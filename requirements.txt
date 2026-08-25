@@ -1,0 +1,21 @@
+# ==========================================
+# Sales AI Intelligence Engine - Dependencies
+# ==========================================
+
+# Core Scraping & HTTP
+apify-client>=1.6.0
+requests>=2.31.0
+
+# Environment Configuration
+python-dotenv>=1.0.0
+
+# Data Validation & Schemas
+pydantic>=2.5.0
+
+# Database & ORM Layer (PostgreSQL)
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.9
+
+# Distributed Task Queue & Scheduling (15-Day Refresh Cycles)
+celery>=5.3.0
+redis>=5.0.0

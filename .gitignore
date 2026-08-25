@@ -1,0 +1,34 @@
+# Environment & Secrets
+.env
+*.env.local
+dump_to_neon.py
+db/dump_to_neon.py
+
+# Output & Scraped Data
+output/
+*.json
+
+# Python & Virtual Environments
+venv/
+env/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+
+# Celery & Redis Task Queue (Deferred for later update)
+celery_app.py
+tasks/
+celerybeat-schedule
+celerybeat.pid
+
+# Logs & Temporary Files
+*.log
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
