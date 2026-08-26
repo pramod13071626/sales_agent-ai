@@ -482,8 +482,6 @@ body {
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0; padding: 10px 12px; margin-bottom: 10px;
 }
 .alert-card:last-child { margin-bottom: 0; }
-.alert-card.clickable { cursor: pointer; transition: var(--transition); }
-.alert-card.clickable:hover { background: var(--brand-soft); }
 .alert-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .alert-header i { color: var(--brand); font-size: 1rem; }
 .alert-title { font-weight: 700; font-size: .82rem; flex: 1; }
@@ -495,6 +493,41 @@ body {
 .alert-evidence i.bi-quote { font-style: normal; margin-right: 3px; }
 .alert-evidence-meta { font-style: normal; font-weight: 600; color: var(--text-secondary); margin-left: 4px; }
 .alert-evidence a { margin-left: 6px; color: var(--brand); }
+
+.alert-contact-empty {
+  margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border-color);
+  font-size: .74rem; color: var(--text-muted); display: flex; align-items: center; gap: 6px;
+}
+
+.alert-view-account {
+  display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%;
+  margin-top: 10px; padding: 7px; border: none; border-radius: var(--radius-sm);
+  background: var(--brand-soft); color: var(--brand); font-family: inherit; font-size: .74rem;
+  font-weight: 700; cursor: pointer; transition: var(--transition);
+}
+.alert-view-account:hover { opacity: .85; }
+
+/* Org hierarchy disclosure within an alert card */
+.alert-hierarchy { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border-color); font-size: .74rem; }
+.alert-hierarchy summary { cursor: pointer; font-weight: 700; color: var(--brand); list-style: none; }
+.alert-hierarchy summary::-webkit-details-marker { display: none; }
+.alert-hierarchy summary::before { content: '▸'; display: inline-block; margin-right: 5px; transition: transform .15s; }
+.alert-hierarchy[open] summary::before { transform: rotate(90deg); }
+.hierarchy-note { color: var(--text-muted); margin: 8px 0; display: flex; align-items: center; gap: 5px; }
+.hierarchy-group { margin-top: 10px; }
+.hierarchy-group-label {
+  font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+  color: var(--text-secondary); margin-bottom: 5px; display: flex; align-items: center; gap: 6px;
+}
+.hierarchy-group-count {
+  font-size: .62rem; font-weight: 700; background: var(--badge-bg); color: var(--text-muted);
+  padding: 1px 6px; border-radius: 999px;
+}
+.hierarchy-group-people { display: flex; flex-wrap: wrap; gap: 5px; }
+.hierarchy-person {
+  font-size: .7rem; padding: 3px 9px; border-radius: 999px;
+  background: var(--panel-bg); border: 1px solid var(--border-color); color: var(--text-primary);
+}
 
 /* ── Responsive ─────────────────────────────────────────────── */
 @media (max-width: 1100px) {

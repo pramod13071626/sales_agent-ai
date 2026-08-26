@@ -42,34 +42,138 @@
     {
       id: 'ai', label: 'Applied AI', icon: 'bi-cpu-fill',
       pitch: 'AI governance, LLMOps, and production-grade AI agents/copilots.',
-      keywords: [/artificial intelligence/i, /\bai\b/i, /\bllm\b/i, /generative ai/i, /genai/i, /machine learning/i, /\bml\b/i, /copilot/i, /\bagent/i, /agentic/i, /guardrail/i, /knowledge graph/i, /chatbot/i]
+      keywords: [/artificial intelligence/i, /\bai\b/i, /\bllm\b/i, /generative ai/i, /genai/i, /machine learning/i, /\bml\b/i, /copilot/i, /\bagent/i, /agentic/i, /guardrail/i, /knowledge graph/i, /chatbot/i],
+      roleKeywords: [/chief technology/i, /\bcto\b/i, /chief data/i, /\bcdo\b/i, /chief information officer/i, /\bcio\b/i, /chief digital/i, /chief innovation/i, /head of (ai|technology|data|innovation)/i],
+      looseRoleKeywords: [/technology/i, /digital/i, /data/i, /innovation/i]
     },
     {
       id: 'data', label: 'Data Analytics', icon: 'bi-bar-chart-fill',
       pitch: 'Data integration, predictive intelligence, and decision-intelligence dashboards.',
-      keywords: [/data quality/i, /data integration/i, /predictive/i, /forecast/i, /dashboard/i, /analytics/i, /business intelligence/i, /decision intelligence/i, /\breporting\b/i]
+      keywords: [/data quality/i, /data integration/i, /predictive/i, /forecast/i, /dashboard/i, /analytics/i, /business intelligence/i, /decision intelligence/i, /\breporting\b/i],
+      roleKeywords: [/chief data/i, /\bcdo\b/i, /head of (data|analytics)/i, /chief analytics/i, /data officer/i],
+      looseRoleKeywords: [/data/i, /analytics/i]
     },
     {
       id: 'cyber', label: 'Cybersecurity', icon: 'bi-shield-lock-fill',
       pitch: 'AI-enhanced security engineering, managed threat monitoring, and compliance readiness.',
-      keywords: [/cyber/i, /security/i, /breach/i, /ransomware/i, /\bthreat/i, /vulnerabilit/i, /incident response/i, /data protection/i, /identity management/i]
+      keywords: [/cyber/i, /security/i, /breach/i, /ransomware/i, /\bthreat/i, /vulnerabilit/i, /incident response/i, /data protection/i, /identity management/i],
+      roleKeywords: [/chief information security/i, /\bciso\b/i, /head of security/i, /chief security/i, /security officer/i],
+      looseRoleKeywords: [/security/i, /risk/i]
     },
     {
       id: 'cloud', label: 'Cloud & Infrastructure', icon: 'bi-cloud-fill',
       pitch: 'Multi-cloud migration, legacy modernization, and 24/7 managed cloud operations.',
-      keywords: [/cloud migration/i, /\bcloud\b/i, /\baws\b/i, /\bazure\b/i, /\bgcp\b/i, /data cent(re|er)/i, /modernization/i, /multi-cloud/i, /legacy system/i, /\binfrastructure\b/i]
+      keywords: [/cloud migration/i, /\bcloud\b/i, /\baws\b/i, /\bazure\b/i, /\bgcp\b/i, /data cent(re|er)/i, /modernization/i, /multi-cloud/i, /legacy system/i, /\binfrastructure\b/i],
+      roleKeywords: [/chief technology/i, /\bcto\b/i, /chief information officer/i, /\bcio\b/i, /head of (infrastructure|engineering|technology)/i, /vp.*engineering/i],
+      looseRoleKeywords: [/technology/i, /infrastructure/i, /engineering/i, /operations/i]
     },
     {
       id: 'testing', label: 'Automated AI Testing', icon: 'bi-check2-square',
       pitch: 'AI-powered test automation and quality engineering frameworks.',
-      keywords: [/\bqa\b/i, /quality engineering/i, /test automation/i, /ci\/cd/i, /release readiness/i, /\bdefect/i]
+      keywords: [/\bqa\b/i, /quality engineering/i, /test automation/i, /ci\/cd/i, /release readiness/i, /\bdefect/i],
+      roleKeywords: [/head of (quality|engineering)/i, /vp.*engineering/i, /chief technology/i, /\bcto\b/i, /quality assurance/i],
+      looseRoleKeywords: [/quality/i, /engineering/i]
     },
     {
       id: 'digital_assets', label: 'Digital Assets & Blockchain', icon: 'bi-currency-bitcoin',
       pitch: 'Regulated tokenization, custody infrastructure, and smart-contract lifecycle management.',
-      keywords: [/tokeniz/i, /\btoken\b/i, /blockchain/i, /digital asset/i, /stablecoin/i, /smart contract/i, /distributed ledger/i, /\bdlt\b/i, /\bcustody\b/i, /\bmica\b/i, /\bsettlement\b/i]
+      keywords: [/tokeniz/i, /\btoken\b/i, /blockchain/i, /digital asset/i, /stablecoin/i, /smart contract/i, /distributed ledger/i, /\bdlt\b/i, /\bcustody\b/i, /\bmica\b/i, /\bsettlement\b/i],
+      roleKeywords: [/digital asset/i, /blockchain/i, /chief digital/i, /chief innovation/i, /head of (digital|innovation)/i],
+      looseRoleKeywords: [/digital/i, /innovation/i, /custody/i]
     }
   ];
+
+  function findPersonaLob(account, persona) {
+    return (account.lobs || []).find(l => (l.personas || []).some(p => p.name === persona.name)) || null;
+  }
+
+  function tierLabel(p) {
+    const t = (p.tier || '').toLowerCase().replace(/[_\s-]+/g, ' ').trim();
+    if (t.includes('c suite') || t === 'csuite') return 'C-Suite';
+    if (t.includes('vp') || t.includes('vice president')) return 'VP';
+    if (t.includes('director')) return 'Director';
+    if (t.includes('manager')) return 'Manager';
+    return t ? t.replace(/\b\w/g, c => c.toUpperCase()) : 'Other';
+  }
+
+  function buildHierarchyGroups(personas) {
+    const TIER_ORDER = ['C-Suite', 'VP', 'Director', 'Manager'];
+    const groups = {};
+    personas.forEach(p => { const label = tierLabel(p); (groups[label] = groups[label] || []).push(p); });
+    const orderedLabels = [...TIER_ORDER.filter(l => groups[l]), ...Object.keys(groups).filter(l => !TIER_ORDER.includes(l))];
+    return orderedLabels.map(label => ({
+      label,
+      people: groups[label].sort((a, b) => (a.hierarchy_level ?? 99) - (b.hierarchy_level ?? 99))
+    }));
+  }
+
+  function buildAlertHierarchy(account, rec) {
+    let scopeName, personas, subLobs = [];
+    const lobObj = rec.lob ? (account.lobs || []).find(l => l.name === rec.lob) : null;
+    if (lobObj) {
+      personas = dedupePersonas(lobObj.personas || []);
+      subLobs = lobObj.subLobs || [];
+      scopeName = lobObj.name;
+    } else {
+      personas = dedupePersonas(account.personas || []);
+      scopeName = `${account.name} (Corporate / Group level)`;
+    }
+    return { scopeName, subLobs, isLob: !!lobObj, groups: buildHierarchyGroups(personas), total: personas.length };
+  }
+
+  function renderAlertHierarchy(h) {
+    if (!h.total) return '';
+    return `
+      <details class="alert-hierarchy">
+        <summary>Org hierarchy — ${esc(h.scopeName)} (${h.total} contact${h.total !== 1 ? 's' : ''})</summary>
+        ${h.isLob ? (h.subLobs.length
+          ? `<div class="chip-row" style="margin:8px 0;">${h.subLobs.map(s => `<span class="chip"><i class="bi bi-diagram-2"></i> ${esc(s.name)}</span>`).join('')}</div>`
+          : `<div class="hierarchy-note"><i class="bi bi-info-circle"></i> No sub-divisions mapped for this LOB.</div>`) : ''}
+        ${h.groups.map(g => `
+          <div class="hierarchy-group">
+            <div class="hierarchy-group-label">${esc(g.label)} <span class="hierarchy-group-count">${g.people.length}</span></div>
+            <div class="hierarchy-group-people">
+              ${g.people.map(p => `<span class="hierarchy-person" title="${esc(p.title || '')}">${esc(p.name)}</span>`).join('')}
+            </div>
+          </div>`).join('')}
+      </details>
+    `;
+  }
+
+  function recommendContact(offering, account, evidence) {
+    const personas = dedupePersonas(account.personas || []);
+    if (!personas.length) return null;
+
+    function withLob(persona, reason) {
+      const lob = findPersonaLob(account, persona);
+      return { persona, reason, lob: lob ? lob.name : null };
+    }
+
+    if (evidence && evidence.person) {
+      const match = personas.find(p => p.name === evidence.person);
+      if (match) return withLob(match, 'Already posting about this topic');
+    }
+
+    const roleMatches = personas.filter(p => p.title && offering.roleKeywords.some(rx => rx.test(p.title)));
+    if (roleMatches.length) {
+      roleMatches.sort((a, b) => (a.hierarchy_level ?? 99) - (b.hierarchy_level ?? 99));
+      return withLob(roleMatches[0], 'Best-fit role for this service line');
+    }
+
+    const looseMatches = personas.filter(p => p.title && (offering.looseRoleKeywords || []).some(rx => rx.test(p.title)));
+    if (looseMatches.length) {
+      looseMatches.sort((a, b) => (a.hierarchy_level ?? 99) - (b.hierarchy_level ?? 99));
+      return withLob(looseMatches[0], 'Loosely related role — no dedicated specialist found');
+    }
+
+    const bySeniority = [...personas].sort((a, b) => {
+      const aC = (a.tier || '').toLowerCase().includes('c-suite') || (a.tier || '').toLowerCase() === 'c_suite' ? 0 : 1;
+      const bC = (b.tier || '').toLowerCase().includes('c-suite') || (b.tier || '').toLowerCase() === 'c_suite' ? 0 : 1;
+      if (aC !== bC) return aC - bC;
+      return (a.hierarchy_level ?? 99) - (b.hierarchy_level ?? 99);
+    });
+    return withLob(bySeniority[0], 'No specialist mapped yet — start at the top of the org');
+  }
 
   function buildContentEntries(targetKey) {
     const entries = [];
@@ -129,8 +233,11 @@
       const snippet = ev.text.length > 180 ? ev.text.slice(0, 180) + '…' : ev.text;
       const evMeta = [ev.account, ev.person, ev.channel ? (CHANNEL_LABEL[ev.channel] || ev.channel) : null].filter(Boolean).join(' · ');
       const accountCount = m.accountIds ? new Set(m.accountIds).size : null;
+      const matchAccount = opts.getAccount ? opts.getAccount(m) : null;
+      const rec = matchAccount ? recommendContact(m, matchAccount, ev) : null;
+
       return `
-        <div class="alert-card ${ev.accountId != null ? 'clickable' : ''}" ${ev.accountId != null ? `data-jump-account="${ev.accountId}"` : ''}>
+        <div class="alert-card">
           <div class="alert-header">
             <i class="bi ${m.icon}"></i>
             <span class="alert-title">${esc(m.label)} opportunity</span>
@@ -141,8 +248,13 @@
           <div class="alert-evidence">
             <i class="bi bi-quote"></i> ${esc(snippet)}
             ${evMeta ? `<span class="alert-evidence-meta">— ${esc(evMeta)}</span>` : ''}
-            ${ev.url ? `<a href="${esc(ev.url)}" target="_blank" onclick="event.stopPropagation();"><i class="bi bi-box-arrow-up-right"></i></a>` : ''}
+            ${ev.url ? `<a href="${esc(ev.url)}" target="_blank"><i class="bi bi-box-arrow-up-right"></i></a>` : ''}
           </div>
+          ${rec ? renderAlertHierarchy(buildAlertHierarchy(matchAccount, rec)) : (matchAccount ? `
+            <div class="alert-contact alert-contact-empty">
+              <i class="bi bi-person-x"></i> No contacts mapped for ${esc(matchAccount.name)} yet — fetch personas in the Account Explorer first.
+            </div>` : '')}
+          ${ev.accountId != null ? `<button type="button" class="alert-view-account" data-jump-account="${ev.accountId}">Open ${esc(ev.account || 'account')} <i class="bi bi-arrow-right"></i></button>` : ''}
         </div>`;
     }).join('');
   }
@@ -155,7 +267,7 @@
         <div class="empty-block-text">No captured content yet to match against StradIT's service lines.</div>
       </div>`;
     }
-    return renderAlertCards(matchOfferings(entries));
+    return renderAlertCards(matchOfferings(entries), { getAccount: () => account });
   }
 
   function renderGlobalSalesAlerts() {
@@ -171,7 +283,10 @@
       ...m,
       accountIds: entries.filter(e => m.keywords.some(rx => rx.test(e.text))).map(e => e.accountId)
     }));
-    return renderAlertCards(matches, { emptyText: 'Captured content doesn’t reference any StradIT service line yet across your accounts.' });
+    return renderAlertCards(matches, {
+      emptyText: 'Captured content doesn’t reference any StradIT service line yet across your accounts.',
+      getAccount: (m) => accounts.find(a => a.id === m.evidence.accountId)
+    });
   }
 
   function esc(s) {
