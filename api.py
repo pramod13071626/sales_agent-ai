@@ -276,6 +276,16 @@ if FASTAPI_AVAILABLE:
                         "target_kpis": p.target_kpis or [],
                         "operational_pain_points": p.operational_pain_points or [],
                         "key_objections": p.key_objections or [],
+                        "degree": p.degree or "",
+                        "institution": p.institution or "",
+                        "prior_company": p.prior_company or "",
+                        "communication_style": p.communication_style or "",
+                        "engagement_rate": p.engagement_rate or "",
+                        "value_proposition": p.value_proposition or "",
+                        "personalized_icebreaker": p.personalized_icebreaker or "",
+                        "social_platform": p.social_platform or "",
+                        "social_profile_url": p.social_profile_url or "",
+                        "social_presence_level": p.social_presence_level or "",
                         "raw_data": p.raw_data
                     })
 
@@ -1036,7 +1046,7 @@ if FASTAPI_AVAILABLE:
     from fastapi.staticfiles import StaticFiles
     frontend_dir = Path(__file__).resolve().parent / "frontend"
     if frontend_dir.exists():
-        app.mount("/pipline", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")
+        app.mount("/", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")
 
 
 if __name__ == "__main__":
