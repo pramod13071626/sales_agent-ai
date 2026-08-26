@@ -327,6 +327,8 @@ if FASTAPI_AVAILABLE:
                         "jurisdiction": l.jurisdiction,
                         "technologies": l.technologies or [],
                         "competitors": l.competitors or [],
+                        "financial_snippets": l.financial_snippets or [],
+                        "patents": l.patents or [],
                         "logo_url": l.logo_url,
                         "google_news_rss_url": l.google_news_rss_url,
                         "reddit_rss_url": l.reddit_rss_url,

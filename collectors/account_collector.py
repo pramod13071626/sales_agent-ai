@@ -147,7 +147,7 @@ def extract_account_firmographics(raw_org: Dict[str, Any], company_name: str, we
     ipo_fields = raw_org.get("ipo_fields", {})
     ipo_summary = raw_org.get("ipo_summary", {})
     growth = raw_org.get("growth_and_heat", {})
-    semrush = raw_org.get("semrush_overview", {})
+    semrush = raw_org.get("semrush_summary", {})
     builtwith = raw_org.get("builtwith_summary", {})
     ipqwery = raw_org.get("ipqwery_summary", {})
     apptopia = raw_org.get("apptopia_summary", {})

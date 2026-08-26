@@ -14,6 +14,9 @@
   const drawerTitle = el('drawerTitle');
   const drawerPinned = el('drawerPinned');
   const drawerBody = el('drawerBody');
+  const signalModalBackdrop = el('signalModalBackdrop');
+  const signalModalTitle = el('signalModalTitle');
+  const signalModalBody = el('signalModalBody');
 
   let accounts = [];
   let expandedAccountIds = new Set();
@@ -21,6 +24,8 @@
   let activeLobId = null;
   let extraTech = {}; // accountId -> [] technologies fetched live via Diffbot, not persisted
   let currentPersonas = []; // personas currently rendered in the right panel, indexed for the drawer
+  let currentSignals = []; // Account Signals currently rendered in the center panel, indexed for the modal
+  let allAccountPersonas = []; // unfiltered persona list for the currently rendered right panel, for search
   let contentStore = { digests: {}, posts: {} }; // real scraped posts + LLM digests, keyed by target_key
 
   const CHANNEL_ICON = {
@@ -150,6 +155,22 @@
   }
   dashContent.addEventListener('click', handleHierarchyPersonClick);
   dashEmpty.addEventListener('click', handleHierarchyPersonClick);
+
+  function handleOrgChartClick(e) {
+    const btn = e.target.closest('.orgchart-node');
+    if (!btn) return;
+    const account = accounts.find(a => a.id === activeAccountId);
+    if (!account) return;
+    const persona = dedupePersonas(account.personas || []).find(p => p.name === btn.dataset.personaName);
+    if (persona) {
+      signalModalBackdrop.classList.remove('open');
+      openContactDrawer(persona);
+    } else {
+      showToast(`${btn.dataset.personaName} isn't in the mapped contacts list yet.`);
+    }
+  }
+  dashContent.addEventListener('click', handleOrgChartClick);
+  signalModalBody.addEventListener('click', handleOrgChartClick);
 
   function recommendContact(offering, account, evidence) {
     const personas = dedupePersonas(account.personas || []);
@@ -674,6 +695,7 @@
   function renderCenter(account, lob) {
     const industries = (account.industries || []).slice(0, 6);
     const signals = computeSignals(account, lob);
+    currentSignals = signals;
 
     return `
       <div class="panel">
@@ -721,6 +743,18 @@
         ${renderEngagementPanel(account)}
       </div>
 
+      ${lob ? `
+        <div class="panel">
+          <div class="panel-title">Financial Intelligence <span class="panel-note">${esc(lob.name)}</span></div>
+          ${renderFinancialSnippets(lob)}
+        </div>` : ''}
+
+      ${!lob ? `
+        <div class="panel">
+          <div class="panel-title">Org Chart <span class="panel-note">verified reporting lines</span></div>
+          ${renderOrgChart(account)}
+        </div>` : ''}
+
       ${!lob ? `
         <div class="panel">
           <div class="panel-title">Sales Alerts <span class="panel-note">StradIT service-line fit</span></div>
@@ -729,7 +763,11 @@
 
       <div class="panel">
         <div class="panel-title">Account Signals</div>
-        ${signals.length ? signals.map(s => `<div class="signal-chip"><span class="signal-icon"><i class="bi ${s.icon}"></i></span><span>${esc(s.text)}</span></div>`).join('')
+        ${signals.length ? signals.map((s, i) => `
+          <button type="button" class="signal-chip ${s.detail ? 'clickable' : ''}" ${s.detail ? `data-signal-idx="${i}"` : ''}>
+            <span class="signal-icon"><i class="bi ${s.icon}"></i></span><span>${esc(s.text)}</span>
+            ${s.detail ? '<i class="bi bi-chevron-right signal-chevron"></i>' : ''}
+          </button>`).join('')
           : `<div class="empty-block"><div class="empty-block-icon"><i class="bi bi-search"></i></div><div class="empty-block-text">No signals detected yet for this ${lob ? 'line of business' : 'account'}.</div></div>`}
       </div>
 
@@ -738,6 +776,75 @@
           <div class="panel-title">Social &amp; Content Intelligence</div>
           ${renderContentPanel(account)}
         </div>` : ''}
+    `;
+  }
+
+  function parseSnippetTable(text) {
+    if (!text || text.indexOf('|') === -1) return null;
+    const cells = text.split('|').map(c => c.trim()).filter(Boolean);
+    for (const cols of [5, 4, 6, 3]) {
+      if (cells.length >= cols * 2 && cells.length % cols === 0) {
+        const rows = [];
+        for (let i = 0; i < cells.length; i += cols) rows.push(cells.slice(i, i + cols));
+        return rows;
+      }
+    }
+    return null;
+  }
+
+  function renderFinancialSnippets(lob) {
+    const snippets = lob.financial_snippets || [];
+    if (!snippets.length) {
+      return `<div class="empty-block">
+        <div class="empty-block-icon"><i class="bi bi-cash-stack"></i></div>
+        <div class="empty-block-text">No financial snippets captured yet for this line of business.</div>
+      </div>`;
+    }
+    return snippets.map(s => {
+      const rows = parseSnippetTable(s);
+      if (rows && rows.length > 1) {
+        const [header, ...body] = rows;
+        return `
+          <div class="fin-table-wrap">
+            <table class="fin-table">
+              <thead><tr>${header.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>
+              <tbody>${body.map(r => `<tr>${r.map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody>
+            </table>
+          </div>`;
+      }
+      return `<blockquote class="fin-snippet"><i class="bi bi-quote"></i> ${esc(s)}</blockquote>`;
+    }).join('');
+  }
+
+  function renderOrgChart(account) {
+    const tree = account.organisational_hierarchy_tree;
+    if (!tree || !tree.full_name) {
+      return `<div class="empty-block">
+        <div class="empty-block-icon"><i class="bi bi-diagram-2"></i></div>
+        <div class="empty-block-text">No verified reporting-line tree captured yet for this account.</div>
+      </div>`;
+    }
+    const reports = tree.direct_reports || [];
+
+    function nodeCard(node, isRoot) {
+      const tags = [node.seniority_tier, node.decision_authority ? `Decision: ${node.decision_authority}` : null].filter(Boolean);
+      return `
+        <button type="button" class="orgchart-node ${isRoot ? 'orgchart-root-node' : ''}" data-persona-name="${esc(node.full_name)}">
+          <div class="orgchart-avatar">${esc(initials(node.full_name))}</div>
+          <div class="orgchart-name">${esc(node.full_name)}</div>
+          <div class="orgchart-title">${esc(node.job_title || '')}</div>
+          ${tags.length ? `<div class="orgchart-tags">${tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>` : ''}
+        </button>`;
+    }
+
+    return `
+      <div class="orgchart">
+        <div class="orgchart-root">${nodeCard(tree, true)}</div>
+        ${reports.length ? `
+          <div class="orgchart-connector"></div>
+          <div class="orgchart-reports">${reports.map(r => nodeCard(r, false)).join('')}</div>
+        ` : ''}
+      </div>
     `;
   }
 
@@ -804,39 +911,142 @@
 
   function computeSignals(account, lob) {
     const signals = [];
+    const msi = account.multi_source_intelligence || {};
+
+    if (msi.linkedin_metrics && msi.linkedin_metrics.follower_count) {
+      const lm = msi.linkedin_metrics;
+      signals.push({
+        icon: 'bi-linkedin', text: `${Number(lm.follower_count).toLocaleString()} LinkedIn followers`,
+        title: 'LinkedIn Snapshot',
+        detail: `
+          <div class="stat-row"><span class="stat-label">Followers</span><span class="stat-value">${Number(lm.follower_count).toLocaleString()}</span></div>
+          ${lm.exact_employee_headcount ? `<div class="stat-row"><span class="stat-label">Employees (verified)</span><span class="stat-value">${Number(lm.exact_employee_headcount).toLocaleString()}</span></div>` : ''}
+          ${(lm.specialties || []).length ? `<div class="dossier-label" style="margin-top:10px;">Specialties</div><div class="chip-row">${lm.specialties.map(s => `<span class="chip">${esc(s)}</span>`).join('')}</div>` : ''}
+          ${account.linkedin_url ? `<a class="social-link" style="margin-top:10px;" href="${esc(account.linkedin_url)}" target="_blank"><i class="bi bi-box-arrow-up-right"></i> Open LinkedIn profile</a>` : ''}
+        `
+      });
+    }
+    if (msi.linkedin_metrics && msi.linkedin_metrics.exact_employee_headcount) {
+      signals.push({ icon: 'bi-people', text: `${Number(msi.linkedin_metrics.exact_employee_headcount).toLocaleString()} employees (verified via LinkedIn)` });
+    }
+    if (msi.sec_10k_chunks_meta && (msi.sec_10k_chunks_meta.sections_found || []).length) {
+      const meta = msi.sec_10k_chunks_meta;
+      signals.push({
+        icon: 'bi-file-earmark-text', text: `Recent 10-K on file — ${meta.sections_found.join(', ')}`,
+        title: 'SEC 10-K Filing',
+        detail: `
+          <div class="stat-row"><span class="stat-label">Accession number</span><span class="stat-value">${esc(meta.accession_number || '—')}</span></div>
+          <div class="stat-row"><span class="stat-label">Sections available</span><span class="stat-value">${esc(meta.sections_found.join(', '))}</span></div>
+          <div class="stat-row"><span class="stat-label">Chunks indexed</span><span class="stat-value">${esc(meta.total_chunks ?? '—')}</span></div>
+          <button type="button" class="action-btn" id="fetchSecBtn" data-cik="${esc(account.sec_cik || '')}" style="margin-top:12px;">
+            <i class="bi bi-cloud-arrow-down"></i> Fetch full filing text
+          </button>
+          <div id="secFetchResult"></div>
+        `
+      });
+    }
+    if (msi.gleif_intel && msi.gleif_intel.lei_code) {
+      signals.push({
+        icon: 'bi-patch-check', text: `LEI verified: ${msi.gleif_intel.lei_code} (${msi.gleif_intel.jurisdiction || 'jurisdiction unknown'})`,
+        title: 'GLEIF Legal Entity Identity',
+        detail: `
+          <div class="stat-row"><span class="stat-label">Legal Entity Identifier</span><span class="stat-value">${esc(msi.gleif_intel.lei_code)}</span></div>
+          <div class="stat-row"><span class="stat-label">Legal name</span><span class="stat-value">${esc(msi.gleif_intel.legal_name || account.legal_name || '—')}</span></div>
+          <div class="stat-row"><span class="stat-label">Jurisdiction</span><span class="stat-value">${esc(msi.gleif_intel.jurisdiction || '—')}</span></div>
+          <a class="social-link" style="margin-top:10px;" href="https://search.gleif.org/#/record/${encodeURIComponent(msi.gleif_intel.lei_code)}" target="_blank"><i class="bi bi-box-arrow-up-right"></i> View on GLEIF registry</a>
+        `
+      });
+    }
+
     if (account.company_type === 'Public') {
-      signals.push({ icon: 'bi-graph-up-arrow', text: `Publicly traded — ${account.ticker || ''} on ${account.stock_exchange || 'a public exchange'}` });
+      signals.push({
+        icon: 'bi-graph-up-arrow', text: `Publicly traded — ${account.ticker || ''} on ${account.stock_exchange || 'a public exchange'}`,
+        title: 'Public Market Listing',
+        detail: `
+          <div class="stat-row"><span class="stat-label">Ticker</span><span class="stat-value">${esc(account.ticker || '—')}</span></div>
+          <div class="stat-row"><span class="stat-label">Exchange</span><span class="stat-value">${esc(account.stock_exchange || '—')}</span></div>
+          <div class="stat-row"><span class="stat-label">Company type</span><span class="stat-value">${esc(account.company_type || '—')}</span></div>
+        `
+      });
     }
     if (account.last_funding_type) {
-      const amt = account.total_funding_amount_usd ? ` — $${Number(account.total_funding_amount_usd).toLocaleString()}` : '';
+      const amt = account.total_funding_amount_usd ? `$${Number(account.total_funding_amount_usd).toLocaleString()}` : '—';
       const date = account.last_funding_date ? ` (${account.last_funding_date})` : '';
-      signals.push({ icon: 'bi-cash-coin', text: `Last funding: ${account.last_funding_type}${date}${amt}` });
+      signals.push({
+        icon: 'bi-cash-coin', text: `Last funding: ${account.last_funding_type}${date}${account.total_funding_amount_usd ? ` — ${amt}` : ''}`,
+        title: 'Funding History',
+        detail: `
+          <div class="stat-row"><span class="stat-label">Last funding type</span><span class="stat-value">${esc(account.last_funding_type)}</span></div>
+          <div class="stat-row"><span class="stat-label">Date</span><span class="stat-value">${esc(account.last_funding_date || '—')}</span></div>
+          <div class="stat-row"><span class="stat-label">Amount</span><span class="stat-value">${amt}</span></div>
+          <div class="stat-row"><span class="stat-label">Funding rounds</span><span class="stat-value">${esc(account.num_funding_rounds ?? '—')}</span></div>
+          <div class="stat-row"><span class="stat-label">Funding status</span><span class="stat-value">${esc(account.funding_status || '—')}</span></div>
+        `
+      });
     }
     if (account.ipo_status) {
-      signals.push({ icon: 'bi-bank2', text: `IPO status: ${account.ipo_status}` });
+      signals.push({
+        icon: 'bi-bank2', text: `IPO status: ${account.ipo_status}`,
+        title: 'IPO Status',
+        detail: `
+          <div class="stat-row"><span class="stat-label">Status</span><span class="stat-value">${esc(account.ipo_status)}</span></div>
+          <div class="stat-row"><span class="stat-label">IPO date</span><span class="stat-value">${esc(account.ipo_date || '—')}</span></div>
+        `
+      });
     }
     if (account.patents_granted) {
       signals.push({ icon: 'bi-lightbulb', text: `${account.patents_granted} patent${account.patents_granted !== 1 ? 's' : ''} granted` });
     }
     if (account.active_tech_count) {
-      signals.push({ icon: 'bi-cpu', text: `${account.active_tech_count} active technologies detected${account.it_spend ? ` (IT spend: ${account.it_spend})` : ''}` });
+      const techSet = new Set();
+      (account.lobs || []).forEach(l => (l.technologies || []).forEach(t => techSet.add(t)));
+      signals.push({
+        icon: 'bi-cpu', text: `${account.active_tech_count} active technologies detected${account.it_spend ? ` (IT spend: ${account.it_spend})` : ''}`,
+        title: 'Technology Footprint',
+        detail: `
+          <div class="stat-row"><span class="stat-label">Active technologies</span><span class="stat-value">${esc(account.active_tech_count)}</span></div>
+          ${account.it_spend ? `<div class="stat-row"><span class="stat-label">IT spend</span><span class="stat-value">${esc(account.it_spend)}</span></div>` : ''}
+          ${techSet.size ? `<div class="dossier-label" style="margin-top:10px;">Detected across LOBs</div><div class="chip-row">${[...techSet].map(t => `<span class="chip"><i class="bi bi-cpu"></i> ${esc(t)}</span>`).join('')}</div>` : ''}
+        `
+      });
     }
     if (account.num_acquisitions) {
       signals.push({ icon: 'bi-briefcase', text: `${account.num_acquisitions} acquisition${account.num_acquisitions !== 1 ? 's' : ''} on record` });
     }
     if ((account.lobs || []).length > 1) {
-      signals.push({ icon: 'bi-folder2', text: `${account.lobs.length} active lines of business tracked` });
+      signals.push({
+        icon: 'bi-folder2', text: `${account.lobs.length} active lines of business tracked`,
+        title: 'Lines of Business',
+        detail: `<div class="chip-row">${account.lobs.map(l => `<button type="button" class="chip" style="cursor:pointer;border:1px solid var(--border-color);font-family:inherit;" data-jump-lob="${l.id}" data-jump-account="${account.id}">${esc(l.name)}</button>`).join('')}</div>`
+      });
     }
     if (account.total_contacts_captured) {
-      signals.push({ icon: 'bi-people-fill', text: `${account.total_contacts_captured} contacts mapped across the org` });
+      const tierCounts = {};
+      dedupePersonas(account.personas || []).forEach(p => { const t = tierLabel(p); tierCounts[t] = (tierCounts[t] || 0) + 1; });
+      signals.push({
+        icon: 'bi-people-fill', text: `${account.total_contacts_captured} contacts mapped across the org`,
+        title: 'Org Coverage',
+        detail: `
+          <div class="chip-row" style="margin-bottom:14px;">${Object.entries(tierCounts).map(([label, n]) => `<span class="chip">${esc(label)}: ${n}</span>`).join('')}</div>
+          ${renderOrgChart(account)}
+        `
+      });
     }
     if ((account.industries || []).length) {
-      signals.push({ icon: 'bi-tag', text: `Operates in ${account.industries.slice(0, 3).join(', ')}` });
+      signals.push({
+        icon: 'bi-tag', text: `Operates in ${account.industries.slice(0, 3).join(', ')}`,
+        title: 'Industries',
+        detail: `<div class="chip-row">${account.industries.map(i => `<span class="chip"><i class="bi bi-tag"></i> ${esc(i)}</span>`).join('')}</div>`
+      });
     }
     const competitors = new Set();
     (lob ? [lob] : (account.lobs || [])).forEach(l => (l.competitors || []).forEach(c => competitors.add(c)));
     if (competitors.size) {
-      signals.push({ icon: 'bi-shield-exclamation', text: `Competitors tracked: ${[...competitors].slice(0, 3).join(', ')}` });
+      signals.push({
+        icon: 'bi-shield-exclamation', text: `Competitors tracked: ${[...competitors].slice(0, 3).join(', ')}`,
+        title: 'Competitive Landscape',
+        detail: `<div class="chip-row">${[...competitors].map(c => `<span class="chip"><i class="bi bi-shield-exclamation"></i> ${esc(c)}</span>`).join('')}</div>`
+      });
     }
     return signals;
   }
@@ -1148,7 +1358,74 @@
 
   el('drawerClose').addEventListener('click', closeContactDrawer);
   drawerBackdrop.addEventListener('click', closeContactDrawer);
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeContactDrawer(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    closeContactDrawer();
+    closeSignalModal();
+  });
+
+  function openSignalModal(signal) {
+    signalModalTitle.textContent = signal.title || 'Signal Detail';
+    signalModalBody.innerHTML = signal.detail || '';
+    signalModalBackdrop.classList.add('open');
+  }
+  function closeSignalModal() {
+    signalModalBackdrop.classList.remove('open');
+  }
+  el('signalModalClose').addEventListener('click', closeSignalModal);
+  signalModalBackdrop.addEventListener('click', (e) => { if (e.target === signalModalBackdrop) closeSignalModal(); });
+
+  dashContent.addEventListener('click', function (e) {
+    const chip = e.target.closest('[data-signal-idx]');
+    if (chip) { const s = currentSignals[Number(chip.dataset.signalIdx)]; if (s) openSignalModal(s); return; }
+    const lobBtn = e.target.closest('[data-jump-lob]');
+    if (lobBtn) {
+      activeAccountId = Number(lobBtn.dataset.jumpAccount);
+      activeLobId = Number(lobBtn.dataset.jumpLob);
+      expandedAccountIds.add(activeAccountId);
+      closeSignalModal();
+      renderNavTree();
+      renderSelection();
+    }
+  });
+
+  signalModalBody.addEventListener('click', async function (e) {
+    const btn = e.target.closest('#fetchSecBtn');
+    if (!btn) return;
+    const cik = btn.dataset.cik;
+    const resultEl = el('secFetchResult');
+    if (!cik) { resultEl.innerHTML = `<div class="content-provenance"><i class="bi bi-exclamation-triangle"></i> No SEC CIK on file for this account.</div>`; return; }
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Fetching…';
+    try {
+      const res = await fetch('/api/account/sec-10k-chunks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sec_cik: cik, chunk_size: 1500, overlap: 200 })
+      });
+      const data = await res.json();
+      if (data.status !== 'success') {
+        resultEl.innerHTML = `<div class="content-provenance"><i class="bi bi-exclamation-triangle"></i> ${esc(data.message || 'No filing text available.')}</div>`;
+        return;
+      }
+      const bySection = {};
+      (data.chunks || []).forEach(c => { (bySection[c.section] = bySection[c.section] || []).push(c); });
+      resultEl.innerHTML = `
+        <div class="content-provenance" style="margin:10px 0;"><i class="bi bi-check-circle"></i> ${data.filing_type} filed ${esc(data.filing_date || '')} — <a href="${esc(data.primary_document_url)}" target="_blank">open original filing <i class="bi bi-box-arrow-up-right"></i></a></div>
+        ${Object.entries(bySection).map(([section, chunks]) => `
+          <details class="content-observed">
+            <summary>${esc(section)} (${chunks.length} chunk${chunks.length !== 1 ? 's' : ''})</summary>
+            ${chunks.slice(0, 3).map(c => `<p class="content-summary" style="margin-top:8px;">${esc(c.text.slice(0, 500))}${c.text.length > 500 ? '…' : ''}</p>`).join('')}
+          </details>
+        `).join('')}
+      `;
+    } catch (err) {
+      resultEl.innerHTML = `<div class="content-provenance"><i class="bi bi-exclamation-triangle"></i> Fetch failed: ${esc(err.message)}</div>`;
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-cloud-arrow-down"></i> Fetch full filing text';
+    }
+  });
 
   contactDrawer.addEventListener('click', function (e) {
     const jumpBtn = e.target.closest('[data-jump]');
@@ -1159,21 +1436,10 @@
     jumpBtn.classList.add('active');
   });
 
-  function renderPeople(account, lob) {
-    const personas = getPersonasFor(account, lob);
+  function renderContactsList(personas) {
     currentPersonas = personas;
-    const tech = getTechFor(account, lob);
-
-    const socialLinks = [
-      account.linkedin_url ? { label: 'LinkedIn', icon: 'bi-linkedin', url: account.linkedin_url } : null,
-      account.twitter_url ? { label: 'X / Twitter', icon: 'bi-twitter-x', url: account.twitter_url } : (account.twitter_handle ? { label: 'X / Twitter', icon: 'bi-twitter-x', url: `https://twitter.com/${account.twitter_handle}` } : null),
-      account.blog_url ? { label: 'Blog', icon: 'bi-journal-richtext', url: account.blog_url } : null,
-      account.github_url ? { label: 'GitHub', icon: 'bi-github', url: account.github_url } : null,
-      account.glassdoor_url ? { label: 'Glassdoor', icon: 'bi-building', url: account.glassdoor_url } : null,
-      account.website_url ? { label: 'Website', icon: 'bi-globe2', url: account.website_url } : null
-    ].filter(Boolean);
-
-    const contactsHtml = personas.length ? personas.slice(0, 12).map((p, idx) => {
+    if (!personas.length) return '<div class="people-empty">No contacts match.</div>';
+    return personas.slice(0, 12).map((p, idx) => {
       const tag = p.tier || p.decision_authority || (p.departments && p.departments[0]) || null;
       const dossierReady = hasDossier(p);
       return `
@@ -1193,12 +1459,36 @@
             <a class="icon-btn ${p.linkedin_url ? '' : 'disabled'}" ${p.linkedin_url ? `href="${esc(p.linkedin_url)}" target="_blank"` : ''} title="${p.linkedin_url ? 'LinkedIn' : 'No LinkedIn on file'}"><i class="bi bi-linkedin"></i></a>
           </div>
         </div>`;
-    }).join('') + (personas.length > 12 ? `<div class="people-empty">+${personas.length - 12} more contacts</div>` : '')
-      : '<div class="people-empty">No contacts mapped yet.</div>';
+    }).join('') + (personas.length > 12 ? `<div class="people-empty">+${personas.length - 12} more contacts — refine your search to narrow it down</div>` : '');
+  }
+
+  function filterContacts(personas, query) {
+    const q = (query || '').trim().toLowerCase();
+    if (!q) return personas;
+    return personas.filter(p => (p.name || '').toLowerCase().includes(q) || (p.title || '').toLowerCase().includes(q));
+  }
+
+  function renderPeople(account, lob) {
+    const personas = getPersonasFor(account, lob);
+    allAccountPersonas = personas;
+    const tech = getTechFor(account, lob);
+
+    const socialLinks = [
+      account.linkedin_url ? { label: 'LinkedIn', icon: 'bi-linkedin', url: account.linkedin_url } : null,
+      account.twitter_url ? { label: 'X / Twitter', icon: 'bi-twitter-x', url: account.twitter_url } : (account.twitter_handle ? { label: 'X / Twitter', icon: 'bi-twitter-x', url: `https://twitter.com/${account.twitter_handle}` } : null),
+      account.blog_url ? { label: 'Blog', icon: 'bi-journal-richtext', url: account.blog_url } : null,
+      account.github_url ? { label: 'GitHub', icon: 'bi-github', url: account.github_url } : null,
+      account.glassdoor_url ? { label: 'Glassdoor', icon: 'bi-building', url: account.glassdoor_url } : null,
+      account.website_url ? { label: 'Website', icon: 'bi-globe2', url: account.website_url } : null
+    ].filter(Boolean);
 
     return `
       <div class="panel-title" style="margin-top:2px;">Key Contacts <span class="panel-note">${personas.length}</span></div>
-      ${contactsHtml}
+      <div class="contact-search">
+        <i class="bi bi-search"></i>
+        <input type="text" id="contactSearchInput" placeholder="Search contacts by name or title..." autocomplete="off">
+      </div>
+      <div id="contactsListContainer">${renderContactsList(personas)}</div>
 
       <div class="panel-title" style="margin-top:16px;">Social &amp; Web</div>
       ${socialLinks.length ? `<div class="social-links">${socialLinks.map(s => `<a class="social-link" href="${esc(s.url)}" target="_blank"><i class="bi ${s.icon}"></i> ${esc(s.label)}</a>`).join('')}</div>`
@@ -1214,6 +1504,12 @@
       <button type="button" class="action-btn secondary" id="openExplorerBtn" data-name="${esc(account.name)}"><i class="bi bi-box-arrow-up-right"></i> Open in Account Explorer</button>
     `;
   }
+
+  dashPeople.addEventListener('input', function (e) {
+    if (e.target.id !== 'contactSearchInput') return;
+    const filtered = filterContacts(allAccountPersonas, e.target.value);
+    el('contactsListContainer').innerHTML = renderContactsList(filtered);
+  });
 
   dashPeople.addEventListener('click', async function (e) {
     const contactBtn = e.target.closest('[data-contact-idx]');
