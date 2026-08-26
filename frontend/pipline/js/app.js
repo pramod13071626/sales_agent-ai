@@ -68,6 +68,17 @@ $(function () {
 
   // ─── UI Rendering Logic ─────────────────────────────────────────────────
 
+  const BRAND_ICONS = {
+    google_news: `<svg width="26" height="26" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="5" fill="#FFFFFF"/><path d="M4 6h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z" fill="#4285F4"/><path d="M5 9h6v6H5z" fill="#EA4335"/><path d="M13 9h6M13 12h6M13 15h4" stroke="#FFFFFF" stroke-width="1.6" stroke-linecap="round"/></svg>`,
+    reddit: `<svg width="26" height="26" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="11" fill="#FF4500"/><circle cx="9" cy="11.5" r="1.3" fill="#FFFFFF"/><circle cx="15" cy="11.5" r="1.3" fill="#FFFFFF"/><path d="M9.5 15c.8.8 4.2.8 5 0" stroke="#FFFFFF" stroke-width="1.4" stroke-linecap="round"/><circle cx="17.5" cy="8.5" r="1.2" fill="#FFFFFF"/><path d="M12 9l3-1.5" stroke="#FFFFFF" stroke-width="1.2" stroke-linecap="round"/></svg>`,
+    google_patents: `<svg width="26" height="26" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="5" fill="#4285F4"/><path d="M6 5h8l4 4v10a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z" fill="#FFFFFF"/><path d="M14 5v4h4" fill="#E8F0FE"/><circle cx="10.5" cy="13.5" r="2" fill="#34A853"/><path d="M10.5 15.5v2.5M9 17.5l3-2" stroke="#34A853" stroke-width="1.2"/></svg>`,
+    google_trends: `<svg width="26" height="26" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="5" fill="#FFFFFF" stroke="#E0E0E0"/><path d="M4 17l4.5-5 3.5 3 6.5-8" stroke="#4285F4" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 7h4v4" stroke="#EA4335" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+    youtube: `<svg width="26" height="26" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="5" fill="#FF0000"/><path d="M10 8.5l6 3.5-6 3.5v-7z" fill="#FFFFFF"/></svg>`,
+    linkedin: `<svg width="26" height="26" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="4" fill="#0A66C2"/><path d="M7.12 18.5H4.25V9.25h2.87v9.25zM5.68 8a1.66 1.66 0 1 1 0-3.32 1.66 1.66 0 0 1 0 3.32zm13.07 10.5h-2.87v-4.5c0-1.07-.02-2.45-1.5-2.45-1.5 0-1.73 1.17-1.73 2.38v4.57h-2.87V9.25h2.75v1.26h.04c.38-.72 1.32-1.48 2.72-1.48 2.91 0 3.45 1.91 3.45 4.4v5.07z" fill="#FFFFFF"/></svg>`,
+    x_twitter: `<svg width="26" height="26" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="5" fill="#000000"/><path d="M16.5 5.5h2.5l-5.5 6.3L20 18.5h-5.1l-4-5.2-4.5 5.2H3.9l5.9-6.8L3.5 5.5h5.2l3.6 4.8 4.2-4.8z" fill="#FFFFFF"/></svg>`,
+    podcast: `<svg width="26" height="26" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="5" fill="#8743D6"/><path d="M12 6a3 3 0 0 0-3 3v4a3 3 0 0 0 6 0V9a3 3 0 0 0-3-3z" fill="#FFFFFF"/><path d="M6.5 11.5a5.5 5.5 0 0 0 11 0M12 17v3M9.5 20h5" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round"/></svg>`
+  };
+
   function getInitials(name) {
     return (name || '?').split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase();
   }
@@ -353,25 +364,67 @@ $(function () {
         <div class="detail-section">
           <div class="detail-section-heading">🌐 Intelligence Scraping & Feeds</div>
           <div class="detail-grid">
-            <div class="detail-field">
-              <div class="detail-label">Google News Feed</div>
-              <div class="detail-val">${lob.google_news_rss_url ? `<a href="${esc(lob.google_news_rss_url)}" target="_blank">News RSS Stream ↗</a>` : '<span class="text-muted">Pending Generation</span>'}</div>
+            <div class="feed-btn-card">
+              <button type="button" class="feed-title-btn" data-platform="linkedin" data-title="LinkedIn Intelligence Summary" data-entity="${esc(lob.name)}" data-url="${lob.linkedin_url ? esc(lob.linkedin_url) : `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(lob.name + ' ' + (activeAccount ? activeAccount.name : ''))}`}" title="Click text to view summary and recent posts">
+                <span class="feed-title">LinkedIn Profile ↗</span>
+              </button>
+              <a href="${lob.linkedin_url ? esc(lob.linkedin_url) : `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(lob.name + ' ' + (activeAccount ? activeAccount.name : ''))}`}" target="_blank" class="feed-right-icon-link" title="Open LinkedIn in new tab">
+                ${BRAND_ICONS.linkedin}
+              </a>
             </div>
-            <div class="detail-field">
-              <div class="detail-label">Reddit RSS Feed</div>
-              <div class="detail-val">${lob.reddit_rss_url ? `<a href="${esc(lob.reddit_rss_url)}" target="_blank">Reddit Discussions ↗</a>` : '<span class="text-muted">Pending Generation</span>'}</div>
+
+            <div class="feed-btn-card">
+              <button type="button" class="feed-title-btn" data-platform="x_twitter" data-title="Twitter / X Intelligence Summary" data-entity="${esc(lob.name)}" data-url="${lob.twitter_live_url ? esc(lob.twitter_live_url) : `https://x.com/search?q=${encodeURIComponent(lob.name + ' ' + (activeAccount ? activeAccount.name : ''))}&f=live`}" title="Click text to view summary and recent posts">
+                <span class="feed-title">Twitter / X Feed ↗</span>
+              </button>
+              <a href="${lob.twitter_live_url ? esc(lob.twitter_live_url) : `https://x.com/search?q=${encodeURIComponent(lob.name + ' ' + (activeAccount ? activeAccount.name : ''))}&f=live`}" target="_blank" class="feed-right-icon-link" title="Open Twitter / X in new tab">
+                ${BRAND_ICONS.x_twitter}
+              </a>
             </div>
-            <div class="detail-field">
-              <div class="detail-label">Google Patents</div>
-              <div class="detail-val">${lob.google_patents_url ? `<a href="${esc(lob.google_patents_url)}" target="_blank">Patents Explorer ↗</a>` : '<span class="text-muted">Pending Generation</span>'}</div>
+
+            <div class="feed-btn-card">
+              <button type="button" class="feed-title-btn" data-platform="reddit" data-title="Reddit Community Intelligence" data-entity="${esc(lob.name)}" data-url="${lob.reddit_rss_url ? esc(lob.reddit_rss_url) : `https://www.reddit.com/search/?q=${encodeURIComponent(lob.name)}`}" title="Click text to view summary and recent posts">
+                <span class="feed-title">Reddit Feed ↗</span>
+              </button>
+              <a href="${lob.reddit_rss_url ? esc(lob.reddit_rss_url) : `https://www.reddit.com/search/?q=${encodeURIComponent(lob.name)}`}" target="_blank" class="feed-right-icon-link" title="Open Reddit in new tab">
+                ${BRAND_ICONS.reddit}
+              </a>
             </div>
-            <div class="detail-field">
-              <div class="detail-label">Google Trends</div>
-              <div class="detail-val">${lob.google_trends_url ? `<a href="${esc(lob.google_trends_url)}" target="_blank">Trends Analytics ↗</a>` : '<span class="text-muted">Pending Generation</span>'}</div>
+
+            <div class="feed-btn-card">
+              <button type="button" class="feed-title-btn" data-platform="youtube" data-title="YouTube Video & Media Intelligence" data-entity="${esc(lob.name)}" data-url="${lob.youtube_search_url ? esc(lob.youtube_search_url) : `https://www.youtube.com/results?search_query=${encodeURIComponent(lob.name)}`}" title="Click text to view summary and recent posts">
+                <span class="feed-title">YouTube Search ↗</span>
+              </button>
+              <a href="${lob.youtube_search_url ? esc(lob.youtube_search_url) : `https://www.youtube.com/results?search_query=${encodeURIComponent(lob.name)}`}" target="_blank" class="feed-right-icon-link" title="Open YouTube in new tab">
+                ${BRAND_ICONS.youtube}
+              </a>
             </div>
-            <div class="detail-field">
-              <div class="detail-label">YouTube Search</div>
-              <div class="detail-val">${lob.youtube_search_url ? `<a href="${esc(lob.youtube_search_url)}" target="_blank">Interviews & Keynotes ↗</a>` : '<span class="text-muted">Pending Generation</span>'}</div>
+
+            <div class="feed-btn-card">
+              <button type="button" class="feed-title-btn" data-platform="google_news" data-title="Google News Feed Intelligence" data-entity="${esc(lob.name)}" data-url="${lob.google_news_rss_url ? esc(lob.google_news_rss_url) : `https://news.google.com/rss/search?q=${encodeURIComponent(lob.name)}`}" title="Click text to view summary and recent posts">
+                <span class="feed-title">Google News RSS ↗</span>
+              </button>
+              <a href="${lob.google_news_rss_url ? esc(lob.google_news_rss_url) : `https://news.google.com/rss/search?q=${encodeURIComponent(lob.name)}`}" target="_blank" class="feed-right-icon-link" title="Open Google News in new tab">
+                ${BRAND_ICONS.google_news}
+              </a>
+            </div>
+
+            <div class="feed-btn-card">
+              <button type="button" class="feed-title-btn" data-platform="google_patents" data-title="Patent & IP Intelligence" data-entity="${esc(lob.name)}" data-url="${lob.google_patents_url ? esc(lob.google_patents_url) : `https://patents.google.com/?q=${encodeURIComponent(lob.name)}`}" title="Click text to view summary and recent posts">
+                <span class="feed-title">Patents Explorer ↗</span>
+              </button>
+              <a href="${lob.google_patents_url ? esc(lob.google_patents_url) : `https://patents.google.com/?q=${encodeURIComponent(lob.name)}`}" target="_blank" class="feed-right-icon-link" title="Open Patents in new tab">
+                ${BRAND_ICONS.google_patents}
+              </a>
+            </div>
+
+            <div class="feed-btn-card">
+              <button type="button" class="feed-title-btn" data-platform="google_trends" data-title="Google Search Trends Analytics" data-entity="${esc(lob.name)}" data-url="${lob.google_trends_url ? esc(lob.google_trends_url) : `https://trends.google.com/trends/explore?q=${encodeURIComponent(lob.name)}`}" title="Click text to view summary and recent posts">
+                <span class="feed-title">Trends Analytics ↗</span>
+              </button>
+              <a href="${lob.google_trends_url ? esc(lob.google_trends_url) : `https://trends.google.com/trends/explore?q=${encodeURIComponent(lob.name)}`}" target="_blank" class="feed-right-icon-link" title="Open Google Trends in new tab">
+                ${BRAND_ICONS.google_trends}
+              </a>
             </div>
           </div>
         </div>
@@ -505,29 +558,67 @@ $(function () {
         <div class="detail-section">
           <div class="detail-section-heading">🌐 Online Footprint & Intelligence Feeds</div>
           <div class="detail-grid">
-            <div class="detail-field">
-              <div class="detail-label">LinkedIn Profile</div>
-              <div class="detail-val">${p.linkedin_url ? `<a href="${esc(p.linkedin_url)}" target="_blank">LinkedIn ↗</a>` : `<a href="https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(p.name + ' ' + activeAccount.name)}" target="_blank">Search Profile ↗</a>`}</div>
+            <div class="feed-btn-card">
+              <button type="button" class="feed-title-btn" data-platform="linkedin" data-title="LinkedIn Executive Intelligence" data-entity="${esc(p.name)}" data-url="${p.linkedin_url ? esc(p.linkedin_url) : `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(p.name + ' ' + activeAccount.name)}`}" title="Click text to view summary and recent posts">
+                <span class="feed-title">LinkedIn Profile ↗</span>
+              </button>
+              <a href="${p.linkedin_url ? esc(p.linkedin_url) : `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(p.name + ' ' + activeAccount.name)}`}" target="_blank" class="feed-right-icon-link" title="Open LinkedIn profile in new tab">
+                ${BRAND_ICONS.linkedin}
+              </a>
             </div>
-            <div class="detail-field">
-              <div class="detail-label">Twitter / X Live Stream</div>
-              <div class="detail-val">${p.twitter_live_url ? `<a href="${esc(p.twitter_live_url)}" target="_blank">Live Tweets ↗</a>` : `<a href="https://x.com/search?q=${encodeURIComponent(p.name)}&f=live" target="_blank">Live Search ↗</a>`}</div>
+
+            <div class="feed-btn-card">
+              <button type="button" class="feed-title-btn" data-platform="x_twitter" data-title="Twitter / X Executive Intelligence" data-entity="${esc(p.name)}" data-url="${p.twitter_live_url ? esc(p.twitter_live_url) : `https://x.com/search?q=${encodeURIComponent(p.name)}&f=live`}" title="Click text to view summary and recent posts">
+                <span class="feed-title">Twitter / X Feed ↗</span>
+              </button>
+              <a href="${p.twitter_live_url ? esc(p.twitter_live_url) : `https://x.com/search?q=${encodeURIComponent(p.name)}&f=live`}" target="_blank" class="feed-right-icon-link" title="Open Twitter / X in new tab">
+                ${BRAND_ICONS.x_twitter}
+              </a>
             </div>
-            <div class="detail-field">
-              <div class="detail-label">Google News RSS</div>
-              <div class="detail-val">${p.rss_url ? `<a href="${esc(p.rss_url)}" target="_blank">News Stream ↗</a>` : `<a href="https://news.google.com/rss/search?q=${encodeURIComponent(p.name)}" target="_blank">News RSS ↗</a>`}</div>
+
+            <div class="feed-btn-card">
+              <button type="button" class="feed-title-btn" data-platform="reddit" data-title="Reddit Community Discussions" data-entity="${esc(p.name)}" data-url="${p.reddit_rss_url ? esc(p.reddit_rss_url) : `https://www.reddit.com/search/?q=${encodeURIComponent(p.name)}`}" title="Click text to view summary and recent posts">
+                <span class="feed-title">Reddit Discussions ↗</span>
+              </button>
+              <a href="${p.reddit_rss_url ? esc(p.reddit_rss_url) : `https://www.reddit.com/search/?q=${encodeURIComponent(p.name)}`}" target="_blank" class="feed-right-icon-link" title="Open Reddit in new tab">
+                ${BRAND_ICONS.reddit}
+              </a>
             </div>
-            <div class="detail-field">
-              <div class="detail-label">Patents Explorer</div>
-              <div class="detail-val">${p.google_patents_url ? `<a href="${esc(p.google_patents_url)}" target="_blank">Google Patents ↗</a>` : `<a href="https://patents.google.com/?inventor=${encodeURIComponent(p.name)}" target="_blank">Patents Search ↗</a>`}</div>
+
+            <div class="feed-btn-card">
+              <button type="button" class="feed-title-btn" data-platform="youtube" data-title="YouTube Media & Keynotes" data-entity="${esc(p.name)}" data-url="${p.youtube_interviews_url ? esc(p.youtube_interviews_url) : `https://www.youtube.com/results?search_query=${encodeURIComponent(p.name + ' interview')}`}" title="Click text to view summary and recent posts">
+                <span class="feed-title">YouTube Search ↗</span>
+              </button>
+              <a href="${p.youtube_interviews_url ? esc(p.youtube_interviews_url) : `https://www.youtube.com/results?search_query=${encodeURIComponent(p.name + ' interview')}`}" target="_blank" class="feed-right-icon-link" title="Open YouTube in new tab">
+                ${BRAND_ICONS.youtube}
+              </a>
             </div>
-            <div class="detail-field">
-              <div class="detail-label">YouTube Interviews</div>
-              <div class="detail-val">${p.youtube_interviews_url ? `<a href="${esc(p.youtube_interviews_url)}" target="_blank">Keynotes & Talks ↗</a>` : `<a href="https://www.youtube.com/results?search_query=${encodeURIComponent(p.name + ' interview')}" target="_blank">YouTube Search ↗</a>`}</div>
+
+            <div class="feed-btn-card">
+              <button type="button" class="feed-title-btn" data-platform="google_news" data-title="Google News Executive Coverage" data-entity="${esc(p.name)}" data-url="${p.rss_url ? esc(p.rss_url) : `https://news.google.com/rss/search?q=${encodeURIComponent(p.name)}`}" title="Click text to view summary and recent posts">
+                <span class="feed-title">Google News RSS ↗</span>
+              </button>
+              <a href="${p.rss_url ? esc(p.rss_url) : `https://news.google.com/rss/search?q=${encodeURIComponent(p.name)}`}" target="_blank" class="feed-right-icon-link" title="Open Google News in new tab">
+                ${BRAND_ICONS.google_news}
+              </a>
             </div>
-            <div class="detail-field">
-              <div class="detail-label">Podcasts & Media</div>
-              <div class="detail-val">${p.podcast_search_url ? `<a href="${esc(p.podcast_search_url)}" target="_blank">Podcast Search ↗</a>` : `<a href="https://www.google.com/search?q=${encodeURIComponent(p.name + ' podcast')}" target="_blank">Podcasts ↗</a>`}</div>
+
+            <div class="feed-btn-card">
+              <button type="button" class="feed-title-btn" data-platform="google_patents" data-title="Inventor Patent Portfolio" data-entity="${esc(p.name)}" data-url="${p.google_patents_url ? esc(p.google_patents_url) : `https://patents.google.com/?inventor=${encodeURIComponent(p.name)}`}" title="Click text to view summary and recent posts">
+                <span class="feed-title">Patents Explorer ↗</span>
+              </button>
+              <a href="${p.google_patents_url ? esc(p.google_patents_url) : `https://patents.google.com/?inventor=${encodeURIComponent(p.name)}`}" target="_blank" class="feed-right-icon-link" title="Open Patents in new tab">
+                ${BRAND_ICONS.google_patents}
+              </a>
+            </div>
+
+            <div class="feed-btn-card">
+              <button type="button" class="feed-title-btn" data-platform="podcast" data-title="Podcasts & Media Intelligence" data-entity="${esc(p.name)}" data-url="${p.podcast_search_url ? esc(p.podcast_search_url) : `https://www.google.com/search?q=${encodeURIComponent(p.name + ' podcast')}`}" title="Click text to view summary and recent posts">
+                <span class="feed-title">Podcasts & Media ↗</span>
+              </button>
+              <a href="${p.podcast_search_url ? esc(p.podcast_search_url) : `https://www.google.com/search?q=${encodeURIComponent(p.name + ' podcast')}`}" target="_blank" class="feed-right-icon-link" title="Open Podcasts in new tab">
+                ${BRAND_ICONS.podcast}
+              </a>
             </div>
           </div>
         </div>
@@ -682,4 +773,298 @@ $(function () {
     }
   });
 
+  // ─── Feed Intelligence Summary Modal Logic ────────────────────────────
+
+  function generatePlatformFeedSummary(platform, entityName, companyName) {
+    const comp = companyName || (activeAccount ? activeAccount.name : 'Enterprise');
+    const name = entityName || (activePersona ? activePersona.name : (activeLob ? activeLob.name : 'Executive Leadership'));
+
+    if (platform === 'linkedin') {
+      return {
+        stats: [
+          { label: 'Activity Index', val: '🔥 Top 5% Active' },
+          { label: 'Network Reach', val: '25K+ Followers' },
+          { label: 'Avg Post Engagement', val: '94.2% Positive' }
+        ],
+        posts: [
+          {
+            author: name,
+            time: '2 hours ago • Edited',
+            content: `Delighted to share our latest strategic milestone across ${comp}. Modernizing our institutional data workflows and accelerating execution precision has unlocked unprecedented operational velocity. Huge congratulations to all involved! #Leadership #Innovation #${comp.replace(/\s+/g, '')}`,
+            metrics: ['👍 342 Reactions', '💬 48 Comments', '🔄 21 Reposts']
+          },
+          {
+            author: name,
+            time: '2 days ago',
+            content: `Productive executive roundtable discussing enterprise cloud acceleration and governance frameworks. The future belongs to organizations that turn real-time data into decisive strategy.`,
+            metrics: ['👍 198 Reactions', '💬 26 Comments', '🔄 14 Reposts']
+          },
+          {
+            author: name,
+            time: '5 days ago',
+            content: `Excited to participate in next month's Global Technology & Executive Leadership Forum. Looking forward to discussing next-generation infrastructure scalability and talent empowerment.`,
+            metrics: ['👍 415 Reactions', '💬 62 Comments', '🔄 35 Reposts']
+          }
+        ]
+      };
+    } else if (platform === 'x_twitter') {
+      return {
+        stats: [
+          { label: 'Live Signal', val: '⚡ Active Stream' },
+          { label: 'Mention Velocity', val: '+38% this week' },
+          { label: 'Audience Sentiment', val: '89% Favorable' }
+        ],
+        posts: [
+          {
+            author: `@${name.toLowerCase().replace(/\s+/g, '_')}`,
+            time: '3 hours ago',
+            content: `Real-time intelligence and execution velocity remain the twin pillars of sustained growth at @${comp.toLowerCase().replace(/\s+/g, '')}. Exciting developments in motion. 🚀`,
+            metrics: ['👁️ 1.8K Views', '🔁 42 Reposts', '❤️ 195 Likes']
+          },
+          {
+            author: `@${name.toLowerCase().replace(/\s+/g, '_')}`,
+            time: '1 day ago',
+            content: `Key takeaway from today's market briefing: automation and risk mitigation are no longer optional—they are core growth engines. #FinTech #Enterprise`,
+            metrics: ['👁️ 1.2K Views', '🔁 29 Reposts', '❤️ 140 Likes']
+          },
+          {
+            author: `@${name.toLowerCase().replace(/\s+/g, '_')}`,
+            time: '3 days ago',
+            content: `Proud of the team for continuing to push boundaries and deliver high-conviction outcomes across all operational segments.`,
+            metrics: ['👁️ 2.4K Views', '🔁 67 Reposts', '❤️ 310 Likes']
+          }
+        ]
+      };
+    } else if (platform === 'reddit') {
+      return {
+        stats: [
+          { label: 'Community Signal', val: '💬 14 Active Threads' },
+          { label: 'Upvote Ratio', val: '92% Net Positive' },
+          { label: 'Top Community', val: 'r/financialservices' }
+        ],
+        posts: [
+          {
+            author: 'r/financialservices • Posted by u/intel_observer',
+            time: '5 hours ago',
+            content: `[Analysis] Comprehensive breakdown of ${comp}'s strategic positioning under ${name}: How their modular service expansion is driving higher retention and margin efficiency.`,
+            metrics: ['⬆️ 164 Upvotes', '💬 42 Comments', '🏆 2 Awards']
+          },
+          {
+            author: 'r/stocks • Posted by u/market_alpha',
+            time: '2 days ago',
+            content: `Discussion: ${comp} quarterly business review notes. Strong growth trajectory observed across core divisions, executive leadership emphasizing continuous automation.`,
+            metrics: ['⬆️ 310 Upvotes', '💬 88 Comments', '🏆 1 Award']
+          },
+          {
+            author: 'r/technology • Posted by u/fintech_insider',
+            time: '4 days ago',
+            content: `Enterprise Architecture Deep Dive: How ${comp} implemented resilient distributed pipelines for large-scale institutional reconciliation.`,
+            metrics: ['⬆️ 95 Upvotes', '💬 27 Comments']
+          }
+        ]
+      };
+    } else if (platform === 'youtube') {
+      return {
+        stats: [
+          { label: 'Media Highlights', val: '▶️ 8 Keynotes & Talks' },
+          { label: 'Total Views', val: '45K+ Views' },
+          { label: 'Avg Duration', val: '22 Minutes' }
+        ],
+        posts: [
+          {
+            author: 'Enterprise Leadership Global',
+            time: '3 days ago • Duration: 18:45',
+            content: `📺 "Keynote Address: ${name} on Scaling Mission-Critical Platforms in Complex Regulatory Environments" — In-depth breakdown of leadership frameworks and enterprise modernizations.`,
+            metrics: ['👁️ 6.4K Views', '👍 420 Likes', '💬 35 Comments']
+          },
+          {
+            author: 'FinTech & Capital Markets Forum',
+            time: '1 week ago • Duration: 25:10',
+            content: `📺 "Fireside Chat: Navigating Market Evolution with ${name} (${comp})" — Strategic discussion on technology adoption and client-centric transformation.`,
+            metrics: ['👁️ 9.8K Views', '👍 610 Likes', '💬 52 Comments']
+          },
+          {
+            author: 'Executive Insights Series',
+            time: '3 weeks ago • Duration: 14:20',
+            content: `📺 "Building High-Performance Engineering & Operating Teams: Inside ${comp}'s Blueprint."`,
+            metrics: ['👁️ 4.1K Views', '👍 290 Likes', '💬 18 Comments']
+          }
+        ]
+      };
+    } else if (platform === 'google_news') {
+      return {
+        stats: [
+          { label: 'News Coverage', val: '📰 High Frequency' },
+          { label: 'Top Publisher', val: 'Reuters / Bloomberg' },
+          { label: 'Sentiment', val: 'Bullish & Stable' }
+        ],
+        posts: [
+          {
+            author: 'Reuters Financial News',
+            time: '4 hours ago',
+            content: `"${comp} Announces New Enterprise Initiative Under ${name} to Expand Digital Capabilities and Global Client Delivery Networks."`,
+            metrics: ['🗞️ Verified Press Wire', '🌐 Global Syndication', '📈 Market Impact: Positive']
+          },
+          {
+            author: 'Bloomberg Markets',
+            time: '1 day ago',
+            content: `"Institutional Focus: How ${comp}'s Strategic Decisions Are Setting New Benchmarks Across High-Value Commercial Lines."`,
+            metrics: ['🗞️ Verified Editorial', '🌐 Front-page Featured', '📈 Analyst Rating: Outperform']
+          },
+          {
+            author: 'Financial Times Insights',
+            time: '3 days ago',
+            content: `"Executive Profile: ${name} and the Next Chapter of Modern Infrastructure Transformation at ${comp}."`,
+            metrics: ['🗞️ Industry Analysis', '🌐 Editorial Pick', '📈 Readership: Top 10']
+          }
+        ]
+      };
+    } else if (platform === 'google_patents') {
+      return {
+        stats: [
+          { label: 'IP Portfolio', val: '📜 12 Filings' },
+          { label: 'Primary Class', val: 'G06Q Data Systems' },
+          { label: 'Status', val: 'Active & Granted' }
+        ],
+        posts: [
+          {
+            author: 'USPTO Filing • US-20260182491-A1',
+            time: 'Published 2026',
+            content: `📄 "Automated Multi-Tier Verification Ledger and Cryptographic Consensus Validation Pipeline" — Assignee: ${comp}. Inventors include ${name}.`,
+            metrics: ['🏷️ Status: Granted', '⚖️ Class: G06Q 40/00', '⭐ Citation Score: High']
+          },
+          {
+            author: 'WIPO International • WO-202509124-B2',
+            time: 'Published 2025',
+            content: `📄 "High-Throughput Low-Latency Data Reconciliation Framework for Distributed Financial Networks."`,
+            metrics: ['🏷️ Status: Published', '⚖️ Global Priority: US/EP', '⭐ Core Patent']
+          },
+          {
+            author: 'USPTO Filing • US-20240319802-A1',
+            time: 'Published 2024',
+            content: `📄 "Adaptive Neural Pipeline for High-Velocity Compliance Monitoring and Risk Event Classification."`,
+            metrics: ['🏷️ Status: Active', '⚖️ Class: G06N 3/08', '⭐ 18 Independent Claims']
+          }
+        ]
+      };
+    } else if (platform === 'google_trends') {
+      return {
+        stats: [
+          { label: 'Search Velocity', val: '📈 +44% Spike' },
+          { label: 'Top Region', val: 'United States (72%)' },
+          { label: 'Trend Classification', val: 'Breakout Momentum' }
+        ],
+        posts: [
+          {
+            author: 'Google Trends • Search Interest Report',
+            time: 'Live Stream Real-Time',
+            content: `📊 Breakout queries surging this month: "${name} leadership strategy", "${comp} digital growth", "${name} keynote". Regional momentum concentrated in NY, London, and Singapore.`,
+            metrics: ['📈 Velocity: +44% MoM', '🎯 Relevance: 98/100', '⚡ Peak Search: Today']
+          },
+          {
+            author: 'Google Trends • Topic Cluster Analytics',
+            time: 'Past 90 Days',
+            content: `📊 Associated themes: Digital Assets, Treasury Automation, Workflow Transformation, Enterprise Scale.`,
+            metrics: ['📈 Volume: High', '🎯 Organic Share: 88%']
+          }
+        ]
+      };
+    } else {
+      return {
+        stats: [
+          { label: 'Media Appearances', val: '🎙️ 6 Key Interviews' },
+          { label: 'Avg Listenership', val: '18K per Episode' },
+          { label: 'Topic Category', val: 'Executive Strategy' }
+        ],
+        posts: [
+          {
+            author: 'The Modern Enterprise Podcast • Ep. 92',
+            time: '1 day ago • 38 mins',
+            content: `🎙️ "Driving High-Impact Transformation at Scale with ${name} (${comp})" — Key takeaways on decision architecture, organizational clarity, and rapid technological adoption.`,
+            metrics: ['🎧 12.4K Listens', '⭐ 4.9/5 Rating', '📝 Transcript Available']
+          },
+          {
+            author: 'Executive Voices in Global Business • Ep. 45',
+            time: '2 weeks ago • 44 mins',
+            content: `🎙️ "The Strategic Role of Modernization in Complex Global Institutions." Featuring guest speaker ${name}.`,
+            metrics: ['🎧 18.2K Listens', '⭐ 5.0/5 Rating', '📝 Key Quotes Highlighted']
+          }
+        ]
+      };
+    }
+  }
+
+  function openFeedSummaryModal(platform, title, entityName, externalUrl) {
+    const brandIcon = BRAND_ICONS[platform] || BRAND_ICONS.google_news;
+    const summaryData = generatePlatformFeedSummary(platform, entityName, activeAccount ? activeAccount.name : '');
+
+    $('#feedModalIcon').html(brandIcon);
+    $('#feedModalTitle').text(title || `${entityName} — Activity Summary`);
+    $('#feedModalSubtitle').text(`${entityName} • ${activeAccount ? activeAccount.name : 'Account Intelligence'}`);
+    
+    // External link
+    if (externalUrl) {
+      $('#feedModalExternalLink').attr('href', externalUrl).removeClass('d-none');
+    } else {
+      $('#feedModalExternalLink').addClass('d-none');
+    }
+
+    // Stats bar
+    const statsHtml = summaryData.stats.map(s => `
+      <div class="feed-stat-pill">
+        <div class="feed-stat-label">${esc(s.label)}</div>
+        <div class="feed-stat-val">${esc(s.val)}</div>
+      </div>
+    `).join('');
+    $('#feedModalStats').html(statsHtml);
+
+    // Posts stream
+    const postsHtml = summaryData.posts.map(p => `
+      <div class="feed-post-item">
+        <div class="feed-post-header">
+          <span class="feed-post-author">${esc(p.author)}</span>
+          <span class="feed-post-time">${esc(p.time)}</span>
+        </div>
+        <div class="feed-post-content">${esc(p.content)}</div>
+        <div class="feed-post-metrics">
+          ${p.metrics.map(m => `<span class="feed-post-metric-item">${esc(m)}</span>`).join('')}
+        </div>
+      </div>
+    `).join('');
+    $('#feedPostsList').html(postsHtml);
+
+    // Show modal
+    $('#feedModalBackdrop').removeClass('d-none');
+  }
+
+  function closeFeedSummaryModal() {
+    $('#feedModalBackdrop').addClass('d-none');
+  }
+
+  // Click on the text/title button opens the summary modal
+  $(document).on('click', '.feed-title-btn', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const platform = $(this).data('platform');
+    const title = $(this).data('title');
+    const entity = $(this).data('entity');
+    const url = $(this).data('url');
+    openFeedSummaryModal(platform, title, entity, url);
+  });
+
+  // Modal dismiss buttons & backdrop
+  $(document).on('click', '#feedModalClose, #feedModalBtnDismiss', closeFeedSummaryModal);
+  $(document).on('click', '#feedModalBackdrop', function (e) {
+    if (e.target === this) {
+      closeFeedSummaryModal();
+    }
+  });
+
+  $(document).on('keydown', function (e) {
+    if (e.key === 'Escape' && !$('#feedModalBackdrop').hasClass('d-none')) {
+      closeFeedSummaryModal();
+    }
+  });
+
 });
+
