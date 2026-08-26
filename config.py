@@ -32,6 +32,10 @@ SERPER_API_KEY = os.getenv("SERPER_API_KEY", "")
 DATA_GOV_API_KEY = os.getenv("DATA_GOV_API_KEY", "")
 DIFFBOT_TOKEN = os.getenv("DIFFBOT_TOKEN", "")
 
+# OpenAI (persona dossier synthesis)
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+
 DEFAULT_HIERARCHY_LIMIT = int(os.getenv("DEFAULT_HIERARCHY_LIMIT", "50"))
 OUTPUT_DIR = BASE_DIR / os.getenv("OUTPUT_DIR", "output")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)

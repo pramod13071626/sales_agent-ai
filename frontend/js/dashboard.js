@@ -118,7 +118,7 @@
       personas = dedupePersonas(account.personas || []);
       scopeName = `${account.name} (Corporate / Group level)`;
     }
-    return { scopeName, subLobs, isLob: !!lobObj, groups: buildHierarchyGroups(personas), total: personas.length };
+    return { scopeName, subLobs, isLob: !!lobObj, groups: buildHierarchyGroups(personas), total: personas.length, accountId: account.id };
   }
 
   function renderAlertHierarchy(h) {
@@ -133,12 +133,23 @@
           <div class="hierarchy-group">
             <div class="hierarchy-group-label">${esc(g.label)} <span class="hierarchy-group-count">${g.people.length}</span></div>
             <div class="hierarchy-group-people">
-              ${g.people.map(p => `<span class="hierarchy-person" title="${esc(p.title || '')}">${esc(p.name)}</span>`).join('')}
+              ${g.people.map(p => `<button type="button" class="hierarchy-person" title="${esc(p.title || '')} — click to view full details" data-account-id="${h.accountId}" data-persona-id="${p.id}">${esc(p.name)}</button>`).join('')}
             </div>
           </div>`).join('')}
       </details>
     `;
   }
+
+  function handleHierarchyPersonClick(e) {
+    const btn = e.target.closest('.hierarchy-person');
+    if (!btn) return;
+    const account = accounts.find(a => a.id === Number(btn.dataset.accountId));
+    if (!account) return;
+    const persona = dedupePersonas(account.personas || []).find(p => p.id === Number(btn.dataset.personaId));
+    if (persona) openContactDrawer(persona);
+  }
+  dashContent.addEventListener('click', handleHierarchyPersonClick);
+  dashEmpty.addEventListener('click', handleHierarchyPersonClick);
 
   function recommendContact(offering, account, evidence) {
     const personas = dedupePersonas(account.personas || []);

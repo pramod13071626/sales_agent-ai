@@ -219,6 +219,86 @@ def query_diffbot_person_timeline(person_name: str, company_name: str) -> Dict[s
     return {}
 
 
+def query_openai_dossier_synthesis(
+    name: str,
+    title: str,
+    company: str,
+    combined_text: str,
+    prior_company: Optional[str] = None,
+    degree: Optional[str] = None,
+    institution: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
+    """
+    Synthesizes KPIs, pain points, communication style, value proposition, icebreaker,
+    and objections from the real gathered bio/news text via OpenAI. Returns None on any
+    failure (no key, request error, malformed response) so callers fall back to the
+    deterministic title-bucket template.
+    """
+    if not config.OPENAI_API_KEY or not (combined_text or "").strip():
+        return None
+
+    background_bits = []
+    if prior_company:
+        background_bits.append(f"Prior company: {prior_company}")
+    if degree or institution:
+        background_bits.append(f"Education: {(degree or '').strip()} {(institution or '').strip()}".strip())
+    background = "\n".join(background_bits)
+
+    system_prompt = (
+        "You are a B2B sales research analyst. Given real bio/news text about a specific "
+        "executive, derive a call-prep brief for a sales rep. Base every field ONLY on the "
+        "supplied text - do not invent facts, achievements, or figures that aren't present "
+        "or reasonably inferable from it. If the text is too thin to support a field, write "
+        "a generic-but-honest fallback rather than fabricating specifics. "
+        "Respond with strict JSON only, matching exactly this schema: "
+        '{"target_kpis": [string, ...], "operational_pain_points": [string, ...], '
+        '"communication_style": string, "engagement_rate": string, '
+        '"value_proposition": string, "personalized_icebreaker": string, '
+        '"key_objections": [string, ...]}'
+    )
+    user_prompt = (
+        f"Executive: {name}\nTitle: {title}\nCompany: {company}\n{background}\n\n"
+        f"Source text (bio, news, strategic-context snippets):\n{(combined_text or '')[:6000]}"
+    )
+
+    try:
+        res = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {config.OPENAI_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": config.OPENAI_MODEL,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                "response_format": {"type": "json_object"},
+                "temperature": 0.4
+            },
+            timeout=30
+        )
+        if res.status_code != 200:
+            print(f"[!] [PersonaEnricher] OpenAI dossier synthesis HTTP {res.status_code}: {res.text[:200]}")
+            return None
+
+        content = res.json()["choices"][0]["message"]["content"]
+        parsed = json.loads(content)
+
+        required_keys = {
+            "target_kpis", "operational_pain_points", "communication_style",
+            "engagement_rate", "value_proposition", "personalized_icebreaker", "key_objections"
+        }
+        if not required_keys.issubset(parsed.keys()):
+            print(f"[!] [PersonaEnricher] OpenAI dossier response missing expected keys: {list(parsed.keys())}")
+            return None
+        return parsed
+    except Exception as e:
+        print(f"[!] [PersonaEnricher] OpenAI dossier synthesis warning: {e}")
+        return None
+
+
 def build_persona_dossier(
     name: Optional[str] = None,
     title: Optional[str] = None,
@@ -281,23 +361,51 @@ def build_persona_dossier(
         "Operational Scaling"
     ]
 
-    # Strategic Priorities & KPIs
-    title_lower = actual_title.lower()
-    if "ceo" in title_lower or "chief executive" in title_lower or "president" in title_lower:
-        kpis = ["Total Shareholder Return (TSR)", "Operating Margin Expansion", "Enterprise Valuation & M&A", "Customer Retention"]
-        pain_points = ["Macroeconomic volatility", "Legacy technology modernization debt", "Market competition & fee compression"]
-    elif "cio" in title_lower or "cto" in title_lower or "technology" in title_lower:
-        kpis = ["Infrastructure Uptime & SLA", "Cloud Modernization & Security Compliance", "GenAI & Automation Adoption"]
-        pain_points = ["Technical debt in core processing systems", "Cybersecurity compliance friction", "Talent retention"]
-    elif "cfo" in title_lower or "financial" in title_lower:
-        kpis = ["Operating Expense Efficiency", "EBITDA Margin Target", "Capital Allocation & Free Cash Flow"]
-        pain_points = ["Cost inflation across vendor contracts", "Regulatory compliance reporting overhead", "Billing reconciliation"]
+    # Strategic Priorities, KPIs & Personal Touch — real LLM synthesis when available,
+    # falling back to the deterministic title-bucket template otherwise.
+    llm_dossier = query_openai_dossier_synthesis(
+        actual_name, actual_title, actual_company, combined_text,
+        prior_company=prior_company, degree=degree, institution=institution
+    )
+
+    if llm_dossier:
+        synthesis_method = "openai"
+        kpis = llm_dossier["target_kpis"]
+        pain_points = llm_dossier["operational_pain_points"]
+        communication_style = llm_dossier["communication_style"]
+        engagement_rate = llm_dossier["engagement_rate"]
+        value_proposition = llm_dossier["value_proposition"]
+        personalized_icebreaker = llm_dossier["personalized_icebreaker"]
+        key_objections = llm_dossier["key_objections"]
     else:
-        kpis = ["Departmental Delivery & Efficiency", "Team Velocity & Talent Retention", "Budgetary Governance"]
-        pain_points = ["Cross-functional communication friction", "Process bottlenecks & manual overhead"]
+        synthesis_method = "template_fallback"
+        title_lower = actual_title.lower()
+        if "ceo" in title_lower or "chief executive" in title_lower or "president" in title_lower:
+            kpis = ["Total Shareholder Return (TSR)", "Operating Margin Expansion", "Enterprise Valuation & M&A", "Customer Retention"]
+            pain_points = ["Macroeconomic volatility", "Legacy technology modernization debt", "Market competition & fee compression"]
+        elif "cio" in title_lower or "cto" in title_lower or "technology" in title_lower:
+            kpis = ["Infrastructure Uptime & SLA", "Cloud Modernization & Security Compliance", "GenAI & Automation Adoption"]
+            pain_points = ["Technical debt in core processing systems", "Cybersecurity compliance friction", "Talent retention"]
+        elif "cfo" in title_lower or "financial" in title_lower:
+            kpis = ["Operating Expense Efficiency", "EBITDA Margin Target", "Capital Allocation & Free Cash Flow"]
+            pain_points = ["Cost inflation across vendor contracts", "Regulatory compliance reporting overhead", "Billing reconciliation"]
+        else:
+            kpis = ["Departmental Delivery & Efficiency", "Team Velocity & Talent Retention", "Budgetary Governance"]
+            pain_points = ["Cross-functional communication friction", "Process bottlenecks & manual overhead"]
+
+        communication_style = "Data-driven, concise, ROI-focused executive briefing"
+        engagement_rate = "High for consultative enterprise propositions"
+        value_proposition = f"Empowering {actual_company}'s {actual_title} with AI-driven operational scaling and automated efficiency"
+        key_objections = [
+            "Implementation timeline & system integration friction",
+            "Vendor risk & data sovereignty compliance",
+            "Demonstrable near-term ROI justification"
+        ]
+        personalized_icebreaker = f"Noticed your strategic leadership driving initiatives at {actual_company}{f' following your background at {prior_company}' if prior_company else ''}."
 
     return {
         "status": "enriched",
+        "synthesis_method": synthesis_method,
         "person_name": actual_name,
         "title": actual_title,
         "company": actual_company,
@@ -316,15 +424,11 @@ def build_persona_dossier(
             "political_donations": fec_donations
         },
         "level_3_personal_touch": {
-            "communication_style": "Data-driven, concise, ROI-focused executive briefing",
-            "engagement_rate": "High for consultative enterprise propositions",
-            "value_proposition": f"Empowering {actual_company}'s {actual_title} with AI-driven operational scaling and automated efficiency",
-            "key_objections": [
-                "Implementation timeline & system integration friction",
-                "Vendor risk & data sovereignty compliance",
-                "Demonstrable near-term ROI justification"
-            ],
-            "personalized_icebreaker": f"Noticed your strategic leadership driving initiatives at {actual_company}{f' following your background at {prior_company}' if prior_company else ''}.",
+            "communication_style": communication_style,
+            "engagement_rate": engagement_rate,
+            "value_proposition": value_proposition,
+            "key_objections": key_objections,
+            "personalized_icebreaker": personalized_icebreaker,
             "social_media": {
                 "profile_url": resolved_linkedin,
                 "verified": bool(resolved_linkedin)
