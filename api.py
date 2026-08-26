@@ -48,7 +48,7 @@ from serializers.lob_serializer import LOBSerializer
 from serializers.persona_serializer import PersonaSerializer
 
 from db.connection import get_session
-from db.models import Account, Lob, SubLob, Persona
+from db.models import Account, Lob, SubLob, Persona, Post, Digest
 from db.schemas import AccountSchema, LobSchema, PersonaSchema
 from db.repositories import AccountRepository, LobRepository, PersonaRepository
 from db.importer import import_run_to_db
@@ -276,6 +276,16 @@ if FASTAPI_AVAILABLE:
                         "target_kpis": p.target_kpis or [],
                         "operational_pain_points": p.operational_pain_points or [],
                         "key_objections": p.key_objections or [],
+                        "degree": p.degree,
+                        "institution": p.institution,
+                        "prior_company": p.prior_company,
+                        "communication_style": p.communication_style,
+                        "engagement_rate": p.engagement_rate,
+                        "value_proposition": p.value_proposition,
+                        "personalized_icebreaker": p.personalized_icebreaker,
+                        "social_platform": p.social_platform,
+                        "social_profile_url": p.social_profile_url,
+                        "social_presence_level": p.social_presence_level,
                         "raw_data": p.raw_data
                     })
 
@@ -311,7 +321,7 @@ if FASTAPI_AVAILABLE:
                         "audited_segment_revenue": l.audited_segment_revenue,
                         "head": l.operating_head,
                         "operating_head": l.operating_head,
-                        "headcount": l.segment_headcount or "1,000+ employees",
+                        "headcount": l.segment_headcount,
                         "segment_headcount": l.segment_headcount,
                         "lei_code": l.lei_code,
                         "jurisdiction": l.jurisdiction,
@@ -329,8 +339,8 @@ if FASTAPI_AVAILABLE:
                     })
 
                 acct_name = acct.legal_name or acct.display_name or acct.key
-                acct_loc = acct.headquarters_location or (f"{acct.city}, {acct.country}" if acct.city else "New York, USA")
-                acct_desc = acct.short_description or acct.full_description or "Global Financial Services & Investment Management"
+                acct_loc = acct.headquarters_location or (f"{acct.city}, {acct.country}" if acct.city else None)
+                acct_desc = acct.short_description or acct.full_description
 
                 result.append({
                     "id": acct.id,
@@ -338,25 +348,25 @@ if FASTAPI_AVAILABLE:
                     "name": acct_name,
                     "display_name": acct.display_name or acct_name,
                     "legal_name": acct.legal_name or acct_name,
-                    "ticker": acct.stock_symbol or "BNY",
-                    "stock_symbol": acct.stock_symbol or "BNY",
-                    "revenue": "$17.5 Billion (FY2024 Audited)",
+                    "ticker": acct.stock_symbol,
+                    "stock_symbol": acct.stock_symbol,
+                    "revenue": acct.estimated_revenue_range or "Revenue N/A",
                     "location": acct_loc,
                     "desc": acct_desc,
                     "domain": acct.domain,
                     "primary_domain": acct.primary_domain or acct.domain,
                     "website_url": acct.website_url,
                     "crunchbase_url": acct.crunchbase_url,
-                    "operating_status": acct.operating_status or "Active",
-                    "company_type": acct.company_type or "Public",
+                    "operating_status": acct.operating_status,
+                    "company_type": acct.company_type,
                     "founded_year": acct.founded_year,
-                    "employee_count_range": acct.employee_count_range or "55,000+",
+                    "employee_count_range": acct.employee_count_range,
                     "short_description": acct_desc,
                     "full_description": acct.full_description or acct_desc,
                     "headquarters_location": acct_loc,
-                    "city": acct.city or "New York",
-                    "state": acct.state or "NY",
-                    "country": acct.country or "United States",
+                    "city": acct.city,
+                    "state": acct.state,
+                    "country": acct.country,
                     "postal_code": acct.postal_code,
                     "phone_number": acct.phone_number,
                     "sanitized_phone": acct.sanitized_phone,
@@ -364,7 +374,7 @@ if FASTAPI_AVAILABLE:
                     "linkedin_url": acct.linkedin_url,
                     "twitter_url": acct.twitter_url,
                     "twitter_handle": acct.twitter_handle,
-                    "stock_exchange": acct.stock_exchange or "NYSE",
+                    "stock_exchange": acct.stock_exchange,
                     "sec_cik": acct.sec_cik,
                     "sec_edgar_url": acct.sec_edgar_url,
                     "sec_filings_rss": acct.sec_filings_rss,
@@ -390,7 +400,34 @@ if FASTAPI_AVAILABLE:
                     "personas": personas_list,
                     "multi_source_intelligence": acct.multi_source_intelligence,
                     "organisational_hierarchy_tree": acct.organisational_hierarchy_tree,
-                    "extracted_at": acct.extracted_at.isoformat() if acct.extracted_at else None
+                    "extracted_at": acct.extracted_at.isoformat() if acct.extracted_at else None,
+
+                    # ── Engagement / opportunity signals (previously captured but never exposed) ──
+                    "heat_score": acct.heat_score,
+                    "trend_score_90d": acct.trend_score_90d,
+                    "active_tech_count": acct.active_tech_count,
+                    "it_spend": acct.it_spend,
+                    "patents_granted": acct.patents_granted,
+                    "trademarks_registered": acct.trademarks_registered,
+                    "total_funding_amount_usd": acct.total_funding_amount_usd,
+                    "total_funding_currency": acct.total_funding_currency,
+                    "last_funding_type": acct.last_funding_type,
+                    "last_funding_date": acct.last_funding_date.isoformat() if acct.last_funding_date else None,
+                    "num_funding_rounds": acct.num_funding_rounds,
+                    "funding_status": acct.funding_status,
+                    "ipo_status": acct.ipo_status,
+                    "ipo_date": acct.ipo_date.isoformat() if acct.ipo_date else None,
+                    "num_suborganizations": acct.num_suborganizations,
+                    "num_acquisitions": acct.num_acquisitions,
+                    "global_traffic_rank": acct.global_traffic_rank,
+                    "monthly_visits": acct.monthly_visits,
+                    "bounce_rate": acct.bounce_rate,
+                    "visit_duration": acct.visit_duration,
+                    "page_views_per_visit": acct.page_views_per_visit,
+                    "c_suite_count": acct.c_suite_count,
+                    "vp_count": acct.vp_count,
+                    "director_count": acct.director_count,
+                    "manager_count": acct.manager_count
                 })
 
             return {"accounts": result}
@@ -1030,13 +1067,56 @@ if FASTAPI_AVAILABLE:
         """Plural alias for GET /api/account/{account_id}."""
         return get_account_from_db(account_id)
 
+    @app.get("/api/content", tags=["4. Content Intelligence"])
+    def get_content_intelligence():
+        """
+        Bulk fetch of externally-ingested content intelligence (real scraped posts +
+        LLM-generated digests per target_key — company or person). The frontend matches
+        target_key against account.key/ticker and persona.key client-side.
+        """
+        session = get_session()
+        try:
+            digests_by_key = {}
+            for d in session.query(Digest).all():
+                digests_by_key[d.target_key] = {
+                    "target_key": d.target_key,
+                    "kind": d.kind,
+                    "priority": d.priority,
+                    "llm": d.llm,
+                    "posts_considered": d.posts_considered,
+                    "generated_at": d.generated_at.isoformat() if d.generated_at else None,
+                    "digest": d.digest
+                }
+
+            posts_by_key = {}
+            for p in session.query(Post).order_by(Post.target_key, Post.channel, Post.rank).all():
+                posts_by_key.setdefault(p.target_key, []).append({
+                    "id": p.id,
+                    "channel": p.channel,
+                    "post_key": p.post_key,
+                    "rank": p.rank,
+                    "post_url": p.post_url,
+                    "body": p.body,
+                    "author": p.author,
+                    "published_at": p.published_at,
+                    "engagement": p.engagement,
+                    "media": p.media,
+                    "new_in_last_run": p.new_in_last_run,
+                    "first_seen": p.first_seen.isoformat() if p.first_seen else None,
+                    "last_seen": p.last_seen.isoformat() if p.last_seen else None
+                })
+
+            return {"digests": digests_by_key, "posts": posts_by_key}
+        finally:
+            session.close()
+
     # ══════════════════════════════════════════════════════
     # FRONTEND STATIC UI MOUNT
     # ══════════════════════════════════════════════════════
     from fastapi.staticfiles import StaticFiles
     frontend_dir = Path(__file__).resolve().parent / "frontend"
     if frontend_dir.exists():
-        app.mount("/pipline", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")
+        app.mount("/", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")
 
 
 if __name__ == "__main__":
