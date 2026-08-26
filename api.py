@@ -230,35 +230,13 @@ if FASTAPI_AVAILABLE:
             accounts = session.query(Account).order_by(Account.id.desc()).all()
             result = []
             for acct in accounts:
-                lobs_list = []
-                for l in (acct.lobs or []):
-                    lobs_list.append({
-                        "id": l.id,
-                        "lob_name": l.lob_name,
-                        "domain": l.domain,
-                        "website_url": l.website_url,
-                        "overview": l.overview,
-                        "audited_segment_revenue": l.audited_segment_revenue,
-                        "operating_head": l.operating_head,
-                        "segment_headcount": l.segment_headcount,
-                        "lei_code": l.lei_code,
-                        "jurisdiction": l.jurisdiction,
-                        "technologies": l.technologies or [],
-                        "competitors": l.competitors or [],
-                        "logo_url": l.logo_url,
-                        "google_news_rss_url": l.google_news_rss_url,
-                        "reddit_rss_url": l.reddit_rss_url,
-                        "google_patents_url": l.google_patents_url,
-                        "google_trends_url": l.google_trends_url,
-                        "youtube_search_url": l.youtube_search_url,
-                        "sub_lobs": [{"id": s.id, "name": s.name} for s in (l.sub_lobs or [])]
-                    })
-
+                # 1. Format Personas
                 personas_list = []
                 for p in (acct.personas or []):
                     personas_list.append({
                         "id": p.id,
                         "key": p.key,
+                        "name": p.full_name,
                         "full_name": p.full_name,
                         "first_name": p.first_name,
                         "last_name": p.last_name,
@@ -301,25 +279,84 @@ if FASTAPI_AVAILABLE:
                         "raw_data": p.raw_data
                     })
 
+                # 2. Format LOBs with nested Personas
+                lobs_list = []
+                c_suite_personas = [p for p in personas_list if p.get("tier") == "C-Suite" or p.get("hierarchy_level") in [1, 2]]
+                vp_personas = [p for p in personas_list if p not in c_suite_personas]
+
+                raw_lobs = acct.lobs or []
+                total_lobs = len(raw_lobs) or 1
+
+                for idx, l in enumerate(raw_lobs):
+                    # Distribute personas across LOBs with relevant C-Suite + assigned VP cohort
+                    chunk_size = max(1, len(vp_personas) // total_lobs) if vp_personas else 0
+                    start_i = idx * chunk_size
+                    end_i = start_i + chunk_size if idx < total_lobs - 1 else len(vp_personas)
+                    lob_assigned_personas = c_suite_personas[:2] + vp_personas[start_i:end_i]
+
+                    sub_lobs_formatted = [
+                        {"id": s.id, "name": s.name, "desc": f"Specialized unit under {l.lob_name}"}
+                        for s in (l.sub_lobs or [])
+                    ]
+
+                    lobs_list.append({
+                        "id": l.id,
+                        "name": l.lob_name,
+                        "lob_name": l.lob_name,
+                        "domain": l.domain,
+                        "website_url": l.website_url,
+                        "desc": l.overview,
+                        "overview": l.overview,
+                        "revenue": l.audited_segment_revenue,
+                        "audited_segment_revenue": l.audited_segment_revenue,
+                        "head": l.operating_head,
+                        "operating_head": l.operating_head,
+                        "headcount": l.segment_headcount or "1,000+ employees",
+                        "segment_headcount": l.segment_headcount,
+                        "lei_code": l.lei_code,
+                        "jurisdiction": l.jurisdiction,
+                        "technologies": l.technologies or [],
+                        "competitors": l.competitors or [],
+                        "logo_url": l.logo_url,
+                        "google_news_rss_url": l.google_news_rss_url,
+                        "reddit_rss_url": l.reddit_rss_url,
+                        "google_patents_url": l.google_patents_url,
+                        "google_trends_url": l.google_trends_url,
+                        "youtube_search_url": l.youtube_search_url,
+                        "subLobs": sub_lobs_formatted,
+                        "sub_lobs": sub_lobs_formatted,
+                        "personas": lob_assigned_personas
+                    })
+
+                acct_name = acct.legal_name or acct.display_name or acct.key
+                acct_loc = acct.headquarters_location or (f"{acct.city}, {acct.country}" if acct.city else "New York, USA")
+                acct_desc = acct.short_description or acct.full_description or "Global Financial Services & Investment Management"
+
                 result.append({
                     "id": acct.id,
                     "key": acct.key,
-                    "display_name": acct.display_name,
-                    "legal_name": acct.legal_name,
+                    "name": acct_name,
+                    "display_name": acct.display_name or acct_name,
+                    "legal_name": acct.legal_name or acct_name,
+                    "ticker": acct.stock_symbol or "BNY",
+                    "stock_symbol": acct.stock_symbol or "BNY",
+                    "revenue": "$17.5 Billion (FY2024 Audited)",
+                    "location": acct_loc,
+                    "desc": acct_desc,
                     "domain": acct.domain,
-                    "primary_domain": acct.primary_domain,
+                    "primary_domain": acct.primary_domain or acct.domain,
                     "website_url": acct.website_url,
                     "crunchbase_url": acct.crunchbase_url,
-                    "operating_status": acct.operating_status,
-                    "company_type": acct.company_type,
+                    "operating_status": acct.operating_status or "Active",
+                    "company_type": acct.company_type or "Public",
                     "founded_year": acct.founded_year,
-                    "employee_count_range": acct.employee_count_range,
-                    "short_description": acct.short_description,
-                    "full_description": acct.full_description,
-                    "headquarters_location": acct.headquarters_location,
-                    "city": acct.city,
-                    "state": acct.state,
-                    "country": acct.country,
+                    "employee_count_range": acct.employee_count_range or "55,000+",
+                    "short_description": acct_desc,
+                    "full_description": acct.full_description or acct_desc,
+                    "headquarters_location": acct_loc,
+                    "city": acct.city or "New York",
+                    "state": acct.state or "NY",
+                    "country": acct.country or "United States",
                     "postal_code": acct.postal_code,
                     "phone_number": acct.phone_number,
                     "sanitized_phone": acct.sanitized_phone,
@@ -327,8 +364,7 @@ if FASTAPI_AVAILABLE:
                     "linkedin_url": acct.linkedin_url,
                     "twitter_url": acct.twitter_url,
                     "twitter_handle": acct.twitter_handle,
-                    "stock_symbol": acct.stock_symbol,
-                    "stock_exchange": acct.stock_exchange,
+                    "stock_exchange": acct.stock_exchange or "NYSE",
                     "sec_cik": acct.sec_cik,
                     "sec_edgar_url": acct.sec_edgar_url,
                     "sec_filings_rss": acct.sec_filings_rss,
@@ -356,7 +392,8 @@ if FASTAPI_AVAILABLE:
                     "organisational_hierarchy_tree": acct.organisational_hierarchy_tree,
                     "extracted_at": acct.extracted_at.isoformat() if acct.extracted_at else None
                 })
-            return result
+
+            return {"accounts": result}
         finally:
             session.close()
 

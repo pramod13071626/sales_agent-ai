@@ -151,6 +151,87 @@ class MasterSerializer:
                 saved_paths.append(out_file)
         return saved_paths
 
+    @classmethod
+    def save_json(cls, data: Any, file_path: Path):
+        """Saves dictionary data to a formatted JSON file."""
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
 
-# Backwards compatibility alias
+    @classmethod
+    def serialize_and_save_all(
+        cls,
+        account_data: Dict[str, Any],
+        account_hierarchy: Dict[str, List[Dict[str, Any]]],
+        sublobs_data: List[Dict[str, Any]],
+        lobs_hierarchies: Optional[List[Dict[str, List[Dict[str, Any]]]]] = None,
+        run_dirs: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Coordinates full 3-tier serialization, saves Master JSON, Social Launchpad JSON,
+        and slices individual LOB and Persona JSON files into enriched storage directories.
+        """
+        enriched_doc = cls.build_master_payload(
+            account_data=account_data,
+            account_hierarchy=account_hierarchy,
+            lobs_data=sublobs_data,
+            lobs_hierarchies=lobs_hierarchies
+        )
+
+        company_name = account_data.get("name") or "Corporate Account"
+        company_slug = slugify(company_name)
+
+        # Build Social and Content Launchpad Document
+        social_doc = {
+            "title": f"Sales AI Launchpad — {company_name}",
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "target_database": "sales_ai",
+            "account_required": enriched_doc["account"]["required_account"],
+            "lobs_required": [
+                {
+                    "lob_name": l["lob_name"],
+                    "required_account": l["required_account"]
+                }
+                for l in enriched_doc.get("lobs", [])
+            ],
+            "personas_required": [
+                {
+                    "name": p.get("name"),
+                    "title": p.get("title"),
+                    "tier": tier,
+                    "required_person_data": p.get("required_person_data", {})
+                }
+                for tier, people in account_hierarchy.items()
+                for p in people
+            ]
+        }
+
+        saved_lobs_count = 0
+        saved_personas_count = 0
+
+        if run_dirs:
+            # 1. Save Master Enriched JSON
+            cls.save_json(enriched_doc, run_dirs["enriched_json_path"])
+
+            # 2. Save Social Launchpad JSON
+            cls.save_json(social_doc, run_dirs["social_json_path"])
+
+            # 3. Save LOB Slices
+            lob_paths = cls.save_sliced_lobs(enriched_doc["lobs"], company_slug, run_dirs["enriched_dir"])
+            saved_lobs_count = len(lob_paths)
+
+            # 4. Save Persona Slices
+            persona_paths = cls.save_sliced_personas(account_hierarchy, company_slug, run_dirs["enriched_dir"])
+            saved_personas_count = len(persona_paths)
+
+        return {
+            "enriched_doc": enriched_doc,
+            "social_doc": social_doc,
+            "saved_lobs_count": saved_lobs_count,
+            "saved_personas_count": saved_personas_count
+        }
+
+
+# Backwards compatibility aliases
+PipelineSerializer = MasterSerializer
 EnterpriseSalesSerializer = MasterSerializer
