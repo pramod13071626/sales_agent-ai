@@ -16,12 +16,18 @@ import config
 engine = create_engine(
     config.DATABASE_URL,
     pool_pre_ping=True,
+    pool_recycle=300,  # Recycle connections every 5 minutes to prevent SSL closed socket drops
+    pool_timeout=30,
     echo=False
 )
 
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 
-def get_session() -> Session:
-    """Returns a new database session."""
-    return SessionLocal()
+def get_session():
+    """FastAPI dependency yielding a managed database session with guaranteed closure."""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()

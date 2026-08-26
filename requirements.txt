@@ -19,3 +19,7 @@ psycopg2-binary>=2.9.9
 # Distributed Task Queue & Scheduling (15-Day Refresh Cycles)
 celery>=5.3.0
 redis>=5.0.0
+
+# API Server
+fastapi>=0.100.0
+uvicorn>=0.20.0
