@@ -6,16 +6,24 @@ Saves exact raw API responses into output/raw/apify/.
 
 import json
 import re
-from typing import List, Dict, Any
+from pathlib import Path
+from typing import List, Dict, Any, Optional
 from apify_client import ApifyClient
 import config
 from .account_collector import extract_domain, unwrap, save_raw_apify_response, slugify
 
-def scrape_sublobs(parent_account_name: str, expected_count: int = 0) -> List[Dict[str, Any]]:
+def scrape_sublobs(
+    parent_account_name: str,
+    expected_count: int = 0,
+    raw_apify_dir: Optional[Path] = None
+) -> List[Dict[str, Any]]:
     print(f"[*] [SubLOBCollector] Discovering sub-organizations for: '{parent_account_name}'...")
     
     safe_name = parent_account_name.lower().replace(" ", "_").replace(".", "").replace(",", "")
-    raw_parent_file = config.RAW_APIFY_DIR / f"{safe_name}_account_crunchbase_raw.json"
+    target_apify_dir = raw_apify_dir if raw_apify_dir else config.RAW_APIFY_DIR
+    raw_parent_file = target_apify_dir / f"{safe_name}_account_crunchbase_raw.json"
+    if not raw_parent_file.exists():
+        raw_parent_file = config.RAW_APIFY_DIR / f"{safe_name}_account_crunchbase_raw.json"
     
     sublobs = []
     seen_names = set()
@@ -71,6 +79,6 @@ def scrape_sublobs(parent_account_name: str, expected_count: int = 0) -> List[Di
             print(f"[!] Error parsing sub-organizations from raw cache: {e}")
 
     # Save sublobs raw response
-    save_raw_apify_response(parent_account_name, "sublobs_crunchbase", sublobs)
+    save_raw_apify_response(parent_account_name, "sublobs_crunchbase", sublobs, out_dir=raw_apify_dir)
     print(f"[+] [SubLOBCollector] Identified {len(sublobs)} clean sub-organization(s) for '{parent_account_name}'.")
     return sublobs

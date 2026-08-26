@@ -26,7 +26,10 @@ celerybeat-schedule
 celerybeat.pid
 
 # Logs & Temporary Files
+scratch/
+architecture_flow.md
 *.log
+.obsidian/
 .vscode/
 .idea/
 *.swp

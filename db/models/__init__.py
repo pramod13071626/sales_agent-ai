@@ -8,5 +8,6 @@ from db.models.account import Account
 from db.models.lob import Lob
 from db.models.sub_lob import SubLob
 from db.models.persona import Persona
+from db.models.pipeline_run import PipelineRun
 
-__all__ = ["Base", "Account", "Lob", "SubLob", "Persona"]
+__all__ = ["Base", "Account", "Lob", "SubLob", "Persona", "PipelineRun"]

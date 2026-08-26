@@ -1,6 +1,7 @@
 """Lob ORM Model — 17 columns. Lines of Business / Sub-Organizations with scraping URLs."""
 
 from sqlalchemy import Column, Integer, String, Text, ForeignKey
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from db.models.base import Base
 
@@ -22,6 +23,15 @@ class Lob(Base):
     audited_segment_revenue = Column(String(100))
     operating_head = Column(String(500))
     segment_headcount = Column(String(100))
+    lei_code = Column(String(50))
+    jurisdiction = Column(String(50))
+    technologies = Column(JSONB)
+    competitors = Column(JSONB)
+    logo_url = Column(Text)
+    financial_snippets = Column(JSONB)
+    wikipedia_url = Column(Text)
+    patents = Column(JSONB)
+    raw_data = Column(JSONB)
 
     # ── LOB Scraping URLs ──
     google_news_rss_url = Column(Text)
