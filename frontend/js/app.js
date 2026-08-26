@@ -42,6 +42,17 @@ $(function () {
     return actionStateStore[key];
   }
 
+  // Exposes live selection state to the chatbot widget (chatbot.js), which
+  // runs outside this closure and has no other way to read these variables.
+  window.getSalesAssistantContext = function () {
+    return {
+      accounts: MOCK_DATA.accounts || [],
+      account: activeAccount,
+      lob: activeLob,
+      persona: activePersona
+    };
+  };
+
   async function loadData() {
     try {
       const response = await fetch('/api/accounts');
