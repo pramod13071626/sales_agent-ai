@@ -375,6 +375,79 @@
       </div>`).join('');
   }
 
+  function computeDomainExpansionOpportunities(account) {
+    const opportunities = [];
+    const personas = dedupePersonas(account.personas || []);
+    const lobs = account.lobs || [];
+    const techSet = new Set();
+    lobs.forEach(l => (l.technologies || []).forEach(t => techSet.add(t.toLowerCase())));
+
+    // 1. Digital Assets, Tokenization & Settlement
+    const hasDigitalAssets = lobs.some(l => /nominee|investment|fund|pershing/i.test(l.name)) || personas.some(p => /market|trade|investment/i.test(p.title || ''));
+    if (hasDigitalAssets) {
+      const sponsor = personas.find(p => /global markets|digital|innovation|technology/i.test(p.title || '')) || personas[0];
+      opportunities.push({
+        id: 'tokenization',
+        title: 'Institutional Tokenization & Digital Asset Custody Engine',
+        domain: 'Digital Assets & Web3 Integration',
+        icon: 'bi-currency-bitcoin',
+        status: 'High Demand in Enterprise',
+        statusClass: 'pill-brand',
+        demandSignal: 'Active market shift towards tokenized institutional collateral, digital custody, and real-time ledger settlement rails.',
+        synergyAngle: 'StradIT can bridge existing AI governance & secure cloud infrastructure with custom smart-contract audit & tokenized custody APIs.',
+        proposedScope: 'Deliver a 6-week POC on AI-assisted transaction reconciliation and multi-signature smart-contract lifecycle compliance.',
+        sponsorName: sponsor ? sponsor.name : 'Head of Global Markets / CDO',
+        sponsorTitle: sponsor ? (sponsor.title || 'Executive Leader') : 'Digital Innovation Leader'
+      });
+    }
+
+    // 2. Quantum-Safe Cryptography & Post-Quantum Cyber Defense
+    const hasSecurityMandate = account.company_type === 'Public' || /bank|financial|mellon/i.test(account.name);
+    if (hasSecurityMandate) {
+      const secSponsor = personas.find(p => /security|ciso|risk|technology advisory|infrastructure/i.test(p.title || '')) || personas.find(p => (p.tier || '').toLowerCase().includes('c')) || personas[0];
+      opportunities.push({
+        id: 'pqc',
+        title: 'Post-Quantum Cryptography (PQC) & NIST Migration Readiness',
+        domain: 'Next-Gen Cyber & Zero-Trust',
+        icon: 'bi-shield-check',
+        status: 'Emerging Regulatory Mandate',
+        statusClass: 'pill-success',
+        demandSignal: 'Upcoming federal and regulatory directives requiring financial institutions to inventory cryptographic assets for quantum resistance.',
+        synergyAngle: 'Leverage StradIT AI-driven static code analysis and test automation to scan enterprise repositories for deprecated cipher suites.',
+        proposedScope: 'Automated cryptographic discovery scan across core service repositories and post-quantum transition roadmap definition.',
+        sponsorName: secSponsor ? secSponsor.name : 'CISO / Head of Security Engineering',
+        sponsorTitle: secSponsor ? (secSponsor.title || 'Chief Information Security Officer') : 'Security Engineering Lead'
+      });
+    }
+
+    // 3. Intelligent Core Event-Driven Microservices Refactoring
+    if (lobs.length > 2 || account.employee_count_range) {
+      const appSponsor = personas.find(p => /application|engineering|scrum|project lead/i.test(p.title || '')) || personas[0];
+      opportunities.push({
+        id: 'core_modernization',
+        title: 'Intelligent Event-Driven Microservices & Legacy Core De-Coupling',
+        domain: 'Cloud Architecture & Modernization',
+        icon: 'bi-diagram-3-fill',
+        status: 'Active Multi-LOB Modernization',
+        statusClass: 'pill-warning',
+        demandSignal: 'Managing disparate operating divisions requiring decoupled real-time event streaming and zero-downtime message orchestration.',
+        synergyAngle: 'Pair StradIT cloud engineering with automated AI testing pipelines to extract business rules from legacy services safely.',
+        proposedScope: 'Domain-Driven Design (DDD) workshop and scaffolding of an event-driven Kafka/cloud microservices bridge for clearance modules.',
+        sponsorName: appSponsor ? appSponsor.name : 'VP Lead Applications',
+        sponsorTitle: appSponsor ? (appSponsor.title || 'Lead Application Manager / VP') : 'Enterprise Engineering Director'
+      });
+    }
+
+    return opportunities;
+  }
+
+  function renderDomainExpansionOpportunities(account) {
+    return `<div class="empty-block">
+      <div class="empty-block-icon"><i class="bi bi-layers"></i></div>
+      <div class="empty-block-text">No custom capability expansion domains defined yet for this account.</div>
+    </div>`;
+  }
+
   function esc(s) {
     const d = document.createElement('div');
     d.textContent = (s == null ? '' : String(s));
@@ -917,17 +990,17 @@
   // ── Render Tab 3: Sales Alerts & Battlecards ───────────────────
   function renderSalesAlertsTab(account, lob, matches) {
     return `
-      <!-- Sales Alerts Matching Panel -->
+      <!-- Panel 1: Direct Service Line Matches -->
       <div class="panel">
         <div class="panel-title">
           <span><i class="bi bi-lightning-charge-fill"></i> StradIT Service Line Fit &amp; Opportunities</span>
           <span class="context-badge ai"><i class="bi bi-stars"></i> ${matches.length} matches</span>
         </div>
-        <p class="section-desc">Opportunities discovered by cross-referencing StradIT core offerings with real citations in public filings and executive statements.</p>
+        <p class="section-desc">Immediate opportunities discovered by cross-referencing StradIT core offerings with real citations in public filings and executive statements.</p>
         ${renderSalesAlerts(account)}
       </div>
 
-      <!-- Growth Opportunities Panel -->
+      <!-- Panel 2: Growth Whitespace Panel -->
       <div class="panel">
         <div class="panel-title">
           <span><i class="bi bi-compass"></i> Unserved Content Themes &amp; Growth Whitespace</span>
@@ -935,6 +1008,16 @@
         </div>
         <p class="section-desc">Recurring themes in this account's discourse that don't match existing service lines — potential areas for custom solution engineering.</p>
         ${renderGrowthOpportunities(account)}
+      </div>
+
+      <!-- Panel 3: Emerging Expansion Domains & Custom Engineering (New) -->
+      <div class="panel">
+        <div class="panel-title">
+          <span><i class="bi bi-rocket-takeoff-fill"></i> Emerging Domain Expansion &amp; Custom Integration</span>
+          <span class="context-badge live"><i class="bi bi-layers-fill"></i> High-Demand Scope</span>
+        </div>
+        <p class="section-desc">Trending enterprise initiatives and adjacent technology domains heavily demanded by <strong>${esc(account.name)}</strong> where StradIT can engineer custom integrated solutions.</p>
+        ${renderDomainExpansionOpportunities(account)}
       </div>
     `;
   }
