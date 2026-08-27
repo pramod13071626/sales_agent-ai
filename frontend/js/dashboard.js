@@ -2,6 +2,7 @@
   'use strict';
 
   const el = (id) => document.getElementById(id);
+  const dashBody = el('dashBody');
   const navTree = el('navTree');
   const navFilters = el('navFilters');
   const navSearch = el('navSearch');
@@ -440,9 +441,29 @@
     `<button type="button" class="filter-chip" disabled title="${esc(f.reason)}"><i class="bi ${f.icon}"></i> ${esc(f.label)}</button>`
   ).join('');
 
-  // ── Data loading ─────────────────────────────────────────────
+  // ── Data loading & Dynamic URL Endpoint Tracking ────────────
+  function syncUrlState() {
+    if (!activeAccountId) {
+      if (window.location.search) history.replaceState(null, '', window.location.pathname);
+      return;
+    }
+    const params = new URLSearchParams();
+    params.set('account', activeAccountId);
+    if (activeLobId) params.set('lob', activeLobId);
+    if (activeSalesTab) params.set('tab', activeSalesTab);
+    const newQuery = `${window.location.pathname}?${params.toString()}`;
+    if (window.location.search !== `?${params.toString()}`) {
+      history.replaceState({ accountId: activeAccountId, lobId: activeLobId, tab: activeSalesTab }, '', newQuery);
+    }
+  }
+
   async function loadAccounts() {
     try {
+      // On fresh page reload / hard-refresh, always reset URL to clean main port root URL
+      if (window.location.search) {
+        history.replaceState(null, '', window.location.pathname);
+      }
+
       const [acctRes, contentRes] = await Promise.all([
         fetch('/api/accounts'),
         fetch('/api/content').catch(() => null)
@@ -456,7 +477,7 @@
       }
 
       renderNavTree();
-      if (!activeAccountId) renderDigest();
+      renderDigest();
     } catch (err) {
       console.error(err);
       navTree.innerHTML = '<div class="nav-empty">Error loading accounts. Ensure the API is running.</div>';
@@ -738,18 +759,24 @@
     closeContactDrawer();
     const account = accounts.find(a => a.id === activeAccountId);
     if (!account) {
+      if (dashBody) dashBody.classList.add('no-account');
+      if (dashPeople) dashPeople.classList.add('d-none');
       dashEmpty.classList.remove('d-none');
       dashContent.classList.add('d-none');
-      dashPeople.innerHTML = '<div class="people-empty">Select an account to see key contacts, social presence, and tech stack.</div>';
+      if (dashPeople) dashPeople.innerHTML = '';
       renderDigest();
+      syncUrlState();
       return;
     }
     const lob = activeLobId ? (account.lobs || []).find(l => l.id === activeLobId) : null;
 
+    if (dashBody) dashBody.classList.remove('no-account');
+    if (dashPeople) dashPeople.classList.remove('d-none');
     dashEmpty.classList.add('d-none');
     dashContent.classList.remove('d-none');
     dashContent.innerHTML = renderCenter(account, lob);
     dashPeople.innerHTML = renderPeople(account, lob);
+    syncUrlState();
   }
 
   // ── Quick Outreach Arsenal Copy Helpers ────────────────────────
@@ -801,8 +828,9 @@
             </div>` : ''}
           ${signals.slice(0, 2).map((s, i) => `
             <button type="button" class="signal-chip ${s.detail ? 'clickable' : ''}" ${s.detail ? `data-signal-idx="${i}" title="Click to view detailed breakdown"` : ''}>
-              <span class="signal-icon"><i class="bi ${s.icon}"></i></span><span>${esc(s.text)}</span>
-              ${s.detail ? '<i class="bi bi-chevron-right signal-chevron"></i>' : ''}
+              <span class="signal-icon"><i class="bi ${s.icon}"></i></span>
+              <span class="signal-text">${esc(s.text)}</span>
+              ${s.detail ? '<span class="signal-badge-btn"><span>View Details</span> <i class="bi bi-chevron-right"></i></span>' : ''}
             </button>`).join('')}
         </div>
       </div>
@@ -855,8 +883,9 @@
         <p class="section-desc">Aggregated from LinkedIn headcount, SEC 10-K filings, GLEIF legal entities, and funding records. Click to explore details.</p>
         ${signals.length ? signals.map((s, i) => `
           <button type="button" class="signal-chip ${s.detail ? 'clickable' : ''}" ${s.detail ? `data-signal-idx="${i}" title="Click to view detailed breakdown"` : ''}>
-            <span class="signal-icon"><i class="bi ${s.icon}"></i></span><span>${esc(s.text)}</span>
-            ${s.detail ? '<i class="bi bi-chevron-right signal-chevron"></i>' : ''}
+            <span class="signal-icon"><i class="bi ${s.icon}"></i></span>
+            <span class="signal-text">${esc(s.text)}</span>
+            ${s.detail ? '<span class="signal-badge-btn"><span>Explore Details</span> <i class="bi bi-chevron-right"></i></span>' : ''}
           </button>`).join('')
           : `<div class="empty-block"><div class="empty-block-icon"><i class="bi bi-search"></i></div><div class="empty-block-text">No signals detected yet for this ${lob ? 'line of business' : 'account'}.</div></div>`}
       </div>
@@ -865,70 +894,22 @@
 
   // ── Render Tab 2: Buying Committee & Org Chart ─────────────────
   function renderBuyingCommitteeTab(account, lob) {
-    const personas = dedupePersonas(getPersonasFor(account, lob));
-    const groups = buildHierarchyGroups(personas);
-
     return `
       <div class="info-banner">
-        <i class="bi bi-people-fill"></i>
+        <i class="bi bi-diagram-3-fill"></i>
         <div>
-          <strong>Buying Committee &amp; Org Mapping:</strong> Click any executive card to view their complete AI Call-Prep Dossier, psychological profile indicators, and personalized icebreaker.
+          <strong>Verified Reporting Hierarchy:</strong> Direct reporting relationships and decision-making tiers for ${lob ? `<strong>${esc(lob.name)}</strong>` : 'the enterprise group'}. Click any executive node to open their complete AI Call-Prep Dossier.
         </div>
       </div>
 
-      <div class="committee-split">
-        <!-- Visual Org Chart Column -->
-        <div class="panel" style="margin-bottom:0;">
-          <div class="panel-title">
-            <span><i class="bi bi-diagram-3"></i> Verified Hierarchy</span>
-            <span class="context-badge live">Reporting Lines</span>
-          </div>
-          <p class="section-desc">Executive tree showing direct reporting relationships and decision-making tiers.</p>
-          ${renderOrgChart(account)}
+      <!-- Full-Width Verified Hierarchy Panel -->
+      <div class="panel" style="margin-bottom:0; min-height: 480px;">
+        <div class="panel-title">
+          <span><i class="bi bi-diagram-3"></i> Verified Hierarchy</span>
+          <span class="context-badge live">${lob ? esc(lob.name) : 'Corporate Level'}</span>
         </div>
-
-        <!-- Tiered Persona List Column -->
-        <div class="panel" style="margin-bottom:0;">
-          <div class="panel-title">
-            <span><i class="bi bi-person-lines-fill"></i> Committee by Seniority</span>
-            <span class="context-badge live">${personas.length} contacts</span>
-          </div>
-          <p class="section-desc">Stakeholders grouped by organizational tier with decision and budget authority flags.</p>
-
-          ${groups.length ? groups.map(g => `
-            <div class="tier-group-block">
-              <div class="tier-group-title">
-                <span>${esc(g.label)}</span>
-                <span>${g.people.length}</span>
-              </div>
-              ${g.people.map(p => {
-                const isDecision = p.decision_authority && /decision|primary|approver/i.test(p.decision_authority);
-                const isBudget = p.budget_authority && /budget|sign.?off|owner/i.test(p.budget_authority);
-                return `
-                  <div class="persona-committee-card" data-open-persona="${esc(p.name)}" title="Click to open call prep for ${esc(p.name)}">
-                    <div class="persona-committee-avatar">${esc(initials(p.name))}</div>
-                    <div class="persona-committee-body">
-                      <div class="persona-committee-name">${esc(p.name)}</div>
-                      <div class="persona-committee-title">${esc(p.title || 'Executive')}</div>
-                      <div class="persona-committee-badges">
-                        ${isDecision ? `<span class="authority-pill authority-decision"><i class="bi bi-check-circle-fill"></i> Decision Maker</span>` : ''}
-                        ${isBudget ? `<span class="authority-pill authority-budget"><i class="bi bi-cash-coin"></i> Budget Sign-off</span>` : ''}
-                        ${p.tier ? `<span class="pill" style="font-size:.62rem;padding:1px 6px;">${esc(p.tier)}</span>` : ''}
-                        ${p.email ? `<span class="pill pill-success" style="font-size:.62rem;padding:1px 6px;"><i class="bi bi-envelope"></i> Verified</span>` : ''}
-                      </div>
-                    </div>
-                    <i class="bi bi-chevron-right" style="color:var(--text-muted);align-self:center;font-size:.85rem;"></i>
-                  </div>
-                `;
-              }).join('')}
-            </div>
-          `).join('') : `
-            <div class="empty-block">
-              <div class="empty-block-icon"><i class="bi bi-person-x"></i></div>
-              <div class="empty-block-text">No contacts mapped for this division yet. Ingest personas via the Account Explorer.</div>
-            </div>
-          `}
-        </div>
+        <p class="section-desc">Interactive organizational reporting tree showing executive hierarchy, leadership tiers, and decision-making authority.</p>
+        ${renderOrgChart(account, lob)}
       </div>
     `;
   }
@@ -1084,25 +1065,6 @@
         ${renderTrendPill(account)}
       </div>
 
-      <!-- ⚡ Quick Outreach Arsenal Bar -->
-      <div class="quick-arsenal">
-        <div class="quick-arsenal-left">
-          <span class="quick-arsenal-title"><i class="bi bi-lightning-charge-fill"></i> Quick Outreach Arsenal</span>
-          <span class="context-badge live" style="background:#fff;"><i class="bi bi-check2"></i> ${matches.length} Triggers Found</span>
-        </div>
-        <div class="quick-arsenal-actions">
-          <button type="button" class="arsenal-btn primary" id="copyIcebreakerBtn" title="1-Click copy of the highest-relevance icebreaker hook to clipboard">
-            <i class="bi bi-chat-quote"></i> Copy Icebreaker
-          </button>
-          <button type="button" class="arsenal-btn" id="copyEmailPitchBtn" title="1-Click copy of customized cold email outreach template to clipboard">
-            <i class="bi bi-envelope"></i> Copy Cold Pitch Email
-          </button>
-          <button type="button" class="arsenal-btn" id="copyCheatSheetBtn" title="1-Click copy of complete 1-page account summary & buying committee to clipboard">
-            <i class="bi bi-clipboard-data"></i> Copy Battlecard
-          </button>
-        </div>
-      </div>
-
       <!-- 🎯 Workflow Navigation Tabs -->
       <div class="sales-tabs" id="salesTabsNav">
         <button type="button" class="tab-btn ${activeSalesTab === 'briefing' ? 'active' : ''}" data-tab="briefing" title="30-Second account snapshot & core triggers">
@@ -1113,9 +1075,6 @@
         </button>
         <button type="button" class="tab-btn ${activeSalesTab === 'alerts' ? 'active' : ''}" data-tab="alerts" title="StradIT service offering matches & sales battlecards">
           <i class="bi bi-lightning-charge"></i> Sales Alerts &amp; Angles <span class="tab-badge">${matches.length}</span>
-        </button>
-        <button type="button" class="tab-btn ${activeSalesTab === 'financials' ? 'active' : ''}" data-tab="financials" title="10-K filing chunks & segment revenue diligence">
-          <i class="bi bi-cash-stack"></i> Financials &amp; SEC 10-K
         </button>
         <button type="button" class="tab-btn ${activeSalesTab === 'social' ? 'active' : ''}" data-tab="social" title="Live discourse, executive tweets, and social sentiment">
           <i class="bi bi-chat-square-text"></i> Social Listening <span class="tab-badge">${postCount}</span>
@@ -1166,33 +1125,169 @@
     }).join('');
   }
 
-  function renderOrgChart(account) {
-    const tree = account.organisational_hierarchy_tree;
-    if (!tree || !tree.full_name) {
-      return `<div class="empty-block">
-        <div class="empty-block-icon"><i class="bi bi-diagram-2"></i></div>
-        <div class="empty-block-text">No verified reporting-line tree captured yet for this account.</div>
-      </div>`;
+  function renderOrgChart(account, lob) {
+    if (lob) {
+      const lobPersonas = dedupePersonas(lob.personas || []);
+      const headName = lob.head || lob.operating_head;
+
+      let rootNode = null;
+      let reports = [];
+
+      if (headName) {
+        rootNode = lobPersonas.find(p => p.name === headName || p.full_name === headName) || {
+          full_name: headName,
+          job_title: 'Operating Head',
+          seniority_tier: 'Division Head',
+          decision_authority: 'primary'
+        };
+        reports = lobPersonas.filter(p => (p.name || p.full_name) !== headName);
+      } else if (lobPersonas.length) {
+        const sorted = [...lobPersonas].sort((a, b) => {
+          const aTier = (a.tier || '').toLowerCase().includes('c') ? 0 : ((a.tier || '').toLowerCase().includes('vp') ? 1 : 2);
+          const bTier = (b.tier || '').toLowerCase().includes('c') ? 0 : ((b.tier || '').toLowerCase().includes('vp') ? 1 : 2);
+          if (aTier !== bTier) return aTier - bTier;
+          return (a.hierarchy_level ?? 99) - (b.hierarchy_level ?? 99);
+        });
+        rootNode = sorted[0];
+        reports = sorted.slice(1);
+      }
+
+      if (!rootNode) {
+        return `<div class="empty-block">
+          <div class="empty-block-icon"><i class="bi bi-diagram-2"></i></div>
+          <div class="empty-block-text">No verified reporting-line tree captured yet for <strong>${esc(lob.name)}</strong>.</div>
+        </div>`;
+      }
+
+      function nodeCard(node, isRoot) {
+        const name = node.full_name || node.name || 'Executive';
+        const title = node.job_title || node.title || (isRoot ? 'Operating Head' : 'Stakeholder');
+        const tags = [node.seniority_tier || node.tier, node.decision_authority ? `Decision: ${node.decision_authority}` : null].filter(Boolean);
+        return `
+          <button type="button" class="orgchart-node ${isRoot ? 'orgchart-root-node' : ''}" data-persona-name="${esc(name)}">
+            <div class="orgchart-avatar">${esc(initials(name))}</div>
+            <div class="orgchart-name">${esc(name)}</div>
+            <div class="orgchart-title">${esc(title)}</div>
+            ${tags.length ? `<div class="orgchart-tags">${tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>` : ''}
+          </button>`;
+      }
+
+      return `
+        <div class="orgchart">
+          <div class="orgchart-root">${nodeCard(rootNode, true)}</div>
+          ${reports.length ? `
+            <div class="orgchart-connector"></div>
+            <div class="orgchart-reports">${reports.map(r => nodeCard(r, false)).join('')}</div>
+          ` : ''}
+        </div>
+      `;
     }
-    const reports = tree.direct_reports || [];
+
+    // Corporate level (no LOB selected) — render full multi-tier enterprise tree
+    const allPersonas = dedupePersonas(account.personas || []);
+    const tree = account.organisational_hierarchy_tree || {};
+
+    // 1. Root Node (CEO / President)
+    const rootName = tree.full_name || (allPersonas.find(p => /chief executive|ceo|president/i.test(p.title || '')) || allPersonas[0] || {}).name;
+    const rootPersona = allPersonas.find(p => p.name === rootName) || {
+      full_name: rootName || 'Chief Executive Officer',
+      job_title: tree.job_title || 'President & Chief Executive Officer',
+      seniority_tier: 'C-Suite',
+      decision_authority: 'final'
+    };
+
+    // 2. Level 2: C-Suite & Board Level Direct Reports
+    const cSuiteReports = [];
+    const directNames = new Set((tree.direct_reports || []).map(r => r.full_name));
+    
+    allPersonas.forEach(p => {
+      if (p.name === rootName) return;
+      const isC = (p.tier || '').toLowerCase().includes('c') || /director of board|board member|chairman|vice chair|lead consultant/i.test(p.title || '') || directNames.has(p.name);
+      if (isC) {
+        cSuiteReports.push(p);
+      }
+    });
+
+    // 3. Level 3: All remaining VPs grouped by Functional Domain
+    const renderedNames = new Set([rootName, ...cSuiteReports.map(p => p.name)]);
+    const remainingVPs = allPersonas.filter(p => !renderedNames.has(p.name));
+
+    const clusters = [
+      {
+        id: 'directors',
+        title: 'Vice Presidents & Directors',
+        icon: 'bi-award',
+        filter: p => /director/i.test(p.title || '')
+      },
+      {
+        id: 'dept_app',
+        title: 'Department & Application Leadership',
+        icon: 'bi-grid-1x2',
+        filter: p => /department head|application|tax manager|team lead/i.test(p.title || '')
+      },
+      {
+        id: 'scrum_proj',
+        title: 'Engineering, Project & Scrum Leads',
+        icon: 'bi-cpu',
+        filter: p => /scrum|project lead|consultant/i.test(p.title || '')
+      },
+      {
+        id: 'ops_lead',
+        title: 'Operations & Enterprise Lead Managers',
+        icon: 'bi-briefcase',
+        filter: () => true // Catch-all for remaining VPs
+      }
+    ];
+
+    const vpGroups = [];
+    const assignedVpNames = new Set();
+
+    clusters.forEach(c => {
+      const matched = remainingVPs.filter(p => !assignedVpNames.has(p.name) && c.filter(p));
+      matched.forEach(p => assignedVpNames.add(p.name));
+      if (matched.length) {
+        vpGroups.push({ ...c, people: matched });
+      }
+    });
 
     function nodeCard(node, isRoot) {
-      const tags = [node.seniority_tier, node.decision_authority ? `Decision: ${node.decision_authority}` : null].filter(Boolean);
+      const name = node.full_name || node.name || 'Executive';
+      const title = node.job_title || node.title || (isRoot ? 'President & CEO' : 'Executive');
+      const tags = [node.seniority_tier || node.tier, node.decision_authority ? `Decision: ${node.decision_authority}` : null].filter(Boolean);
       return `
-        <button type="button" class="orgchart-node ${isRoot ? 'orgchart-root-node' : ''}" data-persona-name="${esc(node.full_name)}">
-          <div class="orgchart-avatar">${esc(initials(node.full_name))}</div>
-          <div class="orgchart-name">${esc(node.full_name)}</div>
-          <div class="orgchart-title">${esc(node.job_title || '')}</div>
+        <button type="button" class="orgchart-node ${isRoot ? 'orgchart-root-node' : ''}" data-persona-name="${esc(name)}">
+          <div class="orgchart-avatar">${esc(initials(name))}</div>
+          <div class="orgchart-name">${esc(name)}</div>
+          <div class="orgchart-title">${esc(title)}</div>
           ${tags.length ? `<div class="orgchart-tags">${tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>` : ''}
         </button>`;
     }
 
     return `
       <div class="orgchart">
-        <div class="orgchart-root">${nodeCard(tree, true)}</div>
-        ${reports.length ? `
+        <!-- Level 1: Group Chief Executive -->
+        <div class="orgchart-root">${nodeCard(rootPersona, true)}</div>
+
+        ${cSuiteReports.length ? `
           <div class="orgchart-connector"></div>
-          <div class="orgchart-reports">${reports.map(r => nodeCard(r, false)).join('')}</div>
+          <!-- Level 2: C-Suite & Executive Board -->
+          <div class="orgchart-reports">${cSuiteReports.map(r => nodeCard(r, false)).join('')}</div>
+        ` : ''}
+
+        ${vpGroups.length ? `
+          <div class="orgchart-connector" style="height:20px;"></div>
+          <!-- Level 3: Functional VP & Divisional Branches -->
+          ${vpGroups.map(g => `
+            <div class="orgchart-tier-block">
+              <div class="orgchart-tier-header">
+                <span class="orgchart-tier-title"><i class="bi ${g.icon}"></i> ${esc(g.title)}</span>
+                <span class="orgchart-tier-count">${g.people.length} mapped</span>
+              </div>
+              <div class="orgchart-tier-grid">
+                ${g.people.map(p => nodeCard(p, false)).join('')}
+              </div>
+            </div>
+          `).join('')}
         ` : ''}
       </div>
     `;

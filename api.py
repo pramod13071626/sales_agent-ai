@@ -1058,55 +1058,273 @@ if FASTAPI_AVAILABLE:
     app.include_router(lobs_router)
     app.include_router(personas_router)
 
-    # Plural alias for frontend /api/accounts page initialization
-    @app.get("/api/accounts", tags=["1. Account Level"])
-    def get_all_accounts_alias():
-        """Plural alias for GET /api/account — Page initialization loadData()."""
+    # ══════════════════════════════════════════════════════
+    # SOLID REST API ENDPOINTS
+    # ══════════════════════════════════════════════════════
+
+    @app.get("/api/accounts", tags=["1. Accounts"])
+    def get_all_accounts():
+        """Retrieve all enterprise accounts with full hierarchical structure."""
         return list_all_accounts_with_hierarchy()
 
-    @app.get("/api/accounts/{account_id}", tags=["1. Account Level"])
-    def get_single_account_alias(account_id: int):
-        """Plural alias for GET /api/account/{account_id}."""
+    @app.get("/api/accounts/{account_id}", tags=["1. Accounts"])
+    def get_account_by_id(account_id: int):
+        """Retrieve a specific enterprise account with its complete profile."""
         return get_account_from_db(account_id)
+
+    @app.get("/api/accounts/{account_id}/lobs", tags=["2. Lines of Business"])
+    def get_account_lines_of_business(account_id: int):
+        """Retrieve all Lines of Business (LOBs) and nested sub-divisions for an account."""
+        session = get_session()
+        try:
+            lobs = session.query(Lob).filter_by(account_id=account_id).all()
+            result = []
+            for l in lobs:
+                sublobs = session.query(SubLob).filter_by(lob_id=l.id).all()
+                result.append({
+                    "id": l.id,
+                    "account_id": l.account_id,
+                    "name": l.lob_name,
+                    "lob_name": l.lob_name,
+                    "key": l.key,
+                    "domain": l.domain,
+                    "website_url": l.website_url,
+                    "desc": l.overview,
+                    "overview": l.overview,
+                    "revenue": l.audited_segment_revenue,
+                    "audited_segment_revenue": l.audited_segment_revenue,
+                    "head": l.operating_head,
+                    "operating_head": l.operating_head,
+                    "headcount": l.segment_headcount,
+                    "segment_headcount": l.segment_headcount,
+                    "lei_code": l.lei_code,
+                    "jurisdiction": l.jurisdiction,
+                    "technologies": l.technologies or [],
+                    "competitors": l.competitors or [],
+                    "financial_snippets": l.financial_snippets or [],
+                    "patents": l.patents or [],
+                    "logo_url": l.logo_url,
+                    "google_news_rss_url": l.google_news_rss_url,
+                    "reddit_rss_url": l.reddit_rss_url,
+                    "google_patents_url": l.google_patents_url,
+                    "google_trends_url": l.google_trends_url,
+                    "youtube_search_url": l.youtube_search_url,
+                    "sub_lobs": [{"id": s.id, "name": s.name} for s in sublobs]
+                })
+            return {"account_id": account_id, "total_lobs": len(result), "lobs": result}
+        finally:
+            session.close()
+
+    @app.get("/api/lobs/{lob_id}", tags=["2. Lines of Business"])
+    def get_single_line_of_business(lob_id: int):
+        """Retrieve details for a single Line of Business by its ID."""
+        session = get_session()
+        try:
+            l = session.query(Lob).filter_by(id=lob_id).first()
+            if not l:
+                raise HTTPException(status_code=404, detail="Line of Business not found.")
+            sublobs = session.query(SubLob).filter_by(lob_id=l.id).all()
+            return {
+                "id": l.id,
+                "account_id": l.account_id,
+                "name": l.lob_name,
+                "lob_name": l.lob_name,
+                "key": l.key,
+                "domain": l.domain,
+                "website_url": l.website_url,
+                "overview": l.overview,
+                "audited_segment_revenue": l.audited_segment_revenue,
+                "operating_head": l.operating_head,
+                "segment_headcount": l.segment_headcount,
+                "lei_code": l.lei_code,
+                "jurisdiction": l.jurisdiction,
+                "technologies": l.technologies or [],
+                "competitors": l.competitors or [],
+                "financial_snippets": l.financial_snippets or [],
+                "patents": l.patents or [],
+                "google_news_rss_url": l.google_news_rss_url,
+                "reddit_rss_url": l.reddit_rss_url,
+                "google_patents_url": l.google_patents_url,
+                "google_trends_url": l.google_trends_url,
+                "youtube_search_url": l.youtube_search_url,
+                "sub_lobs": [{"id": s.id, "name": s.name} for s in sublobs]
+            }
+        finally:
+            session.close()
+
+    @app.get("/api/accounts/{account_id}/personas", tags=["3. Personas & Buying Committee"])
+    def get_account_buying_committee(account_id: int):
+        """Retrieve all executive personas and decision makers mapped to an account."""
+        session = get_session()
+        try:
+            personas = session.query(Persona).filter_by(account_id=account_id).all()
+            result = []
+            for p in personas:
+                result.append({
+                    "id": p.id,
+                    "account_id": p.account_id,
+                    "lob_id": p.lob_id,
+                    "key": p.key,
+                    "name": p.full_name or p.display_name or "Executive",
+                    "full_name": p.full_name or p.display_name or "Executive",
+                    "first_name": p.first_name,
+                    "last_name": p.last_name,
+                    "title": p.title,
+                    "job_title": p.title,
+                    "tier": p.tier,
+                    "seniority_tier": p.tier,
+                    "seniority_raw": p.seniority_raw,
+                    "email": p.email,
+                    "phone": p.phone,
+                    "city": p.city,
+                    "state": p.state,
+                    "country": p.country,
+                    "decision_authority": p.decision_authority,
+                    "budget_authority": p.budget_authority,
+                    "departments": p.departments or ["Executive"],
+                    "linkedin_url": p.linkedin_url,
+                    "twitter_url": p.twitter_live_url or (f"https://twitter.com/{p.twitter_handle}" if p.twitter_handle else None),
+                    "skills": p.skills or [],
+                    "target_kpis": p.target_kpis or [],
+                    "operational_pain_points": p.operational_pain_points or [],
+                    "key_objections": p.key_objections or [],
+                    "degree": p.degree,
+                    "institution": p.institution,
+                    "prior_company": p.prior_company,
+                    "communication_style": p.communication_style,
+                    "engagement_rate": p.engagement_rate,
+                    "value_proposition": p.value_proposition,
+                    "personalized_icebreaker": p.personalized_icebreaker,
+                    "social_platform": p.social_platform,
+                    "social_profile_url": p.social_profile_url,
+                    "social_presence_level": p.social_presence_level,
+                    "raw_data": p.raw_data
+                })
+            return {"account_id": account_id, "total_personas": len(result), "personas": result}
+        finally:
+            session.close()
+
+    @app.get("/api/personas/{persona_id}", tags=["3. Personas & Buying Committee"])
+    def get_single_persona_profile(persona_id: int):
+        """Retrieve full details and 58-column AI dossier for a specific executive persona."""
+        session = get_session()
+        try:
+            p = session.query(Persona).filter_by(id=persona_id).first()
+            if not p:
+                raise HTTPException(status_code=404, detail="Persona not found.")
+            return {
+                "id": p.id,
+                "account_id": p.account_id,
+                "lob_id": p.lob_id,
+                "name": p.full_name or p.display_name or "Executive",
+                "title": p.title,
+                "tier": p.tier,
+                "email": p.email,
+                "phone": p.phone,
+                "location": f"{p.city or ''}, {p.country or ''}".strip(", "),
+                "decision_authority": p.decision_authority,
+                "budget_authority": p.budget_authority,
+                "linkedin_url": p.linkedin_url,
+                "degree": p.degree,
+                "institution": p.institution,
+                "prior_company": p.prior_company,
+                "communication_style": p.communication_style,
+                "personalized_icebreaker": p.personalized_icebreaker,
+                "value_proposition": p.value_proposition,
+                "operational_pain_points": p.operational_pain_points or [],
+                "target_kpis": p.target_kpis or [],
+                "raw_data": p.raw_data
+            }
+        finally:
+            session.close()
+
+    @app.get("/api/accounts/{account_id}/signals", tags=["1. Accounts"])
+    def get_account_intelligence_signals(account_id: int):
+        """Retrieve multi-source intelligence, firmographics, heat scores, and traffic telemetry."""
+        session = get_session()
+        try:
+            acct = session.query(Account).filter_by(id=account_id).first()
+            if not acct:
+                raise HTTPException(status_code=404, detail="Account not found.")
+            return {
+                "account_id": acct.id,
+                "account_name": acct.legal_name or acct.display_name,
+                "heat_score": acct.heat_score,
+                "trend_score_90d": acct.trend_score_90d,
+                "active_tech_count": acct.active_tech_count,
+                "it_spend": acct.it_spend,
+                "patents_granted": acct.patents_granted,
+                "trademarks_registered": acct.trademarks_registered,
+                "funding": {
+                    "total_usd": acct.total_funding_amount_usd,
+                    "currency": acct.total_funding_currency,
+                    "last_type": acct.last_funding_type,
+                    "last_date": acct.last_funding_date.isoformat() if acct.last_funding_date else None,
+                    "num_rounds": acct.num_funding_rounds,
+                    "status": acct.funding_status
+                },
+                "ipo": {
+                    "status": acct.ipo_status,
+                    "date": acct.ipo_date.isoformat() if acct.ipo_date else None
+                },
+                "traffic": {
+                    "global_rank": acct.global_traffic_rank,
+                    "monthly_visits": acct.monthly_visits,
+                    "bounce_rate": acct.bounce_rate,
+                    "visit_duration": acct.visit_duration,
+                    "page_views_per_visit": acct.page_views_per_visit
+                },
+                "leadership_counts": {
+                    "c_suite": acct.c_suite_count,
+                    "vp": acct.vp_count,
+                    "director": acct.director_count,
+                    "manager": acct.manager_count
+                },
+                "multi_source_intelligence": acct.multi_source_intelligence
+            }
+        finally:
+            session.close()
 
     @app.get("/api/content", tags=["4. Content Intelligence"])
     def get_content_intelligence():
-        """
-        Bulk fetch of externally-ingested content intelligence (real scraped posts +
-        LLM-generated digests per target_key — company or person). The frontend matches
-        target_key against account.key/ticker and persona.key client-side.
-        """
+        """Retrieve aggregated social listening posts and LLM channel digests."""
         session = get_session()
         try:
             digests_by_key = {}
-            for d in session.query(Digest).all():
-                digests_by_key[d.target_key] = {
-                    "target_key": d.target_key,
-                    "kind": d.kind,
-                    "priority": d.priority,
-                    "llm": d.llm,
-                    "posts_considered": d.posts_considered,
-                    "generated_at": d.generated_at.isoformat() if d.generated_at else None,
-                    "digest": d.digest
-                }
+            try:
+                for d in session.query(Digest).all():
+                    digests_by_key[d.target_key] = {
+                        "target_key": d.target_key,
+                        "kind": d.kind,
+                        "priority": d.priority,
+                        "llm": d.llm,
+                        "posts_considered": d.posts_considered,
+                        "generated_at": d.generated_at.isoformat() if d.generated_at else None,
+                        "digest": d.digest
+                    }
+            except Exception:
+                digests_by_key = {}
 
             posts_by_key = {}
-            for p in session.query(Post).order_by(Post.target_key, Post.channel, Post.rank).all():
-                posts_by_key.setdefault(p.target_key, []).append({
-                    "id": p.id,
-                    "channel": p.channel,
-                    "post_key": p.post_key,
-                    "rank": p.rank,
-                    "post_url": p.post_url,
-                    "body": p.body,
-                    "author": p.author,
-                    "published_at": p.published_at,
-                    "engagement": p.engagement,
-                    "media": p.media,
-                    "new_in_last_run": p.new_in_last_run,
-                    "first_seen": p.first_seen.isoformat() if p.first_seen else None,
-                    "last_seen": p.last_seen.isoformat() if p.last_seen else None
-                })
+            try:
+                for p in session.query(Post).order_by(Post.target_key, Post.channel, Post.rank).all():
+                    posts_by_key.setdefault(p.target_key, []).append({
+                        "id": p.id,
+                        "channel": p.channel,
+                        "post_key": p.post_key,
+                        "rank": p.rank,
+                        "post_url": p.post_url,
+                        "body": p.body,
+                        "author": p.author,
+                        "published_at": p.published_at,
+                        "engagement": p.engagement,
+                        "media": p.media,
+                        "new_in_last_run": p.new_in_last_run,
+                        "first_seen": p.first_seen.isoformat() if p.first_seen else None,
+                        "last_seen": p.last_seen.isoformat() if p.last_seen else None
+                    })
+            except Exception:
+                posts_by_key = {}
 
             return {"digests": digests_by_key, "posts": posts_by_key}
         finally:
