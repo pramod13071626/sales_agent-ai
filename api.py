@@ -21,6 +21,7 @@ import re
 import json
 from pathlib import Path
 from typing import Optional, List, Dict, Any
+from datetime import datetime, timezone
 
 # Ensure project root is on sys.path
 PIPELINE_ROOT = Path(__file__).resolve().parent
@@ -48,7 +49,7 @@ from serializers.lob_serializer import LOBSerializer
 from serializers.persona_serializer import PersonaSerializer
 
 from db.connection import get_session
-from db.models import Account, Lob, SubLob, Persona, Post, Digest
+from db.models import Account, Lob, SubLob, Persona, Post, Digest, OpportunitySignal
 from db.schemas import AccountSchema, LobSchema, PersonaSchema
 from db.repositories import AccountRepository, LobRepository, PersonaRepository
 from db.importer import import_run_to_db
@@ -162,6 +163,16 @@ if FASTAPI_AVAILABLE:
         run_dir: Optional[str] = None
         file: Optional[str] = None
         require_validation: bool = True
+
+    class OpportunitySignalItem(BaseModel):
+        """One currently-detected growth-theme or domain-expansion suggestion, as computed client-side."""
+        signal_key: str
+        title: str
+        details: Dict[str, Any] = {}
+
+    class OpportunitySignalSyncRequest(BaseModel):
+        category: str  # 'growth_theme' | 'domain_expansion'
+        items: List[OpportunitySignalItem] = []
 
     # ══════════════════════════════════════════════════════
     # TAB 1: ACCOUNT LEVEL ENDPOINTS
@@ -1282,6 +1293,89 @@ if FASTAPI_AVAILABLE:
                 },
                 "multi_source_intelligence": acct.multi_source_intelligence
             }
+        finally:
+            session.close()
+
+    def _serialize_opportunity_signal(sig: OpportunitySignal, now: datetime) -> Dict[str, Any]:
+        return {
+            "id": sig.id,
+            "category": sig.category,
+            "signal_key": sig.signal_key,
+            "title": sig.title,
+            "details": sig.details or {},
+            "status": sig.status,
+            "first_seen": sig.first_seen.isoformat() if sig.first_seen else None,
+            "last_seen": sig.last_seen.isoformat() if sig.last_seen else None,
+            "is_new": bool(sig.first_seen and (now - sig.first_seen).days < 3)
+        }
+
+    @app.get("/api/accounts/{account_id}/opportunities", tags=["1. Accounts"])
+    def get_account_opportunity_signals(account_id: int):
+        """Retrieve the persisted history of growth-whitespace themes and domain-expansion
+        product ideas detected for an account, including ones no longer actively recurring."""
+        session = get_session()
+        try:
+            now = datetime.now(timezone.utc)
+            signals = (session.query(OpportunitySignal)
+                       .filter_by(account_id=account_id)
+                       .order_by(OpportunitySignal.first_seen.desc())
+                       .all())
+            by_category: Dict[str, List[Dict[str, Any]]] = {"growth_theme": [], "domain_expansion": []}
+            for s in signals:
+                by_category.setdefault(s.category, []).append(_serialize_opportunity_signal(s, now))
+            return {"account_id": account_id, **by_category}
+        finally:
+            session.close()
+
+    @app.post("/api/accounts/{account_id}/opportunities/sync", tags=["1. Accounts"])
+    def sync_account_opportunity_signals(account_id: int, req: OpportunitySignalSyncRequest):
+        """Upsert the currently-detected opportunity signals for one category (growth_theme or
+        domain_expansion). Signals no longer present in `items` are marked inactive rather than
+        deleted, so the account keeps a full history of what has been suggested over time."""
+        if req.category not in ("growth_theme", "domain_expansion"):
+            raise HTTPException(status_code=400, detail="category must be 'growth_theme' or 'domain_expansion'.")
+        session = get_session()
+        try:
+            now = datetime.now(timezone.utc)
+            existing = (session.query(OpportunitySignal)
+                        .filter_by(account_id=account_id, category=req.category)
+                        .all())
+            existing_by_key = {s.signal_key: s for s in existing}
+            seen_keys = set()
+            for item in req.items:
+                seen_keys.add(item.signal_key)
+                sig = existing_by_key.get(item.signal_key)
+                if sig:
+                    sig.title = item.title
+                    sig.details = item.details
+                    sig.status = "active"
+                    sig.last_seen = now
+                else:
+                    sig = OpportunitySignal(
+                        account_id=account_id, category=req.category, signal_key=item.signal_key,
+                        title=item.title, details=item.details, status="active",
+                        first_seen=now, last_seen=now
+                    )
+                    session.add(sig)
+                    existing_by_key[item.signal_key] = sig
+            for key, sig in existing_by_key.items():
+                if key not in seen_keys and sig.status != "inactive":
+                    sig.status = "inactive"
+            session.commit()
+            signals = (session.query(OpportunitySignal)
+                       .filter_by(account_id=account_id, category=req.category)
+                       .order_by(OpportunitySignal.first_seen.desc())
+                       .all())
+            return {
+                "account_id": account_id,
+                "category": req.category,
+                "signals": [_serialize_opportunity_signal(s, now) for s in signals]
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            session.rollback()
+            raise HTTPException(status_code=500, detail=f"Opportunity signal sync failed: {str(e)}")
         finally:
             session.close()
 

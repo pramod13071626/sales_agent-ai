@@ -29,6 +29,7 @@
   let currentSignals = []; // Account Signals currently rendered in the center panel, indexed for the modal
   let allAccountPersonas = []; // unfiltered persona list for the currently rendered right panel, for search
   let contentStore = { digests: {}, posts: {} }; // real scraped posts + LLM digests, keyed by target_key
+  let opportunityHistory = {}; // accountId -> { growth_theme: [signal...], domain_expansion: [signal...] }, synced from the backend
 
   const CHANNEL_ICON = {
     linkedin: 'bi-linkedin', twitter: 'bi-twitter-x', reddit: 'bi-reddit',
@@ -349,28 +350,55 @@
     });
 
     return [...themeMap.entries()]
-      .map(([theme, info]) => ({ theme, ...info }))
+      .map(([theme, info]) => ({ theme, signalKey: slugify(theme), ...info }))
       .sort((a, b) => b.count - a.count);
   }
 
-  function renderGrowthOpportunities(account) {
+  function suggestGrowthProductIdea(theme) {
+    return `Potential build: a scoped StradIT engagement (discovery workshop + pilot deliverable) addressing "${theme}" as a net-new custom service line for this account.`;
+  }
+
+  // ── Shared history badge + card chrome for both opportunity panels ──
+  function renderHistoryBadge(historyEntry) {
+    if (!historyEntry) return '';
+    if (historyEntry.is_new) return '<span class="pill pill-success"><i class="bi bi-stars"></i> New</span>';
+    if (historyEntry.status === 'inactive') return '<span class="pill pill-muted"><i class="bi bi-clock-history"></i> No longer trending</span>';
+    return '';
+  }
+
+  function renderGrowthOpportunities(account, historySignals) {
     const opportunities = computeGrowthOpportunities(account);
-    if (!opportunities.length) {
+    const historyByKey = new Map((historySignals || []).map(s => [s.signal_key, s]));
+    // Merge in historical (inactive) themes not present in the live compute, so nothing detected in the past silently disappears.
+    const liveKeys = new Set(opportunities.map(o => o.signalKey));
+    const historicalOnly = (historySignals || [])
+      .filter(s => s.status === 'inactive' && !liveKeys.has(s.signal_key))
+      .map(s => ({
+        theme: s.title, signalKey: s.signal_key,
+        count: s.details.count || 0,
+        channels: new Set(s.details.channels || []),
+        summary: s.details.summary, person: s.details.person
+      }));
+    const combined = [...opportunities, ...historicalOnly];
+
+    if (!combined.length) {
       return `<div class="empty-block">
         <div class="empty-block-icon"><i class="bi bi-compass"></i></div>
         <div class="empty-block-text">No recurring unserved themes detected yet for this account.</div>
       </div>`;
     }
-    return opportunities.map(o => `
+    return combined.map(o => `
       <div class="opportunity-card">
         <div class="opportunity-header">
           <i class="bi bi-compass"></i>
           <span class="opportunity-title">${esc(o.theme)}</span>
-          <span class="pill pill-warning">${o.count} mention${o.count !== 1 ? 's' : ''}</span>
+          ${o.count ? `<span class="pill pill-warning">${o.count} mention${o.count !== 1 ? 's' : ''}</span>` : ''}
+          ${renderHistoryBadge(historyByKey.get(o.signalKey))}
         </div>
         <div class="opportunity-note">
-          Not covered by any current StradIT service line — recurring in ${[...o.channels].map(c => esc(CHANNEL_LABEL[c] || c)).join(', ')}${o.person ? ` (via ${esc(o.person)})` : ''}.
+          Not covered by any current StradIT service line${o.channels && o.channels.size ? ` — recurring in ${[...o.channels].map(c => esc(CHANNEL_LABEL[c] || c)).join(', ')}` : ''}${o.person ? ` (via ${esc(o.person)})` : ''}.
         </div>
+        <div class="opportunity-idea"><i class="bi bi-lightbulb"></i> ${esc(suggestGrowthProductIdea(o.theme))}</div>
         ${o.summary ? `<div class="opportunity-evidence"><i class="bi bi-quote"></i> ${esc(o.summary.length > 160 ? o.summary.slice(0, 160) + '…' : o.summary)}</div>` : ''}
       </div>`).join('');
   }
@@ -441,11 +469,77 @@
     return opportunities;
   }
 
-  function renderDomainExpansionOpportunities(account) {
-    return `<div class="empty-block">
-      <div class="empty-block-icon"><i class="bi bi-layers"></i></div>
-      <div class="empty-block-text">No custom capability expansion domains defined yet for this account.</div>
-    </div>`;
+  function renderDomainExpansionOpportunities(account, historySignals) {
+    const opportunities = computeDomainExpansionOpportunities(account);
+    const historyByKey = new Map((historySignals || []).map(s => [s.signal_key, s]));
+    const liveKeys = new Set(opportunities.map(o => o.id));
+    const historicalOnly = (historySignals || [])
+      .filter(s => s.status === 'inactive' && !liveKeys.has(s.signal_key))
+      .map(s => ({ id: s.signal_key, title: s.title, ...s.details }));
+    const combined = [...opportunities, ...historicalOnly];
+
+    if (!combined.length) {
+      return `<div class="empty-block">
+        <div class="empty-block-icon"><i class="bi bi-layers"></i></div>
+        <div class="empty-block-text">No custom capability expansion domains defined yet for this account.</div>
+      </div>`;
+    }
+    return combined.map(o => `
+      <div class="opportunity-card opportunity-card-brand">
+        <div class="opportunity-header">
+          <i class="bi ${esc(o.icon || 'bi-layers')}"></i>
+          <span class="opportunity-title">${esc(o.title)}</span>
+          ${o.status ? `<span class="pill ${esc(o.statusClass || 'pill-brand')}">${esc(o.status)}</span>` : ''}
+          ${renderHistoryBadge(historyByKey.get(o.id))}
+        </div>
+        ${o.domain ? `<div class="opportunity-note"><strong>${esc(o.domain)}</strong>${o.demandSignal ? ` — ${esc(o.demandSignal)}` : ''}</div>` : ''}
+        ${o.proposedScope ? `<div class="opportunity-idea"><i class="bi bi-lightbulb"></i> <strong>Suggested build:</strong> ${esc(o.proposedScope)}</div>` : ''}
+        ${o.synergyAngle ? `<div class="opportunity-evidence"><i class="bi bi-quote"></i> ${esc(o.synergyAngle)}</div>` : ''}
+        ${o.sponsorName ? `<div class="opportunity-sponsor"><i class="bi bi-person-badge"></i> Likely sponsor: ${esc(o.sponsorName)}${o.sponsorTitle ? ` — ${esc(o.sponsorTitle)}` : ''}</div>` : ''}
+      </div>`).join('');
+  }
+
+  // Persists the currently-computed growth-theme & domain-expansion suggestions for an account so
+  // they accumulate as history server-side, then repaints the two panels with new/historical badges.
+  async function syncOpportunitySignals(account) {
+    const growthItems = computeGrowthOpportunities(account).map(o => ({
+      signal_key: o.signalKey,
+      title: o.theme,
+      details: { count: o.count, channels: [...o.channels], summary: o.summary, person: o.person }
+    }));
+    const domainItems = computeDomainExpansionOpportunities(account).map(o => ({
+      signal_key: o.id,
+      title: o.title,
+      details: o
+    }));
+    let growthData = null, domainData = null;
+    try {
+      const [growthRes, domainRes] = await Promise.all([
+        fetch(`/api/accounts/${account.id}/opportunities/sync`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ category: 'growth_theme', items: growthItems })
+        }),
+        fetch(`/api/accounts/${account.id}/opportunities/sync`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ category: 'domain_expansion', items: domainItems })
+        })
+      ]);
+      if (growthRes.ok) growthData = await growthRes.json();
+      if (domainRes.ok) domainData = await domainRes.json();
+    } catch (err) {
+      console.error('Opportunity signal sync failed', err);
+      return;
+    }
+    opportunityHistory[account.id] = {
+      growth_theme: growthData ? growthData.signals : [],
+      domain_expansion: domainData ? domainData.signals : []
+    };
+    if (activeAccountId === account.id && activeSalesTab === 'alerts') {
+      const growthBody = el('growthOpportunitiesBody');
+      const domainBody = el('domainExpansionBody');
+      if (growthBody) growthBody.innerHTML = renderGrowthOpportunities(account, opportunityHistory[account.id].growth_theme);
+      if (domainBody) domainBody.innerHTML = renderDomainExpansionOpportunities(account, opportunityHistory[account.id].domain_expansion);
+    }
   }
 
   function esc(s) {
@@ -660,8 +754,41 @@
         ${renderGlobalSalesAlerts()}
       </div>
 
+      <div class="panel">
+        <div class="panel-title">
+          <span><i class="bi bi-rocket-takeoff-fill"></i> Emerging Domain Expansion &amp; Custom Integration</span>
+          <span class="context-badge live"><i class="bi bi-layers-fill"></i> Across All Accounts</span>
+        </div>
+        <p class="section-desc">Trending enterprise initiatives and adjacent technology domains where StradIT can engineer custom integrated solutions, rolled up across every tracked account.</p>
+        ${renderGlobalDomainExpansion()}
+      </div>
+
       <div class="digest-cta"><i class="bi bi-arrow-left-circle-fill"></i> <span><strong>Ready to explore?</strong> Select any account from the left panel to open its complete intelligence dossier and contact matrix.</span></div>
     `;
+  }
+
+  function renderGlobalDomainExpansion() {
+    const rows = [];
+    accounts.forEach(a => {
+      computeDomainExpansionOpportunities(a).forEach(o => rows.push({ account: a, opportunity: o }));
+    });
+    if (!rows.length) {
+      return `<div class="empty-block">
+        <div class="empty-block-icon"><i class="bi bi-layers"></i></div>
+        <div class="empty-block-text">No emerging domain-expansion opportunities detected yet across any account.</div>
+      </div>`;
+    }
+    return rows.map(({ account, opportunity: o }) => `
+      <div class="opportunity-card opportunity-card-brand">
+        <div class="opportunity-header">
+          <i class="bi ${esc(o.icon || 'bi-layers')}"></i>
+          <span class="opportunity-title">${esc(o.title)}</span>
+          ${o.status ? `<span class="pill ${esc(o.statusClass || 'pill-brand')}">${esc(o.status)}</span>` : ''}
+        </div>
+        ${o.domain ? `<div class="opportunity-note"><strong>${esc(o.domain)}</strong>${o.demandSignal ? ` — ${esc(o.demandSignal)}` : ''}</div>` : ''}
+        ${o.proposedScope ? `<div class="opportunity-idea"><i class="bi bi-lightbulb"></i> <strong>Suggested build:</strong> ${esc(o.proposedScope)}</div>` : ''}
+        <button type="button" class="alert-view-account" data-jump-account="${account.id}">Open ${esc(account.name)} <i class="bi bi-arrow-right"></i></button>
+      </div>`).join('');
   }
 
   function renderContentDigestSummary() {
@@ -850,6 +977,7 @@
     dashContent.innerHTML = renderCenter(account, lob);
     dashPeople.innerHTML = renderPeople(account, lob);
     syncUrlState();
+    if (activeSalesTab === 'alerts') syncOpportunitySignals(account);
   }
 
   // ── Quick Outreach Arsenal Copy Helpers ────────────────────────
@@ -1006,8 +1134,8 @@
           <span><i class="bi bi-compass"></i> Unserved Content Themes &amp; Growth Whitespace</span>
           <span class="context-badge pending"><i class="bi bi-signpost-split"></i> Whitespace</span>
         </div>
-        <p class="section-desc">Recurring themes in this account's discourse that don't match existing service lines — potential areas for custom solution engineering.</p>
-        ${renderGrowthOpportunities(account)}
+        <p class="section-desc">Recurring themes in this account's discourse that don't match existing service lines, with a suggested build for each — potential areas for custom solution engineering. Themes seen before persist here as history even if they stop recurring.</p>
+        <div id="growthOpportunitiesBody">${renderGrowthOpportunities(account, (opportunityHistory[account.id] || {}).growth_theme)}</div>
       </div>
 
       <!-- Panel 3: Emerging Expansion Domains & Custom Engineering (New) -->
@@ -1016,8 +1144,8 @@
           <span><i class="bi bi-rocket-takeoff-fill"></i> Emerging Domain Expansion &amp; Custom Integration</span>
           <span class="context-badge live"><i class="bi bi-layers-fill"></i> High-Demand Scope</span>
         </div>
-        <p class="section-desc">Trending enterprise initiatives and adjacent technology domains heavily demanded by <strong>${esc(account.name)}</strong> where StradIT can engineer custom integrated solutions.</p>
-        ${renderDomainExpansionOpportunities(account)}
+        <p class="section-desc">Trending enterprise initiatives and adjacent technology domains heavily demanded by <strong>${esc(account.name)}</strong> where StradIT can engineer custom integrated solutions. Previously suggested domains stay listed as history.</p>
+        <div id="domainExpansionBody">${renderDomainExpansionOpportunities(account, (opportunityHistory[account.id] || {}).domain_expansion)}</div>
       </div>
     `;
   }

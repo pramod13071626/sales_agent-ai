@@ -11,5 +11,6 @@ from db.models.persona import Persona
 from db.models.pipeline_run import PipelineRun
 from db.models.post import Post
 from db.models.digest import Digest
+from db.models.opportunity_signal import OpportunitySignal
 
-__all__ = ["Base", "Account", "Lob", "SubLob", "Persona", "PipelineRun", "Post", "Digest"]
+__all__ = ["Base", "Account", "Lob", "SubLob", "Persona", "PipelineRun", "Post", "Digest", "OpportunitySignal"]

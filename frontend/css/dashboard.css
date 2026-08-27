@@ -701,6 +701,11 @@ body {
   color: #B45309;
   border-color: rgba(245,166,35,.25);
 }
+.pill-muted {
+  background: var(--badge-bg);
+  color: var(--text-muted);
+  border-color: var(--border-color);
+}
 .acct-desc { font-size: .82rem; color: var(--text-secondary); margin: 0; line-height: 1.55; }
 
 /* Score ring */
@@ -1387,6 +1392,19 @@ body {
   margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border-color);
 }
 .opportunity-evidence i.bi-quote { font-style: normal; margin-right: 3px; }
+.opportunity-idea {
+  font-size: .78rem; color: var(--text-primary); line-height: 1.5;
+  margin-top: 8px; padding: 8px 10px;
+  background: var(--brand-soft); border-radius: var(--radius-xs);
+}
+.opportunity-idea i { color: var(--brand); margin-right: 3px; }
+.opportunity-sponsor {
+  font-size: .74rem; color: var(--text-muted);
+  margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border-color);
+}
+/* Domain expansion cards — brand accent to distinguish from amber growth-whitespace cards */
+.opportunity-card-brand { border-left-color: var(--brand); }
+.opportunity-card-brand .opportunity-header i { color: var(--brand); }
 
 .alert-contact-empty {
   margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border-color);
