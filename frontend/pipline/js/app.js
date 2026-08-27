@@ -164,8 +164,8 @@ $(function () {
       lobs.forEach(lob => {
         const subtitle = lob.revenue ? `Rev: ${lob.revenue}` : (lob.desc || 'Business Division');
         $lobCards.append(`
-          <div class="compact-card lob-card fade-in" data-lob-id="${lob.id}">
-            <div class="compact-card-avatar">📁</div>
+          <div class="compact-card lob-card fade-in" data-lob-id="${lob.id}" title="Click to explore ${esc(lob.name)} division and personas">
+            <div class="compact-card-avatar"><i class="bi bi-folder2"></i></div>
             <div class="compact-card-body">
               <div class="compact-card-title">${esc(lob.name)}</div>
               <div class="compact-card-subtitle">${esc(subtitle)}</div>
@@ -206,7 +206,7 @@ $(function () {
 
     // Populate Persona Cards
     const $personaCards = $('#personaCardsContainer').empty();
-    $('#personaSectionTitle').text(`👥 Organizational Hierarchy (${activeLob.name})`);
+    $('#personaSectionTitle').html(`<i class="bi bi-people-fill"></i> Organizational Hierarchy (${esc(activeLob.name)})`);
     $('#personaCountBadge').text(`(${allPersonas.length} contact${allPersonas.length !== 1 ? 's' : ''})`);
 
     if (allPersonas.length === 0) {
@@ -217,7 +217,7 @@ $(function () {
         p.key = personaKey;
         const pRaw = encodeURIComponent(JSON.stringify(p));
         $personaCards.append(`
-          <div class="compact-card persona-card fade-in" data-key="${personaKey}" data-raw="${pRaw}">
+          <div class="compact-card persona-card fade-in" data-key="${personaKey}" data-raw="${pRaw}" title="Click to view AI call prep, email, and social signals for ${esc(p.name)}">
             <div class="compact-card-avatar">${esc(getInitials(p.name))}</div>
             <div class="compact-card-body">
               <div class="compact-card-title">${esc(p.name)}</div>
@@ -253,21 +253,7 @@ $(function () {
 
   // Breadcrumb navigation
   $(document).on('click', '.crumb-account', function () {
-    if (!activeAccount) return;
-    $('.lob-card').removeClass('active');
-    activeLob = null;
-    activePersona = null;
-    $('#personaSection').addClass('d-none');
-    $('#detailPanelContainer').addClass('d-none').empty();
-    $('#crumbs').html(`<li class="breadcrumb-item active">${esc(activeAccount.name)}</li>`);
-  });
-
-  $(document).on('click', '.crumb-lob', function () {
-    if (!activeLob) return;
-    $(`.lob-card[data-lob-id="${activeLob.id}"]`).click();
-  });
-
-  // ─── Render Functions for Categorized Detail Panels ─────────────────────
+    if (!activeAccount) return  // ─── Render Functions for Categorized Detail Panels ─────────────────────
 
   function renderLobDetailPanel(lob) {
     const lobKey = `lob_${lob.id}`;
@@ -279,10 +265,11 @@ $(function () {
 
     const subLobsHtml = (lob.subLobs && lob.subLobs.length) ? `
       <div class="detail-section">
-        <div class="detail-section-heading">📑 Sub-Divisions & Groups (${lob.subLobs.length})</div>
+        <div class="detail-section-heading"><i class="bi bi-folder-symlink"></i> Sub-Divisions &amp; Operating Groups (${lob.subLobs.length})</div>
+        <p class="section-desc">Nested subsidiaries, specialized business lines, and operational branches mapped under this division.</p>
         <div class="detail-grid">
           ${lob.subLobs.map(s => `
-            <div class="detail-field">
+            <div class="detail-field" title="Sub-division within ${esc(lob.name)}">
               <div class="detail-label">Division Name</div>
               <div class="detail-val font-semibold">${esc(s.name)}</div>
               ${s.desc ? `<div style="font-size:.75rem;color:var(--text-muted);margin-top:2px;">${esc(s.desc)}</div>` : ''}
@@ -296,77 +283,87 @@ $(function () {
       <div class="detail-panel fade-in" data-entity-type="lob" data-key="${lobKey}">
         <div class="detail-panel-header">
           <div class="detail-panel-title-area">
-            <span class="pill pill-brand detail-panel-badge">Line of Business Details</span>
-            <h2 class="detail-panel-title">📁 ${esc(lob.name)}</h2>
-            <p class="detail-panel-subtitle">${esc(lob.desc || lob.overview || 'Division Overview')}</p>
+            <span class="pill pill-brand detail-panel-badge"><i class="bi bi-diagram-2"></i> Line of Business Deep Dive</span>
+            <h2 class="detail-panel-title">${esc(lob.name)}</h2>
+            <p class="detail-panel-subtitle">${esc(lob.desc || lob.overview || 'Division Overview & Intelligence Hub')}</p>
           </div>
           <div class="detail-panel-actions-wrapper">
             <div class="detail-panel-actions">
-              <button type="button" class="panel-btn panel-btn-pull" ${pullBtnDisabled ? 'disabled' : ''}>📥 Pull</button>
-              <button type="button" class="panel-btn panel-btn-validate" ${validateBtnDisabled ? 'disabled' : ''}>🔍 Validate</button>
-              <button type="button" class="panel-btn panel-btn-dump" ${dumpBtnDisabled ? 'disabled' : ''}>💾 Dump</button>
+              <button type="button" class="panel-btn panel-btn-pull" ${pullBtnDisabled ? 'disabled' : ''} title="Step 1: Pull live public feeds (News, Social, Filings, Patents) for this LOB"><i class="bi bi-cloud-arrow-down"></i> Pull</button>
+              <button type="button" class="panel-btn panel-btn-validate" ${validateBtnDisabled ? 'disabled' : ''} title="Step 2: AI cleans, verifies, and extracts strategic intent from scraped signals"><i class="bi bi-shield-check"></i> Validate</button>
+              <button type="button" class="panel-btn panel-btn-dump" ${dumpBtnDisabled ? 'disabled' : ''} title="Step 3: Save verified structured intelligence into NeonDB"><i class="bi bi-database-check"></i> Dump</button>
             </div>
-            <div class="panel-status-msg" id="panelStatusMsg">${state.message || ''}</div>
+            <div class="panel-status-msg" id="panelStatusMsg">${state.message || 'Ready for data ingestion cycle.'}</div>
           </div>
+        </div>
+
+        <!-- Workflow Step Indicator -->
+        <div class="step-guide" style="margin-bottom:18px;">
+          <div class="step-guide-item ${!state.pulled ? 'active' : ''}"><span class="step-guide-num">1</span> <strong>Pull:</strong> Scrape live web, news &amp; social feeds</div>
+          <div class="step-guide-item ${state.pulled && !state.validated ? 'active' : ''}"><span class="step-guide-num">2</span> <strong>Validate:</strong> Verify content with LLM extractor</div>
+          <div class="step-guide-item ${state.validated && !state.dumped ? 'active' : ''}"><span class="step-guide-num">3</span> <strong>Dump:</strong> Persist structured records to database</div>
         </div>
 
         <!-- Categorized Section 1: Overview & Structure -->
         <div class="detail-section">
-          <div class="detail-section-heading">🏷️ Overview & Corporate Structure</div>
+          <div class="detail-section-heading"><i class="bi bi-building"></i> Overview &amp; Corporate Structure</div>
+          <p class="section-desc">Operating scope, relationship taxonomy, primary web domains, and commercial registry listings.</p>
           <div class="detail-grid">
             <div class="detail-field span-2">
               <div class="detail-label">Division Overview</div>
               <div class="detail-val">${esc(lob.overview || lob.desc || 'No overview available.')}</div>
             </div>
-            <div class="detail-field">
+            <div class="detail-field" title="How this division connects to parent corporate entity">
               <div class="detail-label">Relationship Type</div>
               <div class="detail-val"><span class="pill">${esc(lob.relationship_type || 'Operating Segment')}</span></div>
             </div>
-            <div class="detail-field">
+            <div class="detail-field" title="Dedicated digital domain for this business unit">
               <div class="detail-label">Primary Domain</div>
-              <div class="detail-val">${lob.domain ? `<a href="https://${esc(lob.domain)}" target="_blank">${esc(lob.domain)} ↗</a>` : '<span class="text-muted">Not specified</span>'}</div>
+              <div class="detail-val">${lob.domain ? `<a href="https://${esc(lob.domain)}" target="_blank">${esc(lob.domain)} <i class="bi bi-box-arrow-up-right"></i></a>` : '<span class="text-muted">Not specified</span>'}</div>
             </div>
-            <div class="detail-field">
+            <div class="detail-field" title="Official corporate website or segment landing page">
               <div class="detail-label">Website URL</div>
-              <div class="detail-val">${lob.website_url ? `<a href="${esc(lob.website_url)}" target="_blank">${esc(lob.website_url)} ↗</a>` : '<span class="text-muted">Not specified</span>'}</div>
+              <div class="detail-val">${lob.website_url ? `<a href="${esc(lob.website_url)}" target="_blank">${esc(lob.website_url)} <i class="bi bi-box-arrow-up-right"></i></a>` : '<span class="text-muted">Not specified</span>'}</div>
             </div>
-            <div class="detail-field">
-              <div class="detail-label">Crunchbase</div>
-              <div class="detail-val">${lob.crunchbase_url ? `<a href="${esc(lob.crunchbase_url)}" target="_blank">View Profile ↗</a>` : '<span class="text-muted">Not specified</span>'}</div>
+            <div class="detail-field" title="Crunchbase investment and company profile">
+              <div class="detail-label">Crunchbase Profile</div>
+              <div class="detail-val">${lob.crunchbase_url ? `<a href="${esc(lob.crunchbase_url)}" target="_blank">View Profile <i class="bi bi-box-arrow-up-right"></i></a>` : '<span class="text-muted">Not specified</span>'}</div>
             </div>
           </div>
         </div>
 
         <!-- Categorized Section 2: Segment Metrics -->
         <div class="detail-section">
-          <div class="detail-section-heading">📊 Segment Financials & Operations</div>
+          <div class="detail-section-heading"><i class="bi bi-bar-chart-line"></i> Segment Financials &amp; Operational Scale</div>
+          <p class="section-desc">Reported segment revenues, organizational headcount, leadership structure, and mapped executive count.</p>
           <div class="detail-grid">
-            <div class="detail-field">
+            <div class="detail-field" title="Annual financial revenue attributed to this segment">
               <div class="detail-label">Segment Revenue</div>
-              <div class="detail-val">${esc(lob.revenue || 'Not disclosed')}</div>
+              <div class="detail-val font-semibold">${esc(lob.revenue || 'Not disclosed in public filings')}</div>
             </div>
-            <div class="detail-field">
+            <div class="detail-field" title="Estimated full-time workforce within this operating unit">
               <div class="detail-label">Headcount / Size</div>
-              <div class="detail-val">${esc(lob.headcount || 'Not disclosed')}</div>
+              <div class="detail-val">${esc(lob.headcount || 'Enterprise scale')}</div>
             </div>
-            <div class="detail-field">
+            <div class="detail-field" title="Senior executive responsible for business unit outcomes">
               <div class="detail-label">Operating Head</div>
-              <div class="detail-val">${esc(lob.operating_head || 'Executive Leadership')}</div>
+              <div class="detail-val">${esc(lob.operating_head || 'Executive Leadership Team')}</div>
             </div>
-            <div class="detail-field">
-              <div class="detail-label">Associated Personas</div>
-              <div class="detail-val">${lob.personas ? lob.personas.length : 0} Identified</div>
+            <div class="detail-field" title="Total executive contacts discovered for this unit">
+              <div class="detail-label">Mapped Contacts</div>
+              <div class="detail-val font-semibold">${lob.personas ? lob.personas.length : 0} Identified</div>
             </div>
           </div>
         </div>
 
         <!-- Categorized Section 3: Intelligence Feeds -->
         <div class="detail-section">
-          <div class="detail-section-heading">🌐 Intelligence Scraping & Feeds</div>
+          <div class="detail-section-heading"><i class="bi bi-broadcast"></i> Live Intelligence Feeds &amp; Public Signals</div>
+          <p class="section-desc">Click any platform card below to view recent scraped post activity, AI sentiment analysis, and source citations.</p>
           <div class="detail-grid">
             <div class="feed-btn-card">
-              <button type="button" class="feed-title-btn" data-platform="linkedin" data-title="LinkedIn Intelligence Summary" data-entity="${esc(lob.name)}" data-url="${lob.linkedin_url ? esc(lob.linkedin_url) : `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(lob.name + ' ' + (activeAccount ? activeAccount.name : ''))}`}" title="Click text to view summary and recent posts">
-                <span class="feed-title">LinkedIn Profile ↗</span>
+              <button type="button" class="feed-title-btn" data-platform="linkedin" data-title="LinkedIn Intelligence Summary" data-entity="${esc(lob.name)}" data-url="${lob.linkedin_url ? esc(lob.linkedin_url) : `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(lob.name + ' ' + (activeAccount ? activeAccount.name : ''))}`}" title="Click to view LinkedIn activity summary and extracted posts">
+                <span class="feed-title"><i class="bi bi-linkedin" style="color:#0077b5;"></i> LinkedIn Intelligence <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${lob.linkedin_url ? esc(lob.linkedin_url) : `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(lob.name + ' ' + (activeAccount ? activeAccount.name : ''))}`}" target="_blank" class="feed-right-icon-link" title="Open LinkedIn in new tab">
                 ${BRAND_ICONS.linkedin}
@@ -374,8 +371,8 @@ $(function () {
             </div>
 
             <div class="feed-btn-card">
-              <button type="button" class="feed-title-btn" data-platform="x_twitter" data-title="Twitter / X Intelligence Summary" data-entity="${esc(lob.name)}" data-url="${lob.twitter_live_url ? esc(lob.twitter_live_url) : `https://x.com/search?q=${encodeURIComponent(lob.name + ' ' + (activeAccount ? activeAccount.name : ''))}&f=live`}" title="Click text to view summary and recent posts">
-                <span class="feed-title">Twitter / X Feed ↗</span>
+              <button type="button" class="feed-title-btn" data-platform="x_twitter" data-title="Twitter / X Intelligence Summary" data-entity="${esc(lob.name)}" data-url="${lob.twitter_live_url ? esc(lob.twitter_live_url) : `https://x.com/search?q=${encodeURIComponent(lob.name + ' ' + (activeAccount ? activeAccount.name : ''))}&f=live`}" title="Click to view Twitter/X live feed summary and sentiment">
+                <span class="feed-title"><i class="bi bi-twitter-x"></i> Twitter / X Feed <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${lob.twitter_live_url ? esc(lob.twitter_live_url) : `https://x.com/search?q=${encodeURIComponent(lob.name + ' ' + (activeAccount ? activeAccount.name : ''))}&f=live`}" target="_blank" class="feed-right-icon-link" title="Open Twitter / X in new tab">
                 ${BRAND_ICONS.x_twitter}
@@ -383,8 +380,8 @@ $(function () {
             </div>
 
             <div class="feed-btn-card">
-              <button type="button" class="feed-title-btn" data-platform="reddit" data-title="Reddit Community Intelligence" data-entity="${esc(lob.name)}" data-url="${lob.reddit_rss_url ? esc(lob.reddit_rss_url) : `https://www.reddit.com/search/?q=${encodeURIComponent(lob.name)}`}" title="Click text to view summary and recent posts">
-                <span class="feed-title">Reddit Feed ↗</span>
+              <button type="button" class="feed-title-btn" data-platform="reddit" data-title="Reddit Community Intelligence" data-entity="${esc(lob.name)}" data-url="${lob.reddit_rss_url ? esc(lob.reddit_rss_url) : `https://www.reddit.com/search/?q=${encodeURIComponent(lob.name)}`}" title="Click to view Reddit discussions and public sentiment">
+                <span class="feed-title"><i class="bi bi-reddit" style="color:#ff4500;"></i> Reddit Community <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${lob.reddit_rss_url ? esc(lob.reddit_rss_url) : `https://www.reddit.com/search/?q=${encodeURIComponent(lob.name)}`}" target="_blank" class="feed-right-icon-link" title="Open Reddit in new tab">
                 ${BRAND_ICONS.reddit}
@@ -392,8 +389,8 @@ $(function () {
             </div>
 
             <div class="feed-btn-card">
-              <button type="button" class="feed-title-btn" data-platform="youtube" data-title="YouTube Video & Media Intelligence" data-entity="${esc(lob.name)}" data-url="${lob.youtube_search_url ? esc(lob.youtube_search_url) : `https://www.youtube.com/results?search_query=${encodeURIComponent(lob.name)}`}" title="Click text to view summary and recent posts">
-                <span class="feed-title">YouTube Search ↗</span>
+              <button type="button" class="feed-title-btn" data-platform="youtube" data-title="YouTube Video & Media Intelligence" data-entity="${esc(lob.name)}" data-url="${lob.youtube_search_url ? esc(lob.youtube_search_url) : `https://www.youtube.com/results?search_query=${encodeURIComponent(lob.name)}`}" title="Click to view YouTube interviews, keynote presentations, and webinars">
+                <span class="feed-title"><i class="bi bi-youtube" style="color:#ff0000;"></i> YouTube Media <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${lob.youtube_search_url ? esc(lob.youtube_search_url) : `https://www.youtube.com/results?search_query=${encodeURIComponent(lob.name)}`}" target="_blank" class="feed-right-icon-link" title="Open YouTube in new tab">
                 ${BRAND_ICONS.youtube}
@@ -401,8 +398,8 @@ $(function () {
             </div>
 
             <div class="feed-btn-card">
-              <button type="button" class="feed-title-btn" data-platform="google_news" data-title="Google News Feed Intelligence" data-entity="${esc(lob.name)}" data-url="${lob.google_news_rss_url ? esc(lob.google_news_rss_url) : `https://news.google.com/rss/search?q=${encodeURIComponent(lob.name)}`}" title="Click text to view summary and recent posts">
-                <span class="feed-title">Google News RSS ↗</span>
+              <button type="button" class="feed-title-btn" data-platform="google_news" data-title="Google News Feed Intelligence" data-entity="${esc(lob.name)}" data-url="${lob.google_news_rss_url ? esc(lob.google_news_rss_url) : `https://news.google.com/rss/search?q=${encodeURIComponent(lob.name)}`}" title="Click to view Google News headlines and press coverage">
+                <span class="feed-title"><i class="bi bi-newspaper" style="color:#4285f4;"></i> Google News RSS <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${lob.google_news_rss_url ? esc(lob.google_news_rss_url) : `https://news.google.com/rss/search?q=${encodeURIComponent(lob.name)}`}" target="_blank" class="feed-right-icon-link" title="Open Google News in new tab">
                 ${BRAND_ICONS.google_news}
@@ -410,8 +407,8 @@ $(function () {
             </div>
 
             <div class="feed-btn-card">
-              <button type="button" class="feed-title-btn" data-platform="google_patents" data-title="Patent & IP Intelligence" data-entity="${esc(lob.name)}" data-url="${lob.google_patents_url ? esc(lob.google_patents_url) : `https://patents.google.com/?q=${encodeURIComponent(lob.name)}`}" title="Click text to view summary and recent posts">
-                <span class="feed-title">Patents Explorer ↗</span>
+              <button type="button" class="feed-title-btn" data-platform="google_patents" data-title="Patent & IP Intelligence" data-entity="${esc(lob.name)}" data-url="${lob.google_patents_url ? esc(lob.google_patents_url) : `https://patents.google.com/?q=${encodeURIComponent(lob.name)}`}" title="Click to view patent filings, R&D innovations, and IP portfolio">
+                <span class="feed-title"><i class="bi bi-lightbulb" style="color:#34a853;"></i> Patents Explorer <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${lob.google_patents_url ? esc(lob.google_patents_url) : `https://patents.google.com/?q=${encodeURIComponent(lob.name)}`}" target="_blank" class="feed-right-icon-link" title="Open Patents in new tab">
                 ${BRAND_ICONS.google_patents}
@@ -419,8 +416,8 @@ $(function () {
             </div>
 
             <div class="feed-btn-card">
-              <button type="button" class="feed-title-btn" data-platform="google_trends" data-title="Google Search Trends Analytics" data-entity="${esc(lob.name)}" data-url="${lob.google_trends_url ? esc(lob.google_trends_url) : `https://trends.google.com/trends/explore?q=${encodeURIComponent(lob.name)}`}" title="Click text to view summary and recent posts">
-                <span class="feed-title">Trends Analytics ↗</span>
+              <button type="button" class="feed-title-btn" data-platform="google_trends" data-title="Google Search Trends Analytics" data-entity="${esc(lob.name)}" data-url="${lob.google_trends_url ? esc(lob.google_trends_url) : `https://trends.google.com/trends/explore?q=${encodeURIComponent(lob.name)}`}" title="Click to view search term momentum and keyword interest">
+                <span class="feed-title"><i class="bi bi-graph-up" style="color:#ea4335;"></i> Search Trends <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${lob.google_trends_url ? esc(lob.google_trends_url) : `https://trends.google.com/trends/explore?q=${encodeURIComponent(lob.name)}`}" target="_blank" class="feed-right-icon-link" title="Open Google Trends in new tab">
                 ${BRAND_ICONS.google_trends}
@@ -444,32 +441,40 @@ $(function () {
     const validateBtnDisabled = !state.pulled;
     const dumpBtnDisabled = !state.validated;
 
-    const skillsHtml = (p.skills && p.skills.length) ? p.skills.map(s => `<span class="data-tag">${esc(s)}</span>`).join('') : '<span class="text-muted" style="font-size:.8rem;">No skills mapped</span>';
-    const kpisHtml = (p.target_kpis && p.target_kpis.length) ? p.target_kpis.map(k => `<span class="data-tag data-tag-success">${esc(k)}</span>`).join('') : '<span class="text-muted" style="font-size:.8rem;">No KPIs mapped</span>';
-    const painPointsHtml = (p.operational_pain_points && p.operational_pain_points.length) ? p.operational_pain_points.map(pain => `<span class="data-tag data-tag-warning">${esc(pain)}</span>`).join('') : '<span class="text-muted" style="font-size:.8rem;">None recorded</span>';
-    const objectionsHtml = (p.key_objections && p.key_objections.length) ? p.key_objections.map(obj => `<span class="data-tag">${esc(obj)}</span>`).join('') : '<span class="text-muted" style="font-size:.8rem;">None recorded</span>';
+    const skillsHtml = (p.skills && p.skills.length) ? p.skills.map(s => `<span class="data-tag" title="Verified skill area"><i class="bi bi-check2"></i> ${esc(s)}</span>`).join('') : '<span class="text-muted" style="font-size:.8rem;">No skills mapped</span>';
+    const kpisHtml = (p.target_kpis && p.target_kpis.length) ? p.target_kpis.map(k => `<span class="data-tag data-tag-success" title="Target KPI priority"><i class="bi bi-bullseye"></i> ${esc(k)}</span>`).join('') : '<span class="text-muted" style="font-size:.8rem;">No KPIs mapped</span>';
+    const painPointsHtml = (p.operational_pain_points && p.operational_pain_points.length) ? p.operational_pain_points.map(pain => `<span class="data-tag data-tag-warning" title="Critical operational challenge"><i class="bi bi-exclamation-circle"></i> ${esc(pain)}</span>`).join('') : '<span class="text-muted" style="font-size:.8rem;">None recorded</span>';
+    const objectionsHtml = (p.key_objections && p.key_objections.length) ? p.key_objections.map(obj => `<span class="data-tag" title="Anticipated sales objection"><i class="bi bi-shield"></i> ${esc(obj)}</span>`).join('') : '<span class="text-muted" style="font-size:.8rem;">None recorded</span>';
 
     const panelHtml = `
       <div class="detail-panel fade-in" data-entity-type="persona" data-key="${pKey}">
         <div class="detail-panel-header">
           <div class="detail-panel-title-area">
-            <span class="pill pill-brand detail-panel-badge">Executive Persona Details</span>
-            <h2 class="detail-panel-title">👤 ${esc(p.name)}</h2>
+            <span class="pill pill-brand detail-panel-badge"><i class="bi bi-person-badge"></i> Executive Persona Call Prep</span>
+            <h2 class="detail-panel-title">${esc(p.name)}</h2>
             <p class="detail-panel-subtitle">${esc(p.title || 'Executive')} • <span class="pill pill-success" style="font-size:.72rem;">${esc(p.tier || 'Target Tier')}</span> • ${esc(activeAccount.name)}</p>
           </div>
           <div class="detail-panel-actions-wrapper">
             <div class="detail-panel-actions">
-              <button type="button" class="panel-btn panel-btn-pull" ${pullBtnDisabled ? 'disabled' : ''}>📥 Pull</button>
-              <button type="button" class="panel-btn panel-btn-validate" ${validateBtnDisabled ? 'disabled' : ''}>🔍 Validate</button>
-              <button type="button" class="panel-btn panel-btn-dump" ${dumpBtnDisabled ? 'disabled' : ''}>💾 Dump</button>
+              <button type="button" class="panel-btn panel-btn-pull" ${pullBtnDisabled ? 'disabled' : ''} title="Step 1: Pull live social posts, press interviews, and author records for this executive"><i class="bi bi-cloud-arrow-down"></i> Pull</button>
+              <button type="button" class="panel-btn panel-btn-validate" ${validateBtnDisabled ? 'disabled' : ''} title="Step 2: AI parses communication style, icebreakers, and objection readiness"><i class="bi bi-shield-check"></i> Validate</button>
+              <button type="button" class="panel-btn panel-btn-dump" ${dumpBtnDisabled ? 'disabled' : ''} title="Step 3: Save validated executive persona profile into NeonDB"><i class="bi bi-database-check"></i> Dump</button>
             </div>
-            <div class="panel-status-msg" id="panelStatusMsg">${state.message || ''}</div>
+            <div class="panel-status-msg" id="panelStatusMsg">${state.message || 'Ready for data ingestion cycle.'}</div>
           </div>
+        </div>
+
+        <!-- Workflow Step Indicator -->
+        <div class="step-guide" style="margin-bottom:18px;">
+          <div class="step-guide-item ${!state.pulled ? 'active' : ''}"><span class="step-guide-num">1</span> <strong>Pull:</strong> Scrape executive posts &amp; interviews</div>
+          <div class="step-guide-item ${state.pulled && !state.validated ? 'active' : ''}"><span class="step-guide-num">2</span> <strong>Validate:</strong> Generate personalized icebreaker &amp; talk tracks</div>
+          <div class="step-guide-item ${state.validated && !state.dumped ? 'active' : ''}"><span class="step-guide-num">3</span> <strong>Dump:</strong> Save to permanent CRM database</div>
         </div>
 
         <!-- Categorized Section 1: Executive Profile & Demographics -->
         <div class="detail-section">
-          <div class="detail-section-heading">👤 Executive Profile & Demographics</div>
+          <div class="detail-section-heading"><i class="bi bi-person-vcard"></i> Executive Profile &amp; Demographics</div>
+          <p class="section-desc">Corporate title, verified contact information, geographic base, academic background, and organizational seniority level.</p>
           <div class="detail-grid">
             <div class="detail-field">
               <div class="detail-label">Full Name</div>
@@ -481,7 +486,7 @@ $(function () {
             </div>
             <div class="detail-field">
               <div class="detail-label">Corporate Email</div>
-              <div class="detail-val">${p.email ? `<a href="mailto:${esc(p.email)}">${esc(p.email)}</a>` : '<span class="text-muted">Not discovered</span>'}</div>
+              <div class="detail-val">${p.email ? `<a href="mailto:${esc(p.email)}">${esc(p.email)} <i class="bi bi-envelope-check"></i></a>` : '<span class="text-muted">Not discovered</span>'}</div>
             </div>
             <div class="detail-field">
               <div class="detail-label">Email Status / Phone</div>
@@ -508,14 +513,15 @@ $(function () {
 
         <!-- Categorized Section 2: Behavior & Strategic KPIs -->
         <div class="detail-section">
-          <div class="detail-section-heading">🎯 Behavior & Strategic KPIs</div>
+          <div class="detail-section-heading"><i class="bi bi-bullseye"></i> Strategic Priorities &amp; Operational Pain Points</div>
+          <p class="section-desc">Key performance metrics the executive is evaluated on, top operational blockers, and anticipated sales objections.</p>
           <div class="detail-grid">
             <div class="detail-field span-2">
-              <div class="detail-label">Target KPIs & Priorities</div>
+              <div class="detail-label">Target KPIs &amp; Core Priorities</div>
               <div class="tag-list">${kpisHtml}</div>
             </div>
             <div class="detail-field span-2">
-              <div class="detail-label">Core Skills & Domain Expertise</div>
+              <div class="detail-label">Core Skills &amp; Domain Expertise</div>
               <div class="tag-list">${skillsHtml}</div>
             </div>
             <div class="detail-field span-2">
@@ -523,7 +529,7 @@ $(function () {
               <div class="tag-list">${painPointsHtml}</div>
             </div>
             <div class="detail-field span-2">
-              <div class="detail-label">Anticipated Objections</div>
+              <div class="detail-label">Anticipated Objections &amp; Hesitations</div>
               <div class="tag-list">${objectionsHtml}</div>
             </div>
           </div>
@@ -531,11 +537,12 @@ $(function () {
 
         <!-- Categorized Section 3: Personalized Messaging & Pitch -->
         <div class="detail-section">
-          <div class="detail-section-heading">💬 Personalized Engagement & Messaging</div>
+          <div class="detail-section-heading"><i class="bi bi-chat-quote-fill"></i> Personalized Engagement &amp; Pitch Strategy</div>
+          <p class="section-desc">AI-tailored opening icebreaker based on recent initiatives, targeted value proposition, and communication style.</p>
           <div class="detail-grid">
-            <div class="detail-field span-full" style="background: rgba(99,102,241,.05); border-color: rgba(99,102,241,.2);">
-              <div class="detail-label" style="color:var(--brand);">Personalized Icebreaker</div>
-              <div class="detail-val" style="font-size:.9rem; color:var(--text-primary);">
+            <div class="detail-field span-full" style="background: var(--brand-soft); border-color: rgba(0,97,255,.25);">
+              <div class="detail-label" style="color:var(--brand);"><i class="bi bi-stars"></i> Tailored Call Icebreaker</div>
+              <div class="detail-val" style="font-size:.9rem; color:var(--text-primary); font-weight:600;">
                 "${esc(p.personalized_icebreaker || `Congratulations on your leadership initiatives at ${activeAccount.name}.`)}"
               </div>
             </div>
@@ -548,7 +555,7 @@ $(function () {
               <div class="detail-val">${esc(p.communication_style || 'Analytical, data-driven, and outcome-oriented')}</div>
             </div>
             <div class="detail-field">
-              <div class="detail-label">Authority & Influence</div>
+              <div class="detail-label">Authority &amp; Influence</div>
               <div class="detail-val">Decision: ${esc(p.decision_authority || 'Primary')} • Budget: ${esc(p.budget_authority || 'Sign-off')}</div>
             </div>
           </div>
@@ -556,11 +563,12 @@ $(function () {
 
         <!-- Categorized Section 4: Online Footprint & Scraping Feeds -->
         <div class="detail-section">
-          <div class="detail-section-heading">🌐 Online Footprint & Intelligence Feeds</div>
+          <div class="detail-section-heading"><i class="bi bi-broadcast-pin"></i> Executive Online Footprint &amp; Discourse</div>
+          <p class="section-desc">Click any platform card to inspect the executive's real posts, interview quotes, and public commentary.</p>
           <div class="detail-grid">
             <div class="feed-btn-card">
-              <button type="button" class="feed-title-btn" data-platform="linkedin" data-title="LinkedIn Executive Intelligence" data-entity="${esc(p.name)}" data-url="${p.linkedin_url ? esc(p.linkedin_url) : `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(p.name + ' ' + activeAccount.name)}`}" title="Click text to view summary and recent posts">
-                <span class="feed-title">LinkedIn Profile ↗</span>
+              <button type="button" class="feed-title-btn" data-platform="linkedin" data-title="LinkedIn Executive Intelligence" data-entity="${esc(p.name)}" data-url="${p.linkedin_url ? esc(p.linkedin_url) : `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(p.name + ' ' + activeAccount.name)}`}" title="Click to view executive LinkedIn activity and recent posts">
+                <span class="feed-title"><i class="bi bi-linkedin" style="color:#0077b5;"></i> LinkedIn Profile <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${p.linkedin_url ? esc(p.linkedin_url) : `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(p.name + ' ' + activeAccount.name)}`}" target="_blank" class="feed-right-icon-link" title="Open LinkedIn profile in new tab">
                 ${BRAND_ICONS.linkedin}
@@ -568,8 +576,8 @@ $(function () {
             </div>
 
             <div class="feed-btn-card">
-              <button type="button" class="feed-title-btn" data-platform="x_twitter" data-title="Twitter / X Executive Intelligence" data-entity="${esc(p.name)}" data-url="${p.twitter_live_url ? esc(p.twitter_live_url) : `https://x.com/search?q=${encodeURIComponent(p.name)}&f=live`}" title="Click text to view summary and recent posts">
-                <span class="feed-title">Twitter / X Feed ↗</span>
+              <button type="button" class="feed-title-btn" data-platform="x_twitter" data-title="Twitter / X Executive Intelligence" data-entity="${esc(p.name)}" data-url="${p.twitter_live_url ? esc(p.twitter_live_url) : `https://x.com/search?q=${encodeURIComponent(p.name)}&f=live`}" title="Click to view executive Twitter/X timeline and discourse">
+                <span class="feed-title"><i class="bi bi-twitter-x"></i> Twitter / X Feed <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${p.twitter_live_url ? esc(p.twitter_live_url) : `https://x.com/search?q=${encodeURIComponent(p.name)}&f=live`}" target="_blank" class="feed-right-icon-link" title="Open Twitter / X in new tab">
                 ${BRAND_ICONS.x_twitter}
@@ -577,17 +585,17 @@ $(function () {
             </div>
 
             <div class="feed-btn-card">
-              <button type="button" class="feed-title-btn" data-platform="reddit" data-title="Reddit Community Discussions" data-entity="${esc(p.name)}" data-url="${p.reddit_rss_url ? esc(p.reddit_rss_url) : `https://www.reddit.com/search/?q=${encodeURIComponent(p.name)}`}" title="Click text to view summary and recent posts">
-                <span class="feed-title">Reddit Discussions ↗</span>
+              <button type="button" class="feed-title-btn" data-platform="reddit" data-title="Reddit Community Discussions" data-entity="${esc(p.name)}" data-url="${p.reddit_rss_url ? esc(p.reddit_rss_url) : `https://www.reddit.com/search/?q=${encodeURIComponent(p.name)}`}" title="Click to view Reddit discussions and industry mentions">
+                <span class="feed-title"><i class="bi bi-reddit" style="color:#ff4500;"></i> Reddit Mentions <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
-              <a href="${p.reddit_rss_url ? esc(p.reddit_rss_url) : `https://www.reddit.com/search/?q=${encodeURIComponent(p.name)}`}" target="_blank" class="feed-right-icon-link" title="Open Reddit in new tab">
+              <a href="${p.reddit_rss_url ? esc(lob.reddit_rss_url) : `https://www.reddit.com/search/?q=${encodeURIComponent(p.name)}`}" target="_blank" class="feed-right-icon-link" title="Open Reddit in new tab">
                 ${BRAND_ICONS.reddit}
               </a>
             </div>
 
             <div class="feed-btn-card">
-              <button type="button" class="feed-title-btn" data-platform="youtube" data-title="YouTube Media & Keynotes" data-entity="${esc(p.name)}" data-url="${p.youtube_interviews_url ? esc(p.youtube_interviews_url) : `https://www.youtube.com/results?search_query=${encodeURIComponent(p.name + ' interview')}`}" title="Click text to view summary and recent posts">
-                <span class="feed-title">YouTube Search ↗</span>
+              <button type="button" class="feed-title-btn" data-platform="youtube" data-title="YouTube Media & Keynotes" data-entity="${esc(p.name)}" data-url="${p.youtube_interviews_url ? esc(p.youtube_interviews_url) : `https://www.youtube.com/results?search_query=${encodeURIComponent(p.name + ' interview')}`}" title="Click to view executive interviews, keynote videos, and media appearances">
+                <span class="feed-title"><i class="bi bi-youtube" style="color:#ff0000;"></i> YouTube Keynotes <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${p.youtube_interviews_url ? esc(p.youtube_interviews_url) : `https://www.youtube.com/results?search_query=${encodeURIComponent(p.name + ' interview')}`}" target="_blank" class="feed-right-icon-link" title="Open YouTube in new tab">
                 ${BRAND_ICONS.youtube}
@@ -595,8 +603,8 @@ $(function () {
             </div>
 
             <div class="feed-btn-card">
-              <button type="button" class="feed-title-btn" data-platform="google_news" data-title="Google News Executive Coverage" data-entity="${esc(p.name)}" data-url="${p.rss_url ? esc(p.rss_url) : `https://news.google.com/rss/search?q=${encodeURIComponent(p.name)}`}" title="Click text to view summary and recent posts">
-                <span class="feed-title">Google News RSS ↗</span>
+              <button type="button" class="feed-title-btn" data-platform="google_news" data-title="Google News Executive Coverage" data-entity="${esc(p.name)}" data-url="${p.rss_url ? esc(p.rss_url) : `https://news.google.com/rss/search?q=${encodeURIComponent(p.name)}`}" title="Click to view Google News articles and press mentions">
+                <span class="feed-title"><i class="bi bi-newspaper" style="color:#4285f4;"></i> Google News <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${p.rss_url ? esc(p.rss_url) : `https://news.google.com/rss/search?q=${encodeURIComponent(p.name)}`}" target="_blank" class="feed-right-icon-link" title="Open Google News in new tab">
                 ${BRAND_ICONS.google_news}
@@ -604,8 +612,8 @@ $(function () {
             </div>
 
             <div class="feed-btn-card">
-              <button type="button" class="feed-title-btn" data-platform="google_patents" data-title="Inventor Patent Portfolio" data-entity="${esc(p.name)}" data-url="${p.google_patents_url ? esc(p.google_patents_url) : `https://patents.google.com/?inventor=${encodeURIComponent(p.name)}`}" title="Click text to view summary and recent posts">
-                <span class="feed-title">Patents Explorer ↗</span>
+              <button type="button" class="feed-title-btn" data-platform="google_patents" data-title="Inventor Patent Portfolio" data-entity="${esc(p.name)}" data-url="${p.google_patents_url ? esc(p.google_patents_url) : `https://patents.google.com/?inventor=${encodeURIComponent(p.name)}`}" title="Click to view patent filings and inventor IP portfolio">
+                <span class="feed-title"><i class="bi bi-lightbulb" style="color:#34a853;"></i> Patents Explorer <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${p.google_patents_url ? esc(p.google_patents_url) : `https://patents.google.com/?inventor=${encodeURIComponent(p.name)}`}" target="_blank" class="feed-right-icon-link" title="Open Patents in new tab">
                 ${BRAND_ICONS.google_patents}
@@ -613,8 +621,8 @@ $(function () {
             </div>
 
             <div class="feed-btn-card">
-              <button type="button" class="feed-title-btn" data-platform="podcast" data-title="Podcasts & Media Intelligence" data-entity="${esc(p.name)}" data-url="${p.podcast_search_url ? esc(p.podcast_search_url) : `https://www.google.com/search?q=${encodeURIComponent(p.name + ' podcast')}`}" title="Click text to view summary and recent posts">
-                <span class="feed-title">Podcasts & Media ↗</span>
+              <button type="button" class="feed-title-btn" data-platform="podcast" data-title="Podcasts & Media Intelligence" data-entity="${esc(p.name)}" data-url="${p.podcast_search_url ? esc(p.podcast_search_url) : `https://www.google.com/search?q=${encodeURIComponent(p.name + ' podcast')}`}" title="Click to view podcast episodes and audio interviews">
+                <span class="feed-title"><i class="bi bi-mic" style="color:#8743d6;"></i> Podcasts &amp; Media <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${p.podcast_search_url ? esc(p.podcast_search_url) : `https://www.google.com/search?q=${encodeURIComponent(p.name + ' podcast')}`}" target="_blank" class="feed-right-icon-link" title="Open Podcasts in new tab">
                 ${BRAND_ICONS.podcast}

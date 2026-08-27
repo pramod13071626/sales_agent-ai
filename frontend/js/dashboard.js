@@ -22,6 +22,7 @@
   let expandedAccountIds = new Set();
   let activeAccountId = null;
   let activeLobId = null;
+  let activeSalesTab = 'briefing'; // 'briefing' | 'committee' | 'alerts' | 'financials' | 'social'
   let extraTech = {}; // accountId -> [] technologies fetched live via Diffbot, not persisted
   let currentPersonas = []; // personas currently rendered in the right panel, indexed for the drawer
   let currentSignals = []; // Account Signals currently rendered in the center panel, indexed for the modal
@@ -321,6 +322,58 @@
     });
   }
 
+  function computeGrowthOpportunities(account) {
+    const themeMap = new Map(); // theme text -> { count, channels:Set, summary, person }
+    const allKeywords = STRADIT_OFFERINGS.flatMap(off => off.keywords);
+
+    function collectFromTargetKey(targetKey, personName) {
+      const d = contentStore.digests[targetKey];
+      if (!d || isDryRunDigest(d)) return;
+      (d.digest.channels || []).forEach(ch => {
+        (ch.themes || []).forEach(theme => {
+          if (allKeywords.some(rx => rx.test(theme))) return; // already served by an existing offering
+          if (!themeMap.has(theme)) themeMap.set(theme, { count: 0, channels: new Set(), summary: ch.summary, person: personName });
+          const entry = themeMap.get(theme);
+          entry.count++;
+          entry.channels.add(ch.channel);
+        });
+      });
+    }
+
+    const acctKey = resolveAccountTargetKey(account);
+    if (acctKey) collectFromTargetKey(acctKey);
+    (account.personas || []).forEach(p => {
+      const pk = resolvePersonaTargetKey(p);
+      if (pk) collectFromTargetKey(pk, p.name);
+    });
+
+    return [...themeMap.entries()]
+      .map(([theme, info]) => ({ theme, ...info }))
+      .sort((a, b) => b.count - a.count);
+  }
+
+  function renderGrowthOpportunities(account) {
+    const opportunities = computeGrowthOpportunities(account);
+    if (!opportunities.length) {
+      return `<div class="empty-block">
+        <div class="empty-block-icon"><i class="bi bi-compass"></i></div>
+        <div class="empty-block-text">No recurring unserved themes detected yet for this account.</div>
+      </div>`;
+    }
+    return opportunities.map(o => `
+      <div class="opportunity-card">
+        <div class="opportunity-header">
+          <i class="bi bi-compass"></i>
+          <span class="opportunity-title">${esc(o.theme)}</span>
+          <span class="pill pill-warning">${o.count} mention${o.count !== 1 ? 's' : ''}</span>
+        </div>
+        <div class="opportunity-note">
+          Not covered by any current StradIT service line — recurring in ${[...o.channels].map(c => esc(CHANNEL_LABEL[c] || c)).join(', ')}${o.person ? ` (via ${esc(o.person)})` : ''}.
+        </div>
+        ${o.summary ? `<div class="opportunity-evidence"><i class="bi bi-quote"></i> ${esc(o.summary.length > 160 ? o.summary.slice(0, 160) + '…' : o.summary)}</div>` : ''}
+      </div>`).join('');
+  }
+
   function esc(s) {
     const d = document.createElement('div');
     d.textContent = (s == null ? '' : String(s));
@@ -455,58 +508,65 @@
 
     dashEmpty.innerHTML = `
       <div class="digest-header">
-        <h2 class="digest-title"><i class="bi bi-bar-chart-line"></i> Weekly Account Digest</h2>
-        <p class="digest-sub">Live summary built from your ${accounts.length} tracked account${accounts.length !== 1 ? 's' : ''} — not a preset report, this recalculates from current data every time you load the page.</p>
+        <h2 class="digest-title"><i class="bi bi-bar-chart-line-fill"></i> Enterprise Sales Intelligence Command Center</h2>
+        <p class="digest-sub">Live intelligence workspace tracking <strong>${accounts.length} enterprise account${accounts.length !== 1 ? 's' : ''}</strong>. Continuously aggregates signals from executive social feeds, SEC filings, organizational hierarchies, and StradIT service-fit opportunities.</p>
+      </div>
+
+      <!-- Quick Workflow Steps -->
+      <div class="step-guide">
+        <div class="step-guide-item active"><span class="step-guide-num">1</span> <strong>Choose Account:</strong> Select any organization from the left navigator</div>
+        <div class="step-guide-item"><span class="step-guide-num">2</span> <strong>Inspect LOBs:</strong> Drill into specific operating divisions</div>
+        <div class="step-guide-item"><span class="step-guide-num">3</span> <strong>Review Signals:</strong> Match offerings with live buyer pain points</div>
+        <div class="step-guide-item"><span class="step-guide-num">4</span> <strong>Open Call Prep:</strong> Click contacts for tailored talk tracks</div>
       </div>
 
       <div class="digest-grid-2">
         <div class="panel">
-          <div class="panel-title">Recently Updated Accounts</div>
+          <div class="panel-title">
+            <span><i class="bi bi-clock-history"></i> Recently Updated Accounts</span>
+            <span class="context-badge live"><i class="bi bi-arrow-repeat"></i> Fresh Scrapes</span>
+          </div>
+          <p class="section-desc">Accounts with the most recent pipeline updates, data enrichments, or fresh signal captures.</p>
           ${recentlyUpdated.length ? recentlyUpdated.map(a => `
-            <div class="digest-list-row">
-              <span class="digest-list-name">${esc(a.name)}</span>
-              <span class="digest-list-meta">${esc(timeAgo(a.extracted_at))}</span>
-            </div>`).join('') : '<div class="empty-block" style="padding:10px 0;"><div class="empty-block-text">No extraction timestamps recorded yet.</div></div>'}
+            <button type="button" class="digest-list-row clickable" data-jump-account="${a.id}" title="Click to open ${esc(a.name)}">
+              <span class="digest-list-name"><i class="bi bi-building"></i> ${esc(a.name)}</span>
+              <span class="digest-list-meta">${esc(timeAgo(a.extracted_at))} <i class="bi bi-chevron-right"></i></span>
+            </button>`).join('') : '<div class="empty-block" style="padding:10px 0;"><div class="empty-block-text">No extraction timestamps recorded yet.</div></div>'}
         </div>
 
         <div class="panel">
-          <div class="panel-title">Most-Mapped Accounts</div>
+          <div class="panel-title">
+            <span><i class="bi bi-people-fill"></i> Most-Mapped Accounts</span>
+            <span class="context-badge live"><i class="bi bi-check2-all"></i> Org Coverage</span>
+          </div>
+          <p class="section-desc">Accounts with the deepest organizational charts and highest volume of executive contacts identified.</p>
           ${topByContacts.length ? topByContacts.map(a => `
-            <div class="digest-list-row">
-              <span class="digest-list-name">${esc(a.name)}</span>
-              <span class="digest-list-meta">${a.total_contacts_captured || 0} contacts</span>
-            </div>`).join('') : '<div class="empty-block" style="padding:10px 0;"><div class="empty-block-text">No contacts mapped yet.</div></div>'}
+            <button type="button" class="digest-list-row clickable" data-jump-account="${a.id}" title="Click to open ${esc(a.name)}">
+              <span class="digest-list-name"><i class="bi bi-building"></i> ${esc(a.name)}</span>
+              <span class="digest-list-meta">${a.total_contacts_captured || 0} contacts <i class="bi bi-chevron-right"></i></span>
+            </button>`).join('') : '<div class="empty-block" style="padding:10px 0;"><div class="empty-block-text">No contacts mapped yet.</div></div>'}
         </div>
       </div>
 
       <div class="panel">
-        <div class="panel-title">Org Coverage Across All Accounts</div>
-        <div class="chip-row">
-          <span class="chip"><i class="bi bi-award"></i> ${cSuite} C-Suite</span>
-          <span class="chip"><i class="bi bi-graph-up-arrow"></i> ${vp} VPs</span>
-          <span class="chip"><i class="bi bi-compass"></i> ${director} Directors</span>
-          <span class="chip"><i class="bi bi-tools"></i> ${manager} Managers</span>
-          <span class="chip"><i class="bi bi-bullseye"></i> ${scoredCount}/${accounts.length} accounts have an opportunity score</span>
+        <div class="panel-title">
+          <span><i class="bi bi-broadcast-pin"></i> Social &amp; Content Intelligence Digest</span>
+          <span class="context-badge ai"><i class="bi bi-stars"></i> Cross-Account AI</span>
         </div>
-      </div>
-
-      ${industries.size ? `
-        <div class="panel">
-          <div class="panel-title">Industries Covered</div>
-          <div class="chip-row">${[...industries].slice(0, 12).map(i => `<span class="chip"><i class="bi bi-tag"></i> ${esc(i)}</span>`).join('')}</div>
-        </div>` : ''}
-
-      <div class="panel">
-        <div class="panel-title">Social &amp; Content Intelligence</div>
+        <p class="section-desc">Overview of all captured social discourse, executive LinkedIn themes, and LLM-synthesized takeaways across all tracked enterprises.</p>
         ${renderContentDigestSummary()}
       </div>
 
       <div class="panel">
-        <div class="panel-title">Sales Alerts <span class="panel-note">StradIT service-line fit, across all accounts</span></div>
+        <div class="panel-title">
+          <span><i class="bi bi-lightning-charge-fill"></i> Global Sales Alerts &amp; StradIT Service Line Opportunities</span>
+          <span class="context-badge ai"><i class="bi bi-stars"></i> AI Matcher</span>
+        </div>
+        <p class="section-desc">High-priority service alignment opportunities detected across all accounts based on keyword citations and public statements.</p>
         ${renderGlobalSalesAlerts()}
       </div>
 
-      <div class="digest-cta"><i class="bi bi-arrow-left-circle"></i> Select an account from the left panel to open its full intelligence profile.</div>
+      <div class="digest-cta"><i class="bi bi-arrow-left-circle-fill"></i> <span><strong>Ready to explore?</strong> Select any account from the left panel to open its complete intelligence dossier and contact matrix.</span></div>
     `;
   }
 
@@ -692,22 +752,330 @@
     dashPeople.innerHTML = renderPeople(account, lob);
   }
 
-  function renderCenter(account, lob) {
+  // ── Quick Outreach Arsenal Copy Helpers ────────────────────────
+  function getTopIcebreakerText(account) {
+    const personas = dedupePersonas(account.personas || []);
+    const p = personas.find(p => p.personalized_icebreaker);
+    if (p && p.personalized_icebreaker) return p.personalized_icebreaker;
+    return `Congratulations on ${account.name}'s ongoing market initiatives and technology investments.`;
+  }
+
+  function getColdEmailPitchText(account, matches) {
+    const topMatch = matches && matches.length ? matches[0] : null;
+    const offeringName = topMatch ? topMatch.label : 'Enterprise Digital Transformation';
+    const pitch = topMatch ? topMatch.pitch : 'scale high-impact engineering workflows and decision intelligence.';
+    return `Hi [First Name],\n\nI've been following ${account.name}'s strategic initiatives and noticed your focus in ${offeringName.toLowerCase()}.\n\nAt StradIT, we specialize in ${pitch}\n\nWould you be open to a brief 10-minute introductory conversation next Tuesday to share benchmarks from similar enterprise leaders?\n\nBest regards,\n[Your Name]`;
+  }
+
+  function getAccountCheatSheetText(account, lob) {
+    const personas = dedupePersonas(account.personas || []);
+    const tech = getTechFor(account, lob);
+    return `=== SALES BATTLECARD: ${account.name} ===\n` +
+      `Industry: ${(account.industries || []).join(', ') || 'Enterprise'}\n` +
+      `Revenue: ${account.revenue || 'N/A'} | Location: ${account.location || 'N/A'}\n` +
+      `Headcount: ${account.employee_count_range || 'N/A'} | Ticker: ${account.ticker || 'Private'}\n\n` +
+      `Top Tech: ${tech.slice(0, 8).join(', ') || 'N/A'}\n\n` +
+      `Key Buying Committee:\n` +
+      personas.slice(0, 6).map(p => `• ${p.name} — ${p.title || 'Executive'} [${p.tier || 'Leader'}]${p.email ? ` (${p.email})` : ''}`).join('\n');
+  }
+
+  // ── Render Tab 1: Executive Briefing ──────────────────────────
+  function renderExecutiveBriefingTab(account, lob, signals, matches) {
     const industries = (account.industries || []).slice(0, 6);
+    const tech = getTechFor(account, lob);
+
+    return `
+      <!-- Top Strategic Signals Callout -->
+      <div class="panel" style="border-left: 3px solid var(--brand);">
+        <div class="panel-title">
+          <span><i class="bi bi-stars"></i> Top Strategic Triggers &amp; Catalysts</span>
+          <span class="context-badge live">${signals.length + matches.length} active triggers</span>
+        </div>
+        <p class="section-desc">Key high-priority catalysts detected from filings, social discourse, and technology footprints.</p>
+        
+        <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:4px;">
+          ${matches.length ? `
+            <div class="signal-chip" style="background:var(--brand-soft); border-color:rgba(0,97,255,.2); color:var(--brand);">
+              <i class="bi bi-lightning-charge-fill"></i>
+              <span><strong>${matches[0].label} Opportunity:</strong> ${esc(matches[0].pitch)}</span>
+            </div>` : ''}
+          ${signals.slice(0, 2).map((s, i) => `
+            <button type="button" class="signal-chip ${s.detail ? 'clickable' : ''}" ${s.detail ? `data-signal-idx="${i}" title="Click to view detailed breakdown"` : ''}>
+              <span class="signal-icon"><i class="bi ${s.icon}"></i></span><span>${esc(s.text)}</span>
+              ${s.detail ? '<i class="bi bi-chevron-right signal-chevron"></i>' : ''}
+            </button>`).join('')}
+        </div>
+      </div>
+
+      <!-- Firmographics & Scale -->
+      <div class="panel">
+        <div class="panel-title">
+          <span><i class="bi bi-buildings"></i> Firmographics &amp; Scale</span>
+          <span class="context-badge live"><i class="bi bi-check-circle-fill"></i> Verified Data</span>
+        </div>
+        <p class="section-desc">Core corporate attributes including founding year, workforce size, organizational structure, and operational industry sectors.</p>
+        <div class="chip-row">
+          ${account.founded_year ? `<span class="chip" title="Year company was founded"><i class="bi bi-calendar3"></i> Founded ${esc(account.founded_year)}</span>` : ''}
+          ${account.employee_count_range ? `<span class="chip" title="Estimated global employee headcount"><i class="bi bi-people"></i> ${esc(account.employee_count_range)}</span>` : ''}
+          ${account.company_type ? `<span class="chip" title="Corporate ownership structure"><i class="bi bi-building"></i> ${esc(account.company_type)}</span>` : ''}
+          ${(account.lobs || []).length ? `<span class="chip" title="Distinct operational business units and divisions discovered"><i class="bi bi-folder2"></i> ${account.lobs.length} line${account.lobs.length !== 1 ? 's' : ''} of business</span>` : ''}
+          ${industries.map(i => `<span class="chip" title="Primary industry taxonomy sector"><i class="bi bi-tag"></i> ${esc(i)}</span>`).join('')}
+          ${(!account.founded_year && !account.employee_count_range && !industries.length) ? '<span class="chip">No firmographic data captured yet</span>' : ''}
+        </div>
+      </div>
+
+      <!-- Detected Tech Stack -->
+      <div class="panel">
+        <div class="panel-title">
+          <span><i class="bi bi-cpu-fill"></i> Detected Technology Stack</span>
+          <span class="context-badge ai">${tech.length} identified</span>
+        </div>
+        <p class="section-desc">Cloud infrastructure, data tooling, enterprise frameworks, and developer platforms active in this account.</p>
+        <div class="chip-row">
+          ${tech.length ? tech.map(t => `<span class="chip" title="Active technology in stack"><i class="bi bi-cpu"></i> ${esc(t)}</span>`).join('') : '<span class="chip">No tech stack detected yet</span>'}
+        </div>
+      </div>
+
+      <!-- Digital Footprint & Traffic Analytics -->
+      <div class="panel">
+        <div class="panel-title">
+          <span><i class="bi bi-activity"></i> Digital Footprint &amp; Web Analytics</span>
+          <span class="context-badge live"><i class="bi bi-broadcast"></i> Web Telemetry</span>
+        </div>
+        <p class="section-desc">Audience retention, web ranking momentum, and visitor volume.</p>
+        ${renderEngagementPanel(account)}
+      </div>
+
+      <!-- Multi-Source Signals Summary -->
+      <div class="panel">
+        <div class="panel-title">
+          <span><i class="bi bi-radar"></i> Multi-Source Account Signals</span>
+          <span class="context-badge live">${signals.length} signals</span>
+        </div>
+        <p class="section-desc">Aggregated from LinkedIn headcount, SEC 10-K filings, GLEIF legal entities, and funding records. Click to explore details.</p>
+        ${signals.length ? signals.map((s, i) => `
+          <button type="button" class="signal-chip ${s.detail ? 'clickable' : ''}" ${s.detail ? `data-signal-idx="${i}" title="Click to view detailed breakdown"` : ''}>
+            <span class="signal-icon"><i class="bi ${s.icon}"></i></span><span>${esc(s.text)}</span>
+            ${s.detail ? '<i class="bi bi-chevron-right signal-chevron"></i>' : ''}
+          </button>`).join('')
+          : `<div class="empty-block"><div class="empty-block-icon"><i class="bi bi-search"></i></div><div class="empty-block-text">No signals detected yet for this ${lob ? 'line of business' : 'account'}.</div></div>`}
+      </div>
+    `;
+  }
+
+  // ── Render Tab 2: Buying Committee & Org Chart ─────────────────
+  function renderBuyingCommitteeTab(account, lob) {
+    const personas = dedupePersonas(getPersonasFor(account, lob));
+    const groups = buildHierarchyGroups(personas);
+
+    return `
+      <div class="info-banner">
+        <i class="bi bi-people-fill"></i>
+        <div>
+          <strong>Buying Committee &amp; Org Mapping:</strong> Click any executive card to view their complete AI Call-Prep Dossier, psychological profile indicators, and personalized icebreaker.
+        </div>
+      </div>
+
+      <div class="committee-split">
+        <!-- Visual Org Chart Column -->
+        <div class="panel" style="margin-bottom:0;">
+          <div class="panel-title">
+            <span><i class="bi bi-diagram-3"></i> Verified Hierarchy</span>
+            <span class="context-badge live">Reporting Lines</span>
+          </div>
+          <p class="section-desc">Executive tree showing direct reporting relationships and decision-making tiers.</p>
+          ${renderOrgChart(account)}
+        </div>
+
+        <!-- Tiered Persona List Column -->
+        <div class="panel" style="margin-bottom:0;">
+          <div class="panel-title">
+            <span><i class="bi bi-person-lines-fill"></i> Committee by Seniority</span>
+            <span class="context-badge live">${personas.length} contacts</span>
+          </div>
+          <p class="section-desc">Stakeholders grouped by organizational tier with decision and budget authority flags.</p>
+
+          ${groups.length ? groups.map(g => `
+            <div class="tier-group-block">
+              <div class="tier-group-title">
+                <span>${esc(g.label)}</span>
+                <span>${g.people.length}</span>
+              </div>
+              ${g.people.map(p => {
+                const isDecision = p.decision_authority && /decision|primary|approver/i.test(p.decision_authority);
+                const isBudget = p.budget_authority && /budget|sign.?off|owner/i.test(p.budget_authority);
+                return `
+                  <div class="persona-committee-card" data-open-persona="${esc(p.name)}" title="Click to open call prep for ${esc(p.name)}">
+                    <div class="persona-committee-avatar">${esc(initials(p.name))}</div>
+                    <div class="persona-committee-body">
+                      <div class="persona-committee-name">${esc(p.name)}</div>
+                      <div class="persona-committee-title">${esc(p.title || 'Executive')}</div>
+                      <div class="persona-committee-badges">
+                        ${isDecision ? `<span class="authority-pill authority-decision"><i class="bi bi-check-circle-fill"></i> Decision Maker</span>` : ''}
+                        ${isBudget ? `<span class="authority-pill authority-budget"><i class="bi bi-cash-coin"></i> Budget Sign-off</span>` : ''}
+                        ${p.tier ? `<span class="pill" style="font-size:.62rem;padding:1px 6px;">${esc(p.tier)}</span>` : ''}
+                        ${p.email ? `<span class="pill pill-success" style="font-size:.62rem;padding:1px 6px;"><i class="bi bi-envelope"></i> Verified</span>` : ''}
+                      </div>
+                    </div>
+                    <i class="bi bi-chevron-right" style="color:var(--text-muted);align-self:center;font-size:.85rem;"></i>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          `).join('') : `
+            <div class="empty-block">
+              <div class="empty-block-icon"><i class="bi bi-person-x"></i></div>
+              <div class="empty-block-text">No contacts mapped for this division yet. Ingest personas via the Account Explorer.</div>
+            </div>
+          `}
+        </div>
+      </div>
+    `;
+  }
+
+  // ── Render Tab 3: Sales Alerts & Battlecards ───────────────────
+  function renderSalesAlertsTab(account, lob, matches) {
+    return `
+      <!-- Sales Alerts Matching Panel -->
+      <div class="panel">
+        <div class="panel-title">
+          <span><i class="bi bi-lightning-charge-fill"></i> StradIT Service Line Fit &amp; Opportunities</span>
+          <span class="context-badge ai"><i class="bi bi-stars"></i> ${matches.length} matches</span>
+        </div>
+        <p class="section-desc">Opportunities discovered by cross-referencing StradIT core offerings with real citations in public filings and executive statements.</p>
+        ${renderSalesAlerts(account)}
+      </div>
+
+      <!-- Growth Opportunities Panel -->
+      <div class="panel">
+        <div class="panel-title">
+          <span><i class="bi bi-compass"></i> Unserved Content Themes &amp; Growth Whitespace</span>
+          <span class="context-badge pending"><i class="bi bi-signpost-split"></i> Whitespace</span>
+        </div>
+        <p class="section-desc">Recurring themes in this account's discourse that don't match existing service lines — potential areas for custom solution engineering.</p>
+        ${renderGrowthOpportunities(account)}
+      </div>
+    `;
+  }
+
+  // ── Render Tab 4: Financials & SEC Intelligence ────────────────
+  function renderFinancialsTab(account, lob) {
+    return `
+      ${lob ? `
+        <!-- Financial Intelligence (LOB-specific) -->
+        <div class="panel">
+          <div class="panel-title">
+            <span><i class="bi bi-cash-stack"></i> Line of Business Financials</span>
+            <span class="context-badge ai">${esc(lob.name)}</span>
+          </div>
+          <p class="section-desc">Extracted segment revenues, operating performance, and financial disclosures for <strong>${esc(lob.name)}</strong>.</p>
+          ${renderFinancialSnippets(lob)}
+        </div>` : ''}
+
+      <!-- SEC 10-K & Public Market Intelligence -->
+      <div class="panel">
+        <div class="panel-title">
+          <span><i class="bi bi-file-earmark-text"></i> SEC 10-K Filings &amp; Regulatory Disclosures</span>
+          <span class="context-badge live"><i class="bi bi-bank"></i> Edgar Registry</span>
+        </div>
+        <p class="section-desc">Annual report disclosures, risk factors, MD&amp;A commentary, and organizational structures extracted from SEC Edgar filings.</p>
+        
+        <div style="margin-bottom:14px;">
+          ${account.sec_cik ? `
+            <div class="stat-row"><span class="stat-label">SEC CIK Identifier</span><span class="stat-value">${esc(account.sec_cik)}</span></div>
+            <button type="button" class="action-btn" id="fetchSecBtn" data-cik="${esc(account.sec_cik)}" style="margin-top:12px;width:auto;padding:8px 16px;">
+              <i class="bi bi-cloud-arrow-down"></i> Fetch &amp; Index Full 10-K Filing
+            </button>
+            <div id="secFetchResult"></div>
+          ` : `
+            <div class="empty-block">
+              <div class="empty-block-icon"><i class="bi bi-file-earmark-x"></i></div>
+              <div class="empty-block-text">No SEC CIK code recorded for this entity. Typically available for publicly listed US enterprises.</div>
+            </div>
+          `}
+        </div>
+      </div>
+
+      <!-- Funding & Capital Structure -->
+      <div class="panel">
+        <div class="panel-title">
+          <span><i class="bi bi-cash-coin"></i> Capitalization &amp; Funding History</span>
+          <span class="context-badge live">Crunchbase / Pitchbook</span>
+        </div>
+        <p class="section-desc">Historical funding rounds, total capital raised, lead investors, and IPO listing milestone records.</p>
+        <div class="metrics-grid">
+          <div class="metric-tile">
+            <div class="metric-value font-semibold">${account.total_funding_amount_usd ? `$${Number(account.total_funding_amount_usd).toLocaleString()}` : '—'}</div>
+            <div class="metric-label">Total Capital Raised</div>
+          </div>
+          <div class="metric-tile">
+            <div class="metric-value">${esc(account.last_funding_type || '—')}</div>
+            <div class="metric-label">Last Round Type</div>
+          </div>
+          <div class="metric-tile">
+            <div class="metric-value">${esc(account.num_funding_rounds ?? '—')}</div>
+            <div class="metric-label">Total Rounds</div>
+          </div>
+          <div class="metric-tile">
+            <div class="metric-value">${esc(account.ipo_status || (account.ticker ? 'Public' : 'Private'))}</div>
+            <div class="metric-label">Listing Status</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // ── Render Tab 5: Live Social & Content Listening ──────────────
+  function renderSocialTab(account, lob) {
+    return `
+      <div class="panel">
+        <div class="panel-title">
+          <span><i class="bi bi-chat-square-text"></i> Social &amp; Content Intelligence</span>
+          <span class="context-badge ai"><i class="bi bi-robot"></i> LLM Synthesized</span>
+        </div>
+        <p class="section-desc">Synthesized summaries, executive discussion themes, and storylines captured across Twitter/X, LinkedIn, Reddit, News, and Press releases.</p>
+        ${renderContentPanel(account)}
+      </div>
+    `;
+  }
+
+  // ── Main Center Assembly with Tabs ─────────────────────────────
+  function renderCenter(account, lob) {
     const signals = computeSignals(account, lob);
     currentSignals = signals;
 
+    const entries = getAccountContentEntries(account);
+    const matches = matchOfferings(entries);
+
+    const personas = dedupePersonas(getPersonasFor(account, lob));
+    const targetKey = resolveAccountTargetKey(account);
+    const postCount = targetKey ? (contentStore.posts[targetKey] || []).length : 0;
+
+    let tabContent = '';
+    if (activeSalesTab === 'committee') {
+      tabContent = renderBuyingCommitteeTab(account, lob);
+    } else if (activeSalesTab === 'alerts') {
+      tabContent = renderSalesAlertsTab(account, lob, matches);
+    } else if (activeSalesTab === 'financials') {
+      tabContent = renderFinancialsTab(account, lob);
+    } else if (activeSalesTab === 'social') {
+      tabContent = renderSocialTab(account, lob);
+    } else {
+      tabContent = renderExecutiveBriefingTab(account, lob, signals, matches);
+    }
+
     return `
-      <div class="panel">
+      <!-- Account Overview Header Panel -->
+      <div class="panel" style="margin-bottom:12px;">
         <div class="acct-header">
           <div class="acct-avatar-lg">${esc(initials(account.name))}</div>
           <div class="acct-header-body">
             <h2 class="acct-name">${esc(account.name)}${lob ? ' · ' + esc(lob.name) : ''}</h2>
             <div class="acct-pills">
-              <span class="pill pill-brand">${esc(account.ticker || 'Private')}</span>
-              <span class="pill">${esc(account.revenue || 'Revenue N/A')}</span>
-              <span class="pill pill-success">${esc(account.location || 'Location N/A')}</span>
-              ${account.operating_status ? `<span class="pill">${esc(account.operating_status)}</span>` : ''}
+              <span class="pill pill-brand" title="Public / Private stock ticker classification"><i class="bi bi-tag"></i> ${esc(account.ticker || 'Private')}</span>
+              <span class="pill" title="Annual reported revenue"><i class="bi bi-currency-dollar"></i> ${esc(account.revenue || 'Revenue N/A')}</span>
+              <span class="pill pill-success" title="Corporate headquarters location"><i class="bi bi-geo-alt"></i> ${esc(account.location || 'Location N/A')}</span>
+              ${account.operating_status ? `<span class="pill" title="Current operational status"><i class="bi bi-activity"></i> ${esc(account.operating_status)}</span>` : ''}
             </div>
             <p class="acct-desc">${esc(lob ? (lob.desc || 'No description available.') : (account.desc || 'No description available.'))}</p>
           </div>
@@ -716,66 +1084,48 @@
         ${renderTrendPill(account)}
       </div>
 
-      <div class="panel">
-        <div class="panel-title">Key Metrics <span class="panel-note">not tracked yet — needs CRM integration</span></div>
-        <div class="metrics-grid">
-          <div class="metric-tile"><div class="metric-value">—</div><div class="metric-label">Pipeline Value</div></div>
-          <div class="metric-tile"><div class="metric-value">—</div><div class="metric-label">Active Opportunities</div></div>
-          <div class="metric-tile"><div class="metric-value">—</div><div class="metric-label">Engagement Rate</div></div>
-          <div class="metric-tile"><div class="metric-value">—</div><div class="metric-label">Avg Response Time</div></div>
+      <!-- ⚡ Quick Outreach Arsenal Bar -->
+      <div class="quick-arsenal">
+        <div class="quick-arsenal-left">
+          <span class="quick-arsenal-title"><i class="bi bi-lightning-charge-fill"></i> Quick Outreach Arsenal</span>
+          <span class="context-badge live" style="background:#fff;"><i class="bi bi-check2"></i> ${matches.length} Triggers Found</span>
+        </div>
+        <div class="quick-arsenal-actions">
+          <button type="button" class="arsenal-btn primary" id="copyIcebreakerBtn" title="1-Click copy of the highest-relevance icebreaker hook to clipboard">
+            <i class="bi bi-chat-quote"></i> Copy Icebreaker
+          </button>
+          <button type="button" class="arsenal-btn" id="copyEmailPitchBtn" title="1-Click copy of customized cold email outreach template to clipboard">
+            <i class="bi bi-envelope"></i> Copy Cold Pitch Email
+          </button>
+          <button type="button" class="arsenal-btn" id="copyCheatSheetBtn" title="1-Click copy of complete 1-page account summary & buying committee to clipboard">
+            <i class="bi bi-clipboard-data"></i> Copy Battlecard
+          </button>
         </div>
       </div>
 
-      <div class="panel">
-        <div class="panel-title">Firmographics</div>
-        <div class="chip-row">
-          ${account.founded_year ? `<span class="chip"><i class="bi bi-calendar3"></i> Founded ${esc(account.founded_year)}</span>` : ''}
-          ${account.employee_count_range ? `<span class="chip"><i class="bi bi-people"></i> ${esc(account.employee_count_range)}</span>` : ''}
-          ${account.company_type ? `<span class="chip"><i class="bi bi-building"></i> ${esc(account.company_type)}</span>` : ''}
-          ${(account.lobs || []).length ? `<span class="chip"><i class="bi bi-folder2"></i> ${account.lobs.length} line${account.lobs.length !== 1 ? 's' : ''} of business</span>` : ''}
-          ${industries.map(i => `<span class="chip"><i class="bi bi-tag"></i> ${esc(i)}</span>`).join('')}
-          ${(!account.founded_year && !account.employee_count_range && !industries.length) ? '<span class="chip">No firmographic data captured yet</span>' : ''}
-        </div>
+      <!-- 🎯 Workflow Navigation Tabs -->
+      <div class="sales-tabs" id="salesTabsNav">
+        <button type="button" class="tab-btn ${activeSalesTab === 'briefing' ? 'active' : ''}" data-tab="briefing" title="30-Second account snapshot & core triggers">
+          <i class="bi bi-speedometer2"></i> Executive Briefing
+        </button>
+        <button type="button" class="tab-btn ${activeSalesTab === 'committee' ? 'active' : ''}" data-tab="committee" title="Visual hierarchy & stakeholder committee mapping">
+          <i class="bi bi-people"></i> Buying Committee <span class="tab-badge">${personas.length}</span>
+        </button>
+        <button type="button" class="tab-btn ${activeSalesTab === 'alerts' ? 'active' : ''}" data-tab="alerts" title="StradIT service offering matches & sales battlecards">
+          <i class="bi bi-lightning-charge"></i> Sales Alerts &amp; Angles <span class="tab-badge">${matches.length}</span>
+        </button>
+        <button type="button" class="tab-btn ${activeSalesTab === 'financials' ? 'active' : ''}" data-tab="financials" title="10-K filing chunks & segment revenue diligence">
+          <i class="bi bi-cash-stack"></i> Financials &amp; SEC 10-K
+        </button>
+        <button type="button" class="tab-btn ${activeSalesTab === 'social' ? 'active' : ''}" data-tab="social" title="Live discourse, executive tweets, and social sentiment">
+          <i class="bi bi-chat-square-text"></i> Social Listening <span class="tab-badge">${postCount}</span>
+        </button>
       </div>
 
-      <div class="panel">
-        <div class="panel-title">Engagement &amp; Digital Signals</div>
-        ${renderEngagementPanel(account)}
+      <!-- Tab Content Area -->
+      <div id="salesTabContentArea" class="fade-in">
+        ${tabContent}
       </div>
-
-      ${lob ? `
-        <div class="panel">
-          <div class="panel-title">Financial Intelligence <span class="panel-note">${esc(lob.name)}</span></div>
-          ${renderFinancialSnippets(lob)}
-        </div>` : ''}
-
-      ${!lob ? `
-        <div class="panel">
-          <div class="panel-title">Org Chart <span class="panel-note">verified reporting lines</span></div>
-          ${renderOrgChart(account)}
-        </div>` : ''}
-
-      ${!lob ? `
-        <div class="panel">
-          <div class="panel-title">Sales Alerts <span class="panel-note">StradIT service-line fit</span></div>
-          ${renderSalesAlerts(account)}
-        </div>` : ''}
-
-      <div class="panel">
-        <div class="panel-title">Account Signals</div>
-        ${signals.length ? signals.map((s, i) => `
-          <button type="button" class="signal-chip ${s.detail ? 'clickable' : ''}" ${s.detail ? `data-signal-idx="${i}"` : ''}>
-            <span class="signal-icon"><i class="bi ${s.icon}"></i></span><span>${esc(s.text)}</span>
-            ${s.detail ? '<i class="bi bi-chevron-right signal-chevron"></i>' : ''}
-          </button>`).join('')
-          : `<div class="empty-block"><div class="empty-block-icon"><i class="bi bi-search"></i></div><div class="empty-block-text">No signals detected yet for this ${lob ? 'line of business' : 'account'}.</div></div>`}
-      </div>
-
-      ${!lob ? `
-        <div class="panel">
-          <div class="panel-title">Social &amp; Content Intelligence</div>
-          ${renderContentPanel(account)}
-        </div>` : ''}
     `;
   }
 
@@ -1375,9 +1725,81 @@
   el('signalModalClose').addEventListener('click', closeSignalModal);
   signalModalBackdrop.addEventListener('click', (e) => { if (e.target === signalModalBackdrop) closeSignalModal(); });
 
-  dashContent.addEventListener('click', function (e) {
+  dashContent.addEventListener('click', async function (e) {
+    // Tab switcher
+    const tabBtn = e.target.closest('.tab-btn');
+    if (tabBtn && tabBtn.dataset.tab) {
+      activeSalesTab = tabBtn.dataset.tab;
+      renderSelection();
+      return;
+    }
+
+    // Quick Arsenal Actions
+    const icebreakerBtn = e.target.closest('#copyIcebreakerBtn');
+    if (icebreakerBtn) {
+      const account = accounts.find(a => a.id === activeAccountId);
+      if (account) {
+        const text = getTopIcebreakerText(account);
+        try {
+          await navigator.clipboard.writeText(text);
+          showToast('Copied personalized icebreaker to clipboard!');
+        } catch (err) {
+          showToast('Failed to copy. Clipboard permission required.');
+        }
+      }
+      return;
+    }
+
+    const emailPitchBtn = e.target.closest('#copyEmailPitchBtn');
+    if (emailPitchBtn) {
+      const account = accounts.find(a => a.id === activeAccountId);
+      if (account) {
+        const entries = getAccountContentEntries(account);
+        const matches = matchOfferings(entries);
+        const text = getColdEmailPitchText(account, matches);
+        try {
+          await navigator.clipboard.writeText(text);
+          showToast('Copied customized cold pitch email template!');
+        } catch (err) {
+          showToast('Failed to copy. Clipboard permission required.');
+        }
+      }
+      return;
+    }
+
+    const cheatSheetBtn = e.target.closest('#copyCheatSheetBtn');
+    if (cheatSheetBtn) {
+      const account = accounts.find(a => a.id === activeAccountId);
+      if (account) {
+        const lob = activeLobId ? (account.lobs || []).find(l => l.id === activeLobId) : null;
+        const text = getAccountCheatSheetText(account, lob);
+        try {
+          await navigator.clipboard.writeText(text);
+          showToast('Copied account battlecard & committee summary!');
+        } catch (err) {
+          showToast('Failed to copy. Clipboard permission required.');
+        }
+      }
+      return;
+    }
+
+    // Persona trigger in committee tab
+    const personaCard = e.target.closest('[data-open-persona]');
+    if (personaCard) {
+      const pName = personaCard.dataset.openPersona;
+      const account = accounts.find(a => a.id === activeAccountId);
+      if (account) {
+        const p = dedupePersonas(account.personas || []).find(x => x.name === pName);
+        if (p) openContactDrawer(p);
+      }
+      return;
+    }
+
+    // Signal trigger
     const chip = e.target.closest('[data-signal-idx]');
     if (chip) { const s = currentSignals[Number(chip.dataset.signalIdx)]; if (s) openSignalModal(s); return; }
+    
+    // Jump LOB trigger
     const lobBtn = e.target.closest('[data-jump-lob]');
     if (lobBtn) {
       activeAccountId = Number(lobBtn.dataset.jumpAccount);
@@ -1483,25 +1905,44 @@
     ].filter(Boolean);
 
     return `
-      <div class="panel-title" style="margin-top:2px;">Key Contacts <span class="panel-note">${personas.length}</span></div>
+      <!-- Key Contacts Section -->
+      <div class="panel-title" style="margin-top:2px;">
+        <span><i class="bi bi-person-lines-fill"></i> Key Contacts</span>
+        <span class="context-badge live">${personas.length} mapped</span>
+      </div>
+      <p class="section-desc" style="margin-bottom:8px;">Executive stakeholders &amp; decision makers. Click any card to open the AI Call-Prep Dossier.</p>
+      
       <div class="contact-search">
         <i class="bi bi-search"></i>
-        <input type="text" id="contactSearchInput" placeholder="Search contacts by name or title..." autocomplete="off">
+        <input type="text" id="contactSearchInput" placeholder="Filter contacts by name or title..." autocomplete="off">
       </div>
       <div id="contactsListContainer">${renderContactsList(personas)}</div>
 
-      <div class="panel-title" style="margin-top:16px;">Social &amp; Web</div>
-      ${socialLinks.length ? `<div class="social-links">${socialLinks.map(s => `<a class="social-link" href="${esc(s.url)}" target="_blank"><i class="bi ${s.icon}"></i> ${esc(s.label)}</a>`).join('')}</div>`
+      <!-- Social & Web Footprint Section -->
+      <div class="panel-title" style="margin-top:18px;">
+        <span><i class="bi bi-globe"></i> Social &amp; Web Footprint</span>
+      </div>
+      <p class="section-desc" style="margin-bottom:8px;">Verified corporate web properties and active public discourse channels.</p>
+      ${socialLinks.length ? `<div class="social-links">${socialLinks.map(s => `<a class="social-link" href="${esc(s.url)}" target="_blank" title="Open ${esc(s.label)} profile"><i class="bi ${s.icon}"></i> ${esc(s.label)}</a>`).join('')}</div>`
         : '<div class="people-empty">No social/web links on file.</div>'}
 
-      <div class="panel-title" style="margin-top:16px;">Detected Tech Stack</div>
-      <div class="chip-row" style="margin-bottom:10px;">
-        ${tech.length ? tech.map(t => `<span class="chip"><i class="bi bi-cpu"></i> ${esc(t)}</span>`).join('') : '<span class="chip">No tech stack detected yet</span>'}
+      <!-- Detected Tech Stack Section -->
+      <div class="panel-title" style="margin-top:18px;">
+        <span><i class="bi bi-cpu-fill"></i> Detected Tech Stack</span>
+        <span class="context-badge ai">${tech.length} items</span>
+      </div>
+      <p class="section-desc" style="margin-bottom:8px;">Technologies, frameworks, and cloud platforms detected across operating segments.</p>
+      <div class="chip-row" style="margin-bottom:12px;">
+        ${tech.length ? tech.map(t => `<span class="chip" title="Active technology in stack"><i class="bi bi-cpu"></i> ${esc(t)}</span>`).join('') : '<span class="chip">No tech stack detected yet</span>'}
       </div>
 
-      <div class="panel-title" style="margin-top:16px;">Quick Actions</div>
-      <button type="button" class="action-btn" id="fetchDiffbotBtn" data-acct="${account.id}"><i class="bi bi-cloud-arrow-down"></i> Fetch Diffbot Intel</button>
-      <button type="button" class="action-btn secondary" id="openExplorerBtn" data-name="${esc(account.name)}"><i class="bi bi-box-arrow-up-right"></i> Open in Account Explorer</button>
+      <!-- Quick Actions Section -->
+      <div class="panel-title" style="margin-top:18px;">
+        <span><i class="bi bi-tools"></i> Account Actions</span>
+      </div>
+      <p class="section-desc" style="margin-bottom:8px;">Enrich tech telemetry or navigate to the deep Account Explorer pipeline.</p>
+      <button type="button" class="action-btn" id="fetchDiffbotBtn" data-acct="${account.id}" title="Run live Diffbot scraping to identify technologies and company attributes"><i class="bi bi-cloud-arrow-down"></i> Enrich with Diffbot Intel</button>
+      <button type="button" class="action-btn secondary" id="openExplorerBtn" data-name="${esc(account.name)}" title="Jump to Account Explorer for deep scraping workflow"><i class="bi bi-box-arrow-up-right"></i> Open in Account Explorer</button>
     `;
   }
 
