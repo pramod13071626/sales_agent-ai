@@ -12,5 +12,7 @@ from db.models.pipeline_run import PipelineRun
 from db.models.post import Post
 from db.models.digest import Digest
 from db.models.opportunity_signal import OpportunitySignal
+from db.models.weekly_digest import WeeklyDigestSnapshot
 
-__all__ = ["Base", "Account", "Lob", "SubLob", "Persona", "PipelineRun", "Post", "Digest", "OpportunitySignal"]
+__all__ = ["Base", "Account", "Lob", "SubLob", "Persona", "PipelineRun", "Post", "Digest",
+           "OpportunitySignal", "WeeklyDigestSnapshot"]

@@ -1406,6 +1406,43 @@ body {
 .opportunity-card-brand { border-left-color: var(--brand); }
 .opportunity-card-brand .opportunity-header i { color: var(--brand); }
 
+/* Sales Weekly Update Mail */
+.weekly-email-card {
+  background: var(--panel-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+}
+.weekly-email-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.weekly-email-week { font-size: .72rem; font-weight: 700; color: var(--brand); text-transform: uppercase; letter-spacing: .03em; }
+.weekly-email-date { font-size: .72rem; font-weight: 500; color: var(--text-muted); text-transform: none; letter-spacing: normal; }
+.weekly-email-subject { font-size: .92rem; font-weight: 700; color: var(--text-primary); margin-top: 2px; }
+.weekly-email-body { font-size: .82rem; color: var(--text-secondary); line-height: 1.65; }
+.weekly-email-body p { margin: 0 0 10px; }
+.weekly-email-body p:last-child { margin-bottom: 0; }
+.weekly-email-meta {
+  font-size: .72rem; color: var(--text-muted);
+  margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border-color);
+}
+.weekly-email-details { margin-top: 8px; font-size: .76rem; }
+.weekly-email-details summary { cursor: pointer; font-weight: 600; color: var(--brand); }
+.weekly-email-details p { color: var(--text-secondary); line-height: 1.55; margin: 6px 0 0; }
+.weekly-email-archive-item {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  margin-bottom: 10px;
+}
+.weekly-email-archive-item:last-child { margin-bottom: 0; }
+.weekly-email-archive-item summary {
+  cursor: pointer; list-style: none;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.weekly-email-archive-item summary::-webkit-details-marker { display: none; }
+.weekly-email-archive-item .weekly-email-week { text-transform: none; letter-spacing: normal; font-size: .74rem; }
+.weekly-email-subject-sm { font-size: .8rem; font-weight: 600; color: var(--text-primary); flex: 1; }
+.weekly-email-archive-item .weekly-email-card { margin-top: 12px; border: none; padding: 12px 0 0; border-top: 1px dashed var(--border-color); border-radius: 0; }
+
 .alert-contact-empty {
   margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border-color);
   font-size: .74rem; color: var(--text-muted);

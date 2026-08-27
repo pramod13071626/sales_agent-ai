@@ -21,7 +21,7 @@ import re
 import json
 from pathlib import Path
 from typing import Optional, List, Dict, Any
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 # Ensure project root is on sys.path
 PIPELINE_ROOT = Path(__file__).resolve().parent
@@ -49,7 +49,7 @@ from serializers.lob_serializer import LOBSerializer
 from serializers.persona_serializer import PersonaSerializer
 
 from db.connection import get_session
-from db.models import Account, Lob, SubLob, Persona, Post, Digest, OpportunitySignal
+from db.models import Account, Lob, SubLob, Persona, Post, Digest, OpportunitySignal, WeeklyDigestSnapshot
 from db.schemas import AccountSchema, LobSchema, PersonaSchema
 from db.repositories import AccountRepository, LobRepository, PersonaRepository
 from db.importer import import_run_to_db
@@ -173,6 +173,18 @@ if FASTAPI_AVAILABLE:
     class OpportunitySignalSyncRequest(BaseModel):
         category: str  # 'growth_theme' | 'domain_expansion'
         items: List[OpportunitySignalItem] = []
+
+    class WeeklyDigestSyncRequest(BaseModel):
+        """The `digest.email` object already produced weekly per-account by the content pipeline
+        (see Digest.digest['email']), forwarded here so a snapshot of it gets archived."""
+        target_key: str
+        generated_at: Optional[str] = None
+        subject: Optional[str] = None
+        body: Optional[str] = None
+        priority: Optional[str] = None
+        confidence: Optional[str] = None
+        data_gaps: List[str] = []
+        do_not_say: List[str] = []
 
     # ══════════════════════════════════════════════════════
     # TAB 1: ACCOUNT LEVEL ENDPOINTS
@@ -1376,6 +1388,71 @@ if FASTAPI_AVAILABLE:
         except Exception as e:
             session.rollback()
             raise HTTPException(status_code=500, detail=f"Opportunity signal sync failed: {str(e)}")
+        finally:
+            session.close()
+
+    def _serialize_weekly_digest(snap: WeeklyDigestSnapshot) -> Dict[str, Any]:
+        return {
+            "id": snap.id,
+            "target_key": snap.target_key,
+            "week_of": snap.week_of.isoformat() if snap.week_of else None,
+            "generated_at": snap.generated_at.isoformat() if snap.generated_at else None,
+            "subject": snap.subject,
+            "body": snap.body,
+            "priority": snap.priority,
+            "confidence": snap.confidence,
+            "data_gaps": snap.data_gaps or [],
+            "do_not_say": snap.do_not_say or []
+        }
+
+    @app.get("/api/accounts/{account_id}/weekly-updates", tags=["1. Accounts"])
+    def get_account_weekly_updates(account_id: int):
+        """Retrieve the archived history of weekly sales update emails for an account, newest first."""
+        session = get_session()
+        try:
+            snapshots = (session.query(WeeklyDigestSnapshot)
+                         .filter_by(account_id=account_id)
+                         .order_by(WeeklyDigestSnapshot.generated_at.desc())
+                         .all())
+            return {"account_id": account_id, "updates": [_serialize_weekly_digest(s) for s in snapshots]}
+        finally:
+            session.close()
+
+    @app.post("/api/accounts/{account_id}/weekly-updates/sync", tags=["1. Accounts"])
+    def sync_account_weekly_update(account_id: int, req: WeeklyDigestSyncRequest):
+        """Archive the current weekly sales update email as a snapshot, if this generation hasn't
+        been captured yet. The live `digests` row is overwritten every pipeline run, so this is what
+        preserves past weeks' versions instead of losing them."""
+        if not req.generated_at:
+            raise HTTPException(status_code=400, detail="generated_at is required to archive a weekly update snapshot.")
+        try:
+            generated_at = datetime.fromisoformat(req.generated_at)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"generated_at is not a valid ISO datetime: {req.generated_at}")
+        week_of = (generated_at.date() - timedelta(days=generated_at.weekday()))
+        session = get_session()
+        try:
+            existing = (session.query(WeeklyDigestSnapshot)
+                        .filter_by(account_id=account_id, generated_at=generated_at)
+                        .first())
+            if not existing:
+                session.add(WeeklyDigestSnapshot(
+                    account_id=account_id, target_key=req.target_key, week_of=week_of,
+                    generated_at=generated_at, subject=req.subject, body=req.body,
+                    priority=req.priority, confidence=req.confidence,
+                    data_gaps=req.data_gaps, do_not_say=req.do_not_say
+                ))
+                session.commit()
+            snapshots = (session.query(WeeklyDigestSnapshot)
+                         .filter_by(account_id=account_id)
+                         .order_by(WeeklyDigestSnapshot.generated_at.desc())
+                         .all())
+            return {"account_id": account_id, "updates": [_serialize_weekly_digest(s) for s in snapshots]}
+        except HTTPException:
+            raise
+        except Exception as e:
+            session.rollback()
+            raise HTTPException(status_code=500, detail=f"Weekly update sync failed: {str(e)}")
         finally:
             session.close()
 
