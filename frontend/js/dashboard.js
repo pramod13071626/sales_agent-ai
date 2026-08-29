@@ -29,9 +29,34 @@
   const signalModalTitle = el('signalModalTitle');
   const signalModalBody = el('signalModalBody');
 
+  // ── Global fetch-activity indicator ─────────────────────────
+  // Wraps window.fetch so every network request in the app — current and future,
+  // anywhere in this file — drives a top progress bar with no per-call-site instrumentation.
+  const globalLoadingBar = el('globalLoadingBar');
+  let inFlightRequests = 0;
+  let loadingBarHideTimer = null;
+  const nativeFetch = window.fetch.bind(window);
+  window.fetch = function (...args) {
+    inFlightRequests++;
+    if (globalLoadingBar) {
+      clearTimeout(loadingBarHideTimer);
+      globalLoadingBar.classList.remove('done');
+      globalLoadingBar.classList.add('active');
+    }
+    return nativeFetch(...args).finally(() => {
+      inFlightRequests = Math.max(0, inFlightRequests - 1);
+      if (inFlightRequests === 0 && globalLoadingBar) {
+        globalLoadingBar.classList.remove('active');
+        globalLoadingBar.classList.add('done');
+        loadingBarHideTimer = setTimeout(() => globalLoadingBar.classList.remove('done'), 400);
+      }
+    });
+  };
+
   let accounts = [];
   let expandedAccountIds = new Set();
   let activeAccountId = null;
+  let activeView = null; // null | 'allJobs' — a full-page view independent of the account/digest split
   let activeLobId = null;
   let activeSalesTab = 'briefing'; // 'briefing' | 'committee' | 'alerts' | 'financials' | 'social' | 'weekly' | 'jobs'
   let navFilter = 'all'; // 'all' | 'high_score' | 'signal_ready' | 'deep_org' | 'multi_lob'
@@ -43,6 +68,18 @@
   let contentStore = { digests: {}, posts: {}, jobs: {} }; // real scraped posts, LLM digests + LinkedIn job postings, keyed by target_key
   let opportunityHistory = {}; // accountId -> { growth_theme: [signal...], domain_expansion: [signal...] }, synced from the backend
   let weeklyUpdateHistory = {}; // accountId -> [weekly update snapshot...] newest first, synced from the backend
+  let allJobsCache = null; // latest page response from GET /api/linkedin-jobs — server-side filtered/sorted/paginated, refetched whenever a filter or page changes
+  let activeJobCategory = 'All';
+  let activeJobSearch = '';
+  let activeJobEmploymentType = '';
+  let activeJobWorkplaceType = '';
+  let activeJobSort = 'newest';
+  let activeJobPage = 1;
+  const JOB_PAGE_SIZE = 24;
+  let jobsLoading = false;
+  let jobSearchDebounceTimer = null;
+  let activeJobDetailId = null; // set when a job card is opened on the All Jobs page — shows an in-page detail view instead of a modal
+  let jobDetailCache = {}; // job id -> full detail (incl. description), fetched on demand from GET /api/linkedin-jobs/{id}
 
   const DIGEST_SECTIONS = [
     { id: 'step_guide', label: 'Workflow Guide Bar', icon: 'bi-signpost-split', desc: 'Step-by-step 4-step sales exploration guide' },
@@ -650,6 +687,12 @@
 
   // ── Data loading & Dynamic URL Endpoint Tracking ────────────
   function syncUrlState() {
+    if (activeView === 'allJobs') {
+      if (window.location.search !== '?view=jobs') {
+        history.replaceState({ view: 'allJobs' }, '', `${window.location.pathname}?view=jobs`);
+      }
+      return;
+    }
     if (!activeAccountId) {
       if (window.location.search) history.replaceState(null, '', window.location.pathname);
       return;
@@ -666,8 +709,10 @@
 
   async function loadAccounts() {
     try {
-      // On fresh page reload / hard-refresh, always reset URL to clean main port root URL
-      if (window.location.search) {
+      // Deep link: /?view=jobs opens the All Job Postings browser directly on load.
+      const wantsJobsView = window.location.search === '?view=jobs';
+      // Any other query string (stale/unsupported) resets to a clean root URL on hard-refresh.
+      if (window.location.search && !wantsJobsView) {
         history.replaceState(null, '', window.location.pathname);
       }
 
@@ -685,7 +730,11 @@
 
       renderTopbarTicker();
       renderNavTree();
-      renderDigest();
+      if (wantsJobsView) {
+        await openAllJobsPage();
+      } else {
+        renderDigest();
+      }
     } catch (err) {
       console.error(err);
       navTree.innerHTML = '<div class="nav-empty">Error loading accounts. Ensure the API is running.</div>';
@@ -855,6 +904,7 @@
           </div>
           <p class="section-desc">Newest scraped job postings across every tracked account — a hiring-activity signal worth flagging on calls.</p>
           ${renderGlobalRecentJobs()}
+          <button type="button" class="alert-view-account" id="viewAllJobsBtn" style="margin-top:12px;"><i class="bi bi-grid-3x3-gap"></i> View All Job Postings</button>
         </div>
       `;
     }
@@ -1231,6 +1281,7 @@
 
   if (navDigestBtn) {
     navDigestBtn.addEventListener('click', function () {
+      activeView = null;
       activeAccountId = null;
       activeLobId = null;
       renderNavTree();
@@ -1251,6 +1302,7 @@
 
     const lobBtn = e.target.closest('.nav-lob-card');
     if (lobBtn) {
+      activeView = null;
       activeAccountId = Number(lobBtn.dataset.acct);
       activeLobId = Number(lobBtn.dataset.lob);
       expandedAccountIds.add(activeAccountId);
@@ -1263,6 +1315,7 @@
     if (acctCard) {
       const id = Number(acctCard.dataset.acct);
       expandedAccountIds.add(id);
+      activeView = null;
       activeAccountId = id;
       activeLobId = null;
       renderNavTree();
@@ -1272,12 +1325,19 @@
 
   function jumpToAccount(id) {
     expandedAccountIds.add(id);
+    activeView = null;
     activeAccountId = id;
     activeLobId = null;
     renderNavTree();
     renderSelection();
   }
   dashEmpty.addEventListener('click', function (e) {
+    const viewAllJobsBtn = e.target.closest('#viewAllJobsBtn');
+    if (viewAllJobsBtn) {
+      openAllJobsPage();
+      return;
+    }
+
     const jumpBtn = e.target.closest('[data-jump-account]');
     if (jumpBtn) {
       jumpToAccount(Number(jumpBtn.dataset.jumpAccount));
@@ -1362,6 +1422,17 @@
   // ── Center + Right: render selection ──────────────────────────
   function renderSelection() {
     closeContactDrawer();
+
+    if (activeView === 'allJobs') {
+      if (dashBody) dashBody.classList.add('no-account');
+      if (dashPeople) { dashPeople.classList.add('d-none'); dashPeople.innerHTML = ''; }
+      dashEmpty.classList.add('d-none');
+      dashContent.classList.remove('d-none');
+      dashContent.innerHTML = renderAllJobsPage();
+      syncUrlState();
+      return;
+    }
+
     const account = accounts.find(a => a.id === activeAccountId);
     if (!account) {
       if (dashBody) dashBody.classList.add('no-account');
@@ -2649,6 +2720,232 @@
   }
   el('signalModalClose').addEventListener('click', closeSignalModal);
   signalModalBackdrop.addEventListener('click', (e) => { if (e.target === signalModalBackdrop) closeSignalModal(); });
+
+  // ── All LinkedIn Job Postings browser (opened from the Global Accounts Dashboard) ──
+  // Filters, sort, and pagination are all applied server-side (GET /api/linkedin-jobs) so the
+  // browser stays fast as the job dataset grows — the client never holds more than one page.
+  async function openAllJobsPage() {
+    activeView = 'allJobs';
+    activeAccountId = null;
+    activeLobId = null;
+    activeJobDetailId = null;
+    activeJobCategory = 'All';
+    activeJobSearch = '';
+    activeJobEmploymentType = '';
+    activeJobWorkplaceType = '';
+    activeJobSort = 'newest';
+    activeJobPage = 1;
+    renderNavTree();
+    renderSelection();
+    await fetchAllJobs();
+  }
+
+  async function fetchAllJobs(opts) {
+    opts = opts || {};
+    jobsLoading = true;
+    if (activeView === 'allJobs') renderSelection();
+    const params = new URLSearchParams();
+    if (activeJobCategory !== 'All') params.set('category', activeJobCategory);
+    if (activeJobSearch.trim()) params.set('q', activeJobSearch.trim());
+    if (activeJobEmploymentType) params.set('employment_type', activeJobEmploymentType);
+    if (activeJobWorkplaceType) params.set('workplace_type', activeJobWorkplaceType);
+    params.set('sort', activeJobSort);
+    params.set('page', String(activeJobPage));
+    params.set('page_size', String(JOB_PAGE_SIZE));
+    try {
+      const res = await fetch(`/api/linkedin-jobs?${params.toString()}`);
+      allJobsCache = await res.json();
+    } catch (err) {
+      allJobsCache = { total: 0, page: 1, page_size: JOB_PAGE_SIZE, total_pages: 1, categories: [], category_counts: {}, employment_types: [], workplace_types: [], jobs: [] };
+    }
+    jobsLoading = false;
+    if (activeView === 'allJobs') {
+      renderSelection();
+      if (opts.focusSearch) {
+        const input = el('jobSearchInput');
+        if (input) {
+          input.focus();
+          const pos = input.value.length;
+          input.setSelectionRange(pos, pos);
+        }
+      }
+    }
+  }
+
+  function renderAllJobsPage() {
+    if (activeJobDetailId) return renderJobDetailPage();
+    if (!allJobsCache) {
+      return `<div class="panel"><div class="empty-block"><div class="empty-block-icon"><i class="bi bi-hourglass-split"></i></div><div class="empty-block-text">Loading job postings…</div></div></div>`;
+    }
+    const jobs = allJobsCache.jobs || [];
+    const total = allJobsCache.total || 0;
+    const totalPages = allJobsCache.total_pages || 1;
+    const catCounts = allJobsCache.category_counts || {};
+    const catTotal = Object.values(catCounts).reduce((s, n) => s + n, 0);
+    const chips = ['All', ...(allJobsCache.categories || [])].map(c => {
+      const count = c === 'All' ? catTotal : (catCounts[c] || 0);
+      if (c !== 'All' && !count) return '';
+      return `<button type="button" class="job-cat-chip ${activeJobCategory === c ? 'active' : ''}" data-job-category="${esc(c)}">${esc(c)} <span class="job-cat-count">${count}</span></button>`;
+    }).join('');
+    const employmentOptions = (allJobsCache.employment_types || []).map(t => `<option value="${esc(t)}" ${activeJobEmploymentType === t ? 'selected' : ''}>${esc(t)}</option>`).join('');
+    const workplaceOptions = (allJobsCache.workplace_types || []).map(t => `<option value="${esc(t)}" ${activeJobWorkplaceType === t ? 'selected' : ''}>${esc(t)}</option>`).join('');
+
+    return `
+      <button type="button" class="job-detail-back" id="jobsPageBackBtn"><i class="bi bi-arrow-left"></i> Back to Dashboard</button>
+      <div class="panel" style="margin-bottom:12px;">
+        <div class="digest-header">
+          <h2 class="digest-title"><i class="bi bi-linkedin"></i> All LinkedIn Job Postings</h2>
+          <p class="digest-sub">${total} job posting${total !== 1 ? 's' : ''} match your filters, scraped across every tracked account. Search, filter, or click any role for full details.</p>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="job-browser-toolbar">
+          <div class="job-search-wrap">
+            <i class="bi bi-search"></i>
+            <input type="text" id="jobSearchInput" placeholder="Search title, company, or location..." value="${esc(activeJobSearch)}" autocomplete="off">
+          </div>
+          <select id="jobEmploymentTypeFilter" class="job-filter-select" title="Filter by employment type">
+            <option value="">All employment types</option>
+            ${employmentOptions}
+          </select>
+          <select id="jobWorkplaceTypeFilter" class="job-filter-select" title="Filter by workplace type">
+            <option value="">All workplace types</option>
+            ${workplaceOptions}
+          </select>
+          <select id="jobSortSelect" class="job-filter-select" title="Sort order">
+            <option value="newest" ${activeJobSort === 'newest' ? 'selected' : ''}>Newest first</option>
+            <option value="applicants" ${activeJobSort === 'applicants' ? 'selected' : ''}>Most applicants</option>
+            <option value="views" ${activeJobSort === 'views' ? 'selected' : ''}>Most views</option>
+          </select>
+        </div>
+        <div class="job-browser-filters">${chips}</div>
+        <div class="job-page-grid">
+          ${jobsLoading ? `<div class="empty-block"><div class="empty-block-icon"><i class="bi bi-hourglass-split"></i></div><div class="empty-block-text">Loading…</div></div>`
+            : (jobs.length ? jobs.map(j => renderJobBrowserCard(j)).join('') : `<div class="empty-block"><div class="empty-block-icon"><i class="bi bi-linkedin"></i></div><div class="empty-block-text">No job postings match your filters.</div></div>`)}
+        </div>
+        ${totalPages > 1 ? `
+          <div class="job-pagination">
+            <button type="button" class="job-page-btn" id="jobPrevPageBtn" ${activeJobPage <= 1 ? 'disabled' : ''}><i class="bi bi-chevron-left"></i> Prev</button>
+            <span class="job-page-status">Page ${allJobsCache.page} of ${totalPages}</span>
+            <button type="button" class="job-page-btn" id="jobNextPageBtn" ${activeJobPage >= totalPages ? 'disabled' : ''}>Next <i class="bi bi-chevron-right"></i></button>
+          </div>` : ''}
+      </div>
+    `;
+  }
+
+  function renderJobDetailPage() {
+    const cached = jobDetailCache[activeJobDetailId];
+    return `
+      <button type="button" class="job-detail-back" id="jobDetailBackBtn"><i class="bi bi-arrow-left"></i> Back to all job postings</button>
+      <div class="panel">
+        ${cached ? buildJobDetailHtml(cached) : `<div class="empty-block"><div class="empty-block-icon"><i class="bi bi-hourglass-split"></i></div><div class="empty-block-text">Loading job details…</div></div>`}
+      </div>
+    `;
+  }
+
+  async function openJobDetail(jobId) {
+    activeJobDetailId = jobId;
+    renderSelection();
+    if (jobDetailCache[jobId]) return;
+    try {
+      const res = await fetch(`/api/linkedin-jobs/${jobId}`);
+      if (res.ok) jobDetailCache[jobId] = await res.json();
+    } catch (err) { /* stays on the loading state; user can go back */ }
+    if (activeJobDetailId === jobId) renderSelection();
+  }
+
+  function renderJobBrowserCard(job) {
+    return `
+      <button type="button" class="job-browser-card" data-job-id="${job.id}">
+        <div class="job-browser-account"><i class="bi bi-building"></i> ${esc(job.account_name || job.company_name || 'Unknown account')}</div>
+        <div class="job-browser-title">${esc(job.title || 'Untitled role')}</div>
+        <div class="job-browser-meta">
+          ${job.location ? `<span><i class="bi bi-geo-alt"></i> ${esc(job.location)}</span>` : ''}
+          ${job.category ? `<span class="pill pill-brand">${esc(job.category)}</span>` : ''}
+          ${job.new_in_last_run ? '<span class="pill pill-success">New</span>' : ''}
+        </div>
+      </button>`;
+  }
+
+  function buildJobDetailHtml(job) {
+    return `
+      ${renderJobCard(job, { showAccountLink: !!job.account_id, accountId: job.account_id, accountName: job.account_name })}
+      ${job.description ? `<div class="job-detail-description">
+        <div class="job-detail-description-title">Full description</div>
+        ${job.description.split('\n').filter(Boolean).map(p => `<p>${esc(p)}</p>`).join('')}
+      </div>` : ''}
+    `;
+  }
+
+  signalModalBody.addEventListener('click', function (e) {
+    const jumpBtn = e.target.closest('[data-jump-account]');
+    if (jumpBtn) {
+      closeSignalModal();
+      jumpToAccount(Number(jumpBtn.dataset.jumpAccount));
+    }
+  });
+
+  dashContent.addEventListener('click', function (e) {
+    const detailBackBtn = e.target.closest('#jobDetailBackBtn');
+    if (detailBackBtn) {
+      activeJobDetailId = null;
+      renderSelection();
+      return;
+    }
+    const backBtn = e.target.closest('#jobsPageBackBtn');
+    if (backBtn) {
+      activeView = null;
+      activeJobDetailId = null;
+      renderNavTree();
+      renderSelection();
+      return;
+    }
+    const chip = e.target.closest('[data-job-category]');
+    if (chip) {
+      activeJobCategory = chip.dataset.jobCategory;
+      activeJobPage = 1;
+      fetchAllJobs();
+      return;
+    }
+    const prevBtn = e.target.closest('#jobPrevPageBtn');
+    if (prevBtn && !prevBtn.disabled) {
+      activeJobPage = Math.max(1, activeJobPage - 1);
+      fetchAllJobs();
+      return;
+    }
+    const nextBtn = e.target.closest('#jobNextPageBtn');
+    if (nextBtn && !nextBtn.disabled) {
+      activeJobPage += 1;
+      fetchAllJobs();
+      return;
+    }
+    const card = e.target.closest('[data-job-id]');
+    if (card) {
+      openJobDetail(Number(card.dataset.jobId));
+    }
+  });
+
+  dashContent.addEventListener('input', function (e) {
+    if (e.target.id !== 'jobSearchInput') return;
+    activeJobSearch = e.target.value;
+    activeJobPage = 1;
+    clearTimeout(jobSearchDebounceTimer);
+    jobSearchDebounceTimer = setTimeout(() => fetchAllJobs({ focusSearch: true }), 350);
+  });
+
+  dashContent.addEventListener('change', function (e) {
+    if (e.target.id === 'jobEmploymentTypeFilter') {
+      activeJobEmploymentType = e.target.value;
+    } else if (e.target.id === 'jobWorkplaceTypeFilter') {
+      activeJobWorkplaceType = e.target.value;
+    } else if (e.target.id === 'jobSortSelect') {
+      activeJobSort = e.target.value;
+    } else {
+      return;
+    }
+    activeJobPage = 1;
+    fetchAllJobs();
+  });
 
   dashContent.addEventListener('click', async function (e) {
     // Tab switcher

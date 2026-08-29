@@ -19,6 +19,7 @@ Workflow for each level:
 import sys
 import re
 import json
+import math
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone, timedelta
@@ -1526,6 +1527,169 @@ if FASTAPI_AVAILABLE:
                 jobs_by_key = {}
 
             return {"digests": digests_by_key, "posts": posts_by_key, "jobs": jobs_by_key}
+        finally:
+            session.close()
+
+    # ══════════════════════════════════════════════════════
+    # LINKEDIN JOB POSTINGS — bulk cross-account endpoint
+    # ══════════════════════════════════════════════════════
+    JOB_CATEGORY_RULES = [
+        ("Engineering & Technology", r"software|engineer|developer|architect|devops|\bsre\b|platform|infrastructure|\bcloud\b|\bit\b|technology|full[- ]stack|backend|front[- ]end"),
+        ("Data & AI", r"data scientist|data engineer|machine learning|\bai\b|analytics|data governance|data platform|business intelligence|\bml\b"),
+        ("Finance & Accounting", r"finance|accounting|audit|controller|treasury|financial reporting|\btax\b"),
+        ("Sales & Business Development", r"\bsales\b|business development|account executive|relationship manager|client coverage"),
+        ("Marketing & Communications", r"marketing|communications|\bbrand\b|content\b|social media"),
+        ("Product Management", r"product manager|product owner|product lead"),
+        ("Human Resources", r"human resources|\bhr\b|talent acquisition|\brecruit|people operations"),
+        ("Legal & Compliance", r"\blegal\b|compliance|regulatory|counsel|risk management"),
+        ("Customer Success & Support", r"customer success|customer support|client service"),
+        ("Operations", r"operations|operational|process improvement|program manager|project manager"),
+        ("Executive & Leadership", r"\bvp\b|vice president|\bdirector\b|head of|\bchief\b|managing director"),
+    ]
+
+    def categorize_job_title(title: Optional[str]) -> str:
+        if not title:
+            return "Other"
+        for label, pattern in JOB_CATEGORY_RULES:
+            if re.search(pattern, title, re.IGNORECASE):
+                return label
+        return "Other"
+
+    def _build_target_key_to_account_map(session) -> Dict[str, Account]:
+        mapping: Dict[str, Account] = {}
+        for a in session.query(Account).all():
+            for candidate in (a.key, (a.stock_symbol or "").lower() or None,
+                              slugify(a.display_name) if a.display_name else None,
+                              slugify(a.legal_name) if a.legal_name else None):
+                if candidate:
+                    mapping[candidate] = a
+        return mapping
+
+    def _job_summary_dict(j: "LinkedInJob", acct: Optional[Account], job_category: str) -> Dict[str, Any]:
+        return {
+            "id": j.id,
+            "target_key": j.target_key,
+            "job_key": j.job_key,
+            "title": j.title,
+            "company_name": j.company_name,
+            "location": j.location,
+            "employment_type": j.employment_type,
+            "workplace_type": j.workplace_type,
+            "posted_date": j.posted_date,
+            "applicants": j.applicants,
+            "views": j.views,
+            "salary": j.salary,
+            "job_url": j.job_url,
+            "has_description": bool(j.description),
+            "new_in_last_run": j.new_in_last_run,
+            "first_seen": j.first_seen.isoformat() if j.first_seen else None,
+            "last_seen": j.last_seen.isoformat() if j.last_seen else None,
+            "category": job_category,
+            "account_id": acct.id if acct else None,
+            "account_name": (acct.legal_name or acct.display_name) if acct else j.company_name
+        }
+
+    @app.get("/api/linkedin-jobs", tags=["5. LinkedIn Jobs"])
+    def get_all_linkedin_jobs(
+        category: Optional[str] = None,
+        account_id: Optional[int] = None,
+        q: Optional[str] = None,
+        employment_type: Optional[str] = None,
+        workplace_type: Optional[str] = None,
+        sort: str = "newest",
+        page: int = 1,
+        page_size: int = 24,
+    ):
+        """Retrieve scraped LinkedIn job postings across all accounts, each resolved to its
+        owning account and tagged with a heuristic job category. Supports free-text search,
+        category/employment/workplace filters, sorting, and server-side pagination so the
+        Global Accounts Dashboard's 'View All' job browser stays fast as the dataset grows.
+        The list payload omits the (potentially large) job description — fetch
+        GET /api/linkedin-jobs/{id} for the full detail of a single posting."""
+        session = get_session()
+        try:
+            page = max(1, page)
+            page_size = max(1, min(page_size, 100))
+            q_norm = (q or "").strip().lower()
+
+            key_to_account = _build_target_key_to_account_map(session)
+            jobs_query = (session.query(LinkedInJob)
+                          .order_by(LinkedInJob.first_seen.desc().nullslast()))
+
+            employment_types_set, workplace_types_set = set(), set()
+            # Matches every account/search/employment/workplace filter but NOT category,
+            # so the UI can show an accurate job count per category chip.
+            pre_category: List[Dict[str, Any]] = []
+
+            for j in jobs_query.all():
+                acct = key_to_account.get(j.target_key)
+                if j.employment_type:
+                    employment_types_set.add(j.employment_type)
+                if j.workplace_type:
+                    workplace_types_set.add(j.workplace_type)
+
+                if account_id is not None and (not acct or acct.id != account_id):
+                    continue
+                if employment_type and j.employment_type != employment_type:
+                    continue
+                if workplace_type and j.workplace_type != workplace_type:
+                    continue
+                if q_norm:
+                    haystack = " ".join(filter(None, [j.title, j.company_name, j.location])).lower()
+                    if q_norm not in haystack:
+                        continue
+
+                job_category = categorize_job_title(j.title)
+                pre_category.append(_job_summary_dict(j, acct, job_category))
+
+            category_counts: Dict[str, int] = {}
+            for row in pre_category:
+                category_counts[row["category"]] = category_counts.get(row["category"], 0) + 1
+
+            results = [r for r in pre_category if not category or r["category"] == category]
+
+            sort_key = {
+                "newest": lambda r: r["first_seen"] or "",
+                "applicants": lambda r: r["applicants"] if r["applicants"] is not None else -1,
+                "views": lambda r: r["views"] if r["views"] is not None else -1,
+            }.get(sort, None)
+            if sort_key:
+                results.sort(key=sort_key, reverse=True)
+
+            total = len(results)
+            total_pages = max(1, math.ceil(total / page_size))
+            page = min(page, total_pages)
+            start = (page - 1) * page_size
+            page_results = results[start:start + page_size]
+
+            all_categories = [label for label, _ in JOB_CATEGORY_RULES] + ["Other"]
+            return {
+                "total": total,
+                "page": page,
+                "page_size": page_size,
+                "total_pages": total_pages,
+                "categories": all_categories,
+                "category_counts": category_counts,
+                "employment_types": sorted(employment_types_set),
+                "workplace_types": sorted(workplace_types_set),
+                "jobs": page_results,
+            }
+        finally:
+            session.close()
+
+    @app.get("/api/linkedin-jobs/{job_id}", tags=["5. LinkedIn Jobs"])
+    def get_linkedin_job_detail(job_id: int):
+        """Retrieve the full detail (including description) for a single LinkedIn job posting."""
+        session = get_session()
+        try:
+            j = session.query(LinkedInJob).filter(LinkedInJob.id == job_id).first()
+            if not j:
+                raise HTTPException(status_code=404, detail="Job posting not found")
+            acct = _build_target_key_to_account_map(session).get(j.target_key)
+            job_category = categorize_job_title(j.title)
+            detail = _job_summary_dict(j, acct, job_category)
+            detail["description"] = j.description
+            return detail
         finally:
             session.close()
 

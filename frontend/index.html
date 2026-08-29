@@ -10,6 +10,8 @@
 </head>
 <body>
 
+<div class="global-loading-bar" id="globalLoadingBar"></div>
+
 <div class="dash-shell">
 
   <header class="dash-topbar">
@@ -79,7 +81,9 @@
 
     <!-- ── Center Column — Account Intelligence ────────────────── -->
     <main class="dash-main">
-      <div class="dash-empty" id="dashEmpty"></div>
+      <div class="dash-empty" id="dashEmpty">
+        <div class="main-loading"><div class="spinner-md"></div> Loading dashboard…</div>
+      </div>
       <div class="dash-content d-none" id="dashContent"></div>
     </main>
 
