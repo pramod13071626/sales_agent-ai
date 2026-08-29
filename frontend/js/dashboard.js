@@ -1966,7 +1966,7 @@
           <i class="bi bi-speedometer2"></i> Executive Briefing
         </button>
         <button type="button" class="tab-btn ${activeSalesTab === 'committee' ? 'active' : ''}" data-tab="committee" title="Visual hierarchy & stakeholder committee mapping">
-          <i class="bi bi-people"></i> Buying Committee <span class="tab-badge">${personas.length}</span>
+          <i class="bi bi-people"></i> Org Structure <span class="tab-badge">${personas.length}</span>
         </button>
         <button type="button" class="tab-btn ${activeSalesTab === 'alerts' ? 'active' : ''}" data-tab="alerts" title="StradIT service offering matches & sales battlecards">
           <i class="bi bi-lightning-charge"></i> Sales Alerts &amp; Angles <span class="tab-badge">${matches.length}</span>
