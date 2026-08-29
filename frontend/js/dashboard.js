@@ -3,9 +3,19 @@
 
   const el = (id) => document.getElementById(id);
   const dashBody = el('dashBody');
+  const dashNav = el('dashNav');
+  const navCollapseBtn = el('navCollapseBtn');
+  const navCollapseIcon = el('navCollapseIcon');
   const navTree = el('navTree');
   const navFilters = el('navFilters');
   const navSearch = el('navSearch');
+  const navSearchClear = el('navSearchClear');
+  const navSortSelect = el('navSortSelect');
+  const navToggleAllTree = el('navToggleAllTree');
+  const navDigestBtn = el('navDigestBtn');
+  const navAccountCount = el('navAccountCount');
+  const filterCountAll = el('filterCountAll');
+  const topbarTicker = el('topbarTicker');
   const dashEmpty = el('dashEmpty');
   const dashContent = el('dashContent');
   const dashPeople = el('dashPeople');
@@ -23,14 +33,55 @@
   let expandedAccountIds = new Set();
   let activeAccountId = null;
   let activeLobId = null;
-  let activeSalesTab = 'briefing'; // 'briefing' | 'committee' | 'alerts' | 'financials' | 'social' | 'weekly'
+  let activeSalesTab = 'briefing'; // 'briefing' | 'committee' | 'alerts' | 'financials' | 'social' | 'weekly' | 'jobs'
+  let navFilter = 'all'; // 'all' | 'high_score' | 'signal_ready' | 'deep_org' | 'multi_lob'
+  let navSort = 'score'; // 'score' | 'name' | 'contacts' | 'recent'
   let extraTech = {}; // accountId -> [] technologies fetched live via Diffbot, not persisted
   let currentPersonas = []; // personas currently rendered in the right panel, indexed for the drawer
   let currentSignals = []; // Account Signals currently rendered in the center panel, indexed for the modal
   let allAccountPersonas = []; // unfiltered persona list for the currently rendered right panel, for search
-  let contentStore = { digests: {}, posts: {} }; // real scraped posts + LLM digests, keyed by target_key
+  let contentStore = { digests: {}, posts: {}, jobs: {} }; // real scraped posts, LLM digests + LinkedIn job postings, keyed by target_key
   let opportunityHistory = {}; // accountId -> { growth_theme: [signal...], domain_expansion: [signal...] }, synced from the backend
   let weeklyUpdateHistory = {}; // accountId -> [weekly update snapshot...] newest first, synced from the backend
+
+  const DIGEST_SECTIONS = [
+    { id: 'step_guide', label: 'Workflow Guide Bar', icon: 'bi-signpost-split', desc: 'Step-by-step 4-step sales exploration guide' },
+    { id: 'recently_updated', label: 'Recently Updated Accounts', icon: 'bi-clock-history', desc: 'Accounts with fresh scrapes & pipeline updates' },
+    { id: 'most_mapped', label: 'Most-Mapped Accounts', icon: 'bi-people-fill', desc: 'Deepest organizational charts and contact coverage' },
+    { id: 'social_digest', label: 'Social & Content Intelligence', icon: 'bi-broadcast-pin', desc: 'Captured social discourse & LLM synthesized themes' },
+    { id: 'sales_alerts', label: 'Global Sales Alerts (StradIT Fit)', icon: 'bi-lightning-charge-fill', desc: 'AI service alignment opportunities across accounts' },
+    { id: 'domain_expansion', label: 'Emerging Domain Expansion', icon: 'bi-rocket-takeoff-fill', desc: 'Trending enterprise tech initiatives & custom solutions' },
+    { id: 'linkedin_jobs', label: 'Recent LinkedIn Job Postings', icon: 'bi-linkedin', desc: 'Newest scraped job postings across all tracked accounts' }
+  ];
+
+  let digestSectionVisibility = loadDigestSectionVisibility();
+
+  function loadDigestSectionVisibility() {
+    const defaults = {
+      step_guide: true,
+      recently_updated: true,
+      most_mapped: true,
+      social_digest: true,
+      sales_alerts: true,
+      domain_expansion: true,
+      linkedin_jobs: true
+    };
+    try {
+      const saved = localStorage.getItem('dash_digest_section_visibility');
+      if (saved) return { ...defaults, ...JSON.parse(saved) };
+    } catch (e) {
+      console.warn('Could not read digest section visibility from localStorage', e);
+    }
+    return defaults;
+  }
+
+  function saveDigestSectionVisibility() {
+    try {
+      localStorage.setItem('dash_digest_section_visibility', JSON.stringify(digestSectionVisibility));
+    } catch (e) {
+      console.warn('Could not save digest section visibility to localStorage', e);
+    }
+  }
 
   const CHANNEL_ICON = {
     linkedin: 'bi-linkedin', twitter: 'bi-twitter-x', reddit: 'bi-reddit',
@@ -597,18 +648,6 @@
     });
   })();
 
-  // ── Quick filter chips (disabled — fields not in the current data model) ──
-  const PLACEHOLDER_FILTERS = [
-    { icon: 'bi-bullseye', label: 'Intent', reason: 'Needs an intent-scoring backend (not tracked yet)' },
-    { icon: 'bi-graph-up', label: 'Engagement', reason: 'Needs activity-tracking data (not tracked yet)' },
-    { icon: 'bi-check2-circle', label: 'ICP Match', reason: 'Needs ICP-scoring backend (not tracked yet)' },
-    { icon: 'bi-cash-stack', label: 'ARR', reason: 'Needs a CRM ARR field (not tracked yet)' },
-    { icon: 'bi-exclamation-triangle', label: 'Risk Flags', reason: 'Needs risk-flag data (not tracked yet)' }
-  ];
-  navFilters.innerHTML = PLACEHOLDER_FILTERS.map(f =>
-    `<button type="button" class="filter-chip" disabled title="${esc(f.reason)}"><i class="bi ${f.icon}"></i> ${esc(f.label)}</button>`
-  ).join('');
-
   // ── Data loading & Dynamic URL Endpoint Tracking ────────────
   function syncUrlState() {
     if (!activeAccountId) {
@@ -644,6 +683,7 @@
         contentStore = await contentRes.json();
       }
 
+      renderTopbarTicker();
       renderNavTree();
       renderDigest();
     } catch (err) {
@@ -695,74 +735,201 @@
     const realDigestCount = Object.values(contentStore.digests || {}).filter(d => !isDryRunDigest(d)).length;
     const totalPosts = Object.values(contentStore.posts || {}).reduce((s, arr) => s + arr.length, 0);
 
+    const visibleCount = DIGEST_SECTIONS.filter(s => digestSectionVisibility[s.id] !== false).length;
+
+    const showStepGuide = digestSectionVisibility.step_guide !== false;
+    const showRecent = digestSectionVisibility.recently_updated !== false;
+    const showMapped = digestSectionVisibility.most_mapped !== false;
+    const showSocial = digestSectionVisibility.social_digest !== false;
+    const showAlerts = digestSectionVisibility.sales_alerts !== false;
+    const showDomain = digestSectionVisibility.domain_expansion !== false;
+    const showJobs = digestSectionVisibility.linkedin_jobs !== false;
+
+    let topAccountsHtml = '';
+    if (showRecent || showMapped) {
+      const gridClass = (showRecent && showMapped) ? 'digest-grid-2' : 'digest-grid-1';
+      topAccountsHtml = `
+        <div class="${gridClass}">
+          ${showRecent ? `
+            <div class="panel">
+              <div class="panel-title">
+                <span><i class="bi bi-clock-history"></i> Recently Updated Accounts</span>
+                <div class="panel-title-tools">
+                  <span class="context-badge live"><i class="bi bi-arrow-repeat"></i> Fresh Scrapes</span>
+                  <button type="button" class="panel-hide-btn" data-hide-section="recently_updated" title="Hide this section from dashboard"><i class="bi bi-x-lg"></i></button>
+                </div>
+              </div>
+              <p class="section-desc">Accounts with the most recent pipeline updates, data enrichments, or fresh signal captures.</p>
+              ${recentlyUpdated.length ? recentlyUpdated.map(a => `
+                <button type="button" class="digest-list-row clickable" data-jump-account="${a.id}" title="Click to open ${esc(a.name)}">
+                  <span class="digest-list-name"><i class="bi bi-building"></i> ${esc(a.name)}</span>
+                  <span class="digest-list-meta">${esc(timeAgo(a.extracted_at))} <i class="bi bi-chevron-right"></i></span>
+                </button>`).join('') : '<div class="empty-block" style="padding:10px 0;"><div class="empty-block-text">No extraction timestamps recorded yet.</div></div>'}
+            </div>
+          ` : ''}
+
+          ${showMapped ? `
+            <div class="panel">
+              <div class="panel-title">
+                <span><i class="bi bi-people-fill"></i> Most-Mapped Accounts</span>
+                <div class="panel-title-tools">
+                  <span class="context-badge live"><i class="bi bi-check2-all"></i> Org Coverage</span>
+                  <button type="button" class="panel-hide-btn" data-hide-section="most_mapped" title="Hide this section from dashboard"><i class="bi bi-x-lg"></i></button>
+                </div>
+              </div>
+              <p class="section-desc">Accounts with the deepest organizational charts and highest volume of executive contacts identified.</p>
+              ${topByContacts.length ? topByContacts.map(a => `
+                <button type="button" class="digest-list-row clickable" data-jump-account="${a.id}" title="Click to open ${esc(a.name)}">
+                  <span class="digest-list-name"><i class="bi bi-building"></i> ${esc(a.name)}</span>
+                  <span class="digest-list-meta">${a.total_contacts_captured || 0} contacts <i class="bi bi-chevron-right"></i></span>
+                </button>`).join('') : '<div class="empty-block" style="padding:10px 0;"><div class="empty-block-text">No contacts mapped yet.</div></div>'}
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }
+
+    let socialHtml = '';
+    if (showSocial) {
+      socialHtml = `
+        <div class="panel">
+          <div class="panel-title">
+            <span><i class="bi bi-broadcast-pin"></i> Social &amp; Content Intelligence Digest</span>
+            <div class="panel-title-tools">
+              <span class="context-badge ai"><i class="bi bi-stars"></i> Cross-Account AI</span>
+              <button type="button" class="panel-hide-btn" data-hide-section="social_digest" title="Hide this section from dashboard"><i class="bi bi-x-lg"></i></button>
+            </div>
+          </div>
+          <p class="section-desc">Overview of all captured social discourse, executive LinkedIn themes, and LLM-synthesized takeaways across all tracked enterprises.</p>
+          ${renderContentDigestSummary()}
+        </div>
+      `;
+    }
+
+    let opportunitiesHtml = '';
+    if (showAlerts || showDomain) {
+      const gridClass = (showAlerts && showDomain) ? 'digest-grid-2' : 'digest-grid-1';
+      opportunitiesHtml = `
+        <div class="${gridClass}">
+          ${showAlerts ? `
+            <div class="panel">
+              <div class="panel-title">
+                <span><i class="bi bi-lightning-charge-fill"></i> Global Sales Alerts &amp; StradIT Service Line Opportunities</span>
+                <div class="panel-title-tools">
+                  <span class="context-badge ai"><i class="bi bi-stars"></i> AI Matcher</span>
+                  <button type="button" class="panel-hide-btn" data-hide-section="sales_alerts" title="Hide this section from dashboard"><i class="bi bi-x-lg"></i></button>
+                </div>
+              </div>
+              <p class="section-desc">High-priority service alignment opportunities detected across all accounts based on keyword citations and public statements.</p>
+              ${renderGlobalSalesAlerts()}
+            </div>
+          ` : ''}
+
+          ${showDomain ? `
+            <div class="panel">
+              <div class="panel-title">
+                <span><i class="bi bi-rocket-takeoff-fill"></i> Emerging Domain Expansion &amp; Custom Integration</span>
+                <div class="panel-title-tools">
+                  <span class="context-badge live"><i class="bi bi-layers-fill"></i> Across All Accounts</span>
+                  <button type="button" class="panel-hide-btn" data-hide-section="domain_expansion" title="Hide this section from dashboard"><i class="bi bi-x-lg"></i></button>
+                </div>
+              </div>
+              <p class="section-desc">Trending enterprise initiatives and adjacent technology domains where StradIT can engineer custom integrated solutions, rolled up across every tracked account.</p>
+              ${renderGlobalDomainExpansion()}
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }
+
+    let jobsHtml = '';
+    if (showJobs) {
+      jobsHtml = `
+        <div class="panel">
+          <div class="panel-title">
+            <span><i class="bi bi-linkedin"></i> Recent LinkedIn Job Postings</span>
+            <div class="panel-title-tools">
+              <span class="context-badge live"><i class="bi bi-broadcast"></i> Across All Accounts</span>
+              <button type="button" class="panel-hide-btn" data-hide-section="linkedin_jobs" title="Hide this section from dashboard"><i class="bi bi-x-lg"></i></button>
+            </div>
+          </div>
+          <p class="section-desc">Newest scraped job postings across every tracked account — a hiring-activity signal worth flagging on calls.</p>
+          ${renderGlobalRecentJobs()}
+        </div>
+      `;
+    }
+
+    const noSectionsVisible = visibleCount === 0;
+
     dashEmpty.innerHTML = `
       <div class="digest-header">
-        <h2 class="digest-title"><i class="bi bi-bar-chart-line-fill"></i> Enterprise Sales Intelligence Command Center</h2>
-        <p class="digest-sub">Live intelligence workspace tracking <strong>${accounts.length} enterprise account${accounts.length !== 1 ? 's' : ''}</strong>. Continuously aggregates signals from executive social feeds, SEC filings, organizational hierarchies, and StradIT service-fit opportunities.</p>
+        <div class="digest-header-top">
+          <div class="digest-header-main">
+            <h2 class="digest-title"><i class="bi bi-bar-chart-line-fill"></i> Global Accounts Dashboard</h2>
+            <p class="digest-sub">Live intelligence workspace tracking <strong>${accounts.length} enterprise account${accounts.length !== 1 ? 's' : ''}</strong>. Continuously aggregates signals from executive social feeds, SEC filings, organizational hierarchies, and StradIT service-fit opportunities.</p>
+          </div>
+          <div class="digest-header-actions">
+            <div class="digest-customize-wrap">
+              <button type="button" class="digest-customize-btn" id="digestCustomizeBtn" title="Show or hide dashboard sections">
+                <i class="bi bi-sliders"></i> Customize View <span class="customize-badge">${visibleCount}/${DIGEST_SECTIONS.length}</span> <i class="bi bi-chevron-down"></i>
+              </button>
+              <div class="digest-customize-menu d-none" id="digestCustomizeMenu">
+                <div class="digest-customize-menu-header">
+                  <span><i class="bi bi-layout-text-window"></i> Dashboard Sections</span>
+                  <div class="digest-menu-actions">
+                    <button type="button" class="customize-link-btn" id="digestShowAllBtn">Show All</button>
+                    <span class="sep">·</span>
+                    <button type="button" class="customize-link-btn" id="digestResetBtn">Reset</button>
+                  </div>
+                </div>
+                <div class="digest-customize-list">
+                  ${DIGEST_SECTIONS.map(s => {
+                    const isChecked = digestSectionVisibility[s.id] !== false;
+                    return `
+                      <label class="digest-customize-item ${isChecked ? 'active' : ''}">
+                        <input type="checkbox" class="digest-section-cb" data-section-id="${s.id}" ${isChecked ? 'checked' : ''}>
+                        <i class="bi ${s.icon} item-icon"></i>
+                        <div class="item-info">
+                          <div class="item-name">${esc(s.label)}</div>
+                          <div class="item-desc">${esc(s.desc)}</div>
+                        </div>
+                      </label>
+                    `;
+                  }).join('')}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Quick Workflow Steps -->
-      <div class="step-guide">
-        <div class="step-guide-item active"><span class="step-guide-num">1</span> <strong>Choose Account:</strong> Select any organization from the left navigator</div>
-        <div class="step-guide-item"><span class="step-guide-num">2</span> <strong>Inspect LOBs:</strong> Drill into specific operating divisions</div>
-        <div class="step-guide-item"><span class="step-guide-num">3</span> <strong>Review Signals:</strong> Match offerings with live buyer pain points</div>
-        <div class="step-guide-item"><span class="step-guide-num">4</span> <strong>Open Call Prep:</strong> Click contacts for tailored talk tracks</div>
-      </div>
-
-      <div class="digest-grid-2">
-        <div class="panel">
-          <div class="panel-title">
-            <span><i class="bi bi-clock-history"></i> Recently Updated Accounts</span>
-            <span class="context-badge live"><i class="bi bi-arrow-repeat"></i> Fresh Scrapes</span>
-          </div>
-          <p class="section-desc">Accounts with the most recent pipeline updates, data enrichments, or fresh signal captures.</p>
-          ${recentlyUpdated.length ? recentlyUpdated.map(a => `
-            <button type="button" class="digest-list-row clickable" data-jump-account="${a.id}" title="Click to open ${esc(a.name)}">
-              <span class="digest-list-name"><i class="bi bi-building"></i> ${esc(a.name)}</span>
-              <span class="digest-list-meta">${esc(timeAgo(a.extracted_at))} <i class="bi bi-chevron-right"></i></span>
-            </button>`).join('') : '<div class="empty-block" style="padding:10px 0;"><div class="empty-block-text">No extraction timestamps recorded yet.</div></div>'}
+      ${showStepGuide ? `
+        <div class="step-guide">
+          <div class="step-guide-item active"><span class="step-guide-num">1</span> <strong>Choose Account:</strong> Select any organization from the left navigator</div>
+          <div class="step-guide-item"><span class="step-guide-num">2</span> <strong>Inspect LOBs:</strong> Drill into specific operating divisions</div>
+          <div class="step-guide-item"><span class="step-guide-num">3</span> <strong>Review Signals:</strong> Match offerings with live buyer pain points</div>
+          <div class="step-guide-item"><span class="step-guide-num">4</span> <strong>Open Call Prep:</strong> Click contacts for tailored talk tracks</div>
+          <button type="button" class="step-guide-hide-btn" data-hide-section="step_guide" title="Hide workflow guide"><i class="bi bi-x-lg"></i></button>
         </div>
+      ` : ''}
 
-        <div class="panel">
-          <div class="panel-title">
-            <span><i class="bi bi-people-fill"></i> Most-Mapped Accounts</span>
-            <span class="context-badge live"><i class="bi bi-check2-all"></i> Org Coverage</span>
-          </div>
-          <p class="section-desc">Accounts with the deepest organizational charts and highest volume of executive contacts identified.</p>
-          ${topByContacts.length ? topByContacts.map(a => `
-            <button type="button" class="digest-list-row clickable" data-jump-account="${a.id}" title="Click to open ${esc(a.name)}">
-              <span class="digest-list-name"><i class="bi bi-building"></i> ${esc(a.name)}</span>
-              <span class="digest-list-meta">${a.total_contacts_captured || 0} contacts <i class="bi bi-chevron-right"></i></span>
-            </button>`).join('') : '<div class="empty-block" style="padding:10px 0;"><div class="empty-block-text">No contacts mapped yet.</div></div>'}
-        </div>
-      </div>
+      ${topAccountsHtml}
 
-      <div class="panel">
-        <div class="panel-title">
-          <span><i class="bi bi-broadcast-pin"></i> Social &amp; Content Intelligence Digest</span>
-          <span class="context-badge ai"><i class="bi bi-stars"></i> Cross-Account AI</span>
-        </div>
-        <p class="section-desc">Overview of all captured social discourse, executive LinkedIn themes, and LLM-synthesized takeaways across all tracked enterprises.</p>
-        ${renderContentDigestSummary()}
-      </div>
+      ${socialHtml}
 
-      <div class="panel">
-        <div class="panel-title">
-          <span><i class="bi bi-lightning-charge-fill"></i> Global Sales Alerts &amp; StradIT Service Line Opportunities</span>
-          <span class="context-badge ai"><i class="bi bi-stars"></i> AI Matcher</span>
-        </div>
-        <p class="section-desc">High-priority service alignment opportunities detected across all accounts based on keyword citations and public statements.</p>
-        ${renderGlobalSalesAlerts()}
-      </div>
+      ${opportunitiesHtml}
 
-      <div class="panel">
-        <div class="panel-title">
-          <span><i class="bi bi-rocket-takeoff-fill"></i> Emerging Domain Expansion &amp; Custom Integration</span>
-          <span class="context-badge live"><i class="bi bi-layers-fill"></i> Across All Accounts</span>
+      ${jobsHtml}
+
+      ${noSectionsVisible ? `
+        <div class="empty-block" style="padding: 36px 20px; text-align: center;">
+          <div class="empty-block-icon" style="font-size: 2rem; color: var(--text-muted); margin-bottom: 10px;"><i class="bi bi-layout-sidebar-inset"></i></div>
+          <div style="font-weight: 700; font-size: 1.05rem; color: var(--text-primary); margin-bottom: 6px;">All sections are currently hidden</div>
+          <div style="color: var(--text-secondary); font-size: 0.82rem; margin-bottom: 16px; max-width: 420px; margin-left: auto; margin-right: auto;">You can customize your dashboard layout and re-enable any intelligence module dynamically.</div>
+          <button type="button" class="btn btn-primary btn-sm" id="digestEmptyShowAllBtn"><i class="bi bi-eye"></i> Show All Sections</button>
         </div>
-        <p class="section-desc">Trending enterprise initiatives and adjacent technology domains where StradIT can engineer custom integrated solutions, rolled up across every tracked account.</p>
-        ${renderGlobalDomainExpansion()}
-      </div>
+      ` : ''}
 
       <div class="digest-cta"><i class="bi bi-arrow-left-circle-fill"></i> <span><strong>Ready to explore?</strong> Select any account from the left panel to open its complete intelligence dossier and contact matrix.</span></div>
     `;
@@ -883,13 +1050,78 @@
     return [...new Set([...base, ...extra])];
   }
 
+  function renderTopbarTicker() {
+    if (!topbarTicker) return;
+    const totalAccounts = accounts.length;
+    const totalContacts = accounts.reduce((s, a) => s + (a.total_contacts_captured || (a.personas || []).length || 0), 0);
+    let totalSignals = 0;
+    accounts.forEach(a => {
+      totalSignals += computeSignals(a, null).length;
+    });
+
+    topbarTicker.innerHTML = `
+      <div class="topbar-ticker-pill" title="Total enterprise accounts monitored"><i class="bi bi-buildings"></i> <strong>${totalAccounts}</strong> Accounts</div>
+      <div class="topbar-ticker-pill" title="Total executive contacts & decision makers mapped"><i class="bi bi-people-fill"></i> <strong>${totalContacts}</strong> Contacts</div>
+      <div class="topbar-ticker-pill" title="Active signals captured from SEC filings, web & social discourse"><i class="bi bi-lightning-charge-fill"></i> <strong>${totalSignals}</strong> Signals</div>
+    `;
+  }
+
   // ── Left: Navigator tree ─────────────────────────────────────
   function renderNavTree() {
     const q = (navSearch.value || '').trim().toLowerCase();
-    const filtered = accounts.filter(a => !q || (a.name || '').toLowerCase().includes(q));
+    if (navSearchClear) navSearchClear.classList.toggle('d-none', !q);
+
+    if (filterCountAll) filterCountAll.textContent = accounts.length;
+    if (navDigestBtn) navDigestBtn.classList.toggle('active', activeAccountId === null);
+
+    let filtered = accounts.filter(a => {
+      // Search matching
+      if (q) {
+        const text = `${a.name || ''} ${a.ticker || ''} ${a.legal_name || ''} ${(a.industries || []).join(' ')}`.toLowerCase();
+        if (!text.includes(q)) return false;
+      }
+
+      // Quick filter tabs
+      if (navFilter === 'high_score') {
+        return (a.heat_score || 0) >= 70;
+      }
+      if (navFilter === 'signal_ready') {
+        const sigs = computeSignals(a, null);
+        const entries = getAccountContentEntries(a);
+        const matches = matchOfferings(entries);
+        return sigs.length > 0 || matches.length > 0;
+      }
+      if (navFilter === 'deep_org') {
+        const contacts = a.total_contacts_captured || (a.personas || []).length || 0;
+        return contacts >= 10;
+      }
+      if (navFilter === 'multi_lob') {
+        return (a.lobs || []).length > 1;
+      }
+      return true;
+    });
+
+    // Sorting
+    filtered.sort((a, b) => {
+      if (navSort === 'score') return (b.heat_score || 0) - (a.heat_score || 0);
+      if (navSort === 'name') return (a.name || '').localeCompare(b.name || '');
+      if (navSort === 'contacts') {
+        const cA = a.total_contacts_captured || (a.personas || []).length || 0;
+        const cB = b.total_contacts_captured || (b.personas || []).length || 0;
+        return cB - cA;
+      }
+      if (navSort === 'recent') {
+        return new Date(b.extracted_at || 0) - new Date(a.extracted_at || 0);
+      }
+      return 0;
+    });
+
+    if (navAccountCount) {
+      navAccountCount.textContent = `Accounts (${filtered.length})`;
+    }
 
     if (!filtered.length) {
-      navTree.innerHTML = '<div class="nav-empty">No accounts match your search.</div>';
+      navTree.innerHTML = '<div class="nav-empty"><i class="bi bi-search" style="font-size:1.4rem;"></i>No accounts match the current filter or search.</div>';
       return;
     }
 
@@ -897,45 +1129,140 @@
       const isOpen = expandedAccountIds.has(a.id);
       const isActive = activeAccountId === a.id && !activeLobId;
       const lobs = a.lobs || [];
+      const score = a.heat_score;
+      const scoreClass = score >= 70 ? 'high' : (score >= 40 ? 'mid' : 'none');
+      const scoreLabel = score != null ? `${score} SCORE` : '— SCORE';
+      const contactsCount = a.total_contacts_captured || (a.personas || []).length || 0;
+      const signalsCount = computeSignals(a, null).length;
+      const subtitle = [a.ticker ? `Ticker: ${a.ticker}` : '', (a.industries || [])[0] || ''].filter(Boolean).join(' · ') || (a.location || 'Enterprise');
+
       const lobsHtml = isOpen ? `
         <div class="nav-lobs">
-          ${lobs.map(l => `
-            <button type="button" class="nav-lob-row ${activeLobId === l.id ? 'active' : ''}" data-acct="${a.id}" data-lob="${l.id}">
-              <i class="bi bi-folder2"></i> ${esc(l.name)}
-            </button>
-            ${(l.subLobs || []).length ? `<div class="nav-sublobs">${(l.subLobs || []).map(s => `<div class="nav-sublob-row">${esc(s.name)}</div>`).join('')}</div>` : ''}
-          `).join('') || '<div class="nav-sublob-row">No lines of business</div>'}
+          ${lobs.map(l => {
+            const isLobActive = activeAccountId === a.id && activeLobId === l.id;
+            const lobContacts = (l.personas || []).length;
+            return `
+              <button type="button" class="nav-lob-card ${isLobActive ? 'active' : ''}" data-acct="${a.id}" data-lob="${l.id}" title="View ${esc(l.name)} division">
+                <span class="nav-lob-title"><i class="bi bi-folder2"></i> ${esc(l.name)}</span>
+                ${lobContacts ? `<span class="nav-lob-badge">${lobContacts}</span>` : ''}
+              </button>
+              ${(l.subLobs || []).length ? `<div class="nav-sublobs">${(l.subLobs || []).map(s => `<div class="nav-sublob-row">${esc(s.name)}</div>`).join('')}</div>` : ''}
+            `;
+          }).join('') || '<div class="nav-sublob-row">No lines of business</div>'}
         </div>` : '';
 
       return `
         <div class="nav-account">
-          <button type="button" class="nav-account-row ${isActive ? 'active' : ''}" data-acct="${a.id}">
-            <span class="nav-caret ${isOpen ? 'open' : ''}"><i class="bi bi-chevron-right"></i></span>
-            <span class="nav-avatar">${esc(initials(a.name))}</span>
-            <span class="nav-account-name">${esc(a.name)}</span>
-            <span class="nav-account-count">${lobs.length}</span>
-          </button>
+          <div class="nav-account-card ${isActive ? 'active' : ''}" data-acct="${a.id}">
+            <div class="nav-account-top">
+              <span class="nav-account-avatar">${esc(initials(a.name))}</span>
+              <span class="nav-account-name" title="${esc(a.name)}">${esc(a.name)}</span>
+              <span class="nav-score-badge ${scoreClass}">${esc(scoreLabel)}</span>
+              ${lobs.length ? `
+                <button type="button" class="nav-tree-toggle ${isOpen ? 'open' : ''}" data-toggle-acct="${a.id}" title="Toggle divisions">
+                  <i class="bi bi-chevron-right"></i>
+                </button>
+              ` : ''}
+            </div>
+
+            <div class="nav-account-sub">${esc(subtitle)}</div>
+
+            <div class="nav-account-tags">
+              ${signalsCount ? `<span class="nav-micro-tag"><i class="bi bi-lightning-charge-fill text-warning"></i> ${signalsCount}</span>` : ''}
+              ${contactsCount ? `<span class="nav-micro-tag"><i class="bi bi-people-fill"></i> ${contactsCount} contacts</span>` : ''}
+              ${lobs.length ? `<span class="nav-micro-tag"><i class="bi bi-diagram-2"></i> ${lobs.length} LOB${lobs.length !== 1 ? 's' : ''}</span>` : ''}
+            </div>
+          </div>
           ${lobsHtml}
         </div>`;
     }).join('');
   }
 
-  navSearch.addEventListener('input', renderNavTree);
+  // ── Left Column Event Listeners ───────────────────────────────
+  if (navSearch) {
+    navSearch.addEventListener('input', renderNavTree);
+  }
+  if (navSearchClear) {
+    navSearchClear.addEventListener('click', function () {
+      navSearch.value = '';
+      navSearch.focus();
+      renderNavTree();
+    });
+  }
+
+  if (navCollapseBtn && dashNav) {
+    navCollapseBtn.addEventListener('click', function () {
+      const isCollapsed = dashNav.classList.toggle('is-collapsed');
+      if (navCollapseIcon) {
+        navCollapseIcon.className = isCollapsed ? 'bi bi-layout-sidebar' : 'bi bi-layout-sidebar-reverse';
+      }
+      navCollapseBtn.setAttribute('title', isCollapsed ? 'Expand navigator' : 'Collapse navigator');
+    });
+  }
+
+  if (navFilters) {
+    navFilters.addEventListener('click', function (e) {
+      const pill = e.target.closest('.nav-filter-pill');
+      if (!pill) return;
+      navFilters.querySelectorAll('.nav-filter-pill').forEach(p => p.classList.remove('active'));
+      pill.classList.add('active');
+      navFilter = pill.dataset.filter || 'all';
+      renderNavTree();
+    });
+  }
+
+  if (navSortSelect) {
+    navSortSelect.addEventListener('change', function () {
+      navSort = navSortSelect.value || 'score';
+      renderNavTree();
+    });
+  }
+
+  if (navToggleAllTree) {
+    navToggleAllTree.addEventListener('click', function () {
+      if (expandedAccountIds.size > 0) {
+        expandedAccountIds.clear();
+      } else {
+        accounts.forEach(a => { if ((a.lobs || []).length) expandedAccountIds.add(a.id); });
+      }
+      renderNavTree();
+    });
+  }
+
+  if (navDigestBtn) {
+    navDigestBtn.addEventListener('click', function () {
+      activeAccountId = null;
+      activeLobId = null;
+      renderNavTree();
+      renderSelection();
+    });
+  }
 
   navTree.addEventListener('click', function (e) {
-    const lobBtn = e.target.closest('.nav-lob-row');
+    const toggleBtn = e.target.closest('[data-toggle-acct]');
+    if (toggleBtn) {
+      e.stopPropagation();
+      const id = Number(toggleBtn.dataset.toggleAcct);
+      if (expandedAccountIds.has(id)) expandedAccountIds.delete(id);
+      else expandedAccountIds.add(id);
+      renderNavTree();
+      return;
+    }
+
+    const lobBtn = e.target.closest('.nav-lob-card');
     if (lobBtn) {
       activeAccountId = Number(lobBtn.dataset.acct);
       activeLobId = Number(lobBtn.dataset.lob);
+      expandedAccountIds.add(activeAccountId);
       renderNavTree();
       renderSelection();
       return;
     }
-    const acctBtn = e.target.closest('.nav-account-row');
-    if (acctBtn) {
-      const id = Number(acctBtn.dataset.acct);
-      if (expandedAccountIds.has(id)) expandedAccountIds.delete(id);
-      else expandedAccountIds.add(id);
+
+    const acctCard = e.target.closest('.nav-account-card');
+    if (acctCard) {
+      const id = Number(acctCard.dataset.acct);
+      expandedAccountIds.add(id);
       activeAccountId = id;
       activeLobId = null;
       renderNavTree();
@@ -951,8 +1278,85 @@
     renderSelection();
   }
   dashEmpty.addEventListener('click', function (e) {
-    const btn = e.target.closest('[data-jump-account]');
-    if (btn) jumpToAccount(Number(btn.dataset.jumpAccount));
+    const jumpBtn = e.target.closest('[data-jump-account]');
+    if (jumpBtn) {
+      jumpToAccount(Number(jumpBtn.dataset.jumpAccount));
+      return;
+    }
+
+    const customizeBtn = e.target.closest('#digestCustomizeBtn');
+    if (customizeBtn) {
+      e.stopPropagation();
+      const menu = el('digestCustomizeMenu');
+      if (menu) menu.classList.toggle('d-none');
+      return;
+    }
+
+    const hideBtn = e.target.closest('[data-hide-section]');
+    if (hideBtn) {
+      e.stopPropagation();
+      const sectionId = hideBtn.dataset.hideSection;
+      if (sectionId) {
+        digestSectionVisibility[sectionId] = false;
+        saveDigestSectionVisibility();
+        renderDigest();
+        const sDef = DIGEST_SECTIONS.find(s => s.id === sectionId);
+        showToast(`Hidden: ${sDef ? sDef.label : 'Section'}. Re-enable from "Customize View".`);
+      }
+      return;
+    }
+
+    const showAllBtn = e.target.closest('#digestShowAllBtn, #digestEmptyShowAllBtn');
+    if (showAllBtn) {
+      e.stopPropagation();
+      DIGEST_SECTIONS.forEach(s => { digestSectionVisibility[s.id] = true; });
+      saveDigestSectionVisibility();
+      renderDigest();
+      showToast('All dashboard sections enabled.');
+      return;
+    }
+
+    const resetBtn = e.target.closest('#digestResetBtn');
+    if (resetBtn) {
+      e.stopPropagation();
+      DIGEST_SECTIONS.forEach(s => { digestSectionVisibility[s.id] = true; });
+      saveDigestSectionVisibility();
+      renderDigest();
+      showToast('Dashboard layout reset to default.');
+      return;
+    }
+
+    // Keep menu open if clicking inside it
+    if (e.target.closest('#digestCustomizeMenu')) {
+      e.stopPropagation();
+    }
+  });
+
+  dashEmpty.addEventListener('change', function (e) {
+    const cb = e.target.closest('.digest-section-cb');
+    if (cb) {
+      const sectionId = cb.dataset.sectionId;
+      if (sectionId) {
+        digestSectionVisibility[sectionId] = cb.checked;
+        saveDigestSectionVisibility();
+        renderDigest();
+        // Re-open menu after render so user can continue toggling
+        const menu = el('digestCustomizeMenu');
+        if (menu) menu.classList.remove('d-none');
+        const sDef = DIGEST_SECTIONS.find(s => s.id === sectionId);
+        showToast(`${cb.checked ? 'Enabled' : 'Hidden'}: ${sDef ? sDef.label : 'Section'}`);
+      }
+    }
+  });
+
+  // Close customize menu on outside click
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('#digestCustomizeBtn') && !e.target.closest('#digestCustomizeMenu')) {
+      const menu = el('digestCustomizeMenu');
+      if (menu && !menu.classList.contains('d-none')) {
+        menu.classList.add('d-none');
+      }
+    }
   });
 
   // ── Center + Right: render selection ──────────────────────────
@@ -1357,6 +1761,85 @@
     }
   }
 
+  // ── Render Tab: LinkedIn Job Postings ──────────────────────────
+  function getAccountJobs(account) {
+    const key = resolveAccountTargetKey(account);
+    return key ? (contentStore.jobs[key] || []) : [];
+  }
+
+  function formatJobSalary(salary) {
+    if (!salary) return null;
+    if (salary.text) return salary.text;
+    const fmt = n => `$${Number(n).toLocaleString()}`;
+    if (salary.min != null && salary.max != null) return `${fmt(salary.min)}–${fmt(salary.max)}`;
+    if (salary.min != null) return fmt(salary.min);
+    if (salary.max != null) return fmt(salary.max);
+    return null;
+  }
+
+  function renderJobCard(job, opts) {
+    opts = opts || {};
+    const salaryText = formatJobSalary(job.salary);
+    return `
+      <div class="job-card">
+        <div class="job-card-header">
+          <div class="job-card-title-wrap">
+            <div class="job-card-title">${esc(job.title || 'Untitled role')}</div>
+            <div class="job-card-company"><i class="bi bi-building"></i> ${esc(job.company_name || opts.accountName || '')}${job.location ? ` · ${esc(job.location)}` : ''}</div>
+          </div>
+          ${job.new_in_last_run ? '<span class="pill pill-success"><i class="bi bi-stars"></i> New</span>' : ''}
+        </div>
+        ${(job.employment_type || job.workplace_type || salaryText) ? `
+          <div class="chip-row" style="margin:8px 0;">
+            ${job.employment_type ? `<span class="chip">${esc(job.employment_type)}</span>` : ''}
+            ${job.workplace_type ? `<span class="chip">${esc(job.workplace_type)}</span>` : ''}
+            ${salaryText ? `<span class="chip"><i class="bi bi-cash-stack"></i> ${esc(salaryText)}</span>` : ''}
+          </div>` : ''}
+        <div class="job-card-meta">
+          ${job.posted_date ? `<span><i class="bi bi-calendar3"></i> Posted ${esc(formatWeekOf(job.posted_date))}</span>` : ''}
+          ${job.applicants != null ? `<span><i class="bi bi-people"></i> ${job.applicants} applicants</span>` : ''}
+          ${job.views != null ? `<span><i class="bi bi-eye"></i> ${job.views} views</span>` : ''}
+        </div>
+        <div class="job-card-actions">
+          ${opts.showAccountLink ? `<button type="button" class="alert-view-account" data-jump-account="${opts.accountId}">Open ${esc(opts.accountName)} <i class="bi bi-arrow-right"></i></button>` : ''}
+          ${job.job_url ? `<a href="${esc(job.job_url)}" target="_blank" rel="noopener" class="job-card-link"><i class="bi bi-box-arrow-up-right"></i> View posting</a>` : ''}
+        </div>
+      </div>`;
+  }
+
+  function renderAccountJobsTab(account) {
+    const jobs = getAccountJobs(account);
+    return `
+      <div class="panel">
+        <div class="panel-title">
+          <span><i class="bi bi-linkedin"></i> Recent LinkedIn Job Postings</span>
+          <span class="context-badge live">${jobs.length} open role${jobs.length !== 1 ? 's' : ''}</span>
+        </div>
+        <p class="section-desc">Job postings scraped from ${esc(account.name)}'s LinkedIn presence — a useful signal for hiring pushes, team growth, and tech-stack clues.</p>
+        ${jobs.length ? jobs.map(j => renderJobCard(j)).join('') : `<div class="empty-block">
+          <div class="empty-block-icon"><i class="bi bi-linkedin"></i></div>
+          <div class="empty-block-text">No LinkedIn job postings captured yet for this account.</div>
+        </div>`}
+      </div>
+    `;
+  }
+
+  function renderGlobalRecentJobs() {
+    const rows = [];
+    accounts.forEach(a => {
+      getAccountJobs(a).forEach(j => rows.push({ account: a, job: j }));
+    });
+    rows.sort((x, y) => new Date(y.job.first_seen || y.job.posted_date || 0) - new Date(x.job.first_seen || x.job.posted_date || 0));
+    const top = rows.slice(0, 8);
+    if (!top.length) {
+      return `<div class="empty-block">
+        <div class="empty-block-icon"><i class="bi bi-linkedin"></i></div>
+        <div class="empty-block-text">No LinkedIn job postings captured yet across any account.</div>
+      </div>`;
+    }
+    return top.map(({ account, job }) => renderJobCard(job, { showAccountLink: true, accountId: account.id, accountName: account.name })).join('');
+  }
+
   // ── Main Center Assembly with Tabs ─────────────────────────────
   function renderCenter(account, lob) {
     const signals = computeSignals(account, lob);
@@ -1380,6 +1863,8 @@
       tabContent = renderSocialTab(account, lob);
     } else if (activeSalesTab === 'weekly') {
       tabContent = renderWeeklyUpdateTab(account);
+    } else if (activeSalesTab === 'jobs') {
+      tabContent = renderAccountJobsTab(account);
     } else {
       tabContent = renderExecutiveBriefingTab(account, lob, signals, matches);
     }
@@ -1420,6 +1905,9 @@
         </button>
         <button type="button" class="tab-btn ${activeSalesTab === 'weekly' ? 'active' : ''}" data-tab="weekly" title="Weekly sales update email, current and archived past weeks">
           <i class="bi bi-envelope-paper"></i> Weekly Update Mail <span class="tab-badge">${(weeklyUpdateHistory[account.id] || []).length}</span>
+        </button>
+        <button type="button" class="tab-btn ${activeSalesTab === 'jobs' ? 'active' : ''}" data-tab="jobs" title="Recent LinkedIn job postings for this account">
+          <i class="bi bi-linkedin"></i> Job Postings <span class="tab-badge">${getAccountJobs(account).length}</span>
         </button>
       </div>
 

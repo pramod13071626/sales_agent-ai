@@ -13,6 +13,7 @@ from db.models.post import Post
 from db.models.digest import Digest
 from db.models.opportunity_signal import OpportunitySignal
 from db.models.weekly_digest import WeeklyDigestSnapshot
+from db.models.linkedin_job import LinkedInJob
 
 __all__ = ["Base", "Account", "Lob", "SubLob", "Persona", "PipelineRun", "Post", "Digest",
-           "OpportunitySignal", "WeeklyDigestSnapshot"]
+           "OpportunitySignal", "WeeklyDigestSnapshot", "LinkedInJob"]

@@ -49,7 +49,7 @@ from serializers.lob_serializer import LOBSerializer
 from serializers.persona_serializer import PersonaSerializer
 
 from db.connection import get_session
-from db.models import Account, Lob, SubLob, Persona, Post, Digest, OpportunitySignal, WeeklyDigestSnapshot
+from db.models import Account, Lob, SubLob, Persona, Post, Digest, OpportunitySignal, WeeklyDigestSnapshot, LinkedInJob
 from db.schemas import AccountSchema, LobSchema, PersonaSchema
 from db.repositories import AccountRepository, LobRepository, PersonaRepository
 from db.importer import import_run_to_db
@@ -1497,7 +1497,35 @@ if FASTAPI_AVAILABLE:
             except Exception:
                 posts_by_key = {}
 
-            return {"digests": digests_by_key, "posts": posts_by_key}
+            jobs_by_key = {}
+            try:
+                jobs_query = (session.query(LinkedInJob)
+                              .order_by(LinkedInJob.target_key,
+                                        LinkedInJob.first_seen.desc().nullslast()))
+                for j in jobs_query.all():
+                    jobs_by_key.setdefault(j.target_key, []).append({
+                        "id": j.id,
+                        "target_key": j.target_key,
+                        "job_key": j.job_key,
+                        "title": j.title,
+                        "company_name": j.company_name,
+                        "location": j.location,
+                        "employment_type": j.employment_type,
+                        "workplace_type": j.workplace_type,
+                        "posted_date": j.posted_date,
+                        "applicants": j.applicants,
+                        "views": j.views,
+                        "salary": j.salary,
+                        "job_url": j.job_url,
+                        "description": j.description,
+                        "new_in_last_run": j.new_in_last_run,
+                        "first_seen": j.first_seen.isoformat() if j.first_seen else None,
+                        "last_seen": j.last_seen.isoformat() if j.last_seen else None
+                    })
+            except Exception:
+                jobs_by_key = {}
+
+            return {"digests": digests_by_key, "posts": posts_by_key, "jobs": jobs_by_key}
         finally:
             session.close()
 
