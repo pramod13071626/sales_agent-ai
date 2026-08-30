@@ -307,12 +307,34 @@ created 2026-08-25, predating local Postgres's current account (created
 2026-08-26, `id=11` — that table had clearly been reset/reseeded at least
 once during development). Two independent, live-looking datasets, not an
 empty target. Decided (explicitly, not inferred): keep both rather than
-merge them — local's account was copied onto Neon as a **third**, separate
-account (new id, own key `bank_of_new_york_mellon_corporation`), leaving
-Neon's pre-existing `blackrock`/`bny` untouched. Reconciling `"bny"` and
-`"bank_of_new_york_mellon_corporation"` into one account (they're almost
-certainly the same company under two identities now) is left for later,
-deliberately — not something to collapse automatically.
+merge them at that point — local's account was copied onto Neon as a
+**third**, separate account (new id, own key
+`bank_of_new_york_mellon_corporation`), leaving Neon's pre-existing
+`blackrock`/`bny` untouched.
+
+**`"bny"` / `"bank_of_new_york_mellon_corporation"` reconciled
+(2026-08-30):** compared the two accounts' actual content before merging
+anything — zero overlapping LOBs (`"bny"`'s 10 are named business lines:
+Walter Scott, Newton Investment Management, Insight Investment, etc.;
+`"bank_of_new_york_mellon_corporation"`'s 15 are legal/trust/nominee
+entities: Pershing, BNY Mellon Trust Co., nominee shells — reads like two
+different source systems' views of the same corporate structure, e.g.
+Crunchbase-style vs. SEC Exhibit-21-style) and only 4 overlapping persona
+names out of ~55 each. Genuinely complementary, not duplicates — merged
+rather than picked one and discarded the other: reparented `"bny"`'s 10
+lobs and 54 personas onto `bank_of_new_york_mellon_corporation` (`UPDATE
+... SET account_id = <target> WHERE account_id = <bny>`, no id remapping
+needed since the lob/persona rows themselves don't move, only their
+parent), then deleted the now-empty `"bny"` account row. Kept
+`bank_of_new_york_mellon_corporation` as the surviving key — it's what
+the content-pipeline cross-link (Phase 3) was already aligned to; keeping
+`"bny"` instead would have undone that rename. Result: one account, 25
+lobs, 110 personas. Verified via a running `sales_agent-ai` instance —
+`/api/accounts` lists exactly two accounts (`blackrock`,
+`bank_of_new_york_mellon_corporation`), no orphaned `"bny"`. The ~4
+overlapping persona names weren't deduplicated (different source records,
+finer-grained than this account-level reconciliation) — minor duplication
+there is far less costly than picking wrong and losing a record.
 
 Migration mechanics: local's `accounts`/`lobs`/`sub_lobs`/`personas`/
 `pipeline_runs` rows copied via a generic script that remaps FK columns
