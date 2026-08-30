@@ -167,30 +167,90 @@ Then:
   level `docker-compose.yml` bringing up both services together yet; that's
   Phase 4.
 
-### Phase 3 — Cross-linking (the actual "merge" value)
-This is where the two apps start being useful *together*, still as two
-processes:
-- Add a link/embed from `sales_agent-ai`'s account dashboard to this repo's
-  `/frontend/?account=<key>` digest view (or vice versa) using the shared
-  `key`/`target_key`.
-- Optionally expose this repo's `POST /api/run` and `POST /api/send-email`
-  as buttons inside `sales_agent-ai`'s dashboard, so a rep never has to
-  leave the sales-intel UI to trigger a content refresh or send the digest
-  email — reuses the "Copy Email" / talking-points UI already in this repo
-  rather than rebuilding it.
-- `sales_agent-ai`'s `OpportunitySignal` model is the natural home for this
-  repo's `talking_points[]` — consider syncing digest talking points into
-  it as signals, since the sync endpoint pattern (`sync_account_*`) already
-  exists in `api.py`.
+### Phase 3 — Cross-linking (done — `merge/phase-3-cross-linking`)
 
-### Phase 4 — Optional deeper unification (only if Phase 3 proves valuable)
-- Single shared `.env` loader / config module, so tokens aren't duplicated
-  across two `config.py`s (`APIFY_TOKEN`, etc. already appear in both).
-- Single `docker-compose.yml` bringing up both services + Postgres + Redis
-  together for local dev.
-- Evaluate whether this repo's lightweight `http.server` should move behind
-  the same reverse proxy (`Caddyfile`) as `sales_agent-ai`'s FastAPI, so
-  there's one public origin — purely a deployment change, not a code merge.
+Built:
+- `?account=<key>` deep-links the content pipeline's frontend straight to
+  that account (same as clicking it in the sidebar); `?account_key=<key>`
+  does the same for `sales_agent-ai`'s dashboard, matched by the `key`
+  column since the linking app only knows the string key, not this app's
+  numeric account id.
+- A "← Sales Dashboard" link on the digest header (company accounts only);
+  an "Open in Content Pipeline" link on `sales_agent-ai`'s content panel,
+  so a rep can jump to the live app to trigger a fresh run or use its
+  copy-to-clipboard email/talking-points UI.
+- `scripts/reconcile_targets_accounts.py` — the §7.3 follow-up: checks
+  `targets` (content pipeline) against `accounts` (this app) for drift,
+  since the two live in genuinely separate databases (Phase 1).
+
+Running that script for real immediately found a live case of exactly the
+drift it was built to catch: `sales_agent-ai`'s one account
+(`key = "bank_of_new_york_mellon_corporation"`) had no matching target —
+`resolveAccountTargetKey()`'s existing fallbacks (ticker/slugified
+name/legal name) didn't produce `"bny"` either, so the new content-pipeline
+link would never have rendered for it. Fixed by renaming the target's
+canonical key to match the account (`targets.py`, `frontend/manifest.json`,
+the local JSON store/digest files, and both Postgres databases — Neon and
+this app's local `sales_ai`, across `targets`/`posts`/`digests`/
+`linkedin_jobs`/`run_history`, in an order that avoids violating
+`linkedin_jobs`' FK to `targets(key)`: insert the new `targets` row first,
+repoint children, then drop the old row). `"bny"` and its other aliases
+still resolve to the new key via `ALIASES`, so nothing that already types
+`"bny"` broke. Row counts verified before/after on both databases;
+re-running the reconciliation script confirmed the account now has
+matching content monitoring.
+
+Not done: the `POST /api/run` / `POST /api/send-email` buttons inside
+`sales_agent-ai`'s dashboard, and syncing `talking_points[]` into
+`OpportunitySignal` — both still just proposed, not built.
+
+### Phase 4 — Deeper unification (in progress — `merge/phase-4-deeper-unification`)
+
+Checked before building anything: the "shared config loader" item turned
+out to be one variable (`APIFY_TOKEN` — everything else in either
+`config.py` is genuinely app-specific), not worth an abstraction on its
+own — skipped. And `sales_agent-ai` had **no Dockerfile at all** yet, so
+"single docker-compose.yml bringing up both services" meant writing this
+app's first one, not unifying two existing setups — confirmed by checking
+this repo for any Dockerfile/docker-compose and finding only the one that
+came from `apps/content_pipeline`.
+
+Built:
+- `Dockerfile` (this app's first) — mirrors `content_pipeline`'s
+  `python:3.12-slim` style. Runs `uvicorn api:app` directly rather than
+  `python api.py`, since that script's `__main__` block hardcodes
+  `reload=True` (dev-only file-watching, wrong for a container). Doesn't
+  run DB migrations on start, matching how this app already expects
+  `python db/create_tables.py` as a manual one-time step.
+- `.dockerignore` — critically excludes `sales_agent-ai/`, the leftover
+  Python venv sitting at this repo's root (see §3's collision table) —
+  without it, `COPY . .` would have shipped Windows venv binaries into a
+  Linux image. Also excludes `apps/` (that app builds its own image),
+  `output/`, `.env`, caches.
+- `docker-compose.yml` at the repo root — local dev convenience only,
+  brings up both app containers on their existing default ports
+  (8000/8001). Deliberately does **not** containerize Postgres (both apps
+  already point at real Postgres — Neon and/or local, per Phase 1's
+  toggle; a containerized one would just be a third database) or add
+  Redis/Celery (not implemented in this app yet — `celery_app.py`/`tasks/`
+  are gitignored placeholders, nothing would consume it). Does **not**
+  touch or replace `content_pipeline`'s own
+  `apps/content_pipeline/docker-compose.yml` + Caddy/TLS setup, which
+  stays its production deploy path — the reverse-proxy-consolidation
+  question below is still open.
+
+**Not verified against a running Docker daemon** — none available in this
+environment. Checked by static review only (requirements need no native
+build deps beyond what `python:3.12-slim` + `psycopg2-binary` already
+handle, `api.py`'s imports all resolve within the build context, compose
+YAML parses correctly) — needs a real `docker compose build` smoke test
+before relying on it.
+
+**Still open:** whether this app's `http.server`-based sibling should ever
+move behind the same reverse proxy (`Caddyfile`) as `sales_agent-ai`'s
+FastAPI so there's one public origin — that's a live deployment-topology
+decision, not something to do speculatively alongside a Dockerfile that
+has never been deployed.
 
 ### Phase 5 — Cleanup (only after Phase 3/4 are live and stable)
 - Retire `db/import_content_dump.py` once nobody has run it in a while.
