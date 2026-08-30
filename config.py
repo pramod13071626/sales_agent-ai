@@ -67,7 +67,20 @@ GRAPH_TENANT_ID = os.getenv("GRAPH_TENANT_ID", "common")
 # ─── Database (optional — Postgres mirror of the JSON output) ────
 # When unset, db.py's writes are no-ops: the JSON files under output/
 # stay fully functional on their own either way.
-DATABASE_URL = os.getenv("DATABASE_URL", "")
+#
+# Two named connections so this can point at either Postgres without
+# losing the other:
+#   - NEON:  the cloud DB this repo has always written to (default).
+#   - LOCAL: sales_agent-ai's dev Postgres (localhost:5432/sales_ai),
+#            for testing against the same DB that repo's dashboard reads.
+# DATABASE_URL_NEON falls back to the old DATABASE_URL var so existing
+# .env files keep working unchanged. Flip DB_USE_LOCAL=true to switch —
+# see MERGE_PLAN.md Phase 1 before pointing this at local Postgres, the
+# sales_agent-ai `posts` table needs its UNIQUE constraint fixed first.
+DATABASE_URL_NEON = os.getenv("DATABASE_URL_NEON", os.getenv("DATABASE_URL", ""))
+DATABASE_URL_LOCAL = os.getenv("DATABASE_URL_LOCAL", "")
+DB_USE_LOCAL = os.getenv("DB_USE_LOCAL", "false").strip().lower() in ("1", "true", "yes")
+DATABASE_URL = DATABASE_URL_LOCAL if DB_USE_LOCAL else DATABASE_URL_NEON
 
 # ─── API key (required only once this is reachable off localhost) ─
 # When set, every /api/* request (GET and POST) must send a matching

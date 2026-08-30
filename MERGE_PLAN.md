@@ -77,20 +77,48 @@ they read/write the **same** Postgres instance.
 - Confirm both apps currently run standalone (`python main.py serve` here,
   `python api.py` there) — this is the baseline "not hampered" has to hold.
 
-### Phase 1 — Shared live database (removes the manual dump step)
-- Point this repo's `DATABASE_URL` (`.env`) at the same Postgres instance
-  `sales_agent-ai` uses.
-- Diff the two schema definitions once more right before cutover
-  (`db.py`'s `_SCHEMA_STATEMENTS` vs `db/models/post.py` + `digest.py`) —
-  they match today, but confirm no drift crept in since this plan was written.
-- Run this repo's pipeline once against the shared DB; verify
-  `sales_agent-ai`'s `GET /api/content` reflects it *live*, with no
-  `import_content_dump.py` step.
-- Leave `import_content_dump.py` in place, unused, as a manual fallback —
-  don't delete it in this phase.
-- **Risk:** this repo's `db.py` writes are already best-effort/non-fatal if
-  the DB is unreachable, so a bad `DATABASE_URL` degrades to "JSON-only mode"
-  rather than breaking scraping. Low risk.
+### Phase 1 — Shared database, behind a toggle (in progress)
+
+Checking this before cutover surfaced two things a straight `DATABASE_URL`
+swap would have hit immediately:
+
+- The two repos don't actually point at the same Postgres today. This repo
+  writes to a **Neon cloud DB**; `sales_agent-ai` reads from its own
+  **local Postgres** (`localhost:5432/sales_ai`) — the manual
+  `import_content_dump.py` step exists precisely because of that gap.
+- `sales_agent-ai`'s `Post` ORM model (`db/models/post.py`) was missing the
+  `UNIQUE (target_key, channel, post_key)` constraint that this repo's
+  `db.py` relies on for `ON CONFLICT (...) DO UPDATE`. Pointing this repo
+  at local Postgres unchanged would have made every post write fail.
+
+Decision: don't force a single DB yet. Instead, built a **toggle** so this
+repo can connect to either Postgres on demand, with Neon staying the
+unchanged default:
+
+- `config.py` now resolves `DATABASE_URL` from two named connections,
+  `DATABASE_URL_NEON` (falls back to the old `DATABASE_URL` var, so nothing
+  changes for anyone who hasn't touched `.env`) and `DATABASE_URL_LOCAL`,
+  picked by a `DB_USE_LOCAL=true|false` flag (default `false` → Neon).
+- Fixed the missing constraint: added `UniqueConstraint("target_key",
+  "channel", "post_key")` to `sales_agent-ai`'s `Post` model, and applied it
+  to the existing local Postgres table with a one-off migration script,
+  `sales_agent-ai/db/fix_posts_unique_constraint.py` (checked for
+  pre-existing duplicate rows first — none found across 521 rows — then
+  added the constraint; safe to re-run, it no-ops if already present).
+- Verified end-to-end with `DB_USE_LOCAL=true`: wrote the same post twice
+  through `db.upsert_posts()` against local Postgres and confirmed exactly
+  one row landed (the `ON CONFLICT` upsert, not a duplicate-key failure).
+- Left `import_content_dump.py` in place, unused, as a manual fallback.
+
+Both changes are on matching branches, `merge/phase-1-shared-db`, in each
+repo — not merged to either `main`/default branch yet.
+
+**Still open before flipping `DB_USE_LOCAL=true` for real use (not just this
+test):** decide whether local Postgres or Neon should be the *permanent*
+shared DB (see §7.1-adjacent question below) — the toggle defers that
+decision, it doesn't answer it. Neon remains the safer long-term default
+since it's reachable regardless of which machine either app runs on; local
+Postgres only works if both apps stay on the same machine.
 
 ### Phase 2 — Folder consolidation (no behavior change)
 - Move this repo's contents into `sales_agent-ai/apps/content_pipeline/`
