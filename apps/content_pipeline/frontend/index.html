@@ -1108,6 +1108,14 @@
 <script>
 $(function () {
 
+  /* ─── Cross-app link back to sales_agent-ai's dashboard ───
+     Phase 3 of MERGE_PLAN.md: lets sales_agent-ai deep-link into this
+     app (?account=<key>) and lets this app link back to it. Override the
+     default local-dev port with ?dashboard=<url> or window.SALES_DASHBOARD_URL
+     set before this script runs (e.g. for a non-default deployment). */
+  var SALES_DASHBOARD_URL = new URLSearchParams(location.search).get('dashboard') ||
+    window.SALES_DASHBOARD_URL || 'http://127.0.0.1:8000';
+
   /* ─── Channel metadata ─────────────────────────────────── */
   var CHANNEL_META = {
     linkedin: { label: 'LinkedIn',    icon: 'in', cls: 'ch-linkedin' },
@@ -1210,7 +1218,18 @@ $(function () {
   // non-empty value here silently filters every account/person out of
   // the sidebar with no visible error, which is a confusing dead end.
   $('#accountSearch').val('');
-  loadManifest();
+  loadManifest().done(function () {
+    // Deep link from sales_agent-ai's dashboard: ?account=<key> selects
+    // that account the same way clicking it in the sidebar would.
+    var deepLinkKey = new URLSearchParams(location.search).get('account');
+    if (!deepLinkKey) return;
+    $('#accountList .account-item').each(function () {
+      if ($(this).data('key') === deepLinkKey) {
+        $(this).trigger('click');
+        return false;
+      }
+    });
+  });
 
   /* ─── Render account list ──────────────────────────────── */
   function renderGroup($l, items, filter) {
@@ -1446,6 +1465,15 @@ $(function () {
 
     var prioCls = { high: 'pill-danger', medium: 'pill-warning', low: '' }[email.priority] || '';
 
+    // Back-link to sales_agent-ai's account view (Phase 3 cross-link) —
+    // company accounts only, since that dashboard is keyed by company,
+    // not by individual contact/person.
+    var backLinkHtml = '';
+    if (!isPerson && state.account && state.account.meta && state.account.meta.key) {
+      var dashboardUrl = SALES_DASHBOARD_URL + '/frontend/?account_key=' + encodeURIComponent(state.account.meta.key);
+      backLinkHtml = '<a href="' + esc(dashboardUrl) + '" target="_blank" rel="noopener" class="pill" style="text-decoration:none;">← Sales Dashboard</a>';
+    }
+
     var html =
       '<div class="digest-email-card fade-in">' +
         '<div class="digest-email-header">' +
@@ -1455,6 +1483,7 @@ $(function () {
           (email.confidence ? '<span class="pill">confidence: ' + esc(email.confidence) + '</span>' : '') +
           '<span class="pill">' + esc(digest.posts_considered || 0) + ' posts</span>' +
           (dry ? '<span class="pill pill-warning">dry run — no LLM key</span>' : '') +
+          backLinkHtml +
         '</div>' +
         '<div class="send-mail-bar">' +
           '<input type="email" class="send-mail-input" id="sendMailTo" placeholder="recipient@example.com">' +
