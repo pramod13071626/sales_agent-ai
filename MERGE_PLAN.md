@@ -252,10 +252,26 @@ FastAPI so there's one public origin — that's a live deployment-topology
 decision, not something to do speculatively alongside a Dockerfile that
 has never been deployed.
 
-### Phase 5 — Cleanup (only after Phase 3/4 are live and stable)
-- Retire `db/import_content_dump.py` once nobody has run it in a while.
-- Remove the stray venv folder `sales_agent-ai/sales_agent-ai/` from version
-  control (add to `.gitignore` first, confirm it's not referenced anywhere).
+### Phase 5 — Cleanup (only after Phase 3/4 are live and stable — not yet true)
+
+Neither condition holds yet: nothing from Phase 3/4 has been pushed or
+merged to either repo's default branch, and Phase 4's Docker setup has
+never actually been run (no Docker available to test it — see Phase 4).
+Did the one item that didn't depend on that gate:
+
+- Stray venv folder (`sales_agent-ai/sales_agent-ai/`): checked first —
+  it was never actually tracked by git (it self-ignores via its own
+  generated `.gitignore`), so there was nothing to remove *from* version
+  control. Added an explicit rule to the outer `.gitignore` anyway, since
+  relying on a nested venv-generated file surviving forever is fragile.
+  Confirmed nothing in the codebase references that path.
+
+Deliberately **not done**: retiring `db/import_content_dump.py`. It's the
+fallback for exactly the scenario Phase 1's live-DB toggle hasn't been
+proven under yet (real, sustained use) — removing it now, before either
+of those phases has actually run in practice, would cut the fallback at
+the moment it might still be needed. Revisit once Phase 3/4 have actually
+been used for a while, not on a fixed schedule.
 
 ## 6. Guardrails ("should not hamper" — concrete rules)
 
