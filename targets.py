@@ -13,7 +13,12 @@ import custom_targets
 import db
 
 COMPANY_TARGETS: Dict[str, Dict[str, Any]] = {
-    "bny": {
+    # Key matches sales_agent-ai's accounts.key for this company (see
+    # MERGE_PLAN.md S7.3 — every targets.key must correspond to an
+    # accounts.key so the two apps' content-intelligence cross-link
+    # resolves without a fuzzy-match fallback). Was "bny" until the
+    # rename; all the old spellings still work via ALIASES below.
+    "bank_of_new_york_mellon_corporation": {
         "display_name": "BNY (Bank of New York Mellon)",
         "ticker": "BK",
         "linkedin_url": "https://www.linkedin.com/company/bny-mellon/",
@@ -111,11 +116,12 @@ COMPANY_TARGETS.update(custom_targets.load_section("companies"))
 
 # Convenience aliases so the CLI accepts what people actually type.
 ALIASES = {
-    "bny": "bny",
-    "bnymellon": "bny",
-    "bny_mellon": "bny",
-    "bank-of-new-york-mellon": "bny",
-    "bk": "bny",
+    "bank_of_new_york_mellon_corporation": "bank_of_new_york_mellon_corporation",
+    "bny": "bank_of_new_york_mellon_corporation",
+    "bnymellon": "bank_of_new_york_mellon_corporation",
+    "bny_mellon": "bank_of_new_york_mellon_corporation",
+    "bank-of-new-york-mellon": "bank_of_new_york_mellon_corporation",
+    "bk": "bank_of_new_york_mellon_corporation",
     "northern_trust": "northern_trust",
     "northerntrust": "northern_trust",
     "northern-trust": "northern_trust",
