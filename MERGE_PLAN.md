@@ -273,6 +273,35 @@ of those phases has actually run in practice, would cut the fallback at
 the moment it might still be needed. Revisit once Phase 3/4 have actually
 been used for a while, not on a fixed schedule.
 
+### Phase 1 follow-up — permanent DB: Neon (decided)
+
+Both apps are confirmed to always run on the same machine/VM going
+forward, which resolves Neon's main disadvantage (reachability across
+machines) — so the deciding factor came down to which side had less/safer
+data to move. Checked row counts on both databases: each holds the *live*
+copy of one app's data and a *stale* copy of the other's (Neon: 676 posts/
+8 targets/8 digests, current; local: 521 posts, a stale one-off dump.
+Local: 1 account/15 lobs/56 personas/2 pipeline runs, current; Neon: none
+of these tables exist there yet). Neither side is a no-migration option.
+
+Checked both repos for existing backup tooling for local Postgres — found
+none (no `pg_dump` script, no scheduled job, nothing in either codebase).
+Whether the target machine/VM has backups at the infra level (disk
+snapshots, etc.) instead couldn't be confirmed from here. Decided not to
+migrate sales_agent-ai's real data (56 personas, 15 lobs, 2 pipeline runs)
+onto local Postgres as the permanent store without that confirmed —
+**Neon stays the permanent shared DB**, keeping its managed backups.
+`DB_USE_LOCAL` stays `false` (the toggle's default); local Postgres
+remains available for testing via the toggle, not as the target.
+
+Follow-up, not done: migrate sales_agent-ai's own tables (`accounts`,
+`lobs`, `personas`, `pipeline_runs`) onto Neon, then point
+`sales_agent-ai`'s own `DATABASE_URL` there too — that's what actually
+finishes Phase 1 (both apps on the *same* database, not just capable of
+being pointed at either). Local Postgres's existing copies of
+`posts`/`digests`/`linkedin_jobs` (the stale one-off dump) can stay as
+they are or be dropped once nothing reads them.
+
 ## 6. Guardrails ("should not hamper" — concrete rules)
 
 - Never edit a file in one app to satisfy the other's needs — cross-cutting
