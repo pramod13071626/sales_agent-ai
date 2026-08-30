@@ -120,18 +120,52 @@ decision, it doesn't answer it. Neon remains the safer long-term default
 since it's reachable regardless of which machine either app runs on; local
 Postgres only works if both apps stay on the same machine.
 
-### Phase 2 — Folder consolidation (no behavior change)
-- Move this repo's contents into `sales_agent-ai/apps/content_pipeline/`
-  (decision: `sales_agent-ai` is the destination repo — see §7.1), ideally
-  via `git subtree add` so this repo's commit history comes with it.
-- Update only path-relative things that break from the move: `paths.py`'s
-  `output/` resolution, `.dockerignore`, `Dockerfile`, `Caddyfile`,
-  `docker-compose.yml`, any `python main.py` docs.
-- Do **not** touch `engine.py`, `scrapers/`, `digest/`, or any of
-  `sales_agent-ai`'s `collectors/`/`db/` logic in this phase — it's a move,
-  not a rewrite.
-- Re-run both test/status commands after the move to confirm nothing broke:
-  `python main.py status` here, `python api.py` + `GET /docs` there.
+### Phase 2 — Folder consolidation (done — `merge/phase-2-folder-consolidation`)
+
+Before moving anything, found that `paths.py`'s `OUTPUT_DIR`, `main.py`'s
+`serve` static-file directory, its `run_history.json` path, and its
+`frontend/manifest.json` path were all resolved relative to the process's
+**current working directory**, not this project's own directory. Harmless
+run from its own root (always true before this phase), but nesting it
+under `sales_agent-ai/apps/content_pipeline/` and launching from the parent
+repo's root would have silently served or written into whatever
+`frontend/`/`output/` happened to sit at that cwd — including
+`sales_agent-ai`'s own `frontend/`/`output/` directories, since both exist
+at its root too. Fixed by anchoring all of these to a new `paths.PROJECT_ROOT
+= os.path.dirname(os.path.abspath(__file__))` instead of trusting cwd.
+
+Then:
+- Moved the content pipeline's full history into
+  `sales_agent-ai/apps/content_pipeline/` via
+  `git subtree add --prefix=apps/content_pipeline <local path> merge/phase-2-folder-consolidation`
+  — history preserved, not squashed (`git log` on the moved files still
+  works).
+- Did **not** touch `engine.py`, `scrapers/`, `digest/`, or any of
+  `sales_agent-ai`'s `collectors/`/`db/` logic — a move, not a rewrite.
+- Moved this plan doc itself (`MERGE_PLAN.md`) from
+  `apps/content_pipeline/` up to the monorepo root, via `git mv` (history
+  preserved) — it documents the whole merge, not just the one subproject.
+- `output/` and `.env` weren't part of the move (both gitignored in the
+  source repo, so never tracked) — `sales_agent-ai`'s own `.gitignore`
+  patterns for `.env` and `output/` apply at any depth, so the nested
+  copies stay ignored too, no `.gitignore` change needed. A local `.env`
+  was copied into `apps/content_pipeline/` for testing only, untracked.
+- Verified both apps independently, post-move:
+  - `python apps/content_pipeline/main.py status`, run from inside that
+    directory, reads the existing JSON store correctly.
+  - `python apps/content_pipeline/main.py serve`, launched from
+    `sales_agent-ai`'s repo root (the actual risk scenario), correctly
+    served *its own* `frontend/` (`<title>Social Scraper Explorer</title>`,
+    not `sales_agent-ai`'s dashboard) — confirms the path-anchoring fix
+    holds under the exact conditions that would have broken it.
+  - `sales_agent-ai`'s own `api.py` still imports cleanly and builds its
+    FastAPI `app` object, unaffected by the new `apps/` subfolder.
+- Not yet done: `.dockerignore`/`Dockerfile`/`docker-compose.yml`/`Caddyfile`
+  under `apps/content_pipeline/` are unchanged and still work as before,
+  but only if Docker commands are run with that directory as the build
+  context (`cd apps/content_pipeline && docker compose up`) — no monorepo-
+  level `docker-compose.yml` bringing up both services together yet; that's
+  Phase 4.
 
 ### Phase 3 — Cross-linking (the actual "merge" value)
 This is where the two apps start being useful *together*, still as two
