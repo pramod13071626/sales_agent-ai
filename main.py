@@ -18,7 +18,7 @@ import os
 import sys
 
 from engine import scrape_and_store
-from paths import DIGEST_DIR, store_path as _resolved_store_path
+from paths import DIGEST_DIR, OUTPUT_DIR, PROJECT_ROOT, store_path as _resolved_store_path
 from targets import COMPANY_TARGETS, resolve as resolve_company
 from people_targets import PEOPLE_TARGETS, resolve as resolve_person
 
@@ -246,7 +246,7 @@ def cmd_db_backfill(args) -> int:
 
             print(f"  {target['display_name']:<40}{posts_here:>5} posts   digest: {'yes' if has_digest else 'no'}")
 
-    history_file = os.path.join("output", "run_history.json")
+    history_file = os.path.join(OUTPUT_DIR, "run_history.json")
     history_count = 0
     if os.path.exists(history_file):
         with open(history_file, encoding="utf-8") as fh:
@@ -271,7 +271,7 @@ def _upsert_manifest_entry(kind: str, target: dict) -> None:
     from the Run Pipeline page shows up in the sidebar's Accounts/People
     list immediately, not just in the CLI's target registry.
     """
-    manifest_path = os.path.join("frontend", "manifest.json")
+    manifest_path = os.path.join(PROJECT_ROOT, "frontend", "manifest.json")
     try:
         with open(manifest_path, encoding="utf-8") as fh:
             manifest = json.load(fh)
@@ -662,8 +662,14 @@ def cmd_serve(args) -> int:
     port = int(os.getenv("PORT", args.port))
 
     from config import API_KEY
+    import functools
+    # Anchored to PROJECT_ROOT, not cwd — otherwise running `serve` from
+    # outside this project's directory (e.g. a monorepo root one level up)
+    # would serve whatever frontend/output happens to sit at that cwd
+    # instead of this project's own.
+    ServeHandler = functools.partial(Handler, directory=PROJECT_ROOT)
     try:
-        with Server((host, port), Handler) as httpd:
+        with Server((host, port), ServeHandler) as httpd:
             _banner("SERVE")
             shown_host = "127.0.0.1" if host == "0.0.0.0" else host
             print(f"  Frontend:  http://{shown_host}:{port}/frontend/")
