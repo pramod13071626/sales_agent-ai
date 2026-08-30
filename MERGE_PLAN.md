@@ -294,13 +294,41 @@ onto local Postgres as the permanent store without that confirmed —
 `DB_USE_LOCAL` stays `false` (the toggle's default); local Postgres
 remains available for testing via the toggle, not as the target.
 
-Follow-up, not done: migrate sales_agent-ai's own tables (`accounts`,
-`lobs`, `personas`, `pipeline_runs`) onto Neon, then point
-`sales_agent-ai`'s own `DATABASE_URL` there too — that's what actually
-finishes Phase 1 (both apps on the *same* database, not just capable of
-being pointed at either). Local Postgres's existing copies of
-`posts`/`digests`/`linkedin_jobs` (the stale one-off dump) can stay as
-they are or be dropped once nothing reads them.
+**Follow-up completed (2026-08-30):** migrated `sales_agent-ai`'s own
+tables onto Neon and pointed its `DATABASE_URL` there — both apps now
+share the same live database, not just capable of being pointed at either.
+
+Running `db/create_tables.py` against Neon (idempotent — `create_all()` +
+`ADD COLUMN IF NOT EXISTS`, nothing destructive) surfaced something the
+row-count check above didn't catch: **Neon already had its own
+`accounts`/`lobs`/`personas` data** — a `blackrock` account and a `bny`
+account (key `"bny"`, not `"bank_of_new_york_mellon_corporation"`), both
+created 2026-08-25, predating local Postgres's current account (created
+2026-08-26, `id=11` — that table had clearly been reset/reseeded at least
+once during development). Two independent, live-looking datasets, not an
+empty target. Decided (explicitly, not inferred): keep both rather than
+merge them — local's account was copied onto Neon as a **third**, separate
+account (new id, own key `bank_of_new_york_mellon_corporation`), leaving
+Neon's pre-existing `blackrock`/`bny` untouched. Reconciling `"bny"` and
+`"bank_of_new_york_mellon_corporation"` into one account (they're almost
+certainly the same company under two identities now) is left for later,
+deliberately — not something to collapse automatically.
+
+Migration mechanics: local's `accounts`/`lobs`/`sub_lobs`/`personas`/
+`pipeline_runs` rows copied via a generic script that remaps FK columns
+(`account_id`, `lob_id`) to the new auto-assigned ids as it goes (`lobs`
+before `personas`, `accounts` before both) — old ids weren't reusable
+since Neon's sequences had already moved past them. Row counts matched
+exactly post-copy (15 lobs, 56 personas, 2 pipeline runs), and Neon's
+pre-existing `blackrock`/`bny` counts (7/53 and 10/54) were confirmed
+unchanged before and after. Verified end-to-end by running `sales_agent-ai`
+against Neon with no env override — `/api/accounts` lists all three
+accounts, `/api/content` still resolves correctly.
+
+`sales_agent-ai/.env`'s old local-Postgres config is commented out, not
+deleted, so switching back for testing is a one-line change. Local
+Postgres's data itself was left as-is (nothing dropped) — it's now a
+point-in-time snapshot, not read from by either app by default.
 
 ## 6. Guardrails ("should not hamper" — concrete rules)
 
