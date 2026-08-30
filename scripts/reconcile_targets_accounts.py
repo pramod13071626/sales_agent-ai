@@ -23,15 +23,28 @@ own DATABASE_URL) if unset — override either when checking a different
 pair of databases.
 """
 
+import importlib.util
 import os
 import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT))
-sys.path.insert(0, str(REPO_ROOT / "apps" / "content_pipeline"))
 
 import psycopg2
+
+
+def _load_config(module_name: str, config_path: Path):
+    """Loads a config.py by file path (not via sys.path/import), since both
+    apps have a module literally named `config` — importing by name would
+    silently resolve to whichever one happened to be first on sys.path.
+    Running each one's own dotenv-loading config.py is what actually
+    fulfills the docstring's promise of "sensible local-dev defaults" —
+    a bare os.getenv() here would miss anything only set in .env.
+    """
+    spec = importlib.util.spec_from_file_location(module_name, config_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _fetch_target_keys(database_url: str) -> set:
@@ -75,8 +88,17 @@ def _fetch_account_keys(database_url: str) -> set:
 
 
 def main():
-    targets_url = os.getenv("TARGETS_DATABASE_URL") or os.getenv("DATABASE_URL_NEON", "")
-    accounts_url = os.getenv("ACCOUNTS_DATABASE_URL") or os.getenv("DATABASE_URL", "")
+    targets_url = os.getenv("TARGETS_DATABASE_URL")
+    if not targets_url:
+        content_pipeline_config = _load_config(
+            "content_pipeline_config", REPO_ROOT / "apps" / "content_pipeline" / "config.py"
+        )
+        targets_url = content_pipeline_config.DATABASE_URL  # respects that app's Neon/local toggle
+
+    accounts_url = os.getenv("ACCOUNTS_DATABASE_URL")
+    if not accounts_url:
+        sales_ai_config = _load_config("sales_ai_config", REPO_ROOT / "config.py")
+        accounts_url = sales_ai_config.DATABASE_URL
 
     target_keys = _fetch_target_keys(targets_url)
     account_keys = _fetch_account_keys(accounts_url)
