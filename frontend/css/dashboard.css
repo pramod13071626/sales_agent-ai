@@ -1923,6 +1923,14 @@ body {
 
 /* ── Content Intelligence ──────────────────────────────────── */
 .content-meta { font-size: .72rem; color: var(--text-muted); margin-bottom: 10px; }
+.content-pipeline-link {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: .78rem; font-weight: 600;
+  padding: 6px 12px; margin-bottom: 12px;
+  border: 1px solid var(--brand); border-radius: 6px;
+  color: var(--brand); text-decoration: none;
+}
+.content-pipeline-link:hover { background: var(--brand-soft); }
 .content-provenance {
   font-size: .68rem; color: var(--text-muted);
   display: flex; align-items: center; gap: 5px; margin-top: 10px;

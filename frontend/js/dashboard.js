@@ -1,6 +1,12 @@
 (function () {
   'use strict';
 
+  // Cross-app link to the content pipeline app (MERGE_PLAN.md Phase 3).
+  // Override with ?content_pipeline=<url> or window.CONTENT_PIPELINE_URL
+  // set before this script runs — falls back to the local dev default.
+  const CONTENT_PIPELINE_URL = new URLSearchParams(window.location.search).get('content_pipeline') ||
+    window.CONTENT_PIPELINE_URL || 'http://127.0.0.1:8001';
+
   const el = (id) => document.getElementById(id);
   const dashBody = el('dashBody');
   const dashNav = el('dashNav');
@@ -711,8 +717,13 @@
     try {
       // Deep link: /?view=jobs opens the All Job Postings browser directly on load.
       const wantsJobsView = window.location.search === '?view=jobs';
+      // Deep link from the content pipeline app (MERGE_PLAN.md Phase 3):
+      // /?account_key=<key> opens that account, matched by its `key` column
+      // since the linking app only knows the string key, not this app's
+      // numeric account id.
+      const deepLinkAccountKey = new URLSearchParams(window.location.search).get('account_key');
       // Any other query string (stale/unsupported) resets to a clean root URL on hard-refresh.
-      if (window.location.search && !wantsJobsView) {
+      if (window.location.search && !wantsJobsView && !deepLinkAccountKey) {
         history.replaceState(null, '', window.location.pathname);
       }
 
@@ -730,9 +741,13 @@
 
       renderTopbarTicker();
       renderNavTree();
+      const deepLinkAccount = deepLinkAccountKey && accounts.find(a => a.key === deepLinkAccountKey);
       if (wantsJobsView) {
         await openAllJobsPage();
+      } else if (deepLinkAccount) {
+        jumpToAccount(deepLinkAccount.id); // also corrects the URL to ?account=<id> via syncUrlState()
       } else {
+        if (deepLinkAccountKey) history.replaceState(null, '', window.location.pathname); // unknown key — don't leave a dead link in the address bar
         renderDigest();
       }
     } catch (err) {
@@ -2425,11 +2440,23 @@
 
     return `
       <div class="content-meta">${esc(metaBits)}</div>
+      ${renderContentPipelineLink(targetKey)}
       <div class="content-channel-grid">
         ${channels.map(renderChannelCard).join('')}
       </div>
       <div class="content-provenance"><i class="bi bi-info-circle"></i> Source: ${esc(digestEntry.llm || 'unknown')}</div>
     `;
+  }
+
+  // Opens the live content pipeline app (not just this DB snapshot) so a
+  // rep can trigger a fresh scrape/digest run, or use its copy-to-clipboard
+  // sales email + talking points UI, without leaving the sales workflow to
+  // go find that app.
+  function renderContentPipelineLink(targetKey) {
+    const url = `${CONTENT_PIPELINE_URL}/frontend/?account=${encodeURIComponent(targetKey)}`;
+    return `<a href="${esc(url)}" target="_blank" rel="noopener" class="content-pipeline-link">
+      <i class="bi bi-box-arrow-up-right"></i> Open in Content Pipeline
+    </a>`;
   }
 
   function renderChannelCard(ch) {
