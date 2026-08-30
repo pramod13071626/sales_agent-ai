@@ -1470,7 +1470,10 @@ $(function () {
     // not by individual contact/person.
     var backLinkHtml = '';
     if (!isPerson && state.account && state.account.meta && state.account.meta.key) {
-      var dashboardUrl = SALES_DASHBOARD_URL + '/frontend/?account_key=' + encodeURIComponent(state.account.meta.key);
+      // sales_agent-ai's dashboard is mounted at its root ("/"), not
+      // "/frontend/" — unlike this app, which serves its own frontend
+      // under a "/frontend/" prefix (see main.py's serve command).
+      var dashboardUrl = SALES_DASHBOARD_URL + '/?account_key=' + encodeURIComponent(state.account.meta.key);
       backLinkHtml = '<a href="' + esc(dashboardUrl) + '" target="_blank" rel="noopener" class="pill" style="text-decoration:none;">← Sales Dashboard</a>';
     }
 
