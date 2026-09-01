@@ -1,27 +1,16 @@
-[tool.ruff]
+[tool.black]
 line-length = 120
-target-version = "py312"
-extend-exclude = [
-    "sales_agent-ai",   # committed venv artifacts, never lint/format these
-    "output",
-    "apps/content_pipeline/output",
-]
+target-version = ["py312"]
+extend-exclude = '''
+(
+    ^/sales_agent-ai/   # committed venv artifacts, never format these
+    | ^/output/
+    | ^/apps/content_pipeline/output/
+)
+'''
 
-[tool.ruff.lint]
-# E/F: pyflakes+pycodestyle core, I: import sorting, B: bugbear (common bug patterns),
-# UP: pyupgrade, S: bandit-equivalent security checks, C4: comprehension cleanups.
-select = ["E", "F", "I", "B", "UP", "S", "C4"]
-ignore = [
-    "S101",  # assert is fine in test files
-    "E501",  # long lines already covered by line-length + formatter
-]
-
-[tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101"]
-"apps/content_pipeline/tests/**" = ["S101"]
-
-[tool.ruff.format]
-quote-style = "double"
+[tool.bandit]
+exclude_dirs = ["sales_agent-ai", "output", "apps/content_pipeline/output", "tests", "apps/content_pipeline/tests"]
 
 [tool.mypy]
 python_version = "3.12"

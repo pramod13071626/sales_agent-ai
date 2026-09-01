@@ -16,16 +16,18 @@ permissions:
 
 env:
   PYTHON_VERSION: "3.12"
+  NODE_VERSION: "20"
 
 jobs:
-  # Lint + format only fail the PR on lines the PR itself touches
-  # (reviewdog's `-filter-mode=added`) — the existing codebase has ~1000
-  # pre-existing ruff findings and 67 unformatted files that nobody should
-  # be blocked on fixing just to land an unrelated change. New/changed
-  # code is held to the real bar from day one; the backlog is cleaned up
-  # incrementally as those files are touched anyway.
-  lint:
-    name: Lint & format (new code only)
+  # Both lint jobs below only fail a PR on lines it actually changes
+  # (reviewdog's `-filter-mode=added`). The existing codebase has ~300
+  # pre-existing pylint/flake8/bandit findings, 67 unformatted Python
+  # files, and a couple of dozen pre-existing frontend lint issues —
+  # nobody should be blocked fixing those just to land an unrelated
+  # change. New/changed code is held to the real bar from day one; the
+  # backlog shrinks incrementally as those files get touched anyway.
+  python-quality:
+    name: Python Lint & Security
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -35,31 +37,104 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install ruff
-        run: pip install "ruff>=0.6.0"
+      - name: Install tooling + app dependencies
+        run: |
+          pip install flake8 "pylint>=3.0" black "bandit[toml]"
+          pip install -r requirements.txt
+          pip install -r apps/content_pipeline/requirements.txt
 
       - uses: reviewdog/action-setup@v1
         with:
           reviewdog_version: latest
 
-      - name: ruff check
+      - name: flake8
         env:
           REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set +e
-          ruff check . --output-format=rdjson > ruff-check.json
+          flake8 . > flake8-report.txt
           set -e
-          cat ruff-check.json | reviewdog -f=rdjson -name="ruff" \
+          cat flake8-report.txt | reviewdog -efm="%f:%l:%c: %m" -name="flake8" \
             -reporter=github-pr-check -filter-mode=added -fail-on-error=true
 
-      - name: ruff format
+      - name: pylint
         env:
           REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set +e
-          ruff format --diff . > ruff-format.diff
+          pylint --output-format=text --msg-template='{path}:{line}:{column}: {msg_id} {msg}' \
+            $(git ls-files '*.py' | grep -v '^sales_agent-ai/') > pylint-report.txt
           set -e
-          cat ruff-format.diff | reviewdog -f=diff -f.diff.strip=1 -name="ruff-format" \
+          cat pylint-report.txt | reviewdog -efm="%f:%l:%c: %m" -name="pylint" \
+            -reporter=github-pr-check -filter-mode=added -fail-on-error=true
+
+      - name: black --check
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          black --check --diff . > black.diff 2>/dev/null
+          set -e
+          cat black.diff | reviewdog -f=diff -f.diff.strip=0 -name="black" \
+            -reporter=github-pr-check -filter-mode=added -fail-on-error=true
+
+      - name: bandit
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          bandit -c pyproject.toml -r . -f custom \
+            --msg-template '{relpath}:{line}: {test_id} {msg}' > bandit-report.txt
+          set -e
+          cat bandit-report.txt | reviewdog -efm="%f:%l: %m" -name="bandit" \
+            -reporter=github-pr-check -filter-mode=added -fail-on-error=true
+
+  frontend-quality:
+    name: Frontend Lint
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - run: npm ci
+
+      - uses: reviewdog/action-setup@v1
+        with:
+          reviewdog_version: latest
+
+      - name: eslint (jQuery/vanilla JS, frontend/)
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          npx eslint "frontend/**/*.js" -f compact > eslint-report.txt
+          set -e
+          cat eslint-report.txt | reviewdog -efm="%f: line %l, col %c, %m" -name="eslint" \
+            -reporter=github-pr-check -filter-mode=added -fail-on-error=true
+
+      - name: htmlhint
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          npx htmlhint "frontend/**/*.html" "apps/content_pipeline/frontend/**/*.html" \
+            --format=compact > htmlhint-report.txt
+          set -e
+          cat htmlhint-report.txt | reviewdog -efm="%f: line %l, col %c, %m" -name="htmlhint" \
+            -reporter=github-pr-check -filter-mode=added -fail-on-error=true
+
+      - name: stylelint (Bootstrap overrides)
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          npx stylelint "frontend/**/*.css" --formatter compact > stylelint-report.txt
+          set -e
+          cat stylelint-report.txt | reviewdog -efm="%f: line %l, col %c, %m" -name="stylelint" \
             -reporter=github-pr-check -filter-mode=added -fail-on-error=true
 
   typecheck:
@@ -77,7 +152,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -r requirements-dev.txt
+          pip install mypy pytest pytest-cov
           pip install -r requirements.txt
           pip install -r apps/content_pipeline/requirements.txt
 
@@ -106,7 +181,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -r requirements-dev.txt
+          pip install pytest pytest-cov
           pip install -r ${{ matrix.requirements }}
 
       - name: Run tests with coverage

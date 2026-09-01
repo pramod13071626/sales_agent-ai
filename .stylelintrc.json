@@ -1,0 +1,17 @@
+{
+  "extends": "stylelint-config-standard",
+  "ignoreFiles": ["sales_agent-ai/**", "node_modules/**", "**/*.min.css"],
+  "rules": {
+    "declaration-block-no-shorthand-property-overrides": true,
+    "no-descending-specificity": null,
+    "selector-class-pattern": null,
+    "color-function-notation": null,
+    "alpha-value-notation": null,
+    "rule-empty-line-before": null,
+    "at-rule-empty-line-before": null,
+    "declaration-block-single-line-max-declarations": null,
+    "media-feature-range-notation": null,
+    "keyframes-name-pattern": null,
+    "shorthand-property-no-redundant-values": null
+  }
+}

@@ -27,4 +27,4 @@ def test_account_schema_validates_minimal_payload():
 
     account = AccountSchema(key="acme", legal_name="Acme Corp")
     assert account.key == "acme"
-    assert account.industries == []
+    assert not account.industries

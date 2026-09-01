@@ -1,0 +1,31 @@
+[MASTER]
+ignore-paths=sales_agent-ai,output,apps/content_pipeline/output,node_modules
+
+[MESSAGES CONTROL]
+disable=
+    missing-module-docstring,
+    missing-class-docstring,
+    missing-function-docstring,
+    invalid-name,
+    too-few-public-methods,
+    too-many-arguments,
+    too-many-positional-arguments,
+    too-many-locals,
+    too-many-branches,
+    too-many-statements,
+    too-many-instance-attributes,
+    too-many-return-statements,
+    fixme,
+    duplicate-code,
+    broad-exception-caught,
+    no-member,
+    no-name-in-module,
+    wrong-import-position,
+    wrong-import-order,
+    import-outside-toplevel
+
+[FORMAT]
+max-line-length=120
+
+[DESIGN]
+max-args=8
