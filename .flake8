@@ -1,0 +1,10 @@
+[flake8]
+max-line-length = 120
+extend-ignore = E203, W503
+exclude =
+    sales_agent-ai,
+    output,
+    apps/content_pipeline/output,
+    node_modules,
+    .git,
+    __pycache__

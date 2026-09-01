@@ -7,6 +7,15 @@ db/dump_to_neon.py
 # Output & Scraped Data
 output/
 *.json
+# ...except tracked tooling config that happens to be JSON (the *.json
+# rule above is aimed at scraped/output data, not config files).
+!package.json
+!package-lock.json
+!.eslintrc.json
+!.stylelintrc.json
+
+# Node (frontend lint tooling — eslint/htmlhint/stylelint, no build step)
+node_modules/
 
 # Python & Virtual Environments
 venv/

@@ -780,13 +780,8 @@
       return;
     }
 
-    const cSuite = accounts.reduce((s, a) => s + (a.c_suite_count || 0), 0);
-    const vp = accounts.reduce((s, a) => s + (a.vp_count || 0), 0);
-    const director = accounts.reduce((s, a) => s + (a.director_count || 0), 0);
-    const manager = accounts.reduce((s, a) => s + (a.manager_count || 0), 0);
     const industries = new Set();
     accounts.forEach(a => (a.industries || []).forEach(i => industries.add(i)));
-    const scoredCount = accounts.filter(a => a.heat_score != null).length;
 
     const recentlyUpdated = [...accounts]
       .filter(a => a.extracted_at)
@@ -795,9 +790,6 @@
     const topByContacts = [...accounts]
       .sort((a, b) => (b.total_contacts_captured || 0) - (a.total_contacts_captured || 0))
       .slice(0, 6);
-
-    const realDigestCount = Object.values(contentStore.digests || {}).filter(d => !isDryRunDigest(d)).length;
-    const totalPosts = Object.values(contentStore.posts || {}).reduce((s, arr) => s + arr.length, 0);
 
     const visibleCount = DIGEST_SECTIONS.filter(s => digestSectionVisibility[s.id] !== false).length;
 
@@ -2043,6 +2035,23 @@
 
   function renderOrgChart(account, lob) {
     if (lob) {
+      // Function expression (not a declaration) so it stays scoped to this
+      // `if` block without tripping no-inner-declarations — a second,
+      // differently-defaulted nodeCard exists further down in the
+      // corporate-level branch of this same function, so a hoisted
+      // declaration here would collide with it.
+      const nodeCard = (node, isRoot) => {
+        const name = node.full_name || node.name || 'Executive';
+        const title = node.job_title || node.title || (isRoot ? 'Operating Head' : 'Stakeholder');
+        const tags = [node.seniority_tier || node.tier, node.decision_authority ? `Decision: ${node.decision_authority}` : null].filter(Boolean);
+        return `
+          <button type="button" class="orgchart-node ${isRoot ? 'orgchart-root-node' : ''}" data-persona-name="${esc(name)}">
+            <div class="orgchart-avatar">${esc(initials(name))}</div>
+            <div class="orgchart-name">${esc(name)}</div>
+            <div class="orgchart-title">${esc(title)}</div>
+            ${tags.length ? `<div class="orgchart-tags">${tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>` : ''}
+          </button>`;
+      };
       const lobPersonas = dedupePersonas(lob.personas || []);
       const headName = lob.head || lob.operating_head;
 
@@ -2073,19 +2082,6 @@
           <div class="empty-block-icon"><i class="bi bi-diagram-2"></i></div>
           <div class="empty-block-text">No verified reporting-line tree captured yet for <strong>${esc(lob.name)}</strong>.</div>
         </div>`;
-      }
-
-      function nodeCard(node, isRoot) {
-        const name = node.full_name || node.name || 'Executive';
-        const title = node.job_title || node.title || (isRoot ? 'Operating Head' : 'Stakeholder');
-        const tags = [node.seniority_tier || node.tier, node.decision_authority ? `Decision: ${node.decision_authority}` : null].filter(Boolean);
-        return `
-          <button type="button" class="orgchart-node ${isRoot ? 'orgchart-root-node' : ''}" data-persona-name="${esc(name)}">
-            <div class="orgchart-avatar">${esc(initials(name))}</div>
-            <div class="orgchart-name">${esc(name)}</div>
-            <div class="orgchart-title">${esc(title)}</div>
-            ${tags.length ? `<div class="orgchart-tags">${tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>` : ''}
-          </button>`;
       }
 
       return `
