@@ -99,17 +99,21 @@ class RunTelemetry:
         else:
             v_data["free_tier_requests"] += 1
 
-        self.log(
-            "INFO",
-            "API_CALL",
-            f"[{v.upper()}] {endpoint} ➔ status: {status}, credits: {credits_used if is_billable else 0}, latency: {latency_ms}ms"
+        api_msg = (
+            f"[{v.upper()}] {endpoint} ➔ status: {status}, "
+            f"credits: {credits_used if is_billable else 0}, latency: {latency_ms}ms"
         )
+        self.log("INFO", "API_CALL", api_msg)
 
     def set_quality_audit(self, score: float, grade: str):
         """Updates quality audit results."""
         self.quality_score = round(float(score), 2)
         self.quality_grade = grade
-        self.log("INFO", "VALIDATOR", f"Data Quality Audit Completed. Score: {self.quality_score}/100 (Grade: {self.quality_grade})")
+        validator_msg = (
+            f"Data Quality Audit Completed. Score: {self.quality_score}/100 "
+            f"(Grade: {self.quality_grade})"
+        )
+        self.log("INFO", "VALIDATOR", validator_msg)
 
     def set_entities_extracted(
         self,
@@ -135,11 +139,11 @@ class RunTelemetry:
         self.entities_extracted["board_members_count"] = board_members_count
         self.entities_extracted["technologies_count"] = technologies_count
 
-        self.log(
-            "INFO",
-            "SUMMARY",
-            f"Extraction summary: {accounts_count} Account, {lobs_count} LOBs, {personas_count} Personas across 4 tiers."
+        summary_msg = (
+            f"Extraction summary: {accounts_count} Account, {lobs_count} LOBs, "
+            f"{personas_count} Personas across 4 tiers."
         )
+        self.log("INFO", "SUMMARY", summary_msg)
 
     def complete(self, status: str = "staged", error_message: Optional[str] = None):
         """Marks the execution run as finished and computes final duration."""
@@ -149,9 +153,14 @@ class RunTelemetry:
         self.error_message = error_message
 
         if error_message:
-            self.log("ERROR", "EXECUTION", f"Run completed with error: {error_message}")
+            error_msg = f"Run completed with error: {error_message}"
+            self.log("ERROR", "EXECUTION", error_msg)
         else:
-            self.log("INFO", "EXECUTION", f"Run completed successfully in {self.duration_seconds}s. Total Credits Used: {self.total_credits_used}")
+            completion_msg = (
+                f"Run completed successfully in {self.duration_seconds}s. "
+                f"Total Credits Used: {self.total_credits_used}"
+            )
+            self.log("INFO", "EXECUTION", completion_msg)
 
     def to_dict(self) -> Dict[str, Any]:
         """Serializes telemetry into a JSON-serializable dictionary."""
