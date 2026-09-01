@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, BigInteger, String, Text, Float, Date, DateTime, ARRAY
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from db.models.base import Base
 
@@ -118,16 +119,21 @@ class Account(Base):
     youtube_search_url = Column(Text)
     openalex_institution_url = Column(Text)
     wikidata_entity_url = Column(Text)
+    github_url = Column(Text)
+    glassdoor_url = Column(Text)
     blog_url = Column(Text)
     youtube_channel_id = Column(String(100))
 
-    # ── Array Fields ──
+    # ── Array & JSONB Intelligence Fields ──
     industries = Column(ARRAY(Text))
     industry_groups = Column(ARRAY(Text))
     aliases = Column(ARRAY(Text))
     founders = Column(ARRAY(Text))
     headquarters_regions = Column(ARRAY(Text))
     keywords = Column(ARRAY(Text))
+    multi_source_intelligence = Column(JSONB)
+    organisational_hierarchy_tree = Column(JSONB)
+    raw_data = Column(JSONB)
 
     # ── Relationships ──
     lobs = relationship("Lob", back_populates="account", cascade="all, delete-orphan")

@@ -12,6 +12,11 @@ output/
 venv/
 env/
 ENV/
+# The dev venv at this repo's root (pyvenv.cfg, Lib/, Scripts/) already
+# ignores itself via its own generated sales_agent-ai/.gitignore — this
+# is a belt-and-suspenders rule in case that file is ever missing (e.g.
+# venv recreated without it, or created with a tool that skips it).
+sales_agent-ai/
 __pycache__/
 *.py[cod]
 *$py.class
@@ -26,7 +31,10 @@ celerybeat-schedule
 celerybeat.pid
 
 # Logs & Temporary Files
+scratch/
+architecture_flow.md
 *.log
+.obsidian/
 .vscode/
 .idea/
 *.swp

@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sales Intelligence — Account Explorer</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<!-- Mobile sidebar overlay -->
+<div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+<div class="app-shell">
+
+  <!-- ── Sidebar ─────────────────────────────────────────────── -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-icon"><i class="bi bi-diagram-3-fill"></i></div>
+      <div class="brand-text">
+        <div class="brand-name">Sales Intel</div>
+        <div class="brand-sub">Account Explorer</div>
+      </div>
+      <button class="theme-btn" id="themeToggle" title="Toggle theme"><i class="bi bi-moon-stars"></i></button>
+    </div>
+
+    <!-- Search & Action Buttons -->
+    <div class="sidebar-search">
+      <input type="text" id="accountSearch" placeholder="Search accounts..." autocomplete="off" name="presentation" data-lpignore="true">
+    </div>
+
+    <button type="button" class="run-pipeline-nav" id="runPipelineNav">
+      <i class="bi bi-play-fill"></i>&nbsp; Run Pipeline
+    </button>
+    <button type="button" class="run-pipeline-nav api-docs-nav" id="apiDocsNav">
+      <i class="bi bi-file-text"></i>&nbsp; API Docs
+    </button>
+
+    <div class="sidebar-label">Accounts</div>
+
+    <div class="account-list" id="accountList">
+      <!-- Accounts will be injected here via JS -->
+      <div class="spinner-wrap"><div class="spinner"></div></div>
+    </div>
+
+    <div class="sidebar-footer">Connected to NeonDB</div>
+  </aside>
+
+  <!-- ── Main Content ────────────────────────────────────────── -->
+  <div class="content">
+
+    <div class="main-pad">
+
+      <!-- Empty state -->
+      <div id="emptyState" class="empty-state fade-in">
+        <div class="empty-icon"><i class="bi bi-buildings"></i></div>
+        <p class="empty-title">Select an Account to Begin Exploration</p>
+        <p class="empty-sub">Choose any enterprise account from the left sidebar to analyze operating divisions, inspect executive stakeholders, and pull live multi-source signals.</p>
+        
+        <div class="step-guide" style="margin-top:16px; justify-content:center;">
+          <div class="step-guide-item"><span class="step-guide-num">1</span> Pick an enterprise account</div>
+          <div class="step-guide-item"><span class="step-guide-num">2</span> Select an operational division (LOB)</div>
+          <div class="step-guide-item"><span class="step-guide-num">3</span> Open executive call prep &amp; feeds</div>
+        </div>
+      </div>
+
+      <!-- Main Dashboard Container (Visible when account is clicked) -->
+      <div id="dashboardContainer" class="d-none">
+        
+        <!-- Account Hero Header -->
+        <div class="account-hero fade-in">
+          <div class="hero-avatar" id="heroAvatar"></div>
+          <div class="hero-info">
+            <h1 class="hero-name" id="accountName"></h1>
+            <div class="hero-meta">
+              <span class="pill pill-brand" id="accountTicker" title="Public / Private stock ticker"></span>
+              <span class="pill" id="accountRevenue" title="Reported annual revenue"></span>
+              <span class="pill pill-success" id="accountLocation" title="Headquarters location"></span>
+            </div>
+            <p class="account-desc" id="accountDesc"></p>
+          </div>
+        </div>
+
+        <!-- Section 1: Lines of Business (LOB Cards) -->
+        <div id="lobSection" class="mt-4 d-none">
+          <div class="section-header">
+            <span><i class="bi bi-folder2-open"></i>&nbsp; Lines of Business (LOB)</span>
+            <span class="text-muted" style="font-size: .75rem; font-weight: normal;" id="lobCountBadge"></span>
+          </div>
+          <p class="section-subtitle">Discovered operating divisions and commercial segments. Click any card to load associated personas and feeds.</p>
+          <div class="compact-card-grid" id="lobCardsContainer"></div>
+        </div>
+
+        <!-- Section 2: Personas / Hierarchy Cards (Visible after LOB click) -->
+        <div id="personaSection" class="mt-4 d-none">
+          <div class="section-header">
+            <span id="personaSectionTitle"><i class="bi bi-people-fill"></i>&nbsp; Organizational Hierarchy &amp; Contacts</span>
+            <span class="text-muted" style="font-size: .75rem; font-weight: normal;" id="personaCountBadge"></span>
+          </div>
+          <p class="section-subtitle">Mapped executive leadership and decision-makers within this business unit. Click a card to open AI call prep.</p>
+          <div class="compact-card-grid" id="personaCardsContainer"></div>
+        </div>
+
+        <!-- Section 3: Categorized Detail Panel & Action Center (LOB or Persona) -->
+        <div id="detailPanelContainer" class="d-none"></div>
+
+      </div>
+
+    </div><!-- /main-pad -->
+  </div><!-- /content -->
+</div><!-- /app-shell -->
+
+<!-- ── Floating Chatbot ────────────────────────────────────────── -->
+<button type="button" class="chatbot-fab" id="chatbotFab" title="Ask the Sales Assistant">
+  <i class="bi bi-robot"></i>
+  <span class="chatbot-fab-dot"></span>
+</button>
+
+<div class="chatbot-panel" id="chatbotPanel">
+  <div class="chatbot-header">
+    <div class="chatbot-avatar"><i class="bi bi-robot"></i></div>
+    <div class="chatbot-header-text">
+      <div class="chatbot-title">Sales Assistant <span class="chatbot-badge">AI</span></div>
+      <div class="chatbot-subtitle" id="chatbotSubtitle">Account Intelligence</div>
+    </div>
+    <span class="chatbot-status"><span class="chatbot-status-dot"></span>Online</span>
+    <button type="button" class="chatbot-close" id="chatbotClose" title="Close"><i class="bi bi-x-lg"></i></button>
+  </div>
+
+  <div class="chatbot-quicktabs" id="chatbotQuickTabs">
+    <button type="button" class="chatbot-chip" data-query="Give me a summary of this account"><i class="bi bi-clipboard-data"></i> Account Summary</button>
+    <button type="button" class="chatbot-chip" data-query="Who are the key personas?"><i class="bi bi-people"></i> Key Personas</button>
+    <button type="button" class="chatbot-chip" data-query="What lines of business are active?"><i class="bi bi-folder2-open"></i> Lines of Business</button>
+    <button type="button" class="chatbot-chip" data-query="Give me an icebreaker"><i class="bi bi-chat-quote"></i> Icebreaker</button>
+  </div>
+
+  <div class="chatbot-messages" id="chatbotMessages"></div>
+
+  <div class="chatbot-suggestions" id="chatbotSuggestions">
+    <button type="button" class="chatbot-suggestion" data-query="Summarize this account">Summarize this account</button>
+    <button type="button" class="chatbot-suggestion" data-query="List the personas">List the personas</button>
+    <button type="button" class="chatbot-suggestion" data-query="Which LOB has the most contacts?">Which LOB has the most contacts?</button>
+  </div>
+
+  <form class="chatbot-input-row" id="chatbotForm">
+    <input type="text" id="chatbotInput" placeholder="Ask about the selected account..." autocomplete="off">
+    <button type="submit" class="chatbot-send" title="Send"><i class="bi bi-send-fill"></i></button>
+  </form>
+</div>
+
+<!-- ── Intelligence Feed Summary Modal ──────────────────────────── -->
+<div class="feed-modal-backdrop d-none" id="feedModalBackdrop">
+  <div class="feed-modal-card fade-in" id="feedModalCard">
+    <div class="feed-modal-header">
+      <div class="feed-modal-brand-badge" id="feedModalIcon"></div>
+      <div class="feed-modal-title-area">
+        <h3 class="feed-modal-title" id="feedModalTitle">Platform Intelligence Summary</h3>
+        <p class="feed-modal-subtitle" id="feedModalSubtitle">Recent feed &amp; social footprint activity</p>
+      </div>
+      <button type="button" class="feed-modal-close" id="feedModalClose" title="Close modal"><i class="bi bi-x-lg"></i></button>
+    </div>
+
+    <!-- Quick Stats Bar -->
+    <div class="feed-modal-stats" id="feedModalStats"></div>
+
+    <!-- Recent Posts Stream -->
+    <div class="feed-modal-body">
+      <div class="feed-stream-heading"><i class="bi bi-lightning-charge-fill"></i>&nbsp; Recent Activity &amp; Intelligence Highlights</div>
+      <div class="feed-posts-list" id="feedPostsList"></div>
+    </div>
+
+    <div class="feed-modal-footer">
+      <a href="#" target="_blank" class="feed-modal-link-btn" id="feedModalExternalLink">Open Official Platform <i class="bi bi-box-arrow-up-right"></i></a>
+      <button type="button" class="feed-modal-btn-close" id="feedModalBtnDismiss">Close</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="js/app.js"></script>
+<script src="js/chatbot.js"></script>
+</body>
+</html>

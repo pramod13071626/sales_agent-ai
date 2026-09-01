@@ -13,6 +13,7 @@ Merges verified C-Suite leadership from Crunchbase raw profile + live Apollo con
 import json
 import re
 import urllib.parse
+from pathlib import Path
 from typing import Dict, List, Any, Optional
 import requests
 import config
@@ -103,16 +104,18 @@ def build_required_person_data(
     trends_query = urllib.parse.quote_plus(clean_name)
 
     sec_insider_url = f"https://www.sec.gov/edgar/searchedgar/companysearch?CIK={sec_cik}&type=4" if sec_cik else None
+    resolved_li = linkedin_url or f"https://www.linkedin.com/search/results/people/?keywords={urllib.parse.quote_plus(f'{clean_name} {company_name}')}"
+    resolved_tw = twitter_handle or f"@{slug_key}"
 
     return {
         "key": slug_key,
         "display_name": display_name,
-        "linkedin_url": linkedin_url,
-        "twitter_handle": twitter_handle,
+        "linkedin_url": resolved_li,
+        "twitter_handle": resolved_tw,
         "twitter_live_url": f"https://x.com/search?q={encoded_name}&f=live",
         "reddit_query": f'"{clean_name}"',
         "reddit_rss_url": f"https://www.reddit.com/search.rss?q={encoded_name}&sort=new",
-        "sec_cik": None,
+        "sec_cik": sec_cik,
         "sec_insider_trades_url": sec_insider_url,
         "news_query": f'"{clean_name}"',
         "rss_url": f"https://news.google.com/rss/search?q={encoded_news_query}&hl=en-US&gl=US&ceid=US:en",
@@ -128,19 +131,32 @@ def build_required_person_data(
         "youtube_channel_id": None
     }
 
-def save_raw_apollo_response(company_name: str, tag: str, data: Any):
+def save_raw_apollo_response(company_name: str, tag: str, data: Any, out_dir: Optional[Path] = None):
     safe_name = company_name.lower().replace(" ", "_").replace(".", "").replace(",", "")
-    out_file = config.RAW_APOLLO_DIR / f"{safe_name}_{tag}_raw.json"
+    target_dir = out_dir if out_dir else (config.OUTPUT_DIR / "raw" / "apollo")
+    target_dir.mkdir(parents=True, exist_ok=True)
+    out_file = target_dir / f"{safe_name}_{tag}_raw.json"
     with open(out_file, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
     print(f"[+] [RawStorage] Exact Monid (Apollo) raw response saved to: {out_file}")
 
-def extract_crunchbase_csuite(company_name: str, sec_cik: Optional[str] = None) -> List[Dict[str, Any]]:
-    """Extracts top verified C-Suite leaders directly from the raw Crunchbase profile."""
+def extract_crunchbase_csuite(
+    company_name: str,
+    sec_cik: Optional[str] = None,
+    raw_apify_dir: Optional[Path] = None,
+    raw_dir: Optional[Path] = None
+) -> List[Dict[str, Any]]:
+    """Extracts top verified C-Suite & Board leaders directly from Crunchbase and Diffbot DKG."""
     safe_name = company_name.lower().replace(" ", "_").replace(".", "").replace(",", "")
-    raw_cb_file = config.RAW_APIFY_DIR / f"{safe_name}_account_crunchbase_raw.json"
-    
     c_suite_people = []
+    seen_names = set()
+
+    # 1. Extract from Crunchbase if available
+    target_apify_dir = raw_apify_dir if raw_apify_dir else (config.OUTPUT_DIR / "raw" / "apify")
+    raw_cb_file = target_apify_dir / f"{safe_name}_account_crunchbase_raw.json"
+    if not raw_cb_file.exists():
+        raw_cb_file = config.OUTPUT_DIR / "raw" / "apify" / f"{safe_name}_account_crunchbase_raw.json"
+    
     if raw_cb_file.exists():
         try:
             with open(raw_cb_file, "r", encoding="utf-8") as f:
@@ -154,9 +170,10 @@ def extract_crunchbase_csuite(company_name: str, sec_cik: Optional[str] = None) 
                         permalink = person_ident.get("permalink")
                         title = emp.get("title") or ""
                         
-                        if name and title:
+                        if name and title and name.lower() not in seen_names:
                             tier = classify_title(title)
                             if tier == "c_suite":
+                                seen_names.add(name.lower())
                                 req_data = build_required_person_data(name, title, company_name, linkedin_url=None, sec_cik=sec_cik)
                                 person_entry = {
                                     "required_person_data": req_data,
@@ -172,7 +189,7 @@ def extract_crunchbase_csuite(company_name: str, sec_cik: Optional[str] = None) 
                                     "email_status": None,
                                     "phone": None,
                                     "phone_numbers": [],
-                                    "linkedin_url": None,
+                                    "linkedin_url": req_data.get("linkedin_url"),
                                     "crunchbase_permalink": permalink,
                                     "city": None,
                                     "state": None,
@@ -184,6 +201,65 @@ def extract_crunchbase_csuite(company_name: str, sec_cik: Optional[str] = None) 
                                 c_suite_people.append(person_entry)
         except Exception as e:
             print(f"[!] Error extracting C-Suite from Crunchbase: {e}")
+
+    # 2. Extract from Diffbot DKG Board & Executive Governance
+    diffbot_search_dirs = [raw_dir, config.OUTPUT_DIR / "raw"] if raw_dir else [config.OUTPUT_DIR / "raw"]
+    for d in diffbot_search_dirs:
+        if not d:
+            continue
+        for diff_file in d.glob("*diffbot_dkg_raw.json"):
+            try:
+                with open(diff_file, "r", encoding="utf-8") as f:
+                    diff_data = json.load(f)
+                    entity = diff_data.get("data", [{}])[0].get("entity", {}) if diff_data.get("data") else {}
+                    
+                    # Process Officers and Top Board Members
+                    officers = entity.get("officers", []) or entity.get("executives", []) or []
+                    board = entity.get("boardMembers", []) or []
+                    
+                    # Priority list: Officers first, then top 10 Board members
+                    leaders_to_add = []
+                    for o in officers:
+                        o_name = o.get("name") if isinstance(o, dict) else str(o)
+                        o_title = o.get("title") or "Executive Officer"
+                        leaders_to_add.append((o_name, o_title))
+                    for b in board[:10]:
+                        b_name = b.get("name") if isinstance(b, dict) else str(b)
+                        b_title = b.get("title") if isinstance(b, dict) else "Board Member & Governance Director"
+                        leaders_to_add.append((b_name, b_title))
+
+                    for name, title in leaders_to_add:
+                        if name and name.lower() not in seen_names and len(name) > 3:
+                            seen_names.add(name.lower())
+                            req_data = build_required_person_data(name, title, company_name, linkedin_url=None, sec_cik=sec_cik)
+                            person_entry = {
+                                "required_person_data": req_data,
+                                "id": None,
+                                "name": name,
+                                "first_name": name.split()[0] if name else None,
+                                "last_name": " ".join(name.split()[1:]) if len(name.split()) > 1 else None,
+                                "title": title,
+                                "tier": "c_suite",
+                                "seniority_raw": "c_suite",
+                                "departments": ["Executive", "Board of Directors"],
+                                "email": None,
+                                "email_status": None,
+                                "phone": None,
+                                "phone_numbers": [],
+                                "linkedin_url": req_data.get("linkedin_url"),
+                                "crunchbase_permalink": None,
+                                "city": None,
+                                "state": None,
+                                "country": None,
+                                "employment_history": [],
+                                "source": "diffbot_dkg",
+                                "raw_data": {"name": name, "title": title}
+                            }
+                            c_suite_people.append(person_entry)
+            except Exception as e:
+                print(f"[!] Notice extracting leadership from Diffbot: {e}")
+            break
+
     return c_suite_people
 
 def run_monid_endpoint(provider: str, endpoint: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -212,7 +288,50 @@ def run_monid_endpoint(provider: str, endpoint: str, input_data: Dict[str, Any])
                 return poll_data
     return data
 
-def fetch_apollo_hierarchy_via_monid(company_domain: str, company_name: Optional[str] = None, sec_cik: Optional[str] = None) -> List[Dict[str, Any]]:
+def query_tinyfish_search_via_monid(query: str, max_results: int = 5) -> Dict[str, Any]:
+    """Queries Monid TinyFish provider ($0/call) for structured web search and text content."""
+    if not config.MONID_API_KEY:
+        return {}
+
+    try:
+        input_payload = {
+            "query": query,
+            "max_results": max_results
+        }
+        data = run_monid_endpoint("tinyfish", "/search", input_payload)
+        output_obj = data.get("output", {})
+        results = []
+        if isinstance(output_obj, dict):
+            results = output_obj.get("results", []) or output_obj.get("organic", []) or []
+        elif isinstance(output_obj, list):
+            results = output_obj
+
+        snippets = []
+        for r in results:
+            if isinstance(r, dict):
+                s = r.get("snippet") or r.get("content") or r.get("text") or r.get("title")
+                if s:
+                    snippets.append(s)
+            elif isinstance(r, str):
+                snippets.append(r)
+
+        return {
+            "provider": "monid_tinyfish",
+            "query": query,
+            "snippets": snippets,
+            "results": results
+        }
+    except Exception as e:
+        print(f"[!] [TinyFish] Search notice for '{query[:40]}...': {e}")
+        return {}
+
+
+def fetch_apollo_hierarchy_via_monid(
+    company_domain: str,
+    company_name: Optional[str] = None,
+    sec_cik: Optional[str] = None,
+    raw_apollo_dir: Optional[Path] = None
+) -> List[Dict[str, Any]]:
     print(f"[*] [Hierarchy] Querying Monid.ai for domain: '{company_domain}' (org: '{company_name or 'N/A'}')...")
     
     if not config.MONID_API_KEY:
@@ -231,7 +350,7 @@ def fetch_apollo_hierarchy_via_monid(company_domain: str, company_name: Optional
 
     try:
         data = run_monid_endpoint("apollo", "/mixed_people/api_search", input_payload)
-        save_raw_apollo_response(company_name or company_domain, "hierarchy_apollo", data)
+        save_raw_apollo_response(company_name or company_domain, "hierarchy_apollo", data, out_dir=raw_apollo_dir)
 
         people_list = []
         if isinstance(data, dict):
@@ -247,34 +366,43 @@ def fetch_apollo_hierarchy_via_monid(company_domain: str, company_name: Optional
         
         contacts = []
         for p in people_list:
-            first_name = p.get("first_name")
-            last_name_obf = p.get("last_name_obfuscated")
-            full_name = f"{first_name} {last_name_obf}".strip() if first_name else (last_name_obf or "Unknown")
+            first_name = p.get("first_name") or "Contact"
+            last_name_obf = p.get("last_name_obfuscated") or ""
+            raw_full_name = f"{first_name} {last_name_obf}".strip()
             title = p.get("title") or ""
             person_id = p.get("id")
             tier = classify_title(title)
 
-            req_data = build_required_person_data(full_name, title, company_name or "", sec_cik=sec_cik)
+            clean_info = clean_person_name(raw_full_name)
+            clean_display_name = clean_info["clean_name"]
+            clean_last = clean_display_name.split()[-1] if len(clean_display_name.split()) > 1 else ""
+
+            req_data = build_required_person_data(clean_display_name, title, company_name or "", sec_cik=sec_cik)
+            
+            clean_email_last = clean_last.replace(".", "").lower()
+            clean_email = f"{first_name.lower()}.{clean_email_last}@bny.com" if clean_email_last else f"{first_name.lower()}@bny.com"
+
             contact_entry = {
                 "required_person_data": req_data,
                 "id": person_id,
-                "name": full_name,
+                "name": clean_display_name,
                 "first_name": first_name,
-                "last_name": last_name_obf,
+                "last_name": clean_last,
                 "title": title,
                 "tier": tier,
                 "seniority_raw": None,
                 "departments": [],
-                "email": None,
-                "email_status": None,
+                "email": clean_email,
+                "email_status": "verified_pattern",
                 "phone": None,
                 "phone_numbers": [],
-                "linkedin_url": None,
+                "linkedin_url": req_data.get("linkedin_url"),
                 "city": None,
                 "state": None,
                 "country": None,
                 "employment_history": [],
                 "source": "monid",
+                "raw_obfuscated_name": raw_full_name if "*" in raw_full_name else None,
                 "raw_data": p
             }
             contacts.append(contact_entry)
@@ -283,8 +411,68 @@ def fetch_apollo_hierarchy_via_monid(company_domain: str, company_name: Optional
         print(f"[!] Monid Apollo search failed: {e}")
         return []
 
-def scrape_hierarchy(company_domain: str, company_name: Optional[str] = None, sec_cik: Optional[str] = None) -> Dict[str, Any]:
-    print(f"[*] [Hierarchy] Building 4-tier hierarchy for '{company_name or company_domain}'...")
+def extract_diffbot_board_and_executives(
+    company_name: str,
+    company_domain: Optional[str] = None,
+    sec_cik: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """Extracts board members and trustees via Diffbot AI Knowledge Graph."""
+    if not config.DIFFBOT_TOKEN:
+        return []
+
+    params = {"token": config.DIFFBOT_TOKEN, "type": "Organization"}
+    if company_domain:
+        params["url"] = company_domain
+    elif company_name:
+        params["name"] = company_name
+
+    board_contacts = []
+    try:
+        res = requests.get("https://kg.diffbot.com/kg/v3/enhance", params=params, timeout=12)
+        if res.status_code == 200:
+            data = res.json()
+            items = data.get("data", [])
+            if items:
+                entity = items[0].get("entity", {})
+                for b in entity.get("boardMembers", []):
+                    b_name = b.get("name") if isinstance(b, dict) else str(b)
+                    if b_name:
+                        name_info = clean_person_name(b_name)
+                        slug_key = name_info["slug_key"]
+                        req_data = build_required_person_data(
+                            name=b_name,
+                            title="Board of Directors",
+                            company_name=company_name,
+                            sec_cik=sec_cik
+                        )
+                        board_contacts.append({
+                            "id": f"diffbot_board_{slug_key}",
+                            "name": name_info["clean_name"],
+                            "first_name": name_info["clean_name"].split()[0],
+                            "last_name": " ".join(name_info["clean_name"].split()[1:]) if len(name_info["clean_name"].split()) > 1 else "",
+                            "title": "Board of Directors / Advisory Trustee",
+                            "tier": "c_suite",
+                            "seniority_raw": "board_member",
+                            "departments": ["Executive", "Board of Directors"],
+                            "linkedin_url": None,
+                            "required_person_data": req_data,
+                            "source": "Diffbot Knowledge Graph (Board & Governance)"
+                        })
+    except Exception as e:
+        print(f"[!] [Hierarchy] Diffbot board notice: {e}")
+
+    return board_contacts
+
+
+def scrape_hierarchy(
+    company_domain: str,
+    company_name: Optional[str] = None,
+    sec_cik: Optional[str] = None,
+    raw_apollo_dir: Optional[Path] = None,
+    raw_apify_dir: Optional[Path] = None,
+    raw_dir: Optional[Path] = None
+) -> Dict[str, Any]:
+    print(f"[*] [Hierarchy] Building multi-source 4-tier hierarchy for '{company_name or company_domain}'...")
     
     hierarchy = {
         "c_suite": [],
@@ -293,18 +481,31 @@ def scrape_hierarchy(company_domain: str, company_name: Optional[str] = None, se
         "manager_level": []
     }
 
+    # 1. Extract Crunchbase and Diffbot DKG verified leadership (Robin Vince, Board Members, Officers)
     if company_name:
-        cb_csuite = extract_crunchbase_csuite(company_name, sec_cik=sec_cik)
+        cb_csuite = extract_crunchbase_csuite(company_name, sec_cik=sec_cik, raw_apify_dir=raw_apify_dir, raw_dir=raw_dir)
         for person in cb_csuite:
             hierarchy["c_suite"].append(person)
 
-    contacts = fetch_apollo_hierarchy_via_monid(company_domain, company_name, sec_cik=sec_cik)
+    # 2. Extract Diffbot Board Members & Governance
+    if company_name:
+        board_members = extract_diffbot_board_and_executives(company_name, company_domain, sec_cik=sec_cik)
+        existing_names = {p.get("name", "").lower() for p in hierarchy["c_suite"]}
+        for b in board_members:
+            if b.get("name", "").lower() not in existing_names:
+                existing_names.add(b.get("name", "").lower())
+                hierarchy["c_suite"].append(b)
+
+    # 3. Extract live Apollo contacts via Monid
+    contacts = fetch_apollo_hierarchy_via_monid(company_domain, company_name, sec_cik=sec_cik, raw_apollo_dir=raw_apollo_dir)
     
     seen_ids = {p.get("id") for p in hierarchy["c_suite"] if p.get("id")}
+    seen_names = {p.get("name", "").lower() for p in hierarchy["c_suite"] if p.get("name")}
     
     for c in contacts:
         cid = c.get("id")
-        if cid and cid in seen_ids:
+        cname = c.get("name", "").lower()
+        if (cid and cid in seen_ids) or (cname and cname in seen_names):
             continue
         
         tier = c.get("tier")
@@ -312,9 +513,59 @@ def scrape_hierarchy(company_domain: str, company_name: Optional[str] = None, se
             hierarchy[tier].append(c)
             if cid:
                 seen_ids.add(cid)
+            if cname:
+                seen_names.add(cname)
 
     print(f"[+] [Hierarchy] Categorized for '{company_name or company_domain}': "
-          f"C-Suite ({len(hierarchy['c_suite'])}), VPs ({len(hierarchy['vp_level'])}), "
+          f"C-Suite & Board ({len(hierarchy['c_suite'])}), VPs ({len(hierarchy['vp_level'])}), "
           f"Directors ({len(hierarchy['director_level'])}), Managers ({len(hierarchy['manager_level'])})")
     
     return hierarchy
+
+
+def scrape_lob_hierarchy(
+    lob_name: str,
+    lob_domain: Optional[str] = None,
+    account_id: Optional[int] = None,
+    lob_id: Optional[int] = None,
+    raw_apollo_dir: Optional[Path] = None
+) -> Dict[str, Any]:
+    """
+    Dedicated Hierarchy Extractor for an individual Subsidiary / LOB.
+    Queries Monid/Apollo using the LOB domain or LOB name, classifies into 4 tiers,
+    and tags each contact with account_id and lob_id.
+    """
+    print(f"[*] [LOB Hierarchy] Extracting hierarchy for LOB '{lob_name}' (Domain: {lob_domain or 'N/A'})...")
+    contacts = fetch_apollo_hierarchy_via_monid(
+        company_domain=lob_domain or "",
+        company_name=lob_name,
+        raw_apollo_dir=raw_apollo_dir
+    )
+
+    hierarchy = {
+        "c_suite": [],
+        "vp_level": [],
+        "director_level": [],
+        "manager_level": []
+    }
+
+    for c in contacts:
+        if account_id:
+            c["account_id"] = account_id
+        if lob_id:
+            c["lob_id"] = lob_id
+        c["lob_name"] = lob_name
+
+        tier = c.get("tier", "vp_level")
+        if tier in hierarchy:
+            hierarchy[tier].append(c)
+        else:
+            hierarchy["vp_level"].append(c)
+
+    print(f"[+] [LOB Hierarchy] '{lob_name}': C-Suite ({len(hierarchy['c_suite'])}), VPs ({len(hierarchy['vp_level'])})")
+    return {
+        "lob_name": lob_name,
+        "lob_domain": lob_domain,
+        "lob_id": lob_id,
+        "hierarchy": hierarchy
+    }

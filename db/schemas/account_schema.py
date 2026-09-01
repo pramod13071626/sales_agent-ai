@@ -109,16 +109,21 @@ class AccountSchema(BaseModel):
     youtube_search_url: Optional[str] = None
     openalex_institution_url: Optional[str] = None
     wikidata_entity_url: Optional[str] = None
+    github_url: Optional[str] = None
+    glassdoor_url: Optional[str] = None
     blog_url: Optional[str] = None
     youtube_channel_id: Optional[str] = None
 
-    # Array Fields
+    # Array & JSONB Fields
     industries: List[str] = []
     industry_groups: List[str] = []
     aliases: List[str] = []
     founders: List[str] = []
     headquarters_regions: List[str] = []
     keywords: List[str] = []
+    multi_source_intelligence: Optional[dict] = None
+    organisational_hierarchy_tree: Optional[dict] = None
+    raw_data: Optional[dict] = None
 
     model_config = {"from_attributes": True}
 
@@ -230,6 +235,8 @@ class AccountSchema(BaseModel):
             youtube_search_url=req_acc.get("youtube_search_url"),
             openalex_institution_url=req_acc.get("openalex_institution_url"),
             wikidata_entity_url=req_acc.get("wikidata_entity_url"),
+            github_url=req_acc.get("github_url"),
+            glassdoor_url=req_acc.get("glassdoor_url"),
             blog_url=req_acc.get("blog_url"),
             youtube_channel_id=req_acc.get("youtube_channel_id"),
             industries=[i for i in (firmographics.get("industries") or []) if i],
@@ -238,4 +245,7 @@ class AccountSchema(BaseModel):
             founders=[f for f in (people.get("founders") or []) if f],
             headquarters_regions=[r for r in (location.get("headquarters_regions") or []) if r],
             keywords=[k for k in (firmographics.get("keywords") or []) if k],
+            multi_source_intelligence=acct.get("multi_source_intelligence"),
+            organisational_hierarchy_tree=acct.get("organisational_hierarchy_tree"),
+            raw_data=doc
         )
