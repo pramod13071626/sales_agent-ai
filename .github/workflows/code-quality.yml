@@ -1,0 +1,127 @@
+name: Code Quality
+
+on:
+  pull_request:
+  push:
+    branches: [feature/sales-intelligence-pipeline]
+
+concurrency:
+  group: code-quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: read
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  # Lint + format only fail the PR on lines the PR itself touches
+  # (reviewdog's `-filter-mode=added`) — the existing codebase has ~1000
+  # pre-existing ruff findings and 67 unformatted files that nobody should
+  # be blocked on fixing just to land an unrelated change. New/changed
+  # code is held to the real bar from day one; the backlog is cleaned up
+  # incrementally as those files are touched anyway.
+  lint:
+    name: Lint & format (new code only)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install ruff
+        run: pip install "ruff>=0.6.0"
+
+      - uses: reviewdog/action-setup@v1
+        with:
+          reviewdog_version: latest
+
+      - name: ruff check
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          ruff check . --output-format=rdjson > ruff-check.json
+          set -e
+          cat ruff-check.json | reviewdog -f=rdjson -name="ruff" \
+            -reporter=github-pr-check -filter-mode=added -fail-on-error=true
+
+      - name: ruff format
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          ruff format --diff . > ruff-format.diff
+          set -e
+          cat ruff-format.diff | reviewdog -f=diff -f.diff.strip=1 -name="ruff-format" \
+            -reporter=github-pr-check -filter-mode=added -fail-on-error=true
+
+  typecheck:
+    name: Static type check (mypy, report-only)
+    runs-on: ubuntu-latest
+    # No project code has type hints yet, so mypy is wired in as a visible,
+    # non-blocking signal. Flip this to a hard gate once coverage is real.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements-dev.txt
+          pip install -r requirements.txt
+          pip install -r apps/content_pipeline/requirements.txt
+
+      - name: mypy
+        run: mypy .
+
+  test:
+    name: Test (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: sales_ai
+            working-directory: "."
+            requirements: requirements.txt
+          - name: content_pipeline
+            working-directory: apps/content_pipeline
+            requirements: apps/content_pipeline/requirements.txt
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements-dev.txt
+          pip install -r ${{ matrix.requirements }}
+
+      - name: Run tests with coverage
+        working-directory: ${{ matrix.working-directory }}
+        run: |
+          python -m pytest tests/ \
+            --cov=. --cov-report=term-missing --cov-report=xml \
+            --cov-fail-under=0
+
+      # No coverage floor yet (there's almost nothing to cover beyond the
+      # smoke tests this branch adds) — raise --cov-fail-under above once
+      # real unit tests exist, instead of leaving this check meaningless.
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.name }}
+          path: ${{ matrix.working-directory }}/coverage.xml
