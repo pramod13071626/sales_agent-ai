@@ -120,7 +120,7 @@ def run_pipeline(company_name: str, target_url: str = None):
             telemetry.record_api_call("openfec_data_gov", "api.open.fec.gov", credits_used=0, is_billable=False)
 
         # 3. Level 2: Multi-Source LOB & Subsidiary Discovery
-        telemetry.log("INFO", "LOBS", f"Discovering subsidiaries across Crunchbase, SEC EX-21, and GLEIF...")
+        telemetry.log("INFO", "LOBS", "Discovering subsidiaries across Crunchbase, SEC EX-21, and GLEIF...")
         sublobs_raw = scrape_sublobs(parent_account_name=company_name, raw_apify_dir=run_dirs["raw_apify_dir"])
         telemetry.record_api_call("apify", "crunchbase-suborganizations", credits_used=1, is_billable=True)
 
@@ -162,7 +162,7 @@ def run_pipeline(company_name: str, target_url: str = None):
         )
 
         # 5. Level 3: 4-Tier Org Hierarchy for Corporate Account
-        telemetry.log("INFO", "HIERARCHY", f"Extracting 4-tier management and board leadership...")
+        telemetry.log("INFO", "HIERARCHY", "Extracting 4-tier management and board leadership...")
         account_domain = account_data.get("domain") or account_data.get("primary_domain") or target_url
         account_hierarchy = scrape_hierarchy(
             company_domain=account_domain,
@@ -286,9 +286,10 @@ def run_pipeline(company_name: str, target_url: str = None):
     print(f"[+] Telemetry & Usage JSON: {run_dirs['telemetry_json_path']}")
     print("=" * 70)
     print(
-        f"[INFO] Quality Score: {telemetry.quality_score}/100 (Grade: {telemetry.quality_grade}) | Credits Used: {telemetry.total_credits_used}"
+        f"[INFO] Quality Score: {telemetry.quality_score}/100 (Grade: {telemetry.quality_grade}) | "
+        f"Credits Used: {telemetry.total_credits_used}"
     )
-    print(f"[INFO] Data is staged in JSON and recorded in 'pipeline_runs'. To dump entities to database:")
+    print("[INFO] Data is staged in JSON and recorded in 'pipeline_runs'. To dump entities to database:")
     print(f"       python db/importer.py --dir {run_dirs['run_dir']}")
     print("=" * 70)
 
