@@ -167,10 +167,19 @@ jobs:
       # Run per-app: both apps have same-named top-level modules (db, config,
       # main, paths, ...), so a single `mypy .` across both trees fails with
       # "Duplicate module named ..." before it checks anything.
+      #
+      # continue-on-error is set on *each* step, not just the job: the
+      # job-level flag alone only stops a failed job from failing the
+      # overall workflow — it does NOT make a failed step let the next
+      # step run. Without this, mypy (sales_ai) failing (it does; ~78
+      # pre-existing errors, no type hints in this codebase yet) would
+      # abort the job before mypy (content_pipeline) ever ran.
       - name: mypy (sales_ai)
+        continue-on-error: true
         run: mypy . --exclude 'apps/content_pipeline/'
 
       - name: mypy (content_pipeline)
+        continue-on-error: true
         run: mypy apps/content_pipeline
 
   test:
