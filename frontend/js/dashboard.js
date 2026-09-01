@@ -709,12 +709,11 @@
 
   async function loadAccounts() {
     try {
-      // Deep link: /?view=jobs opens the All Job Postings browser directly on load.
-      const wantsJobsView = window.location.search === '?view=jobs';
-      // Any other query string (stale/unsupported) resets to a clean root URL on hard-refresh.
-      if (window.location.search && !wantsJobsView) {
-        history.replaceState(null, '', window.location.pathname);
-      }
+      const urlParams = new URLSearchParams(window.location.search);
+      const wantsJobsView = urlParams.get('view') === 'jobs';
+      const urlAccount = urlParams.get('account');
+      const urlLob = urlParams.get('lob');
+      const urlTab = urlParams.get('tab');
 
       const [acctRes, contentRes] = await Promise.all([
         fetch('/api/accounts'),
@@ -730,8 +729,16 @@
 
       renderTopbarTicker();
       renderNavTree();
+
       if (wantsJobsView) {
         await openAllJobsPage();
+      } else if (urlAccount && accounts.some(a => a.id === Number(urlAccount))) {
+        activeAccountId = Number(urlAccount);
+        if (urlLob) activeLobId = Number(urlLob);
+        if (urlTab) activeSalesTab = urlTab;
+        expandedAccountIds.add(activeAccountId);
+        renderNavTree();
+        renderSelection();
       } else {
         renderDigest();
       }
@@ -1085,7 +1092,8 @@
 
   function getPersonasFor(account, lob) {
     if (lob) return lob.personas || [];
-    return dedupePersonas((account.lobs || []).flatMap(l => l.personas || []));
+    const all = [...(account.personas || []), ...(account.lobs || []).flatMap(l => l.personas || [])];
+    return dedupePersonas(all);
   }
 
   function getTechFor(account, lob) {
@@ -1943,9 +1951,14 @@
     return `
       <!-- Account Overview Header Panel -->
       <div class="panel" style="margin-bottom:12px;">
-        <div class="acct-header">
-          <div class="acct-avatar-lg">${esc(initials(account.name))}</div>
-          <div class="acct-header-body">
+        <div class="acct-header" style="display:flex;align-items:flex-start;gap:14px;">
+          ${lob && lob.logo_url ? `
+            <img src="${esc(lob.logo_url)}" alt="${esc(lob.name)}" style="width:52px;height:52px;border-radius:12px;object-fit:contain;background:#fff;border:1px solid #e2e8f0;padding:4px;flex-shrink:0;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';" />
+            <div class="acct-avatar-lg" style="display:none;width:52px;height:52px;">${esc(initials(lob.name))}</div>
+          ` : `
+            <div class="acct-avatar-lg">${esc(initials(lob ? lob.name : account.name))}</div>
+          `}
+          <div class="acct-header-body" style="flex:1;">
             <h2 class="acct-name">${esc(account.name)}${lob ? ' · ' + esc(lob.name) : ''}</h2>
             <div class="acct-pills">
               <span class="pill pill-brand" title="Public / Private stock ticker classification"><i class="bi bi-tag"></i> ${esc(account.ticker || 'Private')}</span>
@@ -2610,13 +2623,18 @@
   function renderDrawerPinned(p) {
     const tag = p.tier || p.decision_authority || (p.departments && p.departments[0]) || null;
     const dossierReady = hasDossier(p);
+    const isNew = p.is_new_in_role;
     return `
       <div class="drawer-contact-header">
         <div class="drawer-avatar">${esc(initials(p.name))}</div>
         <div>
           <div class="drawer-contact-name">${esc(p.name || 'Unnamed')} ${dossierReady ? '<i class="bi bi-stars" title="AI call-prep dossier available"></i>' : ''}</div>
-          <div class="drawer-contact-title">${esc(p.title || 'Title unknown')}</div>
-          ${tag ? `<div class="contact-tags" style="margin-top:6px;"><span class="tag">${esc(tag)}</span></div>` : ''}
+          <div class="drawer-contact-title">${esc(p.headline || p.title || 'Title unknown')}</div>
+          <div class="contact-tags" style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap;">
+            ${tag ? `<span class="tag">${esc(tag)}</span>` : ''}
+            ${isNew ? `<span class="tag" style="background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5;"><i class="bi bi-lightning-charge-fill"></i> New in Role (${p.current_role_tenure_months || '<6'} mos)</span>` : ''}
+            ${(p.past_companies && p.past_companies.length) ? `<span class="tag" style="background:#f1f5f9;color:#334155;"><i class="bi bi-buildings"></i> Ex-${esc(p.past_companies[0])}</span>` : ''}
+          </div>
         </div>
       </div>
 
@@ -2628,9 +2646,9 @@
 
       <div class="drawer-jumpnav">
         <button type="button" class="drawer-jump-btn active" data-jump="drawer-sec-overview">Overview</button>
+        <button type="button" class="drawer-jump-btn" data-jump="drawer-sec-career">Career History</button>
         <button type="button" class="drawer-jump-btn" data-jump="drawer-sec-dossier">Call Prep</button>
         <button type="button" class="drawer-jump-btn" data-jump="drawer-sec-social">Social</button>
-        <button type="button" class="drawer-jump-btn" data-jump="drawer-sec-profiles">Profiles</button>
       </div>
     `;
   }
@@ -2640,28 +2658,72 @@
       p.decision_authority ? `Decision authority: ${p.decision_authority}` : '',
       p.budget_authority ? `Budget authority: ${p.budget_authority}` : '',
       p.seniority_raw ? `Seniority: ${p.seniority_raw}` : '',
+      p.current_role_tenure_months ? `Tenure in role: ${p.current_role_tenure_months} months` : '',
+      p.personal_email ? `Personal email: ${p.personal_email}` : '',
+      p.direct_mobile_phone ? `Direct mobile: ${p.direct_mobile_phone}` : '',
       [p.city, p.state, p.country].filter(Boolean).join(', ')
     ].filter(Boolean);
+
+    const empHistory = p.employment_history || [];
+    const pastComps = p.past_companies || [];
+    const eduHistory = p.education_history || [];
 
     return `
       <div id="drawer-sec-overview">
         ${meta.length ? `
           <div class="drawer-section">
-            <div class="drawer-section-title"><i class="bi bi-person-vcard"></i> Contact Info</div>
+            <div class="drawer-section-title"><i class="bi bi-person-vcard"></i> Contact &amp; Role Details</div>
             ${meta.map(m => `<div class="stat-row"><span class="stat-label">${esc(m)}</span></div>`).join('')}
           </div>` : ''}
 
         ${(p.skills && p.skills.length) ? `
           <div class="drawer-section">
-            <div class="drawer-section-title"><i class="bi bi-lightning-charge"></i> Skills &amp; Focus Areas</div>
+            <div class="drawer-section-title"><i class="bi bi-lightning-charge"></i> Skills &amp; Core Focus Areas</div>
             <div class="chip-row">${p.skills.map(s => `<span class="chip">${esc(s)}</span>`).join('')}</div>
           </div>` : ''}
+      </div>
 
-        ${(!meta.length && !(p.skills && p.skills.length)) ? `
-          <div class="drawer-section">
-            <div class="drawer-section-title"><i class="bi bi-person-vcard"></i> Contact Info</div>
-            <div class="empty-block" style="padding:6px 0;"><div class="empty-block-text">No additional contact metadata captured yet.</div></div>
-          </div>` : ''}
+      <!-- 🏢 Career Employment History & Trajectory Section -->
+      <div class="drawer-section" id="drawer-sec-career">
+        <div class="drawer-section-title"><i class="bi bi-briefcase"></i> Career &amp; Employment History</div>
+        
+        ${pastComps.length ? `
+          <div style="margin-bottom:12px;">
+            <div style="font-size:0.75rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px;">Previous Organizations</div>
+            <div class="chip-row">
+              ${pastComps.map(c => `<span class="chip" style="background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;"><i class="bi bi-building"></i> ${esc(c)}</span>`).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        ${empHistory.length ? `
+          <div class="career-timeline" style="border-left:2px solid #e2e8f0;padding-left:14px;margin-left:4px;">
+            ${empHistory.map(item => `
+              <div style="margin-bottom:14px;position:relative;">
+                <div style="position:absolute;left:-19px;top:4px;width:8px;height:8px;border-radius:50%;background:${item.is_current ? 'var(--brand)' : '#94a3b8'};"></div>
+                <div style="font-size:0.85rem;font-weight:600;color:var(--text);">${esc(item.title || 'Role')}</div>
+                <div style="font-size:0.8rem;color:var(--brand);font-weight:500;">${esc(item.company || '')}</div>
+                <div style="font-size:0.75rem;color:var(--text-muted);">${esc(item.start_date || '')} – ${esc(item.end_date || (item.is_current ? 'Present' : ''))}</div>
+                ${item.description ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">${esc(item.description)}</div>` : ''}
+              </div>
+            `).join('')}
+          </div>
+        ` : (p.prior_company ? `
+          <div class="stat-row"><span class="stat-label">Previous Company:</span> <span class="stat-val font-semibold">${esc(p.prior_company)}</span></div>
+        ` : `
+          <div class="empty-block" style="padding:14px 4px;">
+            <div class="empty-block-icon"><i class="bi bi-clock-history"></i></div>
+            <div class="empty-block-text">No verified prior employment history on file.<br><span style="font-size:0.75rem;color:var(--text-muted);">Ready for live FullEnrich waterfall sync.</span></div>
+          </div>
+        `)}
+
+        ${(p.degree || p.institution || eduHistory.length) ? `
+          <div style="margin-top:14px;border-top:1px dashed #e2e8f0;padding-top:10px;">
+            <div style="font-size:0.75rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px;"><i class="bi bi-mortarboard"></i> Education &amp; Background</div>
+            ${p.degree || p.institution ? `<div class="stat-row"><span class="stat-label">${esc([p.degree, p.institution].filter(Boolean).join(' · '))}</span></div>` : ''}
+            ${eduHistory.map(edu => `<div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px;">${esc(edu.degree || '')} · ${esc(edu.school || edu.institution || '')}</div>`).join('')}
+          </div>
+        ` : ''}
       </div>
 
       <div class="drawer-section" id="drawer-sec-dossier">
@@ -2674,15 +2736,24 @@
         ${renderSocialActivity(p)}
       </div>
 
-      <div id="drawer-sec-profiles">
-        <div class="drawer-section drawer-section-muted">
-          <div class="drawer-section-title"><i class="bi bi-activity"></i> Psychological Profile</div>
-          ${renderPlaceholderProfile('Not available — no data source for psychological profiling is connected.')}
+      <!-- Psychological & Personality Profile Sections -->
+      <div class="drawer-section">
+        <div class="drawer-section-title" style="font-size:0.75rem;font-weight:700;letter-spacing:0.5px;color:var(--text-muted);text-transform:uppercase;">
+          <i class="bi bi-activity"></i> Psychological Profile
         </div>
+        <div class="empty-block" style="padding:10px 4px;text-align:left;display:flex;align-items:center;gap:8px;">
+          <i class="bi bi-slash-circle" style="color:var(--text-muted);font-size:0.95rem;"></i>
+          <span style="font-size:0.8rem;color:var(--text-muted);">Not available — no data source for psychological profiling is connected.</span>
+        </div>
+      </div>
 
-        <div class="drawer-section drawer-section-muted">
-          <div class="drawer-section-title"><i class="bi bi-person-lines-fill"></i> Personality Profile</div>
-          ${renderPlaceholderProfile('Not available — no personality-assessment source (e.g. DISC/Big Five) is connected.')}
+      <div class="drawer-section">
+        <div class="drawer-section-title" style="font-size:0.75rem;font-weight:700;letter-spacing:0.5px;color:var(--text-muted);text-transform:uppercase;">
+          <i class="bi bi-person-lines-fill"></i> Personality Profile
+        </div>
+        <div class="empty-block" style="padding:10px 4px;text-align:left;display:flex;align-items:center;gap:8px;">
+          <i class="bi bi-slash-circle" style="color:var(--text-muted);font-size:0.95rem;"></i>
+          <span style="font-size:0.8rem;color:var(--text-muted);">Not available — no personality-assessment source (e.g. DISC/Big Five) is connected.</span>
         </div>
       </div>
     `;
@@ -3080,15 +3151,27 @@
     jumpBtn.classList.add('active');
   });
 
+  let contactCurrentPage = 1;
+  const CONTACTS_PAGE_SIZE = 12;
+
   function renderContactsList(personas) {
     currentPersonas = personas;
     if (!personas.length) return '<div class="people-empty">No contacts match.</div>';
-    return personas.slice(0, 12).map((p, idx) => {
+
+    const totalPages = Math.ceil(personas.length / CONTACTS_PAGE_SIZE) || 1;
+    if (contactCurrentPage > totalPages) contactCurrentPage = totalPages;
+    if (contactCurrentPage < 1) contactCurrentPage = 1;
+
+    const startIdx = (contactCurrentPage - 1) * CONTACTS_PAGE_SIZE;
+    const pagePersonas = personas.slice(startIdx, startIdx + CONTACTS_PAGE_SIZE);
+
+    const cardsHtml = pagePersonas.map((p, idx) => {
+      const globalIdx = startIdx + idx;
       const tag = p.tier || p.decision_authority || (p.departments && p.departments[0]) || null;
       const dossierReady = hasDossier(p);
       return `
         <div class="contact-card">
-          <button type="button" class="contact-main" data-contact-idx="${idx}" title="View full contact details">
+          <button type="button" class="contact-main" data-contact-idx="${globalIdx}" title="View full contact details">
             <div class="contact-avatar">${esc(initials(p.name))}</div>
             <div class="contact-body">
               <div class="contact-name">${esc(p.name || 'Unnamed')} ${dossierReady ? '<i class="bi bi-stars dossier-badge" title="AI call-prep dossier available"></i>' : ''}</div>
@@ -3103,18 +3186,54 @@
             <a class="icon-btn ${p.linkedin_url ? '' : 'disabled'}" ${p.linkedin_url ? `href="${esc(p.linkedin_url)}" target="_blank"` : ''} title="${p.linkedin_url ? 'LinkedIn' : 'No LinkedIn on file'}"><i class="bi bi-linkedin"></i></a>
           </div>
         </div>`;
-    }).join('') + (personas.length > 12 ? `<div class="people-empty">+${personas.length - 12} more contacts — refine your search to narrow it down</div>` : '');
+    }).join('');
+
+    let paginationHtml = '';
+    if (totalPages > 1) {
+      const maxVisible = 4;
+      let startPage = Math.max(1, contactCurrentPage - Math.floor(maxVisible / 2));
+      let endPage = startPage + maxVisible - 1;
+
+      if (endPage > totalPages) {
+        endPage = totalPages;
+        startPage = Math.max(1, endPage - maxVisible + 1);
+      }
+
+      const visiblePages = [];
+      for (let i = startPage; i <= endPage; i++) {
+        visiblePages.push(i);
+      }
+
+      paginationHtml = `
+        <div class="contact-pagination" style="display:flex;align-items:center;justify-content:center;gap:5px;margin-top:14px;padding-top:10px;border-top:1px solid #f1f5f9;flex-wrap:wrap;">
+          <button type="button" class="contact-page-btn" data-page="${contactCurrentPage - 1}" ${contactCurrentPage === 1 ? 'disabled' : ''} style="border:1px solid #e2e8f0;background:#fff;border-radius:6px;padding:3px 8px;font-size:0.75rem;cursor:${contactCurrentPage === 1 ? 'default' : 'pointer'};color:${contactCurrentPage === 1 ? '#cbd5e1' : 'inherit'};">
+            <i class="bi bi-chevron-left"></i>
+          </button>
+          ${visiblePages.map(pageNum => `
+            <button type="button" class="contact-page-btn ${pageNum === contactCurrentPage ? 'active' : ''}" data-page="${pageNum}" style="border:1px solid ${pageNum === contactCurrentPage ? 'var(--brand)' : '#e2e8f0'};background:${pageNum === contactCurrentPage ? 'var(--brand)' : '#fff'};color:${pageNum === contactCurrentPage ? '#fff' : 'inherit'};border-radius:6px;padding:3px 9px;font-size:0.75rem;font-weight:${pageNum === contactCurrentPage ? '700' : '500'};cursor:pointer;">
+              ${pageNum}
+            </button>
+          `).join('')}
+          <button type="button" class="contact-page-btn" data-page="${contactCurrentPage + 1}" ${contactCurrentPage === totalPages ? 'disabled' : ''} style="border:1px solid #e2e8f0;background:#fff;border-radius:6px;padding:3px 8px;font-size:0.75rem;cursor:${contactCurrentPage === totalPages ? 'default' : 'pointer'};color:${contactCurrentPage === totalPages ? '#cbd5e1' : 'inherit'};">
+            <i class="bi bi-chevron-right"></i>
+          </button>
+        </div>
+      `;
+    }
+
+    return cardsHtml + paginationHtml;
   }
 
   function filterContacts(personas, query) {
     const q = (query || '').trim().toLowerCase();
     if (!q) return personas;
-    return personas.filter(p => (p.name || '').toLowerCase().includes(q) || (p.title || '').toLowerCase().includes(q));
+    return personas.filter(p => ((p.name || p.full_name || p.display_name || '').toLowerCase().includes(q) || (p.title || p.job_title || '').toLowerCase().includes(q)));
   }
 
   function renderPeople(account, lob) {
     const personas = getPersonasFor(account, lob);
     allAccountPersonas = personas;
+    contactCurrentPage = 1;
     const tech = getTechFor(account, lob);
 
     const socialLinks = [
@@ -3170,11 +3289,21 @@
 
   dashPeople.addEventListener('input', function (e) {
     if (e.target.id !== 'contactSearchInput') return;
+    contactCurrentPage = 1;
     const filtered = filterContacts(allAccountPersonas, e.target.value);
     el('contactsListContainer').innerHTML = renderContactsList(filtered);
   });
 
   dashPeople.addEventListener('click', async function (e) {
+    const pageBtn = e.target.closest('.contact-page-btn');
+    if (pageBtn && !pageBtn.disabled) {
+      contactCurrentPage = Number(pageBtn.dataset.page);
+      const searchVal = el('contactSearchInput') ? el('contactSearchInput').value : '';
+      const filtered = filterContacts(allAccountPersonas, searchVal);
+      el('contactsListContainer').innerHTML = renderContactsList(filtered);
+      return;
+    }
+
     const contactBtn = e.target.closest('[data-contact-idx]');
     if (contactBtn) {
       const p = currentPersonas[Number(contactBtn.dataset.contactIdx)];

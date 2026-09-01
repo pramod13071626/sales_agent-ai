@@ -139,6 +139,7 @@ class LOBSerializer:
         req_acc = cls.build_required_lob_account(name, domain=domain, sec_cik=sec_cik)
 
         return {
+            "key": req_acc.get("key"),
             "lob_name": name,
             "audited_segment_revenue": audited_rev,
             "operating_head": op_head,
@@ -153,6 +154,11 @@ class LOBSerializer:
             "wikipedia_url": raw_lob.get("wikipedia_url"),
             "financial_snippets": cleaned_snippets if cleaned_snippets else [overview],
             "required_account": req_acc,
+            "google_news_rss_url": req_acc.get("rss_url"),
+            "reddit_rss_url": req_acc.get("reddit_rss_url"),
+            "google_patents_url": req_acc.get("google_patents_url"),
+            "google_trends_url": req_acc.get("google_trends_url"),
+            "youtube_search_url": req_acc.get("youtube_search_url"),
             "domain": domain,
             "website_url": website_url,
             "crunchbase_url": raw_lob.get("crunchbase_url"),

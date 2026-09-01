@@ -70,11 +70,23 @@ class PersonaSchema(BaseModel):
     operational_pain_points: List[str] = []
     key_objections: List[str] = []
 
+    # Career Employment History & Personal Intelligence (FullEnrich Waterfall)
+    headline: Optional[str] = None
+    employment_history: Optional[List[Dict[str, Any]]] = None
+    past_companies: List[str] = []
+    previous_titles: List[str] = []
+    current_role_tenure_months: Optional[int] = None
+    is_new_in_role: Optional[bool] = False
+    career_trajectory_score: Optional[float] = None
+    education_history: Optional[List[Dict[str, Any]]] = None
+    personal_email: Optional[str] = None
+    direct_mobile_phone: Optional[str] = None
+
     model_config = {"from_attributes": True}
 
     @classmethod
     def from_enriched_json(cls, person: dict, tree_info: dict = None) -> "PersonaSchema":
-        """Factory: builds PersonaSchema from a single person entry + optional tree metadata."""
+        """Factory: dynamically builds PersonaSchema from a single person entry + optional tree metadata."""
         rpd = person.get("required_person_data", {}) or {}
         dossier = person.get("persona_dossier") or {}
         l1 = dossier.get("level_1_demographics", {}) or {}
@@ -82,6 +94,20 @@ class PersonaSchema(BaseModel):
         l3 = dossier.get("level_3_personal_touch", {}) or {}
         social = l3.get("social_media", {}) or {}
         tree = tree_info or {}
+        raw = person.get("raw_data") or person or {}
+
+        # Dynamic Career & Employment Extraction
+        emp_hist = person.get("employment_history") or raw.get("employment_history") or raw.get("experience") or []
+        past_comps = person.get("past_companies") or [e.get("company") or e.get("company_name") or e.get("organization_name") for e in emp_hist if isinstance(e, dict) and (e.get("company") or e.get("company_name") or e.get("organization_name"))]
+        if not past_comps and l1.get("prior_company"):
+            past_comps = [l1.get("prior_company")]
+
+        prev_titles = person.get("previous_titles") or [e.get("title") or e.get("role") for e in emp_hist if isinstance(e, dict) and (e.get("title") or e.get("role"))]
+        
+        tenure = person.get("current_role_tenure_months")
+        is_new = person.get("is_new_in_role") or (tenure is not None and tenure <= 6)
+        
+        edu_hist = person.get("education_history") or raw.get("education_history") or raw.get("education") or []
 
         return cls(
             external_id=person.get("id"),
@@ -106,7 +132,7 @@ class PersonaSchema(BaseModel):
             hierarchy_level=tree.get("hierarchy_level"),
             decision_authority=tree.get("decision_authority"),
             budget_authority=tree.get("budget_authority"),
-            raw_data=person.get("raw_data") or person,
+            raw_data=raw,
             twitter_handle=rpd.get("twitter_handle"),
             twitter_live_url=rpd.get("twitter_live_url"),
             reddit_query=rpd.get("reddit_query"),
@@ -139,4 +165,14 @@ class PersonaSchema(BaseModel):
             target_kpis=[k for k in (l2.get("target_kpis") or dossier.get("strategic_kpis") or []) if k],
             operational_pain_points=[p for p in (l2.get("operational_pain_points") or dossier.get("pain_points") or []) if p],
             key_objections=[o for o in (l3.get("key_objections") or []) if o],
+            headline=person.get("headline") or raw.get("headline") or person.get("title"),
+            employment_history=emp_hist if isinstance(emp_hist, list) else None,
+            past_companies=[c for c in past_comps if c] if isinstance(past_comps, list) else [],
+            previous_titles=[t for t in prev_titles if t] if isinstance(prev_titles, list) else [],
+            current_role_tenure_months=tenure,
+            is_new_in_role=is_new,
+            career_trajectory_score=person.get("career_trajectory_score"),
+            education_history=edu_hist if isinstance(edu_hist, list) else None,
+            personal_email=person.get("personal_email") or raw.get("personal_email"),
+            direct_mobile_phone=person.get("direct_mobile_phone") or raw.get("direct_mobile_phone") or person.get("phone")
         )

@@ -72,13 +72,25 @@ class AccountSerializer:
         account_hierarchy: Dict[str, List[Dict[str, Any]]],
         tree_root: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Serializes the complete corporate account structure."""
-        name = account_data.get("name") or "Corporate Account"
+        """Serializes the complete corporate account structure across all 93 fields dynamically."""
+        name = account_data.get("name") or account_data.get("legal_name") or "Corporate Account"
         legal_name = account_data.get("legal_name") or name
         domain = account_data.get("primary_domain") or account_data.get("domain")
         website_url = account_data.get("website_url") or (f"https://{domain}" if domain else None)
         
         req_account = cls.build_required_account(account_data)
+
+        # Helper to extract from either flat or nested dict
+        def _get(*keys, default=None):
+            for k in keys:
+                if k in account_data and account_data[k] is not None:
+                    return account_data[k]
+                # Also check in nested sub-dicts
+                for sub_k in ["firmographics", "location", "contact_and_social", "financials_and_funding", "market_and_ipo", "acquisitions_and_suborgs", "web_traffic_and_growth", "tech_and_patents", "key_people"]:
+                    sub_dict = account_data.get(sub_k)
+                    if isinstance(sub_dict, dict) and k in sub_dict and sub_dict[k] is not None:
+                        return sub_dict[k]
+            return default
 
         # Multi-source intelligence preservation
         multi_source = account_data.get("multi_source_intelligence") or {}
@@ -88,37 +100,91 @@ class AccountSerializer:
             "identity": {
                 "name": name,
                 "legal_name": legal_name,
-                "aliases": account_data.get("aliases", []),
+                "aliases": _get("aliases", default=[]),
                 "domain": domain,
                 "primary_domain": domain,
                 "website_url": website_url,
-                "company_url": account_data.get("crunchbase_url") or account_data.get("company_url"),
-                "crunchbase_url": account_data.get("crunchbase_url"),
-                "operating_status": account_data.get("operating_status", "active"),
-                "company_type": account_data.get("company_type", "for_profit")
+                "company_url": _get("crunchbase_url", "company_url"),
+                "crunchbase_url": _get("crunchbase_url"),
+                "operating_status": _get("operating_status", default="active"),
+                "company_type": _get("company_type", default="for_profit")
             },
             "firmographics": {
-                "founded_date": account_data.get("founded_date"),
-                "founded_year": account_data.get("founded_year"),
-                "employee_count_range": account_data.get("employee_count_range"),
-                "short_description": account_data.get("short_description"),
-                "full_description": account_data.get("full_description") or account_data.get("short_description"),
-                "industries": account_data.get("industries", []),
-                "keywords": account_data.get("keywords", [])
+                "founded_date": _get("founded_date"),
+                "founded_year": _get("founded_year"),
+                "employee_count_range": _get("employee_count_range"),
+                "short_description": _get("short_description"),
+                "full_description": _get("full_description") or _get("short_description"),
+                "industries": _get("industries", default=[]),
+                "industry_groups": _get("industry_groups", default=[]),
+                "keywords": _get("keywords", default=[])
             },
             "location": {
-                "headquarters_location": account_data.get("headquarters_location"),
-                "street_address": account_data.get("street_address"),
-                "city": account_data.get("city"),
-                "state": account_data.get("state"),
-                "postal_code": account_data.get("postal_code"),
-                "country": account_data.get("country")
+                "headquarters_location": _get("headquarters_location"),
+                "street_address": _get("street_address"),
+                "city": _get("city"),
+                "state": _get("state"),
+                "postal_code": _get("postal_code"),
+                "country": _get("country"),
+                "headquarters_regions": _get("headquarters_regions", default=[])
+            },
+            "contact_and_social": {
+                "phone_number": _get("phone_number"),
+                "sanitized_phone": _get("sanitized_phone"),
+                "contact_email": _get("contact_email"),
+                "linkedin_url": _get("linkedin_url"),
+                "twitter_url": _get("twitter_url"),
+                "twitter_handle": _get("twitter_handle"),
+                "facebook_url": _get("facebook_url"),
+                "github_url": _get("github_url"),
+                "glassdoor_url": _get("glassdoor_url"),
+                "blog_url": _get("blog_url"),
+                "youtube_channel_id": _get("youtube_channel_id")
+            },
+            "financials_and_funding": {
+                "estimated_revenue_range": _get("estimated_revenue_range"),
+                "total_funding_amount": _get("total_funding_amount"),
+                "total_funding_amount_usd": _get("total_funding_amount_usd"),
+                "total_funding_amount_currency": _get("total_funding_amount_currency", "total_funding_currency"),
+                "last_funding_type": _get("last_funding_type"),
+                "last_funding_date": _get("last_funding_date"),
+                "num_funding_rounds": _get("num_funding_rounds"),
+                "funding_status": _get("funding_status")
             },
             "market_and_ipo": {
-                "stock_symbol": account_data.get("stock_symbol") or account_data.get("ticker"),
-                "stock_exchange": account_data.get("stock_exchange"),
-                "stock_symbol_url": account_data.get("stock_symbol_url"),
-                "sec_cik": str(account_data.get("sec_cik")).zfill(10) if account_data.get("sec_cik") else None
+                "stock_symbol": _get("stock_symbol", "ticker"),
+                "stock_exchange": _get("stock_exchange"),
+                "stock_symbol_url": _get("stock_symbol_url"),
+                "sec_cik": str(_get("sec_cik")).zfill(10) if _get("sec_cik") else None,
+                "sec_name": _get("sec_name"),
+                "ipo_status": _get("ipo_status"),
+                "ipo_date": _get("ipo_date")
+            },
+            "acquisitions_and_suborgs": {
+                "num_suborganizations": _get("num_suborganizations"),
+                "num_acquisitions": _get("num_acquisitions")
+            },
+            "web_traffic_and_growth": {
+                "global_traffic_rank": _get("global_traffic_rank"),
+                "monthly_visits": _get("monthly_visits"),
+                "bounce_rate": _get("bounce_rate"),
+                "visit_duration": _get("visit_duration"),
+                "page_views_per_visit": _get("page_views_per_visit"),
+                "heat_score": _get("heat_score"),
+                "trend_score_90d": _get("trend_score_90d")
+            },
+            "tech_and_patents": {
+                "active_tech_count": _get("active_tech_count"),
+                "it_spend": _get("it_spend"),
+                "patents_granted": _get("patents_granted"),
+                "trademarks_registered": _get("trademarks_registered"),
+                "total_apps": _get("total_apps"),
+                "total_downloads": _get("total_downloads")
+            },
+            "key_people": {
+                "num_founders": _get("num_founders"),
+                "founders": _get("founders", default=[]),
+                "num_contacts": _get("num_contacts")
             },
             "multi_source_intelligence": multi_source,
             "organisational_hierarchy_tree": tree_root,

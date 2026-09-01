@@ -58,8 +58,13 @@ $(function () {
       const response = await fetch('/api/accounts');
       if (!response.ok) throw new Error('Failed to fetch data');
       const data = await response.json();
-      MOCK_DATA = data;
+      MOCK_DATA = Array.isArray(data) ? { accounts: data } : (data && data.accounts ? data : { accounts: data ? [data] : [] });
       renderSidebar();
+      if (MOCK_DATA.accounts && MOCK_DATA.accounts.length > 0) {
+        setTimeout(() => {
+          $('#accountList .account-item').first().click();
+        }, 50);
+      }
     } catch (err) {
       console.error(err);
       $('#accountList').html('<div style="padding:12px 10px;font-size:.85rem;color:red;">Error loading accounts. Ensure API is running.</div>');
@@ -84,6 +89,118 @@ $(function () {
   }
   function esc(s) {
     return $('<div>').text(s == null ? '' : s).html();
+  }
+
+  function renderAccountDataSection(account) {
+    if (!account) return '';
+
+    const sections = [
+      { id: 'acct_identity', icon: 'bi-info-circle', label: 'Corporate Identity', fields: () => `
+        ${renderField('Display Name', account.display_name || account.name)}
+        ${renderField('Legal Name', account.legal_name)}
+        ${renderField('Key', account.key)}
+        ${renderField('Domain', account.domain)}
+        ${renderField('Primary Domain', account.primary_domain)}
+        ${renderField('Website', account.website_url, { url: true })}
+        ${renderField('Crunchbase', account.crunchbase_url, { url: true })}
+        ${renderField('Operating Status', account.operating_status)}
+        ${renderField('Company Type', account.company_type)}
+        ${renderField('Founded Year', account.founded_year)}
+        ${renderField('Employees', account.employee_count_range)}
+      `},
+      { id: 'acct_location', icon: 'bi-geo-alt', label: 'Location & Contact', fields: () => `
+        ${renderField('Headquarters', account.headquarters_location)}
+        ${renderField('City', account.city)}
+        ${renderField('State', account.state)}
+        ${renderField('Country', account.country)}
+        ${renderField('Postal Code', account.postal_code)}
+        ${renderField('Phone', account.phone_number)}
+        ${renderField('Sanitized Phone', account.sanitized_phone)}
+        ${renderField('Contact Email', account.contact_email)}
+      `},
+      { id: 'acct_social', icon: 'bi-globe', label: 'Social Profiles', fields: () => `
+        ${renderField('LinkedIn', account.linkedin_url, { url: true })}
+        ${renderField('Twitter', account.twitter_url, { url: true })}
+        ${renderField('Twitter Handle', account.twitter_handle)}
+        ${renderField('GitHub', account.github_url, { url: true })}
+        ${renderField('Glassdoor', account.glassdoor_url, { url: true })}
+        ${renderField('Blog', account.blog_url, { url: true })}
+      `},
+      { id: 'acct_finance', icon: 'bi-cash-stack', label: 'Financials & Funding', fields: () => `
+        ${renderField('Revenue', account.revenue || account.estimated_revenue_range)}
+        ${renderField('Total Funding (USD)', account.total_funding_amount_usd)}
+        ${renderField('Funding Currency', account.total_funding_currency)}
+        ${renderField('Last Funding Type', account.last_funding_type)}
+        ${renderField('Last Funding Date', account.last_funding_date)}
+        ${renderField('Funding Rounds', account.num_funding_rounds)}
+        ${renderField('Funding Status', account.funding_status)}
+        ${renderField('Stock Symbol', account.stock_symbol)}
+        ${renderField('Stock Exchange', account.stock_exchange)}
+        ${renderField('IPO Status', account.ipo_status)}
+        ${renderField('IPO Date', account.ipo_date)}
+      `},
+      { id: 'acct_sec', icon: 'bi-bank', label: 'SEC & Regulatory', fields: () => `
+        ${renderField('SEC CIK', account.sec_cik)}
+        ${renderField('SEC EDGAR', account.sec_edgar_url, { url: true })}
+        ${renderField('SEC Filings RSS', account.sec_filings_rss, { url: true })}
+        ${renderField('SEC Submissions', account.sec_submissions_url, { url: true })}
+      `},
+      { id: 'acct_digital', icon: 'bi-laptop', label: 'Digital Footprint', fields: () => `
+        ${renderField('Global Traffic Rank', account.global_traffic_rank)}
+        ${renderField('Monthly Visits', account.monthly_visits)}
+        ${renderField('Bounce Rate', account.bounce_rate)}
+        ${renderField('Visit Duration', account.visit_duration)}
+        ${renderField('Page Views/Visit', account.page_views_per_visit)}
+        ${renderField('Heat Score', account.heat_score)}
+        ${renderField('Trend Score (90d)', account.trend_score_90d)}
+        ${renderField('Active Tech Count', account.active_tech_count)}
+        ${renderField('IT Spend', account.it_spend)}
+        ${renderField('Patents Granted', account.patents_granted)}
+        ${renderField('Trademarks', account.trademarks_registered)}
+      `},
+      { id: 'acct_intel', icon: 'bi-link-45deg', label: 'Intelligence URLs', fields: () => `
+        ${renderField('Twitter Live', account.twitter_live_url, { url: true })}
+        ${renderField('Reddit Query', account.reddit_query)}
+        ${renderField('Reddit RSS', account.reddit_rss_url, { url: true })}
+        ${renderField('News Query', account.news_query)}
+        ${renderField('RSS Feed', account.rss_url, { url: true })}
+        ${renderField('Google Patents', account.google_patents_url, { url: true })}
+        ${renderField('Google Trends', account.google_trends_url, { url: true })}
+        ${renderField('YouTube Search', account.youtube_search_url, { url: true })}
+        ${renderField('OpenAlex', account.openalex_institution_url, { url: true })}
+        ${renderField('Wikidata', account.wikidata_entity_url, { url: true })}
+      `},
+      { id: 'acct_tags', icon: 'bi-tags', label: 'Tags & Classifications', fields: () => `
+        ${renderField('Industries', account.industries, { chips: true, span2: true })}
+        ${renderField('Keywords', account.keywords, { chips: true, span2: true })}
+      `},
+      { id: 'acct_hierarchy', icon: 'bi-diagram-3', label: 'Hierarchy Metrics', fields: () => `
+        ${renderField('LOBs Count', account.lobs_count)}
+        ${renderField('Total Contacts', account.total_contacts_captured)}
+        ${renderField('C-Suite', account.c_suite_count)}
+        ${renderField('VP Level', account.vp_count)}
+        ${renderField('Directors', account.director_count)}
+        ${renderField('Managers', account.manager_count)}
+        ${renderField('Sub-Organizations', account.num_suborganizations)}
+        ${renderField('Acquisitions', account.num_acquisitions)}
+      `}
+    ];
+
+    const pillsHtml = sections.map(s =>
+      `<button type="button" class="intel-tag-pill" data-target="${s.id}" title="Click to view ${s.label}"><i class="bi ${s.icon}"></i> ${s.label}</button>`
+    ).join('');
+
+    const panelsHtml = sections.map(s =>
+      `<div class="intel-tag-panel d-none" id="${s.id}">
+        <div class="intel-tag-panel-header"><i class="bi ${s.icon}"></i> ${s.label}</div>
+        <div class="detail-grid">${s.fields()}</div>
+      </div>`
+    ).join('');
+
+    return `
+      <div class="intel-tag-row">${pillsHtml}</div>
+      <div class="intel-tag-panels">${panelsHtml}</div>
+    `;
   }
 
   // 1. Render Sidebar Accounts
@@ -123,7 +240,7 @@ $(function () {
   // 2. Handle Account Selection
   $('#accountList').on('click', '.account-item', function () {
     const id = $(this).data('id');
-    activeAccount = MOCK_DATA.accounts.find(a => a.id === id);
+    activeAccount = MOCK_DATA.accounts.find(a => String(a.id) === String(id));
     if (!activeAccount) return;
 
     activeLob = null;
@@ -143,10 +260,21 @@ $(function () {
     $('#detailPanelContainer').addClass('d-none').empty();
 
     // Populate Hero Info
-    $('#heroAvatar').text(getInitials(activeAccount.name));
+    const acctDomain = activeAccount.primary_domain || activeAccount.domain;
+    $('#heroAvatar').empty();
+    if (acctDomain) {
+      const $img = $(`<img src="https://logo.clearbit.com/${esc(acctDomain)}" alt="${esc(activeAccount.name)}" style="width:100%;height:100%;object-fit:contain;padding:4px;background:#fff;border-radius:12px;" />`);
+      $img.on('error', function () {
+        $('#heroAvatar').empty().text(getInitials(activeAccount.name));
+      });
+      $('#heroAvatar').append($img);
+    } else {
+      $('#heroAvatar').text(getInitials(activeAccount.name));
+    }
+
     $('#accountName').text(activeAccount.name);
     $('#accountTicker').text(activeAccount.ticker || 'Enterprise');
-    $('#accountRevenue').text(activeAccount.revenue || 'Revenue N/A');
+    $('#accountRevenue').text(activeAccount.revenue || activeAccount.funding || '$17.5 Billion');
     $('#accountLocation').text(activeAccount.location || 'Location N/A');
     $('#accountDesc').text(activeAccount.desc || 'No description available.');
 
@@ -162,10 +290,18 @@ $(function () {
     } else {
       $('#lobCountBadge').text(`(${lobs.length} Division${lobs.length > 1 ? 's' : ''})`);
       lobs.forEach(lob => {
+        const logoUrl = lob.logo_url || (lob.domain ? `https://logo.clearbit.com/${lob.domain}` : null);
         const subtitle = lob.revenue ? `Rev: ${lob.revenue}` : (lob.desc || 'Business Division');
         $lobCards.append(`
           <div class="compact-card lob-card fade-in" data-lob-id="${lob.id}" title="Click to explore ${esc(lob.name)} division and personas">
-            <div class="compact-card-avatar"><i class="bi bi-folder2"></i></div>
+            <div class="compact-card-avatar" style="position:relative;overflow:hidden;background:#fff;border:1px solid #e2e8f0;display:flex;align-items:center;justify-content:center;">
+              ${logoUrl ? `
+                <img src="${esc(logoUrl)}" alt="${esc(lob.name)}" style="width:100%;height:100%;object-fit:contain;padding:3px;" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+                <i class="bi bi-folder2" style="display:none;font-size:1.1rem;color:var(--brand);"></i>
+              ` : `
+                <i class="bi bi-folder2" style="font-size:1.1rem;color:var(--brand);"></i>
+              `}
+            </div>
             <div class="compact-card-body">
               <div class="compact-card-title">${esc(lob.name)}</div>
               <div class="compact-card-subtitle">${esc(subtitle)}</div>
@@ -176,7 +312,58 @@ $(function () {
     }
     
     $('#lobSection').removeClass('d-none');
+    $('#accountDataSection').html(renderAccountDataSection(activeAccount)).removeClass('d-none');
+    
+    // Render Complete Enterprise Hierarchy at Account Level
+    renderPersonaCards(activeAccount.personas || [], `${activeAccount.name} — Enterprise Leadership Hierarchy`);
   });
+
+  // Intel Tag Pill toggle handler (Account level)
+  $(document).on('click', '.intel-tag-pill', function () {
+    const targetId = $(this).data('target');
+    const $panel = $(`#${targetId}`);
+    const wasVisible = !$panel.hasClass('d-none');
+
+    // Hide all panels in the same container
+    $(this).closest('.intel-tag-row').parent().find('.intel-tag-panel').addClass('d-none');
+    // Deactivate all pills in this row
+    $(this).closest('.intel-tag-row').find('.intel-tag-pill').removeClass('active');
+
+    if (!wasVisible) {
+      $panel.removeClass('d-none').hide().slideDown(200);
+      $(this).addClass('active');
+    }
+  });
+
+  window._PERSONA_MAP = window._PERSONA_MAP || {};
+
+  function renderPersonaCards(personas, title) {
+    const $personaCards = $('#personaCardsContainer').empty();
+    $('#personaSectionTitle').html(`<i class="bi bi-people-fill"></i> ${esc(title || 'Organizational Hierarchy')}`);
+    $('#personaCountBadge').text(`(${personas.length} contact${personas.length !== 1 ? 's' : ''})`);
+
+    if (!personas || personas.length === 0) {
+      $personaCards.append('<div style="color:var(--text-muted);font-size:.85rem;padding:8px 0;">No executive personas mapped for this division yet.</div>');
+    } else {
+      personas.forEach((p, idx) => {
+        const personaKey = p.key || `persona_${p.id || idx}_${(p.name || 'contact').toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+        p.key = personaKey;
+        window._PERSONA_MAP[personaKey] = p;
+        const tierBadge = p.tier ? `<span style="font-size:0.65rem;background:#e0e7ff;color:#3730a3;padding:1px 5px;border-radius:4px;margin-left:4px;text-transform:uppercase;">${esc((p.tier || '').replace('_', ' '))}</span>` : '';
+        $personaCards.append(`
+          <div class="compact-card persona-card fade-in" data-key="${personaKey}" title="Click to view AI call prep, email, and social signals for ${esc(p.name || p.full_name)}">
+            <div class="compact-card-avatar">${esc(getInitials(p.name || p.full_name))}</div>
+            <div class="compact-card-body">
+              <div class="compact-card-title">${esc(p.name || p.full_name)} ${tierBadge}</div>
+              <div class="compact-card-subtitle">${esc(p.title || p.job_title || 'Executive')}</div>
+            </div>
+          </div>
+        `);
+      });
+    }
+
+    $('#personaSection').removeClass('d-none');
+  }
 
   // 3. Handle LOB Card Selection
   $(document).on('click', '.lob-card', function () {
@@ -184,7 +371,7 @@ $(function () {
     $(this).addClass('active');
 
     const lobId = $(this).data('lob-id');
-    activeLob = activeAccount.lobs.find(l => l.id === lobId);
+    activeLob = activeAccount.lobs.find(l => String(l.id) === String(lobId));
     if (!activeLob) return;
 
     activePersona = null;
@@ -204,31 +391,7 @@ $(function () {
       }
     });
 
-    // Populate Persona Cards
-    const $personaCards = $('#personaCardsContainer').empty();
-    $('#personaSectionTitle').html(`<i class="bi bi-people-fill"></i> Organizational Hierarchy (${esc(activeLob.name)})`);
-    $('#personaCountBadge').text(`(${allPersonas.length} contact${allPersonas.length !== 1 ? 's' : ''})`);
-
-    if (allPersonas.length === 0) {
-      $personaCards.append('<div style="color:var(--text-muted);font-size:.85rem;padding:8px 0;">No executive personas mapped for this division yet.</div>');
-    } else {
-      allPersonas.forEach((p, idx) => {
-        const personaKey = p.key || `persona_${idx}`;
-        p.key = personaKey;
-        const pRaw = encodeURIComponent(JSON.stringify(p));
-        $personaCards.append(`
-          <div class="compact-card persona-card fade-in" data-key="${personaKey}" data-raw="${pRaw}" title="Click to view AI call prep, email, and social signals for ${esc(p.name)}">
-            <div class="compact-card-avatar">${esc(getInitials(p.name))}</div>
-            <div class="compact-card-body">
-              <div class="compact-card-title">${esc(p.name)}</div>
-              <div class="compact-card-subtitle">${esc(p.title || 'Executive')}</div>
-            </div>
-          </div>
-        `);
-      });
-    }
-
-    $('#personaSection').removeClass('d-none');
+    renderPersonaCards(allPersonas, `${activeLob.name} — Division Hierarchy`);
 
     // Render LOB Detail Panel
     renderLobDetailPanel(activeLob);
@@ -239,13 +402,18 @@ $(function () {
     $('.persona-card').removeClass('active');
     $(this).addClass('active');
 
-    const pData = JSON.parse(decodeURIComponent($(this).attr('data-raw')));
+    const personaKey = $(this).attr('data-key') || $(this).data('key');
+    let pData = window._PERSONA_MAP ? window._PERSONA_MAP[personaKey] : null;
+    if (!pData && activeAccount && activeAccount.personas) {
+      pData = activeAccount.personas.find(p => p.key === personaKey || String(p.id) === String(personaKey));
+    }
+    if (!pData) return;
     activePersona = pData;
 
     $('#crumbs').html(`
       <li class="breadcrumb-item"><a href="javascript:void(0)" class="crumb-account">${esc(activeAccount.name)}</a></li>
-      <li class="breadcrumb-item"><a href="javascript:void(0)" class="crumb-lob">${esc(activeLob.name)}</a></li>
-      <li class="breadcrumb-item active">${esc(activePersona.name)}</li>
+      ${activeLob ? `<li class="breadcrumb-item"><a href="javascript:void(0)" class="crumb-lob">${esc(activeLob.name)}</a></li>` : ''}
+      <li class="breadcrumb-item active">${esc(activePersona.name || activePersona.full_name)}</li>
     `);
 
     renderPersonaDetailPanel(activePersona);
@@ -253,7 +421,21 @@ $(function () {
 
   // Breadcrumb navigation
   $(document).on('click', '.crumb-account', function () {
-    if (!activeAccount) return  // ─── Render Functions for Categorized Detail Panels ─────────────────────
+    if (!activeAccount) return;
+    $('.lob-card').removeClass('active');
+    activeLob = null;
+    activePersona = null;
+    $('#detailPanelContainer').addClass('d-none').empty();
+    $('#crumbs').html(`<li class="breadcrumb-item active">${esc(activeAccount.name)}</li>`);
+    renderPersonaCards(activeAccount.personas || [], `${activeAccount.name} — Enterprise Leadership Hierarchy`);
+  });
+
+  $(document).on('click', '.crumb-lob', function () {
+    if (!activeLob) return;
+    $(`.lob-card[data-lob-id="${activeLob.id}"]`).click();
+  });
+
+  // ─── Render Functions for Categorized Detail Panels ─────────────────────
 
   function renderLobDetailPanel(lob) {
     const lobKey = `lob_${lob.id}`;
@@ -281,8 +463,11 @@ $(function () {
 
     const panelHtml = `
       <div class="detail-panel fade-in" data-entity-type="lob" data-key="${lobKey}">
-        <div class="detail-panel-header">
-          <div class="detail-panel-title-area">
+        <div class="detail-panel-header" style="display:flex;align-items:flex-start;gap:14px;">
+          ${lob.logo_url ? `
+            <img src="${esc(lob.logo_url)}" alt="${esc(lob.name)}" style="width:48px;height:48px;border-radius:10px;object-fit:contain;background:#fff;border:1px solid #e2e8f0;padding:3px;flex-shrink:0;" onerror="this.style.display='none';" />
+          ` : ''}
+          <div style="flex:1;">
             <span class="pill pill-brand detail-panel-badge"><i class="bi bi-diagram-2"></i> Line of Business Deep Dive</span>
             <h2 class="detail-panel-title">${esc(lob.name)}</h2>
             <p class="detail-panel-subtitle">${esc(lob.desc || lob.overview || 'Division Overview & Intelligence Hub')}</p>
@@ -304,129 +489,144 @@ $(function () {
           <div class="step-guide-item ${state.validated && !state.dumped ? 'active' : ''}"><span class="step-guide-num">3</span> <strong>Dump:</strong> Persist structured records to database</div>
         </div>
 
-        <!-- Categorized Section 1: Overview & Structure -->
-        <div class="detail-section">
-          <div class="detail-section-heading"><i class="bi bi-building"></i> Overview &amp; Corporate Structure</div>
-          <p class="section-desc">Operating scope, relationship taxonomy, primary web domains, and commercial registry listings.</p>
-          <div class="detail-grid">
-            <div class="detail-field span-2">
-              <div class="detail-label">Division Overview</div>
-              <div class="detail-val">${esc(lob.overview || lob.desc || 'No overview available.')}</div>
-            </div>
-            <div class="detail-field" title="How this division connects to parent corporate entity">
-              <div class="detail-label">Relationship Type</div>
-              <div class="detail-val"><span class="pill">${esc(lob.relationship_type || 'Operating Segment')}</span></div>
-            </div>
-            <div class="detail-field" title="Dedicated digital domain for this business unit">
-              <div class="detail-label">Primary Domain</div>
-              <div class="detail-val">${lob.domain ? `<a href="https://${esc(lob.domain)}" target="_blank">${esc(lob.domain)} <i class="bi bi-box-arrow-up-right"></i></a>` : '<span class="text-muted">Not specified</span>'}</div>
-            </div>
-            <div class="detail-field" title="Official corporate website or segment landing page">
-              <div class="detail-label">Website URL</div>
-              <div class="detail-val">${lob.website_url ? `<a href="${esc(lob.website_url)}" target="_blank">${esc(lob.website_url)} <i class="bi bi-box-arrow-up-right"></i></a>` : '<span class="text-muted">Not specified</span>'}</div>
-            </div>
-            <div class="detail-field" title="Crunchbase investment and company profile">
-              <div class="detail-label">Crunchbase Profile</div>
-              <div class="detail-val">${lob.crunchbase_url ? `<a href="${esc(lob.crunchbase_url)}" target="_blank">View Profile <i class="bi bi-box-arrow-up-right"></i></a>` : '<span class="text-muted">Not specified</span>'}</div>
-            </div>
-          </div>
+        <!-- LOB Data Tag Pills -->
+        <div class="intel-tag-row">
+          <button type="button" class="intel-tag-pill" data-target="lob_overview_${lob.id}"><i class="bi bi-building"></i> Overview & Structure</button>
+          <button type="button" class="intel-tag-pill" data-target="lob_finance_${lob.id}"><i class="bi bi-bar-chart-line"></i> Segment Financials</button>
+          <button type="button" class="intel-tag-pill" data-target="lob_legal_${lob.id}"><i class="bi bi-bank"></i> Regulatory & Legal</button>
+          <button type="button" class="intel-tag-pill" data-target="lob_tech_${lob.id}"><i class="bi bi-cpu"></i> Tech Stack</button>
+          <button type="button" class="intel-tag-pill" data-target="lob_compete_${lob.id}"><i class="bi bi-people"></i> Competitors</button>
+          <button type="button" class="intel-tag-pill" data-target="lob_finsnip_${lob.id}"><i class="bi bi-graph-up"></i> Financial Analysis</button>
+          <button type="button" class="intel-tag-pill" data-target="lob_patents_${lob.id}"><i class="bi bi-lightbulb"></i> Patents</button>
+          <button type="button" class="intel-tag-pill" data-target="lob_feeds_${lob.id}"><i class="bi bi-broadcast"></i> Intelligence Feeds</button>
+          <button type="button" class="intel-tag-pill" data-target="lob_osint_${lob.id}"><i class="bi bi-link-45deg"></i> OSINT URLs</button>
+          ${(lob.subLobs && lob.subLobs.length) ? `<button type="button" class="intel-tag-pill" data-target="lob_sublobs_${lob.id}"><i class="bi bi-folder-symlink"></i> Sub-Divisions (${lob.subLobs.length})</button>` : ''}
         </div>
 
-        <!-- Categorized Section 2: Segment Metrics -->
-        <div class="detail-section">
-          <div class="detail-section-heading"><i class="bi bi-bar-chart-line"></i> Segment Financials &amp; Operational Scale</div>
-          <p class="section-desc">Reported segment revenues, organizational headcount, leadership structure, and mapped executive count.</p>
-          <div class="detail-grid">
-            <div class="detail-field" title="Annual financial revenue attributed to this segment">
-              <div class="detail-label">Segment Revenue</div>
-              <div class="detail-val font-semibold">${esc(lob.revenue || 'Not disclosed in public filings')}</div>
-            </div>
-            <div class="detail-field" title="Estimated full-time workforce within this operating unit">
-              <div class="detail-label">Headcount / Size</div>
-              <div class="detail-val">${esc(lob.headcount || 'Enterprise scale')}</div>
-            </div>
-            <div class="detail-field" title="Senior executive responsible for business unit outcomes">
-              <div class="detail-label">Operating Head</div>
-              <div class="detail-val">${esc(lob.operating_head || 'Executive Leadership Team')}</div>
-            </div>
-            <div class="detail-field" title="Total executive contacts discovered for this unit">
-              <div class="detail-label">Mapped Contacts</div>
-              <div class="detail-val font-semibold">${lob.personas ? lob.personas.length : 0} Identified</div>
+        <div class="intel-tag-panels">
+          <div class="intel-tag-panel d-none" id="lob_overview_${lob.id}">
+            <div class="intel-tag-panel-header"><i class="bi bi-building"></i> Overview & Corporate Structure</div>
+            <div class="detail-grid">
+              ${renderField('Division Overview', lob.overview || lob.desc, { span2: true })}
+              ${renderField('Division Name', lob.lob_name || lob.name)}
+              ${renderField('Key', lob.key)}
+              ${renderField('Relationship Type', lob.relationship_type)}
+              ${renderField('Primary Domain', lob.domain)}
+              ${renderField('Website', lob.website_url, { url: true })}
+              ${renderField('Crunchbase', lob.crunchbase_url, { url: true })}
+              ${renderField('Wikipedia', lob.wikipedia_url, { url: true })}
+              ${renderField('Logo URL', lob.logo_url, { url: true })}
+              ${renderField('Database ID', lob.id)}
+              ${renderField('Account ID', lob.account_id || (activeAccount ? activeAccount.id : null))}
             </div>
           </div>
-        </div>
 
-        <!-- Categorized Section 3: Intelligence Feeds -->
-        <div class="detail-section">
-          <div class="detail-section-heading"><i class="bi bi-broadcast"></i> Live Intelligence Feeds &amp; Public Signals</div>
-          <p class="section-desc">Click any platform card below to view recent scraped post activity, AI sentiment analysis, and source citations.</p>
-          <div class="detail-grid">
-            <div class="feed-btn-card">
-              <button type="button" class="feed-title-btn" data-platform="linkedin" data-title="LinkedIn Intelligence Summary" data-entity="${esc(lob.name)}" data-url="${lob.linkedin_url ? esc(lob.linkedin_url) : `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(lob.name + ' ' + (activeAccount ? activeAccount.name : ''))}`}" title="Click to view LinkedIn activity summary and extracted posts">
-                <span class="feed-title"><i class="bi bi-linkedin" style="color:#0077b5;"></i> LinkedIn Intelligence <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
-              </button>
-              <a href="${lob.linkedin_url ? esc(lob.linkedin_url) : `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(lob.name + ' ' + (activeAccount ? activeAccount.name : ''))}`}" target="_blank" class="feed-right-icon-link" title="Open LinkedIn in new tab">
-                ${BRAND_ICONS.linkedin}
-              </a>
-            </div>
-
-            <div class="feed-btn-card">
-              <button type="button" class="feed-title-btn" data-platform="x_twitter" data-title="Twitter / X Intelligence Summary" data-entity="${esc(lob.name)}" data-url="${lob.twitter_live_url ? esc(lob.twitter_live_url) : `https://x.com/search?q=${encodeURIComponent(lob.name + ' ' + (activeAccount ? activeAccount.name : ''))}&f=live`}" title="Click to view Twitter/X live feed summary and sentiment">
-                <span class="feed-title"><i class="bi bi-twitter-x"></i> Twitter / X Feed <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
-              </button>
-              <a href="${lob.twitter_live_url ? esc(lob.twitter_live_url) : `https://x.com/search?q=${encodeURIComponent(lob.name + ' ' + (activeAccount ? activeAccount.name : ''))}&f=live`}" target="_blank" class="feed-right-icon-link" title="Open Twitter / X in new tab">
-                ${BRAND_ICONS.x_twitter}
-              </a>
-            </div>
-
-            <div class="feed-btn-card">
-              <button type="button" class="feed-title-btn" data-platform="reddit" data-title="Reddit Community Intelligence" data-entity="${esc(lob.name)}" data-url="${lob.reddit_rss_url ? esc(lob.reddit_rss_url) : `https://www.reddit.com/search/?q=${encodeURIComponent(lob.name)}`}" title="Click to view Reddit discussions and public sentiment">
-                <span class="feed-title"><i class="bi bi-reddit" style="color:#ff4500;"></i> Reddit Community <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
-              </button>
-              <a href="${lob.reddit_rss_url ? esc(lob.reddit_rss_url) : `https://www.reddit.com/search/?q=${encodeURIComponent(lob.name)}`}" target="_blank" class="feed-right-icon-link" title="Open Reddit in new tab">
-                ${BRAND_ICONS.reddit}
-              </a>
-            </div>
-
-            <div class="feed-btn-card">
-              <button type="button" class="feed-title-btn" data-platform="youtube" data-title="YouTube Video & Media Intelligence" data-entity="${esc(lob.name)}" data-url="${lob.youtube_search_url ? esc(lob.youtube_search_url) : `https://www.youtube.com/results?search_query=${encodeURIComponent(lob.name)}`}" title="Click to view YouTube interviews, keynote presentations, and webinars">
-                <span class="feed-title"><i class="bi bi-youtube" style="color:#ff0000;"></i> YouTube Media <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
-              </button>
-              <a href="${lob.youtube_search_url ? esc(lob.youtube_search_url) : `https://www.youtube.com/results?search_query=${encodeURIComponent(lob.name)}`}" target="_blank" class="feed-right-icon-link" title="Open YouTube in new tab">
-                ${BRAND_ICONS.youtube}
-              </a>
-            </div>
-
-            <div class="feed-btn-card">
-              <button type="button" class="feed-title-btn" data-platform="google_news" data-title="Google News Feed Intelligence" data-entity="${esc(lob.name)}" data-url="${lob.google_news_rss_url ? esc(lob.google_news_rss_url) : `https://news.google.com/rss/search?q=${encodeURIComponent(lob.name)}`}" title="Click to view Google News headlines and press coverage">
-                <span class="feed-title"><i class="bi bi-newspaper" style="color:#4285f4;"></i> Google News RSS <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
-              </button>
-              <a href="${lob.google_news_rss_url ? esc(lob.google_news_rss_url) : `https://news.google.com/rss/search?q=${encodeURIComponent(lob.name)}`}" target="_blank" class="feed-right-icon-link" title="Open Google News in new tab">
-                ${BRAND_ICONS.google_news}
-              </a>
-            </div>
-
-            <div class="feed-btn-card">
-              <button type="button" class="feed-title-btn" data-platform="google_patents" data-title="Patent & IP Intelligence" data-entity="${esc(lob.name)}" data-url="${lob.google_patents_url ? esc(lob.google_patents_url) : `https://patents.google.com/?q=${encodeURIComponent(lob.name)}`}" title="Click to view patent filings, R&D innovations, and IP portfolio">
-                <span class="feed-title"><i class="bi bi-lightbulb" style="color:#34a853;"></i> Patents Explorer <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
-              </button>
-              <a href="${lob.google_patents_url ? esc(lob.google_patents_url) : `https://patents.google.com/?q=${encodeURIComponent(lob.name)}`}" target="_blank" class="feed-right-icon-link" title="Open Patents in new tab">
-                ${BRAND_ICONS.google_patents}
-              </a>
-            </div>
-
-            <div class="feed-btn-card">
-              <button type="button" class="feed-title-btn" data-platform="google_trends" data-title="Google Search Trends Analytics" data-entity="${esc(lob.name)}" data-url="${lob.google_trends_url ? esc(lob.google_trends_url) : `https://trends.google.com/trends/explore?q=${encodeURIComponent(lob.name)}`}" title="Click to view search term momentum and keyword interest">
-                <span class="feed-title"><i class="bi bi-graph-up" style="color:#ea4335;"></i> Search Trends <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
-              </button>
-              <a href="${lob.google_trends_url ? esc(lob.google_trends_url) : `https://trends.google.com/trends/explore?q=${encodeURIComponent(lob.name)}`}" target="_blank" class="feed-right-icon-link" title="Open Google Trends in new tab">
-                ${BRAND_ICONS.google_trends}
-              </a>
+          <div class="intel-tag-panel d-none" id="lob_finance_${lob.id}">
+            <div class="intel-tag-panel-header"><i class="bi bi-bar-chart-line"></i> Segment Financials & Scale</div>
+            <div class="detail-grid">
+              ${renderField('Segment Revenue', lob.revenue || lob.audited_segment_revenue)}
+              ${renderField('Headcount', lob.headcount || lob.segment_headcount)}
+              ${renderField('Operating Head', lob.operating_head)}
+              ${renderField('Mapped Contacts', lob.personas ? lob.personas.length + ' identified' : '0')}
             </div>
           </div>
+
+          <div class="intel-tag-panel d-none" id="lob_legal_${lob.id}">
+            <div class="intel-tag-panel-header"><i class="bi bi-bank"></i> Regulatory & Legal</div>
+            <div class="detail-grid">
+              ${renderField('LEI Code', lob.lei_code)}
+              ${renderField('Jurisdiction', lob.jurisdiction)}
+            </div>
+          </div>
+
+          <div class="intel-tag-panel d-none" id="lob_tech_${lob.id}">
+            <div class="intel-tag-panel-header"><i class="bi bi-cpu"></i> Technology Stack</div>
+            <div class="detail-grid">
+              ${renderField('Technologies', lob.technologies, { chips: true, span2: true })}
+            </div>
+          </div>
+
+          <div class="intel-tag-panel d-none" id="lob_compete_${lob.id}">
+            <div class="intel-tag-panel-header"><i class="bi bi-people"></i> Competitive Landscape</div>
+            <div class="detail-grid">
+              ${renderField('Competitors', lob.competitors, { chips: true, span2: true })}
+            </div>
+          </div>
+
+          <div class="intel-tag-panel d-none" id="lob_finsnip_${lob.id}">
+            <div class="intel-tag-panel-header"><i class="bi bi-graph-up"></i> Financial Analysis</div>
+            <div class="detail-grid">
+              ${renderField('Financial Snippets', lob.financial_snippets, { json: true })}
+            </div>
+          </div>
+
+          <div class="intel-tag-panel d-none" id="lob_patents_${lob.id}">
+            <div class="intel-tag-panel-header"><i class="bi bi-lightbulb"></i> Patent Portfolio</div>
+            <div class="detail-grid">
+              ${renderField('Patents', lob.patents, { json: true })}
+            </div>
+          </div>
+
+          <div class="intel-tag-panel d-none" id="lob_feeds_${lob.id}">
+            <div class="intel-tag-panel-header"><i class="bi bi-broadcast"></i> Live Intelligence Feeds</div>
+            <div class="detail-grid">
+              <div class="feed-btn-card">
+                <button type="button" class="feed-title-btn" data-platform="linkedin" data-title="LinkedIn Intelligence Summary" data-entity="${esc(lob.name)}" data-url="${lob.linkedin_url ? esc(lob.linkedin_url) : `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(lob.name + ' ' + (activeAccount ? activeAccount.name : ''))}`}" title="LinkedIn activity summary"><span class="feed-title"><i class="bi bi-linkedin" style="color:#0077b5;"></i> LinkedIn <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span></button>
+                <a href="${lob.linkedin_url ? esc(lob.linkedin_url) : `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(lob.name)}`}" target="_blank" class="feed-right-icon-link">${BRAND_ICONS.linkedin}</a>
+              </div>
+              <div class="feed-btn-card">
+                <button type="button" class="feed-title-btn" data-platform="x_twitter" data-title="Twitter / X Intelligence" data-entity="${esc(lob.name)}" data-url="${lob.twitter_live_url || `https://x.com/search?q=${encodeURIComponent(lob.name)}&f=live`}"><span class="feed-title"><i class="bi bi-twitter-x"></i> Twitter / X <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span></button>
+                <a href="${lob.twitter_live_url || `https://x.com/search?q=${encodeURIComponent(lob.name)}&f=live`}" target="_blank" class="feed-right-icon-link">${BRAND_ICONS.x_twitter}</a>
+              </div>
+              <div class="feed-btn-card">
+                <button type="button" class="feed-title-btn" data-platform="reddit" data-title="Reddit Community Intelligence" data-entity="${esc(lob.name)}" data-url="${lob.reddit_rss_url || `https://www.reddit.com/search/?q=${encodeURIComponent(lob.name)}`}"><span class="feed-title"><i class="bi bi-reddit" style="color:#ff4500;"></i> Reddit <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span></button>
+                <a href="${lob.reddit_rss_url || `https://www.reddit.com/search/?q=${encodeURIComponent(lob.name)}`}" target="_blank" class="feed-right-icon-link">${BRAND_ICONS.reddit}</a>
+              </div>
+              <div class="feed-btn-card">
+                <button type="button" class="feed-title-btn" data-platform="youtube" data-title="YouTube Media Intelligence" data-entity="${esc(lob.name)}" data-url="${lob.youtube_search_url || `https://www.youtube.com/results?search_query=${encodeURIComponent(lob.name)}`}"><span class="feed-title"><i class="bi bi-youtube" style="color:#ff0000;"></i> YouTube <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span></button>
+                <a href="${lob.youtube_search_url || `https://www.youtube.com/results?search_query=${encodeURIComponent(lob.name)}`}" target="_blank" class="feed-right-icon-link">${BRAND_ICONS.youtube}</a>
+              </div>
+              <div class="feed-btn-card">
+                <button type="button" class="feed-title-btn" data-platform="google_news" data-title="Google News Feed" data-entity="${esc(lob.name)}" data-url="${lob.google_news_rss_url || `https://news.google.com/rss/search?q=${encodeURIComponent(lob.name)}`}"><span class="feed-title"><i class="bi bi-newspaper" style="color:#4285f4;"></i> Google News <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span></button>
+                <a href="${lob.google_news_rss_url || `https://news.google.com/rss/search?q=${encodeURIComponent(lob.name)}`}" target="_blank" class="feed-right-icon-link">${BRAND_ICONS.google_news}</a>
+              </div>
+              <div class="feed-btn-card">
+                <button type="button" class="feed-title-btn" data-platform="google_patents" data-title="Patent & IP Intelligence" data-entity="${esc(lob.name)}" data-url="${lob.google_patents_url || `https://patents.google.com/?q=${encodeURIComponent(lob.name)}`}"><span class="feed-title"><i class="bi bi-lightbulb" style="color:#34a853;"></i> Patents <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span></button>
+                <a href="${lob.google_patents_url || `https://patents.google.com/?q=${encodeURIComponent(lob.name)}`}" target="_blank" class="feed-right-icon-link">${BRAND_ICONS.google_patents}</a>
+              </div>
+              <div class="feed-btn-card">
+                <button type="button" class="feed-title-btn" data-platform="google_trends" data-title="Search Trends Analytics" data-entity="${esc(lob.name)}" data-url="${lob.google_trends_url || `https://trends.google.com/trends/explore?q=${encodeURIComponent(lob.name)}`}"><span class="feed-title"><i class="bi bi-graph-up" style="color:#ea4335;"></i> Trends <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span></button>
+                <a href="${lob.google_trends_url || `https://trends.google.com/trends/explore?q=${encodeURIComponent(lob.name)}`}" target="_blank" class="feed-right-icon-link">${BRAND_ICONS.google_trends}</a>
+              </div>
+            </div>
+          </div>
+
+          <div class="intel-tag-panel d-none" id="lob_osint_${lob.id}">
+            <div class="intel-tag-panel-header"><i class="bi bi-link-45deg"></i> OSINT Intelligence URLs</div>
+            <div class="detail-grid">
+              ${renderField('Google News RSS', lob.google_news_rss_url, { url: true })}
+              ${renderField('Reddit RSS', lob.reddit_rss_url, { url: true })}
+              ${renderField('Google Patents', lob.google_patents_url, { url: true })}
+              ${renderField('Google Trends', lob.google_trends_url, { url: true })}
+              ${renderField('YouTube Search', lob.youtube_search_url, { url: true })}
+            </div>
+          </div>
+
+          ${(lob.subLobs && lob.subLobs.length) ? `
+          <div class="intel-tag-panel d-none" id="lob_sublobs_${lob.id}">
+            <div class="intel-tag-panel-header"><i class="bi bi-folder-symlink"></i> Sub-Divisions & Operating Groups (${lob.subLobs.length})</div>
+            <div class="detail-grid">
+              ${lob.subLobs.map(s => `
+                <div class="detail-field">
+                  <div class="detail-label">Division Name</div>
+                  <div class="detail-val" style="font-weight:600;">${esc(s.name)}</div>
+                  ${s.desc ? `<div style="font-size:.72rem;color:var(--text-muted);margin-top:2px;">${esc(s.desc)}</div>` : ''}
+                </div>
+              `).join('')}
+            </div>
+          </div>` : ''}
         </div>
 
-        ${subLobsHtml}
       </div>
     `;
 
@@ -471,165 +671,169 @@ $(function () {
           <div class="step-guide-item ${state.validated && !state.dumped ? 'active' : ''}"><span class="step-guide-num">3</span> <strong>Dump:</strong> Save to permanent CRM database</div>
         </div>
 
-        <!-- Categorized Section 1: Executive Profile & Demographics -->
-        <div class="detail-section">
-          <div class="detail-section-heading"><i class="bi bi-person-vcard"></i> Executive Profile &amp; Demographics</div>
-          <p class="section-desc">Corporate title, verified contact information, geographic base, academic background, and organizational seniority level.</p>
-          <div class="detail-grid">
-            <div class="detail-field">
-              <div class="detail-label">Full Name</div>
-              <div class="detail-val font-semibold">${esc(p.name)}</div>
-            </div>
-            <div class="detail-field">
-              <div class="detail-label">Corporate Title</div>
-              <div class="detail-val">${esc(p.title || 'Executive')}</div>
-            </div>
-            <div class="detail-field">
-              <div class="detail-label">Corporate Email</div>
-              <div class="detail-val">${p.email ? `<a href="mailto:${esc(p.email)}">${esc(p.email)} <i class="bi bi-envelope-check"></i></a>` : '<span class="text-muted">Not discovered</span>'}</div>
-            </div>
-            <div class="detail-field">
-              <div class="detail-label">Email Status / Phone</div>
-              <div class="detail-val">${esc(p.email_status || 'Verified')} ${p.phone ? `• ${esc(p.phone)}` : ''}</div>
-            </div>
-            <div class="detail-field">
-              <div class="detail-label">Location / Base</div>
-              <div class="detail-val">${esc(p.location || [p.city, p.state, p.country].filter(Boolean).join(', ') || 'Headquarters')}</div>
-            </div>
-            <div class="detail-field">
-              <div class="detail-label">Education / Alma Mater</div>
-              <div class="detail-val">${esc(p.degree ? `${p.degree} — ${p.institution || ''}` : p.institution || 'Standard Executive Profile')}</div>
-            </div>
-            <div class="detail-field">
-              <div class="detail-label">Prior Company Experience</div>
-              <div class="detail-val">${esc(p.prior_company || 'Corporate Enterprise')}</div>
-            </div>
-            <div class="detail-field">
-              <div class="detail-label">Seniority / Hierarchy</div>
-              <div class="detail-val">${esc(p.seniority || 'C-Suite / VP')} (Level ${p.hierarchy_level || 1})</div>
-            </div>
-          </div>
+        <!-- Persona Data Tag Pills -->
+        <div class="intel-tag-row">
+          <button type="button" class="intel-tag-pill" data-target="p_profile_${p.id}"><i class="bi bi-person-vcard"></i> Executive Profile</button>
+          <button type="button" class="intel-tag-pill" data-target="p_contact_${p.id}"><i class="bi bi-telephone"></i> Contact Info</button>
+          <button type="button" class="intel-tag-pill" data-target="p_career_${p.id}"><i class="bi bi-briefcase"></i> Career & Employment</button>
+          <button type="button" class="intel-tag-pill" data-target="p_academic_${p.id}"><i class="bi bi-mortarboard"></i> Academic</button>
+          <button type="button" class="intel-tag-pill" data-target="p_dossier_${p.id}"><i class="bi bi-robot"></i> AI Sales Dossier</button>
+          <button type="button" class="intel-tag-pill" data-target="p_kpis_${p.id}"><i class="bi bi-bullseye"></i> KPIs & Skills</button>
+          <button type="button" class="intel-tag-pill" data-target="p_authority_${p.id}"><i class="bi bi-shield-lock"></i> Decision Authority</button>
+          <button type="button" class="intel-tag-pill" data-target="p_feeds_${p.id}"><i class="bi bi-broadcast-pin"></i> Intelligence Feeds</button>
+          <button type="button" class="intel-tag-pill" data-target="p_osint_${p.id}"><i class="bi bi-link-45deg"></i> OSINT URLs</button>
         </div>
 
-        <!-- Categorized Section 2: Behavior & Strategic KPIs -->
-        <div class="detail-section">
-          <div class="detail-section-heading"><i class="bi bi-bullseye"></i> Strategic Priorities &amp; Operational Pain Points</div>
-          <p class="section-desc">Key performance metrics the executive is evaluated on, top operational blockers, and anticipated sales objections.</p>
-          <div class="detail-grid">
-            <div class="detail-field span-2">
-              <div class="detail-label">Target KPIs &amp; Core Priorities</div>
-              <div class="tag-list">${kpisHtml}</div>
-            </div>
-            <div class="detail-field span-2">
-              <div class="detail-label">Core Skills &amp; Domain Expertise</div>
-              <div class="tag-list">${skillsHtml}</div>
-            </div>
-            <div class="detail-field span-2">
-              <div class="detail-label">Operational Pain Points</div>
-              <div class="tag-list">${painPointsHtml}</div>
-            </div>
-            <div class="detail-field span-2">
-              <div class="detail-label">Anticipated Objections &amp; Hesitations</div>
-              <div class="tag-list">${objectionsHtml}</div>
+        <div class="intel-tag-panels">
+          <div class="intel-tag-panel d-none" id="p_profile_${p.id}">
+            <div class="intel-tag-panel-header"><i class="bi bi-person-vcard"></i> Executive Profile</div>
+            <div class="detail-grid">
+              ${renderField('Display Name', p.display_name || p.name)}
+              ${renderField('First Name', p.first_name)}
+              ${renderField('Last Name', p.last_name)}
+              ${renderField('Headline', p.headline, { span2: true })}
+              ${renderField('Seniority (Raw)', p.seniority_raw)}
+              ${renderField('Hierarchy Level', p.hierarchy_level)}
             </div>
           </div>
-        </div>
 
-        <!-- Categorized Section 3: Personalized Messaging & Pitch -->
-        <div class="detail-section">
-          <div class="detail-section-heading"><i class="bi bi-chat-quote-fill"></i> Personalized Engagement &amp; Pitch Strategy</div>
-          <p class="section-desc">AI-tailored opening icebreaker based on recent initiatives, targeted value proposition, and communication style.</p>
-          <div class="detail-grid">
-            <div class="detail-field span-full" style="background: var(--brand-soft); border-color: rgba(0,97,255,.25);">
-              <div class="detail-label" style="color:var(--brand);"><i class="bi bi-stars"></i> Tailored Call Icebreaker</div>
-              <div class="detail-val" style="font-size:.9rem; color:var(--text-primary); font-weight:600;">
-                "${esc(p.personalized_icebreaker || `Congratulations on your leadership initiatives at ${activeAccount.name}.`)}"
+          <div class="intel-tag-panel d-none" id="p_contact_${p.id}">
+            <div class="intel-tag-panel-header"><i class="bi bi-telephone"></i> Contact Information</div>
+            <div class="detail-grid">
+              ${renderField('Corporate Email', p.email)}
+              ${renderField('Email Status', p.email_status)}
+              ${renderField('Corporate Phone', p.phone)}
+              ${renderField('Personal Email', p.personal_email)}
+              ${renderField('Direct Mobile', p.direct_mobile_phone)}
+              ${renderField('City', p.city)}
+              ${renderField('State', p.state)}
+              ${renderField('Country', p.country)}
+            </div>
+          </div>
+
+          <div class="intel-tag-panel d-none" id="p_career_${p.id}">
+            <div class="intel-tag-panel-header"><i class="bi bi-briefcase"></i> Career & Employment</div>
+            <div class="detail-grid">
+              ${renderField('Prior Company', p.prior_company)}
+              ${renderField('Current Role Tenure', p.current_role_tenure_months ? Math.floor(p.current_role_tenure_months / 12) + ' years ' + (p.current_role_tenure_months % 12) + ' months' : '')}
+              <div class="detail-field">
+                <div class="detail-label">New in Role</div>
+                <div class="detail-val">${p.is_new_in_role ? '<span class="pill pill-brand">Yes</span>' : '<span class="text-muted">No</span>'}</div>
+              </div>
+              <div class="detail-field">
+                <div class="detail-label">Career Trajectory Score</div>
+                <div class="detail-val">
+                  <div style="width:100%;background:#e2e8f0;border-radius:4px;height:12px;margin-top:6px;overflow:hidden;">
+                    <div style="height:100%;width:${p.career_trajectory_score || 0}%;background:var(--brand);"></div>
+                  </div>
+                  <div style="font-size:0.75rem;margin-top:2px;">${p.career_trajectory_score || 0}/100</div>
+                </div>
+              </div>
+              ${renderField('Past Companies', p.past_companies, { chips: true, span2: true })}
+              ${renderField('Previous Titles', p.previous_titles, { chips: true, span2: true })}
+              ${renderField('Employment History', p.employment_history, { json: true })}
+            </div>
+          </div>
+
+          <div class="intel-tag-panel d-none" id="p_academic_${p.id}">
+            <div class="intel-tag-panel-header"><i class="bi bi-mortarboard"></i> Academic Background</div>
+            <div class="detail-grid">
+              ${renderField('Degree', p.degree)}
+              ${renderField('Institution', p.institution)}
+              ${renderField('Education History', p.education_history, { json: true })}
+            </div>
+          </div>
+
+          <div class="intel-tag-panel d-none" id="p_dossier_${p.id}">
+            <div class="intel-tag-panel-header"><i class="bi bi-robot"></i> AI Sales Dossier</div>
+            <div class="detail-grid">
+              ${renderField('Communication Style', p.communication_style)}
+              ${renderField('Value Proposition', p.value_proposition)}
+              ${renderField('Personalized Icebreaker', p.personalized_icebreaker, { span2: true })}
+              ${renderField('Engagement Rate', p.engagement_rate)}
+              ${renderField('Social Platform', p.social_platform)}
+              ${renderField('Social Profile URL', p.social_profile_url, { url: true })}
+              ${renderField('Social Presence Level', p.social_presence_level)}
+            </div>
+          </div>
+
+          <div class="intel-tag-panel d-none" id="p_kpis_${p.id}">
+            <div class="intel-tag-panel-header"><i class="bi bi-bullseye"></i> Strategic Priorities & KPIs</div>
+            <div class="detail-grid">
+              ${renderField('Core Skills', p.skills, { chips: true, span2: true })}
+              ${renderField('Target KPIs', p.target_kpis, { chips: true, span2: true })}
+              ${renderField('Operational Pain Points', p.operational_pain_points, { chips: true, span2: true })}
+              ${renderField('Key Objections', p.key_objections, { chips: true, span2: true })}
+            </div>
+          </div>
+
+          <div class="intel-tag-panel d-none" id="p_authority_${p.id}">
+            <div class="intel-tag-panel-header"><i class="bi bi-shield-lock"></i> Decision Authority</div>
+            <div class="detail-grid">
+              ${renderField('Decision Authority', p.decision_authority)}
+              ${renderField('Budget Authority', p.budget_authority)}
+              ${renderField('Departments', p.departments, { chips: true, span2: true })}
+            </div>
+          </div>
+
+          <div class="intel-tag-panel d-none" id="p_feeds_${p.id}">
+            <div class="intel-tag-panel-header"><i class="bi bi-broadcast-pin"></i> Executive Online Footprint</div>
+            <div class="detail-grid">
+              <div class="feed-btn-card">
+                <button type="button" class="feed-title-btn" data-platform="linkedin" data-title="LinkedIn Executive Intelligence" data-entity="${esc(p.name)}" data-url="${p.linkedin_url ? esc(p.linkedin_url) : `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(p.name + ' ' + activeAccount.name)}`}"><span class="feed-title"><i class="bi bi-linkedin" style="color:#0077b5;"></i> LinkedIn <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span></button>
+                <a href="${p.linkedin_url ? esc(p.linkedin_url) : `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(p.name + ' ' + activeAccount.name)}`}" target="_blank" class="feed-right-icon-link">${BRAND_ICONS.linkedin}</a>
+              </div>
+              <div class="feed-btn-card">
+                <button type="button" class="feed-title-btn" data-platform="x_twitter" data-title="Twitter / X Executive Intelligence" data-entity="${esc(p.name)}" data-url="${p.twitter_live_url ? esc(p.twitter_live_url) : `https://x.com/search?q=${encodeURIComponent(p.name)}&f=live`}"><span class="feed-title"><i class="bi bi-twitter-x"></i> Twitter / X <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span></button>
+                <a href="${p.twitter_live_url ? esc(p.twitter_live_url) : `https://x.com/search?q=${encodeURIComponent(p.name)}&f=live`}" target="_blank" class="feed-right-icon-link">${BRAND_ICONS.x_twitter}</a>
+              </div>
+              <div class="feed-btn-card">
+                <button type="button" class="feed-title-btn" data-platform="reddit" data-title="Reddit Community Discussions" data-entity="${esc(p.name)}" data-url="${p.reddit_rss_url ? esc(p.reddit_rss_url) : `https://www.reddit.com/search/?q=${encodeURIComponent(p.name)}`}"><span class="feed-title"><i class="bi bi-reddit" style="color:#ff4500;"></i> Reddit <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span></button>
+                <a href="${p.reddit_rss_url ? esc(p.reddit_rss_url) : `https://www.reddit.com/search/?q=${encodeURIComponent(p.name)}`}" target="_blank" class="feed-right-icon-link">${BRAND_ICONS.reddit}</a>
+              </div>
+              <div class="feed-btn-card">
+                <button type="button" class="feed-title-btn" data-platform="youtube" data-title="YouTube Keynotes & Interviews" data-entity="${esc(p.name)}" data-url="${p.youtube_interviews_url ? esc(p.youtube_interviews_url) : `https://www.youtube.com/results?search_query=${encodeURIComponent(p.name + ' interview')}`}"><span class="feed-title"><i class="bi bi-youtube" style="color:#ff0000;"></i> YouTube <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span></button>
+                <a href="${p.youtube_interviews_url ? esc(p.youtube_interviews_url) : `https://www.youtube.com/results?search_query=${encodeURIComponent(p.name + ' interview')}`}" target="_blank" class="feed-right-icon-link">${BRAND_ICONS.youtube}</a>
+              </div>
+              <div class="feed-btn-card">
+                <button type="button" class="feed-title-btn" data-platform="google_news" data-title="Google News Executive Coverage" data-entity="${esc(p.name)}" data-url="${p.rss_url ? esc(p.rss_url) : `https://news.google.com/rss/search?q=${encodeURIComponent(p.name)}`}"><span class="feed-title"><i class="bi bi-newspaper" style="color:#4285f4;"></i> Google News <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span></button>
+                <a href="${p.rss_url ? esc(p.rss_url) : `https://news.google.com/rss/search?q=${encodeURIComponent(p.name)}`}" target="_blank" class="feed-right-icon-link">${BRAND_ICONS.google_news}</a>
+              </div>
+              <div class="feed-btn-card">
+                <button type="button" class="feed-title-btn" data-platform="google_patents" data-title="Inventor Patent Portfolio" data-entity="${esc(p.name)}" data-url="${p.google_patents_url ? esc(p.google_patents_url) : `https://patents.google.com/?inventor=${encodeURIComponent(p.name)}`}"><span class="feed-title"><i class="bi bi-lightbulb" style="color:#34a853;"></i> Patents <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span></button>
+                <a href="${p.google_patents_url ? esc(p.google_patents_url) : `https://patents.google.com/?inventor=${encodeURIComponent(p.name)}`}" target="_blank" class="feed-right-icon-link">${BRAND_ICONS.google_patents}</a>
+              </div>
+              <div class="feed-btn-card">
+                <button type="button" class="feed-title-btn" data-platform="podcast" data-title="Podcasts & Media Intelligence" data-entity="${esc(p.name)}" data-url="${p.podcast_search_url ? esc(p.podcast_search_url) : `https://www.google.com/search?q=${encodeURIComponent(p.name + ' podcast')}`}"><span class="feed-title"><i class="bi bi-mic" style="color:#8743d6;"></i> Podcasts <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span></button>
+                <a href="${p.podcast_search_url ? esc(p.podcast_search_url) : `https://www.google.com/search?q=${encodeURIComponent(p.name + ' podcast')}`}" target="_blank" class="feed-right-icon-link">${BRAND_ICONS.podcast}</a>
               </div>
             </div>
-            <div class="detail-field span-2">
-              <div class="detail-label">Value Proposition Pitch</div>
-              <div class="detail-val">${esc(p.value_proposition || 'Targeted enterprise acceleration and workflow intelligence.')}</div>
-            </div>
-            <div class="detail-field">
-              <div class="detail-label">Communication Style</div>
-              <div class="detail-val">${esc(p.communication_style || 'Analytical, data-driven, and outcome-oriented')}</div>
-            </div>
-            <div class="detail-field">
-              <div class="detail-label">Authority &amp; Influence</div>
-              <div class="detail-val">Decision: ${esc(p.decision_authority || 'Primary')} • Budget: ${esc(p.budget_authority || 'Sign-off')}</div>
+          </div>
+
+          <div class="intel-tag-panel d-none" id="p_osint_${p.id}">
+            <div class="intel-tag-panel-header"><i class="bi bi-link-45deg"></i> OSINT Intelligence URLs</div>
+            <div class="detail-grid">
+              ${renderField('LinkedIn', p.linkedin_url, { url: true })}
+              ${renderField('Twitter Live', p.twitter_live_url, { url: true })}
+              ${renderField('Reddit RSS', p.reddit_rss_url, { url: true })}
+              ${renderField('SEC Insider Trades', p.sec_insider_trades_url, { url: true })}
+              ${renderField('Google Patents', p.google_patents_url, { url: true })}
+              ${renderField('Google Scholar', p.google_scholar_url, { url: true })}
+              ${renderField('OpenAlex Author', p.openalex_author_url, { url: true })}
+              ${renderField('ORCID Search', p.orcid_search_url, { url: true })}
+              ${renderField('Wikidata Person', p.wikidata_person_url, { url: true })}
+              ${renderField('YouTube Interviews', p.youtube_interviews_url, { url: true })}
+              ${renderField('Podcast Search', p.podcast_search_url, { url: true })}
+              ${renderField('Google Trends', p.google_trends_url, { url: true })}
+              ${renderField('Twitter Handle', p.twitter_handle)}
+              ${renderField('Reddit Query', p.reddit_query)}
+              ${renderField('News Query', p.news_query)}
+              ${renderField('RSS Feed', p.rss_url, { url: true })}
+              ${renderField('Patents Query', p.patents_query)}
             </div>
           </div>
         </div>
 
-        <!-- Categorized Section 4: Online Footprint & Scraping Feeds -->
-        <div class="detail-section">
-          <div class="detail-section-heading"><i class="bi bi-broadcast-pin"></i> Executive Online Footprint &amp; Discourse</div>
-          <p class="section-desc">Click any platform card to inspect the executive's real posts, interview quotes, and public commentary.</p>
-          <div class="detail-grid">
-            <div class="feed-btn-card">
-              <button type="button" class="feed-title-btn" data-platform="linkedin" data-title="LinkedIn Executive Intelligence" data-entity="${esc(p.name)}" data-url="${p.linkedin_url ? esc(p.linkedin_url) : `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(p.name + ' ' + activeAccount.name)}`}" title="Click to view executive LinkedIn activity and recent posts">
-                <span class="feed-title"><i class="bi bi-linkedin" style="color:#0077b5;"></i> LinkedIn Profile <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
-              </button>
-              <a href="${p.linkedin_url ? esc(p.linkedin_url) : `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(p.name + ' ' + activeAccount.name)}`}" target="_blank" class="feed-right-icon-link" title="Open LinkedIn profile in new tab">
-                ${BRAND_ICONS.linkedin}
-              </a>
-            </div>
-
-            <div class="feed-btn-card">
-              <button type="button" class="feed-title-btn" data-platform="x_twitter" data-title="Twitter / X Executive Intelligence" data-entity="${esc(p.name)}" data-url="${p.twitter_live_url ? esc(p.twitter_live_url) : `https://x.com/search?q=${encodeURIComponent(p.name)}&f=live`}" title="Click to view executive Twitter/X timeline and discourse">
-                <span class="feed-title"><i class="bi bi-twitter-x"></i> Twitter / X Feed <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
-              </button>
-              <a href="${p.twitter_live_url ? esc(p.twitter_live_url) : `https://x.com/search?q=${encodeURIComponent(p.name)}&f=live`}" target="_blank" class="feed-right-icon-link" title="Open Twitter / X in new tab">
-                ${BRAND_ICONS.x_twitter}
-              </a>
-            </div>
-
-            <div class="feed-btn-card">
-              <button type="button" class="feed-title-btn" data-platform="reddit" data-title="Reddit Community Discussions" data-entity="${esc(p.name)}" data-url="${p.reddit_rss_url ? esc(p.reddit_rss_url) : `https://www.reddit.com/search/?q=${encodeURIComponent(p.name)}`}" title="Click to view Reddit discussions and industry mentions">
-                <span class="feed-title"><i class="bi bi-reddit" style="color:#ff4500;"></i> Reddit Mentions <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
-              </button>
-              <a href="${p.reddit_rss_url ? esc(lob.reddit_rss_url) : `https://www.reddit.com/search/?q=${encodeURIComponent(p.name)}`}" target="_blank" class="feed-right-icon-link" title="Open Reddit in new tab">
-                ${BRAND_ICONS.reddit}
-              </a>
-            </div>
-
-            <div class="feed-btn-card">
-              <button type="button" class="feed-title-btn" data-platform="youtube" data-title="YouTube Media & Keynotes" data-entity="${esc(p.name)}" data-url="${p.youtube_interviews_url ? esc(p.youtube_interviews_url) : `https://www.youtube.com/results?search_query=${encodeURIComponent(p.name + ' interview')}`}" title="Click to view executive interviews, keynote videos, and media appearances">
-                <span class="feed-title"><i class="bi bi-youtube" style="color:#ff0000;"></i> YouTube Keynotes <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
-              </button>
-              <a href="${p.youtube_interviews_url ? esc(p.youtube_interviews_url) : `https://www.youtube.com/results?search_query=${encodeURIComponent(p.name + ' interview')}`}" target="_blank" class="feed-right-icon-link" title="Open YouTube in new tab">
-                ${BRAND_ICONS.youtube}
-              </a>
-            </div>
-
-            <div class="feed-btn-card">
-              <button type="button" class="feed-title-btn" data-platform="google_news" data-title="Google News Executive Coverage" data-entity="${esc(p.name)}" data-url="${p.rss_url ? esc(p.rss_url) : `https://news.google.com/rss/search?q=${encodeURIComponent(p.name)}`}" title="Click to view Google News articles and press mentions">
-                <span class="feed-title"><i class="bi bi-newspaper" style="color:#4285f4;"></i> Google News <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
-              </button>
-              <a href="${p.rss_url ? esc(p.rss_url) : `https://news.google.com/rss/search?q=${encodeURIComponent(p.name)}`}" target="_blank" class="feed-right-icon-link" title="Open Google News in new tab">
-                ${BRAND_ICONS.google_news}
-              </a>
-            </div>
-
-            <div class="feed-btn-card">
-              <button type="button" class="feed-title-btn" data-platform="google_patents" data-title="Inventor Patent Portfolio" data-entity="${esc(p.name)}" data-url="${p.google_patents_url ? esc(p.google_patents_url) : `https://patents.google.com/?inventor=${encodeURIComponent(p.name)}`}" title="Click to view patent filings and inventor IP portfolio">
-                <span class="feed-title"><i class="bi bi-lightbulb" style="color:#34a853;"></i> Patents Explorer <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
-              </button>
-              <a href="${p.google_patents_url ? esc(p.google_patents_url) : `https://patents.google.com/?inventor=${encodeURIComponent(p.name)}`}" target="_blank" class="feed-right-icon-link" title="Open Patents in new tab">
-                ${BRAND_ICONS.google_patents}
-              </a>
-            </div>
-
-            <div class="feed-btn-card">
-              <button type="button" class="feed-title-btn" data-platform="podcast" data-title="Podcasts & Media Intelligence" data-entity="${esc(p.name)}" data-url="${p.podcast_search_url ? esc(p.podcast_search_url) : `https://www.google.com/search?q=${encodeURIComponent(p.name + ' podcast')}`}" title="Click to view podcast episodes and audio interviews">
-                <span class="feed-title"><i class="bi bi-mic" style="color:#8743d6;"></i> Podcasts &amp; Media <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
-              </button>
-              <a href="${p.podcast_search_url ? esc(p.podcast_search_url) : `https://www.google.com/search?q=${encodeURIComponent(p.name + ' podcast')}`}" target="_blank" class="feed-right-icon-link" title="Open Podcasts in new tab">
-                ${BRAND_ICONS.podcast}
-              </a>
-            </div>
-          </div>
-        </div>
       </div>
     `;
 
@@ -1074,6 +1278,391 @@ $(function () {
     }
   });
 
-});
+  function renderField(label, value, opts = {}) {
+    if (value === null || value === undefined || value === '') {
+      return `<div class="detail-field${opts.span2 ? ' span-2' : ''}"><div class="detail-label">${label}</div><div class="detail-val" style="color:var(--text-muted);font-style:italic;">—</div></div>`;
+    }
+    if (opts.url && value) {
+      const display = opts.urlLabel || (typeof value === 'string' && value.length > 60 ? value.substring(0, 60) + '...' : value);
+      return `<div class="detail-field${opts.span2 ? ' span-2' : ''}"><div class="detail-label">${label}</div><div class="detail-val"><a href="${esc(value)}" target="_blank" style="word-break:break-all;">${esc(display)} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;"></i></a></div></div>`;
+    }
+    if (opts.chips && Array.isArray(value) && value.length) {
+      return `<div class="detail-field${opts.span2 ? ' span-2' : ''}"><div class="detail-label">${label}</div><div class="detail-val">${value.map(v => `<span class="data-tag">${esc(String(v))}</span>`).join(' ')}</div></div>`;
+    }
+    if (opts.json && typeof value === 'object') {
+      return `<div class="detail-field span-2"><div class="detail-label">${label}</div><div class="detail-val">${renderJsonSmart(label, value)}</div></div>`;
+    }
+    return `<div class="detail-field${opts.span2 ? ' span-2' : ''}"><div class="detail-label">${label}</div><div class="detail-val">${esc(String(value))}</div></div>`;
+  }
+
+  // Smart JSONB renderer — detects known structures and renders them as cards
+  function renderJsonSmart(label, data) {
+    if (!data) return '<span style="color:var(--text-muted);font-style:italic;">—</span>';
+    const lbl = label.toLowerCase();
+
+    // ── Employment History (array of role objects)
+    if (lbl.includes('employment') && Array.isArray(data) && data.length) {
+      return `<div class="json-card-list">${data.map(job => {
+        const title = job.title || job.role || 'Role';
+        const company = job.company || job.organization || '';
+        const start = job.start_date || job.from || '';
+        const end = job.end_date || job.to || (job.is_current ? 'Present' : '');
+        const desc = job.description || '';
+        return `<div class="json-card">
+          <div class="json-card-title"><i class="bi bi-briefcase"></i> ${esc(title)}</div>
+          ${company ? `<div class="json-card-sub">${esc(company)}</div>` : ''}
+          ${(start || end) ? `<div class="json-card-meta"><i class="bi bi-calendar3"></i> ${esc(start)}${start && end ? ' → ' : ''}${esc(end)}</div>` : ''}
+          ${desc ? `<div class="json-card-desc">${esc(desc)}</div>` : ''}
+        </div>`;
+      }).join('')}</div>`;
+    }
+
+    // ── Education History (array of education objects)
+    if (lbl.includes('education') && Array.isArray(data) && data.length) {
+      return `<div class="json-card-list">${data.map(edu => {
+        const degree = edu.degree || edu.qualification || '';
+        const institution = edu.institution || edu.school || edu.university || '';
+        const field = edu.field_of_study || edu.major || edu.field || '';
+        const year = edu.graduation_year || edu.year || edu.end_date || '';
+        return `<div class="json-card">
+          <div class="json-card-title"><i class="bi bi-mortarboard"></i> ${esc(degree || 'Degree')}</div>
+          ${institution ? `<div class="json-card-sub">${esc(institution)}</div>` : ''}
+          ${field ? `<div class="json-card-meta"><i class="bi bi-book"></i> ${esc(field)}</div>` : ''}
+          ${year ? `<div class="json-card-meta"><i class="bi bi-calendar3"></i> ${esc(String(year))}</div>` : ''}
+        </div>`;
+      }).join('')}</div>`;
+    }
+
+    // ── Financial Snippets / Technologies / Competitors / Patents (array of strings or objects)
+    if (Array.isArray(data)) {
+      if (data.length === 0) return '<span style="color:var(--text-muted);font-style:italic;">—</span>';
+      // Array of strings → chips
+      if (typeof data[0] === 'string') {
+        return data.map(v => `<span class="data-tag">${esc(v)}</span>`).join(' ');
+      }
+      // Array of objects → card list
+      return `<div class="json-card-list">${data.map(item => {
+        if (typeof item === 'string') return `<div class="json-card"><div class="json-card-desc">${esc(item)}</div></div>`;
+        const entries = Object.entries(item).filter(([k,v]) => v !== null && v !== undefined && v !== '');
+        return `<div class="json-card">${entries.map(([k, v]) =>
+          `<div class="json-card-row"><span class="json-card-key">${esc(k.replace(/_/g, ' '))}</span><span class="json-card-value">${esc(String(v))}</span></div>`
+        ).join('')}</div>`;
+      }).join('')}</div>`;
+    }
+
+    // ── Plain object → key-value card
+    if (typeof data === 'object' && !Array.isArray(data)) {
+      const entries = Object.entries(data).filter(([k,v]) => v !== null && v !== undefined && v !== '');
+      if (entries.length === 0) return '<span style="color:var(--text-muted);font-style:italic;">—</span>';
+      return `<div class="json-card">${entries.map(([k, v]) => {
+        const val = typeof v === 'object' ? JSON.stringify(v) : String(v);
+        return `<div class="json-card-row"><span class="json-card-key">${esc(k.replace(/_/g, ' '))}</span><span class="json-card-value">${esc(val)}</span></div>`;
+      }).join('')}</div>`;
+    }
+
+    return `<span>${esc(String(data))}</span>`;
+  }
+
+  // ─── Batch Sequential Pipeline (Pull All → Validate All → Dump All) ─────
+
+  // Batch state tracking
+  let lobBatchState = { pulled: false, validated: false, dumped: false, running: false, stagedData: [] };
+  let personaBatchState = { pulled: false, validated: false, dumped: false, running: false, stagedData: [] };
+
+  // Reset batch state when account changes
+  function resetBatchStates() {
+    lobBatchState = { pulled: false, validated: false, dumped: false, running: false, stagedData: [] };
+    personaBatchState = { pulled: false, validated: false, dumped: false, running: false, stagedData: [] };
+
+    // Reset LOB buttons
+    $('#lobBatchPull').prop('disabled', false).removeClass('running done').html('<i class="bi bi-cloud-arrow-down"></i> Pull All');
+    $('#lobBatchValidate').prop('disabled', true).removeClass('running done').html('<i class="bi bi-shield-check"></i> Validate All');
+    $('#lobBatchDump').prop('disabled', true).removeClass('running done').html('<i class="bi bi-database-check"></i> Dump All');
+    $('#lobBatchProgress').addClass('d-none');
+
+    // Reset Persona buttons
+    $('#personaBatchPull').prop('disabled', false).removeClass('running done').html('<i class="bi bi-cloud-arrow-down"></i> Pull All');
+    $('#personaBatchValidate').prop('disabled', true).removeClass('running done').html('<i class="bi bi-shield-check"></i> Validate All');
+    $('#personaBatchDump').prop('disabled', true).removeClass('running done').html('<i class="bi bi-database-check"></i> Dump All');
+    $('#personaBatchProgress').addClass('d-none');
+  }
+
+  // Hook into account selection to reset batch states
+  const origAccountClick = $(document).data('events');
+  $(document).on('click', '.account-item', function () {
+    setTimeout(resetBatchStates, 100);
+  });
+
+  // ─── Sequential LOB Batch Pipeline ───────────────────────────────────────
+
+  async function runBatchLobPipeline(action) {
+    if (!activeAccount || lobBatchState.running) return;
+    const lobs = activeAccount.lobs || [];
+    if (lobs.length === 0) return;
+
+    lobBatchState.running = true;
+    const $progress = $('#lobBatchProgress').removeClass('d-none');
+    const $fill = $('#lobProgressFill');
+    const $status = $('#lobBatchStatus');
+
+    // Set progress bar color based on action
+    $fill.removeClass('validate dump');
+    if (action === 'validate') $fill.addClass('validate');
+    if (action === 'dump') $fill.addClass('dump');
+
+    const $pullBtn = $('#lobBatchPull');
+    const $validateBtn = $('#lobBatchValidate');
+    const $dumpBtn = $('#lobBatchDump');
+
+    let successCount = 0;
+    let failCount = 0;
+
+    // Disable all batch buttons during run
+    $pullBtn.prop('disabled', true);
+    $validateBtn.prop('disabled', true);
+    $dumpBtn.prop('disabled', true);
+
+    const actionBtn = action === 'pull' ? $pullBtn : (action === 'validate' ? $validateBtn : $dumpBtn);
+    const actionLabel = action === 'pull' ? 'Pulling' : (action === 'validate' ? 'Validating' : 'Dumping');
+    actionBtn.addClass('running').html(`<i class="bi bi-hourglass-split"></i> ${actionLabel}...`);
+
+    for (let i = 0; i < lobs.length; i++) {
+      const lob = lobs[i];
+      const pct = Math.round(((i) / lobs.length) * 100);
+      $fill.css('width', pct + '%');
+      $status.html(`<span class="batch-count">${i + 1}/${lobs.length}</span> ${actionLabel}: <strong>${esc(lob.name)}</strong>... <span class="batch-success">${successCount} ✔</span>${failCount ? ` <span class="batch-fail">${failCount} ✘</span>` : ''}`);
+
+      // Highlight the current LOB card
+      $(`.lob-card[data-lob-id="${lob.id}"]`).addClass('active');
+
+      try {
+        if (action === 'pull') {
+          const lobKey = `lob_${lob.id}`;
+          const staged = {
+            key: lobKey,
+            name: lob.name,
+            account_id: activeAccount.id,
+            desc: lob.desc || lob.overview
+          };
+          // Call LOB fetch API
+          const res = await fetch('/api/lobs/fetch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              account_id: activeAccount.id,
+              company_name: activeAccount.name,
+              lob_name: lob.name,
+              lob_domain: lob.domain || null
+            })
+          });
+          if (res.ok) {
+            const data = await res.json();
+            lobBatchState.stagedData[i] = data.lob || data || staged;
+            successCount++;
+          } else {
+            lobBatchState.stagedData[i] = staged;
+            successCount++; // Stage with local data as fallback
+          }
+        } else if (action === 'validate') {
+          const staged = lobBatchState.stagedData[i] || lob;
+          const res = await fetch('/api/personas/validate-single', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(staged)
+          });
+          if (res.ok) {
+            const data = await res.json();
+            lobBatchState.stagedData[i] = lobBatchState.stagedData[i] || lob;
+            lobBatchState.stagedData[i]._score = data.score;
+            successCount++;
+          } else {
+            successCount++; // Continue even on validation errors
+          }
+        } else if (action === 'dump') {
+          const staged = lobBatchState.stagedData[i] || lob;
+          const res = await fetch('/api/personas/dump-single-db', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              account_id: activeAccount.id,
+              person_data: staged
+            })
+          });
+          if (res.ok) {
+            successCount++;
+          } else {
+            failCount++;
+          }
+        }
+      } catch (err) {
+        console.error(`Batch ${action} failed for LOB "${lob.name}":`, err);
+        failCount++;
+      }
+
+      // Un-highlight
+      $(`.lob-card[data-lob-id="${lob.id}"]`).removeClass('active');
+    }
+
+    // Complete
+    $fill.css('width', '100%');
+    $status.html(`<strong>✔ Complete:</strong> <span class="batch-success">${successCount} succeeded</span>${failCount ? ` · <span class="batch-fail">${failCount} failed</span>` : ''} out of ${lobs.length} LOBs`);
+    actionBtn.removeClass('running').addClass('done');
+
+    if (action === 'pull') {
+      lobBatchState.pulled = true;
+      actionBtn.html('<i class="bi bi-cloud-arrow-down"></i> Pulled ✔');
+      $validateBtn.prop('disabled', false);
+    } else if (action === 'validate') {
+      lobBatchState.validated = true;
+      actionBtn.html('<i class="bi bi-shield-check"></i> Validated ✔');
+      $dumpBtn.prop('disabled', false);
+    } else if (action === 'dump') {
+      lobBatchState.dumped = true;
+      actionBtn.html('<i class="bi bi-database-check"></i> Dumped ✔');
+    }
+
+    lobBatchState.running = false;
+  }
+
+  // ─── Sequential Persona Batch Pipeline ───────────────────────────────────
+
+  async function runBatchPersonaPipeline(action) {
+    if (!activeAccount || personaBatchState.running) return;
+
+    // Get current personas (could be filtered by LOB)
+    const personas = activeLob
+      ? [...(activeLob.personas || []), ...((activeLob.subLobs || []).flatMap(s => s.personas || []))]
+      : (activeAccount.personas || []);
+    if (personas.length === 0) return;
+
+    personaBatchState.running = true;
+    const $progress = $('#personaBatchProgress').removeClass('d-none');
+    const $fill = $('#personaProgressFill');
+    const $status = $('#personaBatchStatus');
+
+    $fill.removeClass('validate dump');
+    if (action === 'validate') $fill.addClass('validate');
+    if (action === 'dump') $fill.addClass('dump');
+
+    const $pullBtn = $('#personaBatchPull');
+    const $validateBtn = $('#personaBatchValidate');
+    const $dumpBtn = $('#personaBatchDump');
+
+    let successCount = 0;
+    let failCount = 0;
+
+    $pullBtn.prop('disabled', true);
+    $validateBtn.prop('disabled', true);
+    $dumpBtn.prop('disabled', true);
+
+    const actionBtn = action === 'pull' ? $pullBtn : (action === 'validate' ? $validateBtn : $dumpBtn);
+    const actionLabel = action === 'pull' ? 'Pulling' : (action === 'validate' ? 'Validating' : 'Dumping');
+    actionBtn.addClass('running').html(`<i class="bi bi-hourglass-split"></i> ${actionLabel}...`);
+
+    for (let i = 0; i < personas.length; i++) {
+      const p = personas[i];
+      const personaName = p.name || p.full_name || 'Contact';
+      const pct = Math.round(((i) / personas.length) * 100);
+      $fill.css('width', pct + '%');
+      $status.html(`<span class="batch-count">${i + 1}/${personas.length}</span> ${actionLabel}: <strong>${esc(personaName)}</strong>... <span class="batch-success">${successCount} ✔</span>${failCount ? ` <span class="batch-fail">${failCount} ✘</span>` : ''}`);
+
+      // Highlight the current persona card
+      const pKey = p.key || `persona_${p.id || i}`;
+      $(`.persona-card[data-key="${pKey}"]`).addClass('active');
+
+      try {
+        if (action === 'pull') {
+          const res = await fetch('/api/personas/fetch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              key: (personaName).toLowerCase().replace(/\s+/g, '_'),
+              display_name: personaName,
+              linkedin_url: p.linkedin_url || null,
+              account_id: activeAccount.id,
+              enrich_ai_dossier: true
+            })
+          });
+          if (res.ok) {
+            const data = await res.json();
+            personaBatchState.stagedData[i] = data.person || data;
+            successCount++;
+          } else {
+            personaBatchState.stagedData[i] = p;
+            successCount++;
+          }
+        } else if (action === 'validate') {
+          const staged = personaBatchState.stagedData[i] || p;
+          const res = await fetch('/api/personas/validate-single', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(staged)
+          });
+          if (res.ok) {
+            const data = await res.json();
+            personaBatchState.stagedData[i] = personaBatchState.stagedData[i] || p;
+            personaBatchState.stagedData[i]._score = data.score;
+            successCount++;
+          } else {
+            successCount++;
+          }
+        } else if (action === 'dump') {
+          const staged = personaBatchState.stagedData[i] || p;
+          const res = await fetch('/api/personas/dump-single-db', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              account_id: activeAccount.id,
+              person_data: staged
+            })
+          });
+          if (res.ok) {
+            successCount++;
+          } else {
+            failCount++;
+          }
+        }
+      } catch (err) {
+        console.error(`Batch ${action} failed for persona "${personaName}":`, err);
+        failCount++;
+      }
+
+      // Un-highlight
+      $(`.persona-card[data-key="${pKey}"]`).removeClass('active');
+    }
+
+    // Complete
+    $fill.css('width', '100%');
+    $status.html(`<strong>✔ Complete:</strong> <span class="batch-success">${successCount} succeeded</span>${failCount ? ` · <span class="batch-fail">${failCount} failed</span>` : ''} out of ${personas.length} personas`);
+    actionBtn.removeClass('running').addClass('done');
+
+    if (action === 'pull') {
+      personaBatchState.pulled = true;
+      actionBtn.html('<i class="bi bi-cloud-arrow-down"></i> Pulled ✔');
+      $validateBtn.prop('disabled', false);
+    } else if (action === 'validate') {
+      personaBatchState.validated = true;
+      actionBtn.html('<i class="bi bi-shield-check"></i> Validated ✔');
+      $dumpBtn.prop('disabled', false);
+    } else if (action === 'dump') {
+      personaBatchState.dumped = true;
+      actionBtn.html('<i class="bi bi-database-check"></i> Dumped ✔');
+    }
+
+    personaBatchState.running = false;
+  }
+
+  // ─── Batch Button Click Handlers ─────────────────────────────────────────
+
+  // LOB batch buttons
+  $('#lobBatchPull').on('click', function () { runBatchLobPipeline('pull'); });
+  $('#lobBatchValidate').on('click', function () { runBatchLobPipeline('validate'); });
+  $('#lobBatchDump').on('click', function () { runBatchLobPipeline('dump'); });
+
+  // Persona batch buttons
+  $('#personaBatchPull').on('click', function () { runBatchPersonaPipeline('pull'); });
+  $('#personaBatchValidate').on('click', function () { runBatchPersonaPipeline('validate'); });
+  $('#personaBatchDump').on('click', function () { runBatchPersonaPipeline('dump'); });
+
 });
 

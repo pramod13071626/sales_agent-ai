@@ -1,6 +1,6 @@
 """Persona ORM Model — 58 columns. Executives with scraping URLs, AI dossier, skills, KPIs."""
 
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, ARRAY
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, ARRAY, Boolean, Float
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from db.models.base import Base
@@ -76,6 +76,18 @@ class Persona(Base):
     target_kpis = Column(ARRAY(Text))
     operational_pain_points = Column(ARRAY(Text))
     key_objections = Column(ARRAY(Text))
+
+    # ── Career Employment History & Personal Intelligence (FullEnrich) ──
+    headline = Column(String(500))
+    employment_history = Column(JSONB)
+    past_companies = Column(ARRAY(Text))
+    previous_titles = Column(ARRAY(Text))
+    current_role_tenure_months = Column(Integer)
+    is_new_in_role = Column(Boolean, default=False)
+    career_trajectory_score = Column(Float)
+    education_history = Column(JSONB)
+    personal_email = Column(String(255))
+    direct_mobile_phone = Column(String(100))
 
     # ── Relationships ──
     account = relationship("Account", back_populates="personas")

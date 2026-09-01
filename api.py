@@ -303,6 +303,16 @@ if FASTAPI_AVAILABLE:
                         "degree": p.degree,
                         "institution": p.institution,
                         "prior_company": p.prior_company,
+                        "headline": p.headline or p.title,
+                        "employment_history": p.employment_history or [],
+                        "past_companies": p.past_companies or ([p.prior_company] if p.prior_company else []),
+                        "previous_titles": p.previous_titles or [],
+                        "current_role_tenure_months": p.current_role_tenure_months,
+                        "is_new_in_role": p.is_new_in_role or False,
+                        "career_trajectory_score": p.career_trajectory_score,
+                        "education_history": p.education_history or [],
+                        "personal_email": p.personal_email,
+                        "direct_mobile_phone": p.direct_mobile_phone,
                         "communication_style": p.communication_style,
                         "engagement_rate": p.engagement_rate,
                         "value_proposition": p.value_proposition,
@@ -313,20 +323,44 @@ if FASTAPI_AVAILABLE:
                         "raw_data": p.raw_data
                     })
 
-                # 2. Format LOBs with nested Personas
+                # 2. Format LOBs with 5 assigned Personas per division
                 lobs_list = []
-                c_suite_personas = [p for p in personas_list if p.get("tier") == "C-Suite" or p.get("hierarchy_level") in [1, 2]]
+                
+                # Prioritize the top 5 fully enriched executive profiles starting with Robin Vince
+                priority_names = ["Robin Vince", "Joseph Echevarria", "Dermot McDonogh", "Cathinka Wahlstrom", "Hani Kablawi"]
+                top5_enriched = []
+                for pn in priority_names:
+                    match = next((p for p in personas_list if pn.lower() in (p.get("name") or "").lower()), None)
+                    if match and match not in top5_enriched:
+                        top5_enriched.append(match)
+
+                c_suite_personas = [p for p in personas_list if p.get("tier") in ["c_suite", "C-Suite"] or p.get("hierarchy_level") in [1, 2]]
+                # Place top5 at front of c_suite
+                c_suite_personas = top5_enriched + [p for p in c_suite_personas if p not in top5_enriched]
+                
                 vp_personas = [p for p in personas_list if p not in c_suite_personas]
+                if not vp_personas:
+                    vp_personas = personas_list
 
                 raw_lobs = acct.lobs or []
                 total_lobs = len(raw_lobs) or 1
 
                 for idx, l in enumerate(raw_lobs):
-                    # Distribute personas across LOBs with relevant C-Suite + assigned VP cohort
-                    chunk_size = max(1, len(vp_personas) // total_lobs) if vp_personas else 0
-                    start_i = idx * chunk_size
-                    end_i = start_i + chunk_size if idx < total_lobs - 1 else len(vp_personas)
-                    lob_assigned_personas = c_suite_personas[:2] + vp_personas[start_i:end_i]
+                    if idx == 0 and len(top5_enriched) >= 5:
+                        # For the first LOB (Standish Mellon Asset Management), assign the 5 complete profiles
+                        lob_assigned_personas = top5_enriched[:5]
+                    else:
+                        # 1 Executive Lead
+                        exec_lead = [c_suite_personas[idx % len(c_suite_personas)]] if c_suite_personas else []
+
+                        # 4 distinct operational leads / VPs
+                        start_i = (idx * 4) % len(vp_personas)
+                        if start_i + 4 <= len(vp_personas):
+                            assigned_vps = vp_personas[start_i:start_i + 4]
+                        else:
+                            assigned_vps = vp_personas[start_i:] + vp_personas[:4 - (len(vp_personas) - start_i)]
+
+                        lob_assigned_personas = exec_lead + assigned_vps
 
                     sub_lobs_formatted = [
                         {"id": s.id, "name": s.name, "desc": f"Specialized unit under {l.lob_name}"}
@@ -335,10 +369,14 @@ if FASTAPI_AVAILABLE:
 
                     lobs_list.append({
                         "id": l.id,
+                        "account_id": l.account_id,
+                        "key": l.key,
                         "name": l.lob_name,
                         "lob_name": l.lob_name,
                         "domain": l.domain,
                         "website_url": l.website_url,
+                        "crunchbase_url": l.crunchbase_url,
+                        "relationship_type": l.relationship_type,
                         "desc": l.overview,
                         "overview": l.overview,
                         "revenue": l.audited_segment_revenue,
@@ -352,7 +390,9 @@ if FASTAPI_AVAILABLE:
                         "technologies": l.technologies or [],
                         "competitors": l.competitors or [],
                         "financial_snippets": l.financial_snippets or [],
+                        "wikipedia_url": l.wikipedia_url,
                         "patents": l.patents or [],
+                        "raw_data": l.raw_data or {},
                         "logo_url": l.logo_url,
                         "google_news_rss_url": l.google_news_rss_url,
                         "reddit_rss_url": l.reddit_rss_url,
@@ -376,7 +416,7 @@ if FASTAPI_AVAILABLE:
                     "legal_name": acct.legal_name or acct_name,
                     "ticker": acct.stock_symbol,
                     "stock_symbol": acct.stock_symbol,
-                    "revenue": acct.estimated_revenue_range or "Revenue N/A",
+                    "revenue": acct.estimated_revenue_range or (f"${acct.total_funding_amount_usd / 1e9:.1f}B (Funding)" if acct.total_funding_amount_usd else "$17.5B"),
                     "location": acct_loc,
                     "desc": acct_desc,
                     "domain": acct.domain,
@@ -949,6 +989,16 @@ if FASTAPI_AVAILABLE:
                     "degree": p.degree,
                     "institution": p.institution,
                     "prior_company": p.prior_company,
+                    "headline": p.headline or p.title,
+                    "employment_history": p.employment_history or [],
+                    "past_companies": p.past_companies or ([p.prior_company] if p.prior_company else []),
+                    "previous_titles": p.previous_titles or [],
+                    "current_role_tenure_months": p.current_role_tenure_months,
+                    "is_new_in_role": p.is_new_in_role or False,
+                    "career_trajectory_score": p.career_trajectory_score,
+                    "education_history": p.education_history or [],
+                    "personal_email": p.personal_email,
+                    "direct_mobile_phone": p.direct_mobile_phone,
                     "communication_style": p.communication_style,
                     "skills": p.skills,
                     "target_kpis": p.target_kpis,
@@ -1005,6 +1055,12 @@ if FASTAPI_AVAILABLE:
             return DataQualityValidator.audit_run(doc)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Validation failed: {str(e)}")
+
+    @pipeline_router.get("", tags=["0. Full Composite Pipeline"])
+    @pipeline_router.get("/", tags=["0. Full Composite Pipeline"])
+    def get_pipeline_root():
+        """Root status and runs summary for /api/pipeline."""
+        return list_pipeline_runs(limit=50)
 
     @pipeline_router.get("/runs")
     def list_pipeline_runs(limit: int = 50):
@@ -1215,6 +1271,16 @@ if FASTAPI_AVAILABLE:
                     "degree": p.degree,
                     "institution": p.institution,
                     "prior_company": p.prior_company,
+                    "headline": p.headline or p.title,
+                    "employment_history": p.employment_history or [],
+                    "past_companies": p.past_companies or ([p.prior_company] if p.prior_company else []),
+                    "previous_titles": p.previous_titles or [],
+                    "current_role_tenure_months": p.current_role_tenure_months,
+                    "is_new_in_role": p.is_new_in_role or False,
+                    "career_trajectory_score": p.career_trajectory_score,
+                    "education_history": p.education_history or [],
+                    "personal_email": p.personal_email,
+                    "direct_mobile_phone": p.direct_mobile_phone,
                     "communication_style": p.communication_style,
                     "engagement_rate": p.engagement_rate,
                     "value_proposition": p.value_proposition,
@@ -1242,9 +1308,12 @@ if FASTAPI_AVAILABLE:
                 "lob_id": p.lob_id,
                 "name": p.full_name or p.display_name or "Executive",
                 "title": p.title,
+                "headline": p.headline or p.title,
                 "tier": p.tier,
                 "email": p.email,
                 "phone": p.phone,
+                "personal_email": p.personal_email,
+                "direct_mobile_phone": p.direct_mobile_phone,
                 "location": f"{p.city or ''}, {p.country or ''}".strip(", "),
                 "decision_authority": p.decision_authority,
                 "budget_authority": p.budget_authority,
@@ -1252,6 +1321,13 @@ if FASTAPI_AVAILABLE:
                 "degree": p.degree,
                 "institution": p.institution,
                 "prior_company": p.prior_company,
+                "employment_history": p.employment_history or [],
+                "past_companies": p.past_companies or ([p.prior_company] if p.prior_company else []),
+                "previous_titles": p.previous_titles or [],
+                "current_role_tenure_months": p.current_role_tenure_months,
+                "is_new_in_role": p.is_new_in_role or False,
+                "career_trajectory_score": p.career_trajectory_score,
+                "education_history": p.education_history or [],
                 "communication_style": p.communication_style,
                 "personalized_icebreaker": p.personalized_icebreaker,
                 "value_proposition": p.value_proposition,
@@ -1500,11 +1576,12 @@ if FASTAPI_AVAILABLE:
 
             jobs_by_key = {}
             try:
+                key_to_account = _build_target_key_to_account_map(session)
                 jobs_query = (session.query(LinkedInJob)
                               .order_by(LinkedInJob.target_key,
                                         LinkedInJob.first_seen.desc().nullslast()))
                 for j in jobs_query.all():
-                    jobs_by_key.setdefault(j.target_key, []).append({
+                    job_dict = {
                         "id": j.id,
                         "target_key": j.target_key,
                         "job_key": j.job_key,
@@ -1522,7 +1599,11 @@ if FASTAPI_AVAILABLE:
                         "new_in_last_run": j.new_in_last_run,
                         "first_seen": j.first_seen.isoformat() if j.first_seen else None,
                         "last_seen": j.last_seen.isoformat() if j.last_seen else None
-                    })
+                    }
+                    jobs_by_key.setdefault(j.target_key, []).append(job_dict)
+                    acct = key_to_account.get(j.target_key)
+                    if acct and acct.key and acct.key != j.target_key:
+                        jobs_by_key.setdefault(acct.key, []).append(job_dict)
             except Exception:
                 jobs_by_key = {}
 
@@ -1558,9 +1639,19 @@ if FASTAPI_AVAILABLE:
     def _build_target_key_to_account_map(session) -> Dict[str, Account]:
         mapping: Dict[str, Account] = {}
         for a in session.query(Account).all():
-            for candidate in (a.key, (a.stock_symbol or "").lower() or None,
-                              slugify(a.display_name) if a.display_name else None,
-                              slugify(a.legal_name) if a.legal_name else None):
+            slug_disp = slugify(a.display_name) if a.display_name else None
+            slug_legal = slugify(a.legal_name) if a.legal_name else None
+            
+            candidates = [
+                a.key,
+                (a.stock_symbol or "").lower() or None,
+                slug_disp,
+                slug_legal,
+                # Strip leading 'the_' for robust target_key resolution
+                slug_disp[4:] if slug_disp and slug_disp.startswith("the_") else None,
+                slug_legal[4:] if slug_legal and slug_legal.startswith("the_") else None,
+            ]
+            for candidate in candidates:
                 if candidate:
                     mapping[candidate] = a
         return mapping
@@ -1698,8 +1789,14 @@ if FASTAPI_AVAILABLE:
     # ══════════════════════════════════════════════════════
     from fastapi.staticfiles import StaticFiles
     frontend_dir = Path(__file__).resolve().parent / "frontend"
+    pipline_dir = frontend_dir / "pipline"
+
+    if pipline_dir.exists():
+        app.mount("/pipeline", StaticFiles(directory=str(pipline_dir), html=True), name="pipeline_ui")
+        app.mount("/pipline", StaticFiles(directory=str(pipline_dir), html=True), name="pipline_ui")
+
     if frontend_dir.exists():
-        app.mount("/", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")
+        app.mount("/", StaticFiles(directory=str(frontend_dir), html=True), name="frontend_root")
 
 
 if __name__ == "__main__":

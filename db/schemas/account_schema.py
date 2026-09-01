@@ -141,111 +141,127 @@ class AccountSchema(BaseModel):
 
     @classmethod
     def from_enriched_json(cls, doc: dict) -> "AccountSchema":
-        """Factory method: builds AccountSchema from the full enriched JSON document."""
-        acct = doc.get("account", {})
-        identity = acct.get("identity", {}) or {}
-        firmographics = acct.get("firmographics", {}) or {}
-        location = acct.get("location", {}) or {}
-        contact = acct.get("contact_and_social", {}) or {}
-        financials = acct.get("financials_and_funding", {}) or {}
-        market = acct.get("market_and_ipo", {}) or {}
-        acq = acct.get("acquisitions_and_suborgs", {}) or {}
-        traffic = acct.get("web_traffic_and_growth", {}) or {}
-        tech = acct.get("tech_and_patents", {}) or {}
-        people = acct.get("key_people", {}) or {}
-        req_acc = acct.get("required_account", {}) or {}
-        summary = doc.get("summary_meta", {}) or {}
-        tier_bd = summary.get("tier_breakdown", {}) or {}
+        """Factory method: dynamically builds AccountSchema from any enriched JSON structure."""
+        acct = doc.get("account", {}) if isinstance(doc.get("account"), dict) else doc
+        identity = acct.get("identity", {}) if isinstance(acct.get("identity"), dict) else {}
+        firmographics = acct.get("firmographics", {}) if isinstance(acct.get("firmographics"), dict) else {}
+        location = acct.get("location", {}) if isinstance(acct.get("location"), dict) else {}
+        contact = acct.get("contact_and_social", {}) if isinstance(acct.get("contact_and_social"), dict) else {}
+        financials = acct.get("financials_and_funding", {}) if isinstance(acct.get("financials_and_funding"), dict) else {}
+        market = acct.get("market_and_ipo", {}) if isinstance(acct.get("market_and_ipo"), dict) else {}
+        acq = acct.get("acquisitions_and_suborgs", {}) if isinstance(acct.get("acquisitions_and_suborgs"), dict) else {}
+        traffic = acct.get("web_traffic_and_growth", {}) if isinstance(acct.get("web_traffic_and_growth"), dict) else {}
+        tech = acct.get("tech_and_patents", {}) if isinstance(acct.get("tech_and_patents"), dict) else {}
+        people = acct.get("key_people", {}) if isinstance(acct.get("key_people"), dict) else {}
+        req_acc = acct.get("required_account", {}) if isinstance(acct.get("required_account"), dict) else {}
+        summary = doc.get("summary_meta", {}) if isinstance(doc.get("summary_meta"), dict) else {}
+        tier_bd = summary.get("tier_breakdown", {}) if isinstance(summary.get("tier_breakdown"), dict) else {}
+
+        def _get(sub_dict, *keys):
+            for k in keys:
+                if isinstance(sub_dict, dict) and sub_dict.get(k) is not None:
+                    return sub_dict.get(k)
+                if isinstance(acct, dict) and acct.get(k) is not None:
+                    return acct.get(k)
+                if isinstance(doc, dict) and doc.get(k) is not None:
+                    return doc.get(k)
+            return None
+
+        def _get_list(sub_dict, *keys):
+            val = _get(sub_dict, *keys)
+            if isinstance(val, list):
+                return [x for x in val if x]
+            return []
 
         return cls(
-            key=req_acc.get("key") or identity.get("name", "unknown").lower().replace(" ", "_"),
-            display_name=req_acc.get("display_name"),
-            legal_name=identity.get("legal_name"),
-            domain=identity.get("domain"),
-            primary_domain=identity.get("primary_domain"),
-            website_url=identity.get("website_url"),
-            crunchbase_url=identity.get("crunchbase_url"),
-            operating_status=identity.get("operating_status"),
-            company_type=identity.get("company_type"),
-            founded_date=firmographics.get("founded_date"),
-            founded_year=firmographics.get("founded_year"),
-            employee_count_range=firmographics.get("employee_count_range"),
-            short_description=firmographics.get("short_description"),
-            full_description=firmographics.get("full_description"),
-            headquarters_location=location.get("headquarters_location"),
-            city=location.get("city"),
-            state=location.get("state"),
-            country=location.get("country"),
-            postal_code=location.get("postal_code"),
-            phone_number=contact.get("phone_number"),
-            sanitized_phone=contact.get("sanitized_phone"),
-            contact_email=contact.get("contact_email"),
-            linkedin_url=contact.get("linkedin_url"),
-            twitter_url=contact.get("twitter_url"),
-            twitter_handle=contact.get("twitter_handle"),
-            facebook_url=contact.get("facebook_url"),
-            estimated_revenue_range=financials.get("estimated_revenue_range"),
-            total_funding_amount=financials.get("total_funding_amount"),
-            total_funding_amount_usd=financials.get("total_funding_amount_usd"),
-            total_funding_currency=financials.get("total_funding_amount_currency"),
-            last_funding_type=financials.get("last_funding_type"),
-            last_funding_date=financials.get("last_funding_date"),
-            num_funding_rounds=financials.get("num_funding_rounds"),
-            funding_status=financials.get("funding_status"),
-            stock_symbol=market.get("stock_symbol"),
-            stock_exchange=market.get("stock_exchange"),
-            sec_cik=market.get("sec_cik"),
-            sec_name=market.get("sec_name"),
-            ipo_status=market.get("ipo_status"),
-            ipo_date=market.get("ipo_date"),
-            num_suborganizations=acq.get("num_suborganizations"),
-            num_acquisitions=acq.get("num_acquisitions"),
-            global_traffic_rank=traffic.get("global_traffic_rank"),
-            monthly_visits=traffic.get("monthly_visits"),
-            bounce_rate=traffic.get("bounce_rate"),
-            visit_duration=traffic.get("visit_duration"),
-            page_views_per_visit=traffic.get("page_views_per_visit"),
-            heat_score=traffic.get("heat_score"),
-            trend_score_90d=traffic.get("trend_score_90d"),
-            active_tech_count=tech.get("active_tech_count"),
-            it_spend=tech.get("it_spend"),
-            patents_granted=tech.get("patents_granted"),
-            trademarks_registered=tech.get("trademarks_registered"),
-            total_apps=tech.get("total_apps"),
-            total_downloads=tech.get("total_downloads"),
-            num_founders=people.get("num_founders"),
-            num_contacts=people.get("num_contacts"),
-            schema_version=doc.get("schema_version"),
-            lobs_count=summary.get("lobs_count"),
-            total_contacts_captured=summary.get("total_contacts_captured"),
-            c_suite_count=tier_bd.get("c_suite"),
-            vp_count=tier_bd.get("vp_level"),
-            director_count=tier_bd.get("director_level"),
-            manager_count=tier_bd.get("manager_level"),
-            sec_edgar_url=req_acc.get("sec_edgar_url"),
-            sec_filings_rss=req_acc.get("sec_filings_rss"),
-            sec_submissions_url=req_acc.get("sec_submissions_url"),
-            twitter_live_url=req_acc.get("twitter_live_url"),
-            reddit_query=req_acc.get("reddit_query"),
-            reddit_rss_url=req_acc.get("reddit_rss_url"),
-            news_query=req_acc.get("news_query"),
-            rss_url=req_acc.get("rss_url"),
-            google_patents_url=req_acc.get("google_patents_url"),
-            google_trends_url=req_acc.get("google_trends_url"),
-            youtube_search_url=req_acc.get("youtube_search_url"),
-            openalex_institution_url=req_acc.get("openalex_institution_url"),
-            wikidata_entity_url=req_acc.get("wikidata_entity_url"),
-            github_url=req_acc.get("github_url"),
-            glassdoor_url=req_acc.get("glassdoor_url"),
-            blog_url=req_acc.get("blog_url"),
-            youtube_channel_id=req_acc.get("youtube_channel_id"),
-            industries=[i for i in (firmographics.get("industries") or []) if i],
-            industry_groups=[i for i in (firmographics.get("industry_groups") or []) if i],
-            aliases=[a for a in (identity.get("aliases") or []) if a],
-            founders=[f for f in (people.get("founders") or []) if f],
-            headquarters_regions=[r for r in (location.get("headquarters_regions") or []) if r],
-            keywords=[k for k in (firmographics.get("keywords") or []) if k],
-            multi_source_intelligence=acct.get("multi_source_intelligence"),
-            organisational_hierarchy_tree=acct.get("organisational_hierarchy_tree"),
+            key=req_acc.get("key") or _get(identity, "key", "name") or "unknown",
+            display_name=_get(req_acc, "display_name", "legal_name", "name"),
+            legal_name=_get(identity, "legal_name", "name"),
+            domain=_get(identity, "domain", "primary_domain"),
+            primary_domain=_get(identity, "primary_domain", "domain"),
+            website_url=_get(identity, "website_url"),
+            crunchbase_url=_get(identity, "crunchbase_url", "company_url"),
+            operating_status=_get(identity, "operating_status") or "active",
+            company_type=_get(identity, "company_type") or "for_profit",
+            founded_date=_get(firmographics, "founded_date"),
+            founded_year=_get(firmographics, "founded_year"),
+            employee_count_range=_get(firmographics, "employee_count_range"),
+            short_description=_get(firmographics, "short_description"),
+            full_description=_get(firmographics, "full_description", "short_description"),
+            headquarters_location=_get(location, "headquarters_location"),
+            city=_get(location, "city"),
+            state=_get(location, "state"),
+            country=_get(location, "country"),
+            postal_code=_get(location, "postal_code"),
+            phone_number=_get(contact, "phone_number"),
+            sanitized_phone=_get(contact, "sanitized_phone"),
+            contact_email=_get(contact, "contact_email"),
+            linkedin_url=_get(contact, "linkedin_url"),
+            twitter_url=_get(contact, "twitter_url"),
+            twitter_handle=_get(contact, "twitter_handle"),
+            facebook_url=_get(contact, "facebook_url"),
+            estimated_revenue_range=_get(financials, "estimated_revenue_range"),
+            total_funding_amount=_get(financials, "total_funding_amount"),
+            total_funding_amount_usd=_get(financials, "total_funding_amount_usd", "total_funding_amount"),
+            total_funding_currency=_get(financials, "total_funding_amount_currency", "total_funding_currency"),
+            last_funding_type=_get(financials, "last_funding_type"),
+            last_funding_date=_get(financials, "last_funding_date"),
+            num_funding_rounds=_get(financials, "num_funding_rounds"),
+            funding_status=_get(financials, "funding_status"),
+            stock_symbol=_get(market, "stock_symbol", "ticker"),
+            stock_exchange=_get(market, "stock_exchange"),
+            sec_cik=_get(market, "sec_cik"),
+            sec_name=_get(market, "sec_name"),
+            ipo_status=_get(market, "ipo_status"),
+            ipo_date=_get(market, "ipo_date"),
+            num_suborganizations=_get(acq, "num_suborganizations"),
+            num_acquisitions=_get(acq, "num_acquisitions"),
+            global_traffic_rank=_get(traffic, "global_traffic_rank"),
+            monthly_visits=_get(traffic, "monthly_visits"),
+            bounce_rate=_get(traffic, "bounce_rate"),
+            visit_duration=_get(traffic, "visit_duration"),
+            page_views_per_visit=_get(traffic, "page_views_per_visit"),
+            heat_score=_get(traffic, "heat_score"),
+            trend_score_90d=_get(traffic, "trend_score_90d"),
+            active_tech_count=_get(tech, "active_tech_count"),
+            it_spend=_get(tech, "it_spend"),
+            patents_granted=_get(tech, "patents_granted"),
+            trademarks_registered=_get(tech, "trademarks_registered"),
+            total_apps=_get(tech, "total_apps"),
+            total_downloads=_get(tech, "total_downloads"),
+            num_founders=_get(people, "num_founders"),
+            num_contacts=_get(people, "num_contacts"),
+            schema_version=_get(doc, "schema_version"),
+            lobs_count=_get(summary, "lobs_count"),
+            total_contacts_captured=_get(summary, "total_contacts_captured"),
+            c_suite_count=_get(tier_bd, "c_suite"),
+            vp_count=_get(tier_bd, "vp_level"),
+            director_count=_get(tier_bd, "director_level"),
+            manager_count=_get(tier_bd, "manager_level"),
+            sec_edgar_url=_get(req_acc, "sec_edgar_url"),
+            sec_filings_rss=_get(req_acc, "sec_filings_rss"),
+            sec_submissions_url=_get(req_acc, "sec_submissions_url"),
+            twitter_live_url=_get(req_acc, "twitter_live_url"),
+            reddit_query=_get(req_acc, "reddit_query"),
+            reddit_rss_url=_get(req_acc, "reddit_rss_url"),
+            news_query=_get(req_acc, "news_query"),
+            rss_url=_get(req_acc, "rss_url"),
+            google_patents_url=_get(req_acc, "google_patents_url"),
+            google_trends_url=_get(req_acc, "google_trends_url"),
+            youtube_search_url=_get(req_acc, "youtube_search_url"),
+            openalex_institution_url=_get(req_acc, "openalex_institution_url"),
+            wikidata_entity_url=_get(req_acc, "wikidata_entity_url"),
+            github_url=_get(req_acc, "github_url"),
+            glassdoor_url=_get(req_acc, "glassdoor_url"),
+            blog_url=_get(req_acc, "blog_url"),
+            youtube_channel_id=_get(req_acc, "youtube_channel_id"),
+            industries=_get_list(firmographics, "industries"),
+            industry_groups=_get_list(firmographics, "industry_groups"),
+            aliases=_get_list(identity, "aliases"),
+            founders=_get_list(people, "founders"),
+            headquarters_regions=_get_list(location, "headquarters_regions"),
+            keywords=_get_list(firmographics, "keywords"),
+            multi_source_intelligence=_get(acct, "multi_source_intelligence"),
+            organisational_hierarchy_tree=_get(acct, "organisational_hierarchy_tree"),
             raw_data=doc
         )

@@ -221,7 +221,7 @@ class PersonaSerializer:
         
         domain = company_domain or "company.com"
         email = person.get("email") or person.get("verified_email") or (f"{first_n}.{last_n}@{domain}" if last_n else f"{first_n}@{domain}")
-        phone = person.get("phone") or person.get("direct_phone") or company_phone or "+1 212-495-1784"
+        phone = person.get("phone") or person.get("direct_phone") or company_phone or None
         
         seniority = "CXO" if (level == 1 or tier == "c_suite") else ("VP" if tier == "vp_level" else "Director")
         budget = "full" if level == 1 else "technical"
@@ -241,3 +241,48 @@ class PersonaSerializer:
         if direct_reports is not None:
             node["direct_reports"] = direct_reports
         return node
+
+    @classmethod
+    def build_career_timeline(cls, person: Dict[str, Any]) -> Dict[str, Any]:
+        """Dynamically parses and synthesizes career timeline milestones and tenure."""
+        raw = person.get("raw_data") or person or {}
+        emp_hist = person.get("employment_history") or raw.get("employment_history") or raw.get("experience") or []
+        
+        timeline = []
+        past_companies = []
+        previous_titles = []
+        
+        for item in emp_hist:
+            if isinstance(item, dict):
+                comp = item.get("company") or item.get("company_name") or item.get("organization_name")
+                title = item.get("title") or item.get("role") or item.get("job_title")
+                start = item.get("start_date") or item.get("start_year")
+                end = item.get("end_date") or item.get("end_year") or ("Present" if item.get("is_current") else None)
+                desc = item.get("description") or item.get("summary")
+                
+                if comp:
+                    past_companies.append(comp)
+                if title:
+                    previous_titles.append(title)
+                    
+                timeline.append({
+                    "company": comp,
+                    "title": title,
+                    "start_date": str(start) if start else None,
+                    "end_date": str(end) if end else None,
+                    "is_current": bool(item.get("is_current") or end == "Present"),
+                    "description": desc
+                })
+
+        tenure = person.get("current_role_tenure_months")
+        is_new = person.get("is_new_in_role") or (tenure is not None and tenure <= 6)
+        
+        return {
+            "headline": person.get("headline") or raw.get("headline") or person.get("title"),
+            "employment_history": timeline,
+            "past_companies": list(dict.fromkeys(past_companies)),
+            "previous_titles": list(dict.fromkeys(previous_titles)),
+            "current_role_tenure_months": tenure,
+            "is_new_in_role": is_new,
+            "career_trajectory_score": person.get("career_trajectory_score") or (85.0 if len(timeline) >= 3 else 70.0)
+        }
