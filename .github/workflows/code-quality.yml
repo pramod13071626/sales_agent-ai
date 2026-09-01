@@ -108,14 +108,14 @@ jobs:
           grep '^apps/content_pipeline/' changed_py_files.txt > changed_py_files_cp.txt || true
           status=0
           if [ -s changed_py_files_root.txt ]; then
-            xargs pylint --output-format=text < changed_py_files_root.txt || status=$?
+            cat changed_py_files_root.txt | xargs pylint --output-format=text || status=$?
           fi
           if [ -s changed_py_files_cp.txt ]; then
             # --rcfile is required here: pylint does not walk up parent
             # directories looking for .pylintrc the way black/flake8 do, so
             # without it every rule .pylintrc disables (missing-docstring,
             # import-outside-toplevel, ...) comes back once cwd changes.
-            (cd apps/content_pipeline && sed 's#^apps/content_pipeline/##' ../../changed_py_files_cp.txt \
+            (cd apps/content_pipeline && cat ../../changed_py_files_cp.txt | sed 's#^apps/content_pipeline/##' \
               | xargs pylint --rcfile="$(pwd)/../../.pylintrc" --output-format=text) || status=$?
           fi
           exit $status
