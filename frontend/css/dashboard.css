@@ -9,7 +9,7 @@
 
   /* Surfaces */
   --content-bg: #F7F8FA;
-  --panel-bg: #FFFFFF;
+  --panel-bg: #FFF;
   --panel-border: #E8EAED;
   --input-bg: #F2F4F7;
   --badge-bg: #F2F4F7;
@@ -76,7 +76,7 @@
 html, body { height: 100%; }
 body {
   margin: 0;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: Inter, system-ui, -apple-system, sans-serif;
   background: var(--content-bg);
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
@@ -1122,48 +1122,6 @@ body {
 .context-badge.pending { background: rgba(245,166,35,.1); color: #B45309; border-color: rgba(245,166,35,.2); }
 .context-badge.ai { background: var(--brand-soft); color: var(--brand); border-color: rgba(0,97,255,.18); }
 
-/* ── Sales Command Center Tabs ──────────────────────────────── */
-.sales-tabs {
-  display: flex; align-items: center; gap: 4px;
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: var(--radius-md);
-  padding: 4px;
-  margin-bottom: 16px;
-  overflow-x: auto;
-  box-shadow: var(--shadow);
-}
-.sales-tabs::-webkit-scrollbar { display: none; }
-
-.tab-btn {
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 8px 14px;
-  border: none; background: transparent;
-  color: var(--text-secondary);
-  font-size: .78rem; font-weight: 600;
-  font-family: inherit;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: var(--transition);
-}
-.tab-btn i { font-size: .95rem; color: var(--text-muted); transition: var(--transition); }
-.tab-btn:hover { background: var(--input-bg); color: var(--text-primary); }
-.tab-btn.active {
-  background: var(--brand-soft);
-  color: var(--brand);
-  font-weight: 700;
-}
-.tab-btn.active i { color: var(--brand); }
-.tab-badge {
-  font-size: .62rem; font-weight: 700;
-  padding: 1px 6px; border-radius: 99px;
-  background: var(--badge-bg); color: var(--text-muted);
-}
-.tab-btn.active .tab-badge {
-  background: var(--brand); color: #fff;
-}
-
 /* ── Quick Outreach Arsenal Bar ─────────────────────────────── */
 .quick-arsenal {
   display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;
@@ -1253,14 +1211,14 @@ body {
 
 .tab-btn.active {
   background: var(--brand);
-  color: #ffffff;
+  color: #fff;
   border-color: var(--brand);
   box-shadow: 0 3px 10px rgba(0, 97, 255, 0.28);
   transform: translateY(-1px);
 }
 
 .tab-btn.active i {
-  color: #ffffff;
+  color: #fff;
 }
 
 .tab-badge {
@@ -1279,7 +1237,7 @@ body {
 
 .tab-btn.active .tab-badge {
   background: rgba(255, 255, 255, 0.25);
-  color: #ffffff;
+  color: #fff;
   border-color: rgba(255, 255, 255, 0.4);
 }
 
@@ -1564,6 +1522,7 @@ body {
 }
 .signal-modal-title { font-size: 1rem; font-weight: 700; color: var(--text-primary); }
 .signal-modal-body { padding: 18px 20px; }
+
 /* All LinkedIn Jobs page */
 .job-browser-toolbar {
   display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;
@@ -2176,6 +2135,7 @@ body {
   font-size: .74rem; color: var(--text-muted);
   margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border-color);
 }
+
 /* Domain expansion cards — brand accent to distinguish from amber growth-whitespace cards */
 .opportunity-card-brand { border-left-color: var(--brand); }
 .opportunity-card-brand .opportunity-header i { color: var(--brand); }

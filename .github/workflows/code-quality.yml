@@ -63,28 +63,38 @@ jobs:
       - name: Determine changed Python files
         id: changed
         run: |
+          echo "PR base ref: ${{ github.event.pull_request.base.ref }}"
+          echo "FETCH_HEAD -> $(git rev-parse FETCH_HEAD) ($(git log -1 --format=%s FETCH_HEAD))"
+          echo "HEAD       -> $(git rev-parse HEAD) ($(git log -1 --format=%s HEAD))"
           git diff --name-only --diff-filter=ACMR FETCH_HEAD...HEAD -- '*.py' \
             | grep -v '^sales_agent-ai/' > changed_py_files.txt || true
-          echo "Changed Python files:"
+          echo "Changed Python files ($(wc -l < changed_py_files.txt)):"
           cat changed_py_files.txt
 
+      # Every step below re-prints the file count + list it's about to lint
+      # (not just the step above) so that whichever single step's log gets
+      # captured/shared is self-diagnosing on its own.
       - name: flake8
         run: |
+          echo "Linting $(wc -l < changed_py_files.txt) file(s):"; cat changed_py_files.txt
           [ -s changed_py_files.txt ] || { echo "No changed Python files."; exit 0; }
           xargs flake8 < changed_py_files.txt
 
       - name: pylint
         run: |
+          echo "Linting $(wc -l < changed_py_files.txt) file(s):"; cat changed_py_files.txt
           [ -s changed_py_files.txt ] || { echo "No changed Python files."; exit 0; }
           xargs pylint --output-format=text < changed_py_files.txt
 
       - name: black --check
         run: |
+          echo "Linting $(wc -l < changed_py_files.txt) file(s):"; cat changed_py_files.txt
           [ -s changed_py_files.txt ] || { echo "No changed Python files."; exit 0; }
           xargs black --check --diff < changed_py_files.txt
 
       - name: bandit
         run: |
+          echo "Linting $(wc -l < changed_py_files.txt) file(s):"; cat changed_py_files.txt
           [ -s changed_py_files.txt ] || { echo "No changed Python files."; exit 0; }
           xargs bandit -c pyproject.toml < changed_py_files.txt
 
@@ -108,28 +118,34 @@ jobs:
 
       - name: Determine changed frontend files
         run: |
+          echo "PR base ref: ${{ github.event.pull_request.base.ref }}"
+          echo "FETCH_HEAD -> $(git rev-parse FETCH_HEAD) ($(git log -1 --format=%s FETCH_HEAD))"
+          echo "HEAD       -> $(git rev-parse HEAD) ($(git log -1 --format=%s HEAD))"
           git diff --name-only --diff-filter=ACMR FETCH_HEAD...HEAD -- 'frontend/*.js' 'apps/content_pipeline/frontend/*.js' \
             | grep -v '^sales_agent-ai/' > changed_js_files.txt || true
           git diff --name-only --diff-filter=ACMR FETCH_HEAD...HEAD -- '*.html' \
             | grep -v '^sales_agent-ai/' > changed_html_files.txt || true
           git diff --name-only --diff-filter=ACMR FETCH_HEAD...HEAD -- '*.css' \
             | grep -v '^sales_agent-ai/' > changed_css_files.txt || true
-          echo "Changed JS files:"; cat changed_js_files.txt
-          echo "Changed HTML files:"; cat changed_html_files.txt
-          echo "Changed CSS files:"; cat changed_css_files.txt
+          echo "Changed JS files ($(wc -l < changed_js_files.txt)):"; cat changed_js_files.txt
+          echo "Changed HTML files ($(wc -l < changed_html_files.txt)):"; cat changed_html_files.txt
+          echo "Changed CSS files ($(wc -l < changed_css_files.txt)):"; cat changed_css_files.txt
 
       - name: eslint (jQuery/vanilla JS)
         run: |
+          echo "Linting $(wc -l < changed_js_files.txt) file(s):"; cat changed_js_files.txt
           [ -s changed_js_files.txt ] || { echo "No changed JS files."; exit 0; }
           xargs npx eslint < changed_js_files.txt
 
       - name: htmlhint
         run: |
+          echo "Linting $(wc -l < changed_html_files.txt) file(s):"; cat changed_html_files.txt
           [ -s changed_html_files.txt ] || { echo "No changed HTML files."; exit 0; }
           xargs npx htmlhint < changed_html_files.txt
 
       - name: stylelint (Bootstrap overrides)
         run: |
+          echo "Linting $(wc -l < changed_css_files.txt) file(s):"; cat changed_css_files.txt
           [ -s changed_css_files.txt ] || { echo "No changed CSS files."; exit 0; }
           xargs npx stylelint < changed_css_files.txt
 
