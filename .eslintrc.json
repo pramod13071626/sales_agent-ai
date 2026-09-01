@@ -21,6 +21,7 @@
     "**/*.min.js"
   ],
   "rules": {
-    "no-unused-vars": ["warn", { "args": "none" }]
+    "no-unused-vars": ["warn", { "args": "none" }],
+    "no-empty": ["error", { "allowEmptyCatch": true }]
   }
 }

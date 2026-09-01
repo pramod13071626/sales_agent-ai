@@ -253,7 +253,19 @@ $(function () {
 
   // Breadcrumb navigation
   $(document).on('click', '.crumb-account', function () {
-    if (!activeAccount) return  // ─── Render Functions for Categorized Detail Panels ─────────────────────
+    if (!activeAccount) return;
+
+    activeLob = null;
+    activePersona = null;
+
+    $('.lob-card').removeClass('active');
+    $('#personaSection').addClass('d-none');
+    $('#detailPanelContainer').addClass('d-none').empty();
+
+    $('#crumbs').html(`<li class="breadcrumb-item active">${esc(activeAccount.name)}</li>`);
+  });
+
+  // ─── Render Functions for Categorized Detail Panels ─────────────────────
 
   function renderLobDetailPanel(lob) {
     const lobKey = `lob_${lob.id}`;
@@ -588,7 +600,7 @@ $(function () {
               <button type="button" class="feed-title-btn" data-platform="reddit" data-title="Reddit Community Discussions" data-entity="${esc(p.name)}" data-url="${p.reddit_rss_url ? esc(p.reddit_rss_url) : `https://www.reddit.com/search/?q=${encodeURIComponent(p.name)}`}" title="Click to view Reddit discussions and industry mentions">
                 <span class="feed-title"><i class="bi bi-reddit" style="color:#ff4500;"></i> Reddit Mentions <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
-              <a href="${p.reddit_rss_url ? esc(lob.reddit_rss_url) : `https://www.reddit.com/search/?q=${encodeURIComponent(p.name)}`}" target="_blank" class="feed-right-icon-link" title="Open Reddit in new tab">
+              <a href="${p.reddit_rss_url ? esc(p.reddit_rss_url) : `https://www.reddit.com/search/?q=${encodeURIComponent(p.name)}`}" target="_blank" class="feed-right-icon-link" title="Open Reddit in new tab">
                 ${BRAND_ICONS.reddit}
               </a>
             </div>
@@ -1074,6 +1086,5 @@ $(function () {
     }
   });
 
-});
 });
 

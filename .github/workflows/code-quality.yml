@@ -55,7 +55,7 @@ jobs:
           flake8 . > flake8-report.txt
           set -e
           cat flake8-report.txt | reviewdog -efm="%f:%l:%c: %m" -name="flake8" \
-            -reporter=github-pr-check -filter-mode=added -fail-on-error=true
+            -reporter=github-pr-check -filter-mode=added -fail-level=error
 
       - name: pylint
         env:
@@ -66,7 +66,7 @@ jobs:
             $(git ls-files '*.py' | grep -v '^sales_agent-ai/') > pylint-report.txt
           set -e
           cat pylint-report.txt | reviewdog -efm="%f:%l:%c: %m" -name="pylint" \
-            -reporter=github-pr-check -filter-mode=added -fail-on-error=true
+            -reporter=github-pr-check -filter-mode=added -fail-level=error
 
       - name: black --check
         env:
@@ -76,7 +76,7 @@ jobs:
           black --check --diff . > black.diff 2>/dev/null
           set -e
           cat black.diff | reviewdog -f=diff -f.diff.strip=0 -name="black" \
-            -reporter=github-pr-check -filter-mode=added -fail-on-error=true
+            -reporter=github-pr-check -filter-mode=added -fail-level=error
 
       - name: bandit
         env:
@@ -87,7 +87,7 @@ jobs:
             --msg-template '{relpath}:{line}: {test_id} {msg}' > bandit-report.txt
           set -e
           cat bandit-report.txt | reviewdog -efm="%f:%l: %m" -name="bandit" \
-            -reporter=github-pr-check -filter-mode=added -fail-on-error=true
+            -reporter=github-pr-check -filter-mode=added -fail-level=error
 
   frontend-quality:
     name: Frontend Lint
@@ -114,7 +114,7 @@ jobs:
           npx eslint "frontend/**/*.js" -f compact > eslint-report.txt
           set -e
           cat eslint-report.txt | reviewdog -efm="%f: line %l, col %c, %m" -name="eslint" \
-            -reporter=github-pr-check -filter-mode=added -fail-on-error=true
+            -reporter=github-pr-check -filter-mode=added -fail-level=error
 
       - name: htmlhint
         env:
@@ -125,7 +125,7 @@ jobs:
             --format=compact > htmlhint-report.txt
           set -e
           cat htmlhint-report.txt | reviewdog -efm="%f: line %l, col %c, %m" -name="htmlhint" \
-            -reporter=github-pr-check -filter-mode=added -fail-on-error=true
+            -reporter=github-pr-check -filter-mode=added -fail-level=error
 
       - name: stylelint (Bootstrap overrides)
         env:
@@ -135,7 +135,7 @@ jobs:
           npx stylelint "frontend/**/*.css" --formatter compact > stylelint-report.txt
           set -e
           cat stylelint-report.txt | reviewdog -efm="%f: line %l, col %c, %m" -name="stylelint" \
-            -reporter=github-pr-check -filter-mode=added -fail-on-error=true
+            -reporter=github-pr-check -filter-mode=added -fail-level=error
 
   typecheck:
     name: Static type check (mypy, report-only)
@@ -156,8 +156,14 @@ jobs:
           pip install -r requirements.txt
           pip install -r apps/content_pipeline/requirements.txt
 
-      - name: mypy
-        run: mypy .
+      # Run per-app: both apps have same-named top-level modules (db, config,
+      # main, paths, ...), so a single `mypy .` across both trees fails with
+      # "Duplicate module named ..." before it checks anything.
+      - name: mypy (sales_ai)
+        run: mypy . --exclude 'apps/content_pipeline/'
+
+      - name: mypy (content_pipeline)
+        run: mypy apps/content_pipeline
 
   test:
     name: Test (${{ matrix.name }})
