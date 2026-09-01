@@ -422,20 +422,16 @@ $(function () {
   // Breadcrumb navigation
   $(document).on('click', '.crumb-account', function () {
     if (!activeAccount) return;
-    $('.lob-card').removeClass('active');
-    activeLob = null;
-    activePersona = null;
-    $('#detailPanelContainer').addClass('d-none').empty();
-    $('#crumbs').html(`<li class="breadcrumb-item active">${esc(activeAccount.name)}</li>`);
-    renderPersonaCards(activeAccount.personas || [], `${activeAccount.name} — Enterprise Leadership Hierarchy`);
+    $(`.account-item[data-id="${activeAccount.id}"]`).trigger('click');
   });
 
   $(document).on('click', '.crumb-lob', function () {
     if (!activeLob) return;
-    $(`.lob-card[data-lob-id="${activeLob.id}"]`).click();
+    $(`.lob-card[data-lob-id="${activeLob.id}"]`).trigger('click');
   });
 
   // ─── Render Functions for Categorized Detail Panels ─────────────────────
+
 
   function renderLobDetailPanel(lob) {
     const lobKey = `lob_${lob.id}`;
@@ -834,6 +830,76 @@ $(function () {
           </div>
         </div>
 
+        <!-- Categorized Section 4: Online Footprint & Scraping Feeds -->
+        <div class="detail-section">
+          <div class="detail-section-heading"><i class="bi bi-broadcast-pin"></i> Executive Online Footprint &amp; Discourse</div>
+          <p class="section-desc">Click any platform card to inspect the executive's real posts, interview quotes, and public commentary.</p>
+          <div class="detail-grid">
+            <div class="feed-btn-card">
+              <button type="button" class="feed-title-btn" data-platform="linkedin" data-title="LinkedIn Executive Intelligence" data-entity="${esc(p.name)}" data-url="${p.linkedin_url ? esc(p.linkedin_url) : `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(p.name + ' ' + activeAccount.name)}`}" title="Click to view executive LinkedIn activity and recent posts">
+                <span class="feed-title"><i class="bi bi-linkedin" style="color:#0077b5;"></i> LinkedIn Profile <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+              </button>
+              <a href="${p.linkedin_url ? esc(p.linkedin_url) : `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(p.name + ' ' + activeAccount.name)}`}" target="_blank" class="feed-right-icon-link" title="Open LinkedIn profile in new tab">
+                ${BRAND_ICONS.linkedin}
+              </a>
+            </div>
+
+            <div class="feed-btn-card">
+              <button type="button" class="feed-title-btn" data-platform="x_twitter" data-title="Twitter / X Executive Intelligence" data-entity="${esc(p.name)}" data-url="${p.twitter_live_url ? esc(p.twitter_live_url) : `https://x.com/search?q=${encodeURIComponent(p.name)}&f=live`}" title="Click to view executive Twitter/X timeline and discourse">
+                <span class="feed-title"><i class="bi bi-twitter-x"></i> Twitter / X Feed <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+              </button>
+              <a href="${p.twitter_live_url ? esc(p.twitter_live_url) : `https://x.com/search?q=${encodeURIComponent(p.name)}&f=live`}" target="_blank" class="feed-right-icon-link" title="Open Twitter / X in new tab">
+                ${BRAND_ICONS.x_twitter}
+              </a>
+            </div>
+
+            <div class="feed-btn-card">
+              <button type="button" class="feed-title-btn" data-platform="reddit" data-title="Reddit Community Discussions" data-entity="${esc(p.name)}" data-url="${p.reddit_rss_url ? esc(p.reddit_rss_url) : `https://www.reddit.com/search/?q=${encodeURIComponent(p.name)}`}" title="Click to view Reddit discussions and industry mentions">
+                <span class="feed-title"><i class="bi bi-reddit" style="color:#ff4500;"></i> Reddit Mentions <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+              </button>
+              <a href="${p.reddit_rss_url ? esc(p.reddit_rss_url) : `https://www.reddit.com/search/?q=${encodeURIComponent(p.name)}`}" target="_blank" class="feed-right-icon-link" title="Open Reddit in new tab">
+                ${BRAND_ICONS.reddit}
+              </a>
+
+            </div>
+
+            <div class="feed-btn-card">
+              <button type="button" class="feed-title-btn" data-platform="youtube" data-title="YouTube Media & Keynotes" data-entity="${esc(p.name)}" data-url="${p.youtube_interviews_url ? esc(p.youtube_interviews_url) : `https://www.youtube.com/results?search_query=${encodeURIComponent(p.name + ' interview')}`}" title="Click to view executive interviews, keynote videos, and media appearances">
+                <span class="feed-title"><i class="bi bi-youtube" style="color:#ff0000;"></i> YouTube Keynotes <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+              </button>
+              <a href="${p.youtube_interviews_url ? esc(p.youtube_interviews_url) : `https://www.youtube.com/results?search_query=${encodeURIComponent(p.name + ' interview')}`}" target="_blank" class="feed-right-icon-link" title="Open YouTube in new tab">
+                ${BRAND_ICONS.youtube}
+              </a>
+            </div>
+
+            <div class="feed-btn-card">
+              <button type="button" class="feed-title-btn" data-platform="google_news" data-title="Google News Executive Coverage" data-entity="${esc(p.name)}" data-url="${p.rss_url ? esc(p.rss_url) : `https://news.google.com/rss/search?q=${encodeURIComponent(p.name)}`}" title="Click to view Google News articles and press mentions">
+                <span class="feed-title"><i class="bi bi-newspaper" style="color:#4285f4;"></i> Google News <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+              </button>
+              <a href="${p.rss_url ? esc(p.rss_url) : `https://news.google.com/rss/search?q=${encodeURIComponent(p.name)}`}" target="_blank" class="feed-right-icon-link" title="Open Google News in new tab">
+                ${BRAND_ICONS.google_news}
+              </a>
+            </div>
+
+            <div class="feed-btn-card">
+              <button type="button" class="feed-title-btn" data-platform="google_patents" data-title="Inventor Patent Portfolio" data-entity="${esc(p.name)}" data-url="${p.google_patents_url ? esc(p.google_patents_url) : `https://patents.google.com/?inventor=${encodeURIComponent(p.name)}`}" title="Click to view patent filings and inventor IP portfolio">
+                <span class="feed-title"><i class="bi bi-lightbulb" style="color:#34a853;"></i> Patents Explorer <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+              </button>
+              <a href="${p.google_patents_url ? esc(p.google_patents_url) : `https://patents.google.com/?inventor=${encodeURIComponent(p.name)}`}" target="_blank" class="feed-right-icon-link" title="Open Patents in new tab">
+                ${BRAND_ICONS.google_patents}
+              </a>
+            </div>
+
+            <div class="feed-btn-card">
+              <button type="button" class="feed-title-btn" data-platform="podcast" data-title="Podcasts & Media Intelligence" data-entity="${esc(p.name)}" data-url="${p.podcast_search_url ? esc(p.podcast_search_url) : `https://www.google.com/search?q=${encodeURIComponent(p.name + ' podcast')}`}" title="Click to view podcast episodes and audio interviews">
+                <span class="feed-title"><i class="bi bi-mic" style="color:#8743d6;"></i> Podcasts &amp; Media <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+              </button>
+              <a href="${p.podcast_search_url ? esc(p.podcast_search_url) : `https://www.google.com/search?q=${encodeURIComponent(p.name + ' podcast')}`}" target="_blank" class="feed-right-icon-link" title="Open Podcasts in new tab">
+                ${BRAND_ICONS.podcast}
+              </a>
+            </div>
+          </div>
+        </div>
       </div>
     `;
 
@@ -1279,6 +1345,7 @@ $(function () {
   });
 
   function renderField(label, value, opts = {}) {
+
     if (value === null || value === undefined || value === '') {
       return `<div class="detail-field${opts.span2 ? ' span-2' : ''}"><div class="detail-label">${label}</div><div class="detail-val" style="color:var(--text-muted);font-style:italic;">—</div></div>`;
     }
@@ -1665,4 +1732,5 @@ $(function () {
   $('#personaBatchDump').on('click', function () { runBatchPersonaPipeline('dump'); });
 
 });
+
 
