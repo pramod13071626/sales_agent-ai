@@ -27,7 +27,8 @@ from pathlib import Path
 # Fix Windows stdout encoding for UTF-8 compatibility
 if sys.platform == "win32":
     import io
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 # Add project root to sys.path
 PIPELINE_ROOT = Path(__file__).resolve().parent
@@ -42,7 +43,7 @@ from collectors.account_collector import (
     fetch_gleif_ownership_tree,
     fetch_wikipedia_dbpedia_intel,
     fetch_fec_political_intel,
-    fetch_diffbot_organization_intel
+    fetch_diffbot_organization_intel,
 )
 from collectors.sublob_collector import scrape_sublobs
 from collectors.hierarchy_collector import scrape_hierarchy, scrape_lob_hierarchy
@@ -77,7 +78,7 @@ def run_pipeline(company_name: str, target_url: str = None):
             company_name=company_name,
             website_url=target_url,
             raw_apify_dir=run_dirs["raw_apify_dir"],
-            raw_sec_dir=run_dirs["raw_sec_dir"]
+            raw_sec_dir=run_dirs["raw_sec_dir"],
         )
         telemetry.record_api_call("apify", "crunchbase-companies-scraper", credits_used=1, is_billable=True)
         sec_cik = account_data.get("sec_cik")
@@ -99,7 +100,7 @@ def run_pipeline(company_name: str, target_url: str = None):
                 account_data["sec_10k_chunks_meta"] = {
                     "accession_number": sec_10k.get("accession_number"),
                     "total_chunks": sec_10k.get("total_chunks"),
-                    "sections_found": sec_10k.get("sections_found")
+                    "sections_found": sec_10k.get("sections_found"),
                 }
                 telemetry.record_api_call("sec_edgar", "/submissions/CIK.json", credits_used=0, is_billable=False)
 
@@ -120,10 +121,7 @@ def run_pipeline(company_name: str, target_url: str = None):
 
         # 3. Level 2: Multi-Source LOB & Subsidiary Discovery
         telemetry.log("INFO", "LOBS", f"Discovering subsidiaries across Crunchbase, SEC EX-21, and GLEIF...")
-        sublobs_raw = scrape_sublobs(
-            parent_account_name=company_name,
-            raw_apify_dir=run_dirs["raw_apify_dir"]
-        )
+        sublobs_raw = scrape_sublobs(parent_account_name=company_name, raw_apify_dir=run_dirs["raw_apify_dir"])
         telemetry.record_api_call("apify", "crunchbase-suborganizations", credits_used=1, is_billable=True)
 
         if sec_cik:
@@ -135,11 +133,13 @@ def run_pipeline(company_name: str, target_url: str = None):
                     l_name = legal_sub.get("legal_name", "")
                     if l_name and slugify(l_name) not in existing_names:
                         existing_names.add(slugify(l_name))
-                        sublobs_raw.append({
-                            "name": l_name,
-                            "relationship_type": f"Legal Subsidiary ({legal_sub.get('jurisdiction', 'US')})",
-                            "source": "SEC Form 10-K Exhibit 21"
-                        })
+                        sublobs_raw.append(
+                            {
+                                "name": l_name,
+                                "relationship_type": f"Legal Subsidiary ({legal_sub.get('jurisdiction', 'US')})",
+                                "source": "SEC Form 10-K Exhibit 21",
+                            }
+                        )
 
         if gleif_tree.get("status") == "success":
             existing_names = {slugify(s.get("name", "")) for s in sublobs_raw}
@@ -147,15 +147,19 @@ def run_pipeline(company_name: str, target_url: str = None):
                 c_name = child.get("legal_name", "")
                 if c_name and slugify(c_name) not in existing_names:
                     existing_names.add(slugify(c_name))
-                    sublobs_raw.append({
-                        "name": c_name,
-                        "relationship_type": f"Global Entity ({child.get('country', 'Global')})",
-                        "source": "GLEIF G20 LEI Database"
-                    })
+                    sublobs_raw.append(
+                        {
+                            "name": c_name,
+                            "relationship_type": f"Global Entity ({child.get('country', 'Global')})",
+                            "source": "GLEIF G20 LEI Database",
+                        }
+                    )
 
         # 4. Enrich LOB Segments with Audited Revenues
         sublobs_data = enrich_lob_segments(company_name, sublobs_raw)
-        telemetry.record_api_call("tavily", "/search?depth=financials", credits_used=len(sublobs_data), is_billable=True)
+        telemetry.record_api_call(
+            "tavily", "/search?depth=financials", credits_used=len(sublobs_data), is_billable=True
+        )
 
         # 5. Level 3: 4-Tier Org Hierarchy for Corporate Account
         telemetry.log("INFO", "HIERARCHY", f"Extracting 4-tier management and board leadership...")
@@ -166,7 +170,7 @@ def run_pipeline(company_name: str, target_url: str = None):
             sec_cik=sec_cik,
             raw_apollo_dir=run_dirs["raw_apollo_dir"],
             raw_apify_dir=run_dirs["raw_apify_dir"],
-            raw_dir=run_dirs["raw_dir"]
+            raw_dir=run_dirs["raw_dir"],
         )
         telemetry.record_api_call("apollo_monid", "/v1/people/search", credits_used=1, is_billable=True)
 
@@ -181,8 +185,15 @@ def run_pipeline(company_name: str, target_url: str = None):
                     name=p_name, title=p_title, company_name=company_name, linkedin_url=p_linkedin
                 )
                 telemetry.record_api_call("exa", "/search?category=people", credits_used=1, is_billable=True)
-                if exec_person["persona_dossier"].get("level_3_personal_touch", {}).get("social_media", {}).get("profile_url"):
-                    verified_url = exec_person["persona_dossier"]["level_3_personal_touch"]["social_media"]["profile_url"]
+                if (
+                    exec_person["persona_dossier"]
+                    .get("level_3_personal_touch", {})
+                    .get("social_media", {})
+                    .get("profile_url")
+                ):
+                    verified_url = exec_person["persona_dossier"]["level_3_personal_touch"]["social_media"][
+                        "profile_url"
+                    ]
                     exec_person["linkedin_url"] = verified_url
                     if "required_person_data" in exec_person:
                         exec_person["required_person_data"]["linkedin_url"] = verified_url
@@ -198,13 +209,12 @@ def run_pipeline(company_name: str, target_url: str = None):
                     lob_name=lob_name,
                     lob_domain=lob_domain,
                     raw_apollo_dir=run_dirs["raw_apollo_dir"],
-                    raw_apify_dir=run_dirs["raw_apify_dir"]
                 )
-                telemetry.record_api_call("apollo_monid", f"/v1/people/search?domain={lob_domain}", credits_used=1, is_billable=True)
+                telemetry.record_api_call(
+                    "apollo_monid", f"/v1/people/search?domain={lob_domain}", credits_used=1, is_billable=True
+                )
             else:
-                lob_hier = {
-                    "c_suite": [], "vp_level": [], "director_level": [], "manager_level": []
-                }
+                lob_hier = {"c_suite": [], "vp_level": [], "director_level": [], "manager_level": []}
             lobs_hierarchies.append(lob_hier)
 
         # 7. Serialize and Save Master JSONs + Individual Slices
@@ -214,7 +224,7 @@ def run_pipeline(company_name: str, target_url: str = None):
             account_hierarchy=account_hierarchy,
             sublobs_data=sublobs_data,
             lobs_hierarchies=lobs_hierarchies,
-            run_dirs=run_dirs
+            run_dirs=run_dirs,
         )
         master_doc = serialized["enriched_doc"]
         social_and_content_doc = serialized["social_doc"]
@@ -224,14 +234,12 @@ def run_pipeline(company_name: str, target_url: str = None):
         print("[*] Running Pre-DB Data Quality Validator & Debugger...")
         print("=" * 70)
         validation_report = DataQualityValidator.audit_run(
-            enriched_doc=master_doc,
-            social_doc=social_and_content_doc,
-            save_path=run_dirs["validation_report_path"]
+            enriched_doc=master_doc, social_doc=social_and_content_doc, save_path=run_dirs["validation_report_path"]
         )
 
         meta = validation_report["audit_metadata"]
         telemetry.set_quality_audit(score=meta["overall_quality_score"], grade=meta["quality_grade"])
-        
+
         # Entity Counts
         telemetry.set_entities_extracted(
             accounts_count=1,
@@ -239,7 +247,7 @@ def run_pipeline(company_name: str, target_url: str = None):
             personas_count=serialized.get("saved_personas_count", 0),
             tier_breakdown=meta.get("tier_breakdown", {}),
             patents_count=len(account_data.get("patents_portfolio", [])),
-            political_contributions_count=len(account_data.get("fec_political_giving", []))
+            political_contributions_count=len(account_data.get("fec_political_giving", [])),
         )
 
         telemetry.complete(status="staged")
@@ -258,7 +266,7 @@ def run_pipeline(company_name: str, target_url: str = None):
         schema = PipelineRunSchema.from_telemetry_dict(
             telemetry.to_dict(),
             raw_storage_dir=str(run_dirs["raw_dir"]),
-            enriched_storage_dir=str(run_dirs["enriched_dir"])
+            enriched_storage_dir=str(run_dirs["enriched_dir"]),
         )
         repo.upsert(schema)
         session.commit()
@@ -277,10 +285,23 @@ def run_pipeline(company_name: str, target_url: str = None):
     print(f"[+] Validation Report JSON: {run_dirs['validation_report_path']}")
     print(f"[+] Telemetry & Usage JSON: {run_dirs['telemetry_json_path']}")
     print("=" * 70)
-    print(f"[INFO] Quality Score: {telemetry.quality_score}/100 (Grade: {telemetry.quality_grade}) | Credits Used: {telemetry.total_credits_used}")
+    print(
+        f"[INFO] Quality Score: {telemetry.quality_score}/100 (Grade: {telemetry.quality_grade}) | Credits Used: {telemetry.total_credits_used}"
+    )
     print(f"[INFO] Data is staged in JSON and recorded in 'pipeline_runs'. To dump entities to database:")
     print(f"       python db/importer.py --dir {run_dirs['run_dir']}")
     print("=" * 70)
+
+    # meta/validation_report only exist if the try block above reached the
+    # validator gate; on a failed run neither is set, so this stays behind
+    # the success check rather than always running (it used to be dead
+    # code after an early `return`, which hid it entirely either way).
+    if telemetry.status == "staged":
+        print(f"[*] Ready for DB Dump: {'YES' if meta['ready_for_db_dump'] else 'NO'}")
+        if validation_report["warnings"]:
+            print(f"[*] Non-blocking Warnings ({len(validation_report['warnings'])}):")
+            for w in validation_report["warnings"]:
+                print(f"    - {w}")
 
     return {
         "status": telemetry.status,
@@ -289,28 +310,7 @@ def run_pipeline(company_name: str, target_url: str = None):
         "quality_grade": telemetry.quality_grade,
         "total_credits_used": telemetry.total_credits_used,
         "credits_breakdown": telemetry.credits_breakdown,
-        "telemetry_path": str(run_dirs["telemetry_json_path"])
-    }
-    print(f"[*] Ready for DB Dump: {'YES' if meta['ready_for_db_dump'] else 'NO'}")
-    if validation_report["warnings"]:
-        print(f"[*] Non-blocking Warnings ({len(validation_report['warnings'])}):")
-        for w in validation_report["warnings"]:
-            print(f"    - {w}")
-
-    print("\n" + "=" * 70)
-    print(f"Pipeline Run Completed Successfully (Staged & Validated)!")
-    print(f"📁 Run Folder:             {run_dirs['run_dir']}")
-    print(f"📄 Enriched Master JSON:   {run_dirs['enriched_json_path']}")
-    print(f"📄 Social Launchpad JSON:  {run_dirs['social_json_path']}")
-    print(f"📊 Validation Report JSON: {run_dirs['validation_report_path']}")
-    print("=" * 70)
-    print("[INFO] Data is staged in JSON. To dump to database on user confirmation:")
-    print(f"       python db/importer.py --dir {run_dirs['run_dir']}")
-    print("=" * 70)
-
-    return {
-        "run_dirs": run_dirs,
-        "validation_report": validation_report
+        "telemetry_path": str(run_dirs["telemetry_json_path"]),
     }
 
 
@@ -319,7 +319,9 @@ if __name__ == "__main__":
     parser.add_argument("--name", "-n", type=str, help="Target company name (e.g. 'BNY', 'BlackRock')")
     parser.add_argument("--url", "-u", type=str, help="Target company website URL (e.g. 'https://www.bny.com')")
     parser.add_argument("--validate", type=str, help="Validate an existing run directory or enriched JSON file")
-    parser.add_argument("--dump-db", type=str, help="Dump a validated run directory or enriched JSON file to PostgreSQL")
+    parser.add_argument(
+        "--dump-db", type=str, help="Dump a validated run directory or enriched JSON file to PostgreSQL"
+    )
     args = parser.parse_args()
 
     if args.validate:
@@ -332,6 +334,7 @@ if __name__ == "__main__":
             target = enriched_files[0]
         with open(target, "r", encoding="utf-8") as f:
             import json
+
             doc = json.load(f)
         report = DataQualityValidator.audit_run(doc)
         print(json.dumps(report, indent=2))
