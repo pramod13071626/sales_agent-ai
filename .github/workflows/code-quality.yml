@@ -92,11 +92,33 @@ jobs:
           [ -s changed_py_files.txt ] || { echo "No changed Python files."; exit 0; }
           xargs flake8 < changed_py_files.txt
 
+      # Run per-app, same reason as the mypy job: root and
+      # apps/content_pipeline each have their own tests/ package (and
+      # other same-named top-level modules). Feeding pylint files from
+      # both trees in one invocation breaks its import resolution for
+      # otherwise-valid imports (reproduced locally: db.schemas.account_
+      # schema import-error appears only when apps/content_pipeline/
+      # tests/ files are analyzed in the same run as root tests/ files;
+      # either set alone is clean).
       - name: pylint
         run: |
           echo "Linting $(wc -l < changed_py_files.txt) file(s):"; cat changed_py_files.txt
           [ -s changed_py_files.txt ] || { echo "No changed Python files."; exit 0; }
-          xargs pylint --output-format=text < changed_py_files.txt
+          grep -v '^apps/content_pipeline/' changed_py_files.txt > changed_py_files_root.txt || true
+          grep '^apps/content_pipeline/' changed_py_files.txt > changed_py_files_cp.txt || true
+          status=0
+          if [ -s changed_py_files_root.txt ]; then
+            xargs pylint --output-format=text < changed_py_files_root.txt || status=$?
+          fi
+          if [ -s changed_py_files_cp.txt ]; then
+            # --rcfile is required here: pylint does not walk up parent
+            # directories looking for .pylintrc the way black/flake8 do, so
+            # without it every rule .pylintrc disables (missing-docstring,
+            # import-outside-toplevel, ...) comes back once cwd changes.
+            (cd apps/content_pipeline && sed 's#^apps/content_pipeline/##' ../../changed_py_files_cp.txt \
+              | xargs pylint --rcfile="$(pwd)/../../.pylintrc" --output-format=text) || status=$?
+          fi
+          exit $status
 
       - name: black --check
         run: |

@@ -68,7 +68,7 @@ class RunTelemetry:
         self,
         vendor: str,
         endpoint: str,
-        credits: int = 1,
+        credits_used: int = 1,
         latency_ms: int = 0,
         status: str = "200_OK",
         is_billable: bool = True
@@ -93,16 +93,16 @@ class RunTelemetry:
         if endpoint not in v_data["endpoints_called"]:
             v_data["endpoints_called"].append(endpoint)
 
-        if is_billable and credits > 0:
-            v_data["credits_consumed"] += credits
-            self.total_credits_used += credits
+        if is_billable and credits_used > 0:
+            v_data["credits_consumed"] += credits_used
+            self.total_credits_used += credits_used
         else:
             v_data["free_tier_requests"] += 1
 
         self.log(
             "INFO",
             "API_CALL",
-            f"[{v.upper()}] {endpoint} ➔ status: {status}, credits: {credits if is_billable else 0}, latency: {latency_ms}ms"
+            f"[{v.upper()}] {endpoint} ➔ status: {status}, credits: {credits_used if is_billable else 0}, latency: {latency_ms}ms"
         )
 
     def set_quality_audit(self, score: float, grade: str):

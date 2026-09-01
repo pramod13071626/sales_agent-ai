@@ -79,19 +79,19 @@ def run_pipeline(company_name: str, target_url: str = None):
             raw_apify_dir=run_dirs["raw_apify_dir"],
             raw_sec_dir=run_dirs["raw_sec_dir"]
         )
-        telemetry.record_api_call("apify", "crunchbase-companies-scraper", credits=1, is_billable=True)
+        telemetry.record_api_call("apify", "crunchbase-companies-scraper", credits_used=1, is_billable=True)
         sec_cik = account_data.get("sec_cik")
 
         # Multi-source account enhancements
         diffbot_intel = fetch_diffbot_organization_intel(company_name, target_url, raw_dir=run_dirs["raw_dir"])
         if diffbot_intel.get("status") == "success":
             account_data["diffbot_intel"] = diffbot_intel
-            telemetry.record_api_call("diffbot", "/kg/v3/enhance?type=Organization", credits=1, is_billable=True)
+            telemetry.record_api_call("diffbot", "/kg/v3/enhance?type=Organization", credits_used=1, is_billable=True)
 
         gleif_tree = fetch_gleif_ownership_tree(company_name, raw_dir=run_dirs["raw_dir"])
         if gleif_tree.get("status") == "success":
             account_data["gleif_intel"] = gleif_tree
-            telemetry.record_api_call("gleif", "/api/v1/lei-records", credits=0, is_billable=False)
+            telemetry.record_api_call("gleif", "/api/v1/lei-records", credits_used=0, is_billable=False)
 
         if sec_cik:
             sec_10k = fetch_latest_10k_chunks(sec_cik, raw_sec_dir=run_dirs["raw_sec_dir"])
@@ -101,22 +101,22 @@ def run_pipeline(company_name: str, target_url: str = None):
                     "total_chunks": sec_10k.get("total_chunks"),
                     "sections_found": sec_10k.get("sections_found")
                 }
-                telemetry.record_api_call("sec_edgar", "/submissions/CIK.json", credits=0, is_billable=False)
+                telemetry.record_api_call("sec_edgar", "/submissions/CIK.json", credits_used=0, is_billable=False)
 
         patents_data = extract_full_patents(company_name, raw_dir=run_dirs["raw_dir"])
         if patents_data.get("status") == "success":
             account_data["patents_portfolio"] = patents_data.get("patents", [])
-            telemetry.record_api_call("uspto_data_gov", "api.patentsview.org", credits=0, is_billable=False)
+            telemetry.record_api_call("uspto_data_gov", "api.patentsview.org", credits_used=0, is_billable=False)
 
         wiki_data = fetch_wikipedia_dbpedia_intel(company_name, raw_dir=run_dirs["raw_dir"])
         if wiki_data.get("status") == "success":
             account_data["wikipedia_intel"] = wiki_data
-            telemetry.record_api_call("wikipedia", "en.wikipedia.org/api/rest_v1", credits=0, is_billable=False)
+            telemetry.record_api_call("wikipedia", "en.wikipedia.org/api/rest_v1", credits_used=0, is_billable=False)
 
         fec_data = fetch_fec_political_intel(company_name, raw_dir=run_dirs["raw_dir"])
         if fec_data.get("status") == "success":
             account_data["fec_political_giving"] = fec_data.get("recent_contributions", [])
-            telemetry.record_api_call("openfec_data_gov", "api.open.fec.gov", credits=0, is_billable=False)
+            telemetry.record_api_call("openfec_data_gov", "api.open.fec.gov", credits_used=0, is_billable=False)
 
         # 3. Level 2: Multi-Source LOB & Subsidiary Discovery
         telemetry.log("INFO", "LOBS", f"Discovering subsidiaries across Crunchbase, SEC EX-21, and GLEIF...")
@@ -124,12 +124,12 @@ def run_pipeline(company_name: str, target_url: str = None):
             parent_account_name=company_name,
             raw_apify_dir=run_dirs["raw_apify_dir"]
         )
-        telemetry.record_api_call("apify", "crunchbase-suborganizations", credits=1, is_billable=True)
+        telemetry.record_api_call("apify", "crunchbase-suborganizations", credits_used=1, is_billable=True)
 
         if sec_cik:
             ex21 = fetch_sec_exhibit_21_subsidiaries(sec_cik, raw_sec_dir=run_dirs["raw_sec_dir"])
             if ex21.get("status") == "success":
-                telemetry.record_api_call("sec_edgar", "Form 10-K EX-21", credits=0, is_billable=False)
+                telemetry.record_api_call("sec_edgar", "Form 10-K EX-21", credits_used=0, is_billable=False)
                 existing_names = {slugify(s.get("name", "")) for s in sublobs_raw}
                 for legal_sub in ex21.get("subsidiaries", []):
                     l_name = legal_sub.get("legal_name", "")
@@ -155,7 +155,7 @@ def run_pipeline(company_name: str, target_url: str = None):
 
         # 4. Enrich LOB Segments with Audited Revenues
         sublobs_data = enrich_lob_segments(company_name, sublobs_raw)
-        telemetry.record_api_call("tavily", "/search?depth=financials", credits=len(sublobs_data), is_billable=True)
+        telemetry.record_api_call("tavily", "/search?depth=financials", credits_used=len(sublobs_data), is_billable=True)
 
         # 5. Level 3: 4-Tier Org Hierarchy for Corporate Account
         telemetry.log("INFO", "HIERARCHY", f"Extracting 4-tier management and board leadership...")
@@ -168,7 +168,7 @@ def run_pipeline(company_name: str, target_url: str = None):
             raw_apify_dir=run_dirs["raw_apify_dir"],
             raw_dir=run_dirs["raw_dir"]
         )
-        telemetry.record_api_call("apollo_monid", "/v1/people/search", credits=1, is_billable=True)
+        telemetry.record_api_call("apollo_monid", "/v1/people/search", credits_used=1, is_billable=True)
 
         # Synthesize AI Persona Dossiers for Key Corporate Executives
         c_suite = account_hierarchy.get("c_suite", [])
@@ -180,7 +180,7 @@ def run_pipeline(company_name: str, target_url: str = None):
                 exec_person["persona_dossier"] = build_persona_dossier(
                     name=p_name, title=p_title, company_name=company_name, linkedin_url=p_linkedin
                 )
-                telemetry.record_api_call("exa", "/search?category=people", credits=1, is_billable=True)
+                telemetry.record_api_call("exa", "/search?category=people", credits_used=1, is_billable=True)
                 if exec_person["persona_dossier"].get("level_3_personal_touch", {}).get("social_media", {}).get("profile_url"):
                     verified_url = exec_person["persona_dossier"]["level_3_personal_touch"]["social_media"]["profile_url"]
                     exec_person["linkedin_url"] = verified_url
@@ -200,7 +200,7 @@ def run_pipeline(company_name: str, target_url: str = None):
                     raw_apollo_dir=run_dirs["raw_apollo_dir"],
                     raw_apify_dir=run_dirs["raw_apify_dir"]
                 )
-                telemetry.record_api_call("apollo_monid", f"/v1/people/search?domain={lob_domain}", credits=1, is_billable=True)
+                telemetry.record_api_call("apollo_monid", f"/v1/people/search?domain={lob_domain}", credits_used=1, is_billable=True)
             else:
                 lob_hier = {
                     "c_suite": [], "vp_level": [], "director_level": [], "manager_level": []
