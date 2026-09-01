@@ -11,8 +11,6 @@ concurrency:
 
 permissions:
   contents: read
-  checks: write
-  pull-requests: read
 
 env:
   PYTHON_VERSION: "3.12"
@@ -26,12 +24,31 @@ jobs:
   # nobody should be blocked fixing those just to land an unrelated
   # change. New/changed code is held to the real bar from day one; the
   # backlog shrinks incrementally as those files get touched anyway.
+  #
+  # The diff used for that filtering is computed here with plain `git
+  # diff` against the PR's base branch (fetched explicitly below), and
+  # fed to reviewdog via `-diff`/`-reporter=local` — NOT via
+  # `-reporter=github-pr-check`'s own GitHub-side diff service. That
+  # service goes through GitHub's diff API (which 406s and falls back
+  # to a git-based path for large diffs) or a "doghouse" relay,
+  # neither of which is verifiable from outside a live run; a first
+  # run showed every pre-existing finding in the whole repo, unfiltered
+  # — i.e. the base-comparison silently wasn't applied. `-reporter=local`
+  # only prints to the job log and relies on the job's own exit code to
+  # fail the check, which is all a required-status-check gate actually
+  # needs; it loses reviewdog's inline PR annotations, not the gate
+  # itself.
   python-quality:
     name: Python Lint & Security
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch PR base branch
+        run: git fetch origin "${{ github.event.pull_request.base.ref }}"
 
       - uses: actions/setup-python@v5
         with:
@@ -48,46 +65,38 @@ jobs:
           reviewdog_version: latest
 
       - name: flake8
-        env:
-          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set +e
           flake8 . > flake8-report.txt
           set -e
           cat flake8-report.txt | reviewdog -efm="%f:%l:%c: %m" -name="flake8" \
-            -reporter=github-pr-check -filter-mode=added -fail-level=error
+            -reporter=local -diff="git diff FETCH_HEAD...HEAD" -filter-mode=added -fail-level=error
 
       - name: pylint
-        env:
-          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set +e
           pylint --output-format=text --msg-template='{path}:{line}:{column}: {msg_id} {msg}' \
             $(git ls-files '*.py' | grep -v '^sales_agent-ai/') > pylint-report.txt
           set -e
           cat pylint-report.txt | reviewdog -efm="%f:%l:%c: %m" -name="pylint" \
-            -reporter=github-pr-check -filter-mode=added -fail-level=error
+            -reporter=local -diff="git diff FETCH_HEAD...HEAD" -filter-mode=added -fail-level=error
 
       - name: black --check
-        env:
-          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set +e
           black --check --diff . > black.diff 2>/dev/null
           set -e
           cat black.diff | reviewdog -f=diff -f.diff.strip=0 -name="black" \
-            -reporter=github-pr-check -filter-mode=added -fail-level=error
+            -reporter=local -diff="git diff FETCH_HEAD...HEAD" -filter-mode=added -fail-level=error
 
       - name: bandit
-        env:
-          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set +e
           bandit -c pyproject.toml -r . -f custom \
             --msg-template '{relpath}:{line}: {test_id} {msg}' > bandit-report.txt
           set -e
           cat bandit-report.txt | reviewdog -efm="%f:%l: %m" -name="bandit" \
-            -reporter=github-pr-check -filter-mode=added -fail-level=error
+            -reporter=local -diff="git diff FETCH_HEAD...HEAD" -filter-mode=added -fail-level=error
 
   frontend-quality:
     name: Frontend Lint
@@ -95,6 +104,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch PR base branch
+        run: git fetch origin "${{ github.event.pull_request.base.ref }}"
 
       - uses: actions/setup-node@v4
         with:
@@ -107,35 +121,29 @@ jobs:
           reviewdog_version: latest
 
       - name: eslint (jQuery/vanilla JS, frontend/)
-        env:
-          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set +e
           npx eslint "frontend/**/*.js" -f compact > eslint-report.txt
           set -e
           cat eslint-report.txt | reviewdog -efm="%f: line %l, col %c, %m" -name="eslint" \
-            -reporter=github-pr-check -filter-mode=added -fail-level=error
+            -reporter=local -diff="git diff FETCH_HEAD...HEAD" -filter-mode=added -fail-level=error
 
       - name: htmlhint
-        env:
-          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set +e
           npx htmlhint "frontend/**/*.html" "apps/content_pipeline/frontend/**/*.html" \
             --format=compact > htmlhint-report.txt
           set -e
           cat htmlhint-report.txt | reviewdog -efm="%f: line %l, col %c, %m" -name="htmlhint" \
-            -reporter=github-pr-check -filter-mode=added -fail-level=error
+            -reporter=local -diff="git diff FETCH_HEAD...HEAD" -filter-mode=added -fail-level=error
 
       - name: stylelint (Bootstrap overrides)
-        env:
-          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set +e
           npx stylelint "frontend/**/*.css" --formatter compact > stylelint-report.txt
           set -e
           cat stylelint-report.txt | reviewdog -efm="%f: line %l, col %c, %m" -name="stylelint" \
-            -reporter=github-pr-check -filter-mode=added -fail-level=error
+            -reporter=local -diff="git diff FETCH_HEAD...HEAD" -filter-mode=added -fail-level=error
 
   typecheck:
     name: Static type check (mypy, report-only)
