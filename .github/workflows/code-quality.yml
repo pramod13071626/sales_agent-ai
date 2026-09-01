@@ -25,19 +25,19 @@ jobs:
   # change. New/changed code is held to the real bar from day one; the
   # backlog shrinks incrementally as those files get touched anyway.
   #
-  # The diff used for that filtering is computed here with plain `git
-  # diff` against the PR's base branch (fetched explicitly below), and
-  # fed to reviewdog via `-diff`/`-reporter=local` — NOT via
-  # `-reporter=github-pr-check`'s own GitHub-side diff service. That
-  # service goes through GitHub's diff API (which 406s and falls back
-  # to a git-based path for large diffs) or a "doghouse" relay,
-  # neither of which is verifiable from outside a live run; a first
-  # run showed every pre-existing finding in the whole repo, unfiltered
-  # — i.e. the base-comparison silently wasn't applied. `-reporter=local`
-  # only prints to the job log and relies on the job's own exit code to
-  # fail the check, which is all a required-status-check gate actually
-  # needs; it loses reviewdog's inline PR annotations, not the gate
-  # itself.
+  # Filtering here is file-level, computed with plain `git diff
+  # --name-only` against the PR's base branch (fetched explicitly
+  # below) — NOT reviewdog's own diff/filter-mode machinery. Two
+  # different reviewdog diff strategies (-reporter=github-pr-check's
+  # GitHub-side service, then a self-supplied -diff="git diff
+  # FETCH_HEAD...HEAD" fed to -reporter=local) both silently reported
+  # on the entire repo, unfiltered, in real runs — not reproducible or
+  # debuggable from outside a live run. A plain `git diff --name-only`
+  # was verified directly against the real pushed branches before
+  # relying on it here. This is coarser than line-level filtering (a
+  # PR touching one line of a file re-flags that whole file's existing
+  # issues), but it is actually correct, which the line-level attempts
+  # were not.
   python-quality:
     name: Python Lint & Security
     if: github.event_name == 'pull_request'
@@ -60,43 +60,33 @@ jobs:
           pip install -r requirements.txt
           pip install -r apps/content_pipeline/requirements.txt
 
-      - uses: reviewdog/action-setup@v1
-        with:
-          reviewdog_version: latest
+      - name: Determine changed Python files
+        id: changed
+        run: |
+          git diff --name-only --diff-filter=ACMR FETCH_HEAD...HEAD -- '*.py' \
+            | grep -v '^sales_agent-ai/' > changed_py_files.txt || true
+          echo "Changed Python files:"
+          cat changed_py_files.txt
 
       - name: flake8
         run: |
-          set +e
-          flake8 . > flake8-report.txt
-          set -e
-          cat flake8-report.txt | reviewdog -efm="%f:%l:%c: %m" -name="flake8" \
-            -reporter=local -diff="git diff FETCH_HEAD...HEAD" -filter-mode=added -fail-level=error
+          [ -s changed_py_files.txt ] || { echo "No changed Python files."; exit 0; }
+          xargs flake8 < changed_py_files.txt
 
       - name: pylint
         run: |
-          set +e
-          pylint --output-format=text --msg-template='{path}:{line}:{column}: {msg_id} {msg}' \
-            $(git ls-files '*.py' | grep -v '^sales_agent-ai/') > pylint-report.txt
-          set -e
-          cat pylint-report.txt | reviewdog -efm="%f:%l:%c: %m" -name="pylint" \
-            -reporter=local -diff="git diff FETCH_HEAD...HEAD" -filter-mode=added -fail-level=error
+          [ -s changed_py_files.txt ] || { echo "No changed Python files."; exit 0; }
+          xargs pylint --output-format=text < changed_py_files.txt
 
       - name: black --check
         run: |
-          set +e
-          black --check --diff . > black.diff 2>/dev/null
-          set -e
-          cat black.diff | reviewdog -f=diff -f.diff.strip=0 -name="black" \
-            -reporter=local -diff="git diff FETCH_HEAD...HEAD" -filter-mode=added -fail-level=error
+          [ -s changed_py_files.txt ] || { echo "No changed Python files."; exit 0; }
+          xargs black --check --diff < changed_py_files.txt
 
       - name: bandit
         run: |
-          set +e
-          bandit -c pyproject.toml -r . -f custom \
-            --msg-template '{relpath}:{line}: {test_id} {msg}' > bandit-report.txt
-          set -e
-          cat bandit-report.txt | reviewdog -efm="%f:%l: %m" -name="bandit" \
-            -reporter=local -diff="git diff FETCH_HEAD...HEAD" -filter-mode=added -fail-level=error
+          [ -s changed_py_files.txt ] || { echo "No changed Python files."; exit 0; }
+          xargs bandit -c pyproject.toml < changed_py_files.txt
 
   frontend-quality:
     name: Frontend Lint
@@ -116,34 +106,32 @@ jobs:
 
       - run: npm ci
 
-      - uses: reviewdog/action-setup@v1
-        with:
-          reviewdog_version: latest
-
-      - name: eslint (jQuery/vanilla JS, frontend/)
+      - name: Determine changed frontend files
         run: |
-          set +e
-          npx eslint "frontend/**/*.js" -f compact > eslint-report.txt
-          set -e
-          cat eslint-report.txt | reviewdog -efm="%f: line %l, col %c, %m" -name="eslint" \
-            -reporter=local -diff="git diff FETCH_HEAD...HEAD" -filter-mode=added -fail-level=error
+          git diff --name-only --diff-filter=ACMR FETCH_HEAD...HEAD -- 'frontend/*.js' 'apps/content_pipeline/frontend/*.js' \
+            | grep -v '^sales_agent-ai/' > changed_js_files.txt || true
+          git diff --name-only --diff-filter=ACMR FETCH_HEAD...HEAD -- '*.html' \
+            | grep -v '^sales_agent-ai/' > changed_html_files.txt || true
+          git diff --name-only --diff-filter=ACMR FETCH_HEAD...HEAD -- '*.css' \
+            | grep -v '^sales_agent-ai/' > changed_css_files.txt || true
+          echo "Changed JS files:"; cat changed_js_files.txt
+          echo "Changed HTML files:"; cat changed_html_files.txt
+          echo "Changed CSS files:"; cat changed_css_files.txt
+
+      - name: eslint (jQuery/vanilla JS)
+        run: |
+          [ -s changed_js_files.txt ] || { echo "No changed JS files."; exit 0; }
+          xargs npx eslint < changed_js_files.txt
 
       - name: htmlhint
         run: |
-          set +e
-          npx htmlhint "frontend/**/*.html" "apps/content_pipeline/frontend/**/*.html" \
-            --format=compact > htmlhint-report.txt
-          set -e
-          cat htmlhint-report.txt | reviewdog -efm="%f: line %l, col %c, %m" -name="htmlhint" \
-            -reporter=local -diff="git diff FETCH_HEAD...HEAD" -filter-mode=added -fail-level=error
+          [ -s changed_html_files.txt ] || { echo "No changed HTML files."; exit 0; }
+          xargs npx htmlhint < changed_html_files.txt
 
       - name: stylelint (Bootstrap overrides)
         run: |
-          set +e
-          npx stylelint "frontend/**/*.css" --formatter compact > stylelint-report.txt
-          set -e
-          cat stylelint-report.txt | reviewdog -efm="%f: line %l, col %c, %m" -name="stylelint" \
-            -reporter=local -diff="git diff FETCH_HEAD...HEAD" -filter-mode=added -fail-level=error
+          [ -s changed_css_files.txt ] || { echo "No changed CSS files."; exit 0; }
+          xargs npx stylelint < changed_css_files.txt
 
   typecheck:
     name: Static type check (mypy, report-only)
