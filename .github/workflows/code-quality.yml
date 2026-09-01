@@ -47,9 +47,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Fetch PR base branch
-        run: git fetch origin "${{ github.event.pull_request.base.ref }}"
-
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -60,13 +57,28 @@ jobs:
           pip install -r requirements.txt
           pip install -r apps/content_pipeline/requirements.txt
 
+      # For a pull_request event, actions/checkout puts us on GitHub's
+      # synthetic merge commit (base tip + PR head merged together), which
+      # has exactly two parents: HEAD^1 is the base branch's tip AT THE
+      # MOMENT that merge commit was generated, HEAD^2 is the PR branch's
+      # own head. That's the correct, race-free base to diff against.
+      #
+      # A prior version of this workflow instead ran `git fetch origin
+      # <base-ref>` and diffed against that fresh fetch. That's wrong
+      # whenever the base branch has moved since the merge commit was
+      # generated (confirmed happening here: the base branch advanced with
+      # a commit that itself touched serializers/*, and the freshly-fetched
+      # tip no longer shared a recent merge-base with the stale merge
+      # commit — triple-dot diff fell back to a much older common ancestor
+      # and pulled in everything the base had changed independently since
+      # then). HEAD^1 has no such staleness window: it's read directly out
+      # of the commit that's already checked out, not re-fetched.
       - name: Determine changed Python files
         id: changed
         run: |
-          echo "PR base ref: ${{ github.event.pull_request.base.ref }}"
-          echo "FETCH_HEAD -> $(git rev-parse FETCH_HEAD) ($(git log -1 --format=%s FETCH_HEAD))"
-          echo "HEAD       -> $(git rev-parse HEAD) ($(git log -1 --format=%s HEAD))"
-          git diff --name-only --diff-filter=ACMR FETCH_HEAD...HEAD -- '*.py' \
+          echo "HEAD    -> $(git rev-parse HEAD) ($(git log -1 --format=%s HEAD))"
+          echo "HEAD^1  -> $(git rev-parse HEAD^1) ($(git log -1 --format=%s HEAD^1))"
+          git diff --name-only --diff-filter=ACMR HEAD^1...HEAD -- '*.py' \
             | grep -v '^sales_agent-ai/' > changed_py_files.txt || true
           echo "Changed Python files ($(wc -l < changed_py_files.txt)):"
           cat changed_py_files.txt
@@ -107,25 +119,24 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Fetch PR base branch
-        run: git fetch origin "${{ github.event.pull_request.base.ref }}"
-
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
 
       - run: npm ci
 
+      # See the long comment in python-quality's "Determine changed Python
+      # files" step: HEAD^1 (the merge commit's base-branch parent) is the
+      # correct, race-free diff target — not a freshly re-fetched base ref.
       - name: Determine changed frontend files
         run: |
-          echo "PR base ref: ${{ github.event.pull_request.base.ref }}"
-          echo "FETCH_HEAD -> $(git rev-parse FETCH_HEAD) ($(git log -1 --format=%s FETCH_HEAD))"
-          echo "HEAD       -> $(git rev-parse HEAD) ($(git log -1 --format=%s HEAD))"
-          git diff --name-only --diff-filter=ACMR FETCH_HEAD...HEAD -- 'frontend/*.js' 'apps/content_pipeline/frontend/*.js' \
+          echo "HEAD    -> $(git rev-parse HEAD) ($(git log -1 --format=%s HEAD))"
+          echo "HEAD^1  -> $(git rev-parse HEAD^1) ($(git log -1 --format=%s HEAD^1))"
+          git diff --name-only --diff-filter=ACMR HEAD^1...HEAD -- 'frontend/*.js' 'apps/content_pipeline/frontend/*.js' \
             | grep -v '^sales_agent-ai/' > changed_js_files.txt || true
-          git diff --name-only --diff-filter=ACMR FETCH_HEAD...HEAD -- '*.html' \
+          git diff --name-only --diff-filter=ACMR HEAD^1...HEAD -- '*.html' \
             | grep -v '^sales_agent-ai/' > changed_html_files.txt || true
-          git diff --name-only --diff-filter=ACMR FETCH_HEAD...HEAD -- '*.css' \
+          git diff --name-only --diff-filter=ACMR HEAD^1...HEAD -- '*.css' \
             | grep -v '^sales_agent-ai/' > changed_css_files.txt || true
           echo "Changed JS files ($(wc -l < changed_js_files.txt)):"; cat changed_js_files.txt
           echo "Changed HTML files ($(wc -l < changed_html_files.txt)):"; cat changed_html_files.txt
