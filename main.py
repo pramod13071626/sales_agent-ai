@@ -344,13 +344,13 @@ if __name__ == "__main__":
         print(json.dumps(res, indent=2))
     else:
         target_name = args.name
-        target_url = args.url
+        url_input = args.url
 
         if not target_name:
             target_name = input("Enter target company name: ").strip()
-        if not target_url:
-            target_url = input("Enter target company website URL (optional, press Enter to auto-discover): ").strip()
-            if not target_url:
-                target_url = None
+        if not url_input:
+            url_input = input("Enter target company website URL (optional, press Enter to auto-discover): ").strip()
+            if not url_input:
+                url_input = None
 
-        run_pipeline(target_name, target_url)
+        run_pipeline(target_name, url_input)
