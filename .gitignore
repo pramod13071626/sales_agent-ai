@@ -1,37 +1,95 @@
+# ==============================================================================
 # Environment & Secrets
+# ==============================================================================
 .env
+.env.*
 *.env.local
 dump_to_neon.py
 db/dump_to_neon.py
 
-# Output & Scraped Data
-output/
-*.json
+# ==============================================================================
+# Database Dumps, Exports & Backups
+# ==============================================================================
+*.sql
+*.dump
+*.tar
+*.bak
+*.backup
+*.sqlite
+*.sqlite3
+*.db
+exports/
+database_exports/
 
-# Python & Virtual Environments
+# ==============================================================================
+# Output & Scraped Data Caches
+# ==============================================================================
+output/
+downloads/
+uploads/
+temp/
+data/
+*.json
+!requirements.json
+!package.json
+
+# ==============================================================================
+# Python, Virtual Environments & Bytecode
+# ==============================================================================
+.venv/
 venv/
 env/
 ENV/
+virtualenv/
 __pycache__/
 *.py[cod]
 *$py.class
 *.egg-info/
 dist/
 build/
+.pytest_cache/
+.coverage
+htmlcov/
 
-# Celery & Redis Task Queue (Deferred for later update)
+# ==============================================================================
+# Local Utility Scripts & Dev Helpers
+# ==============================================================================
+export_db.py
+start_pgadmin.py
+pgadmin_servers.json
+
+# ==============================================================================
+# Local Docker & Container Configs (Local Dev)
+# ==============================================================================
+Dockerfile
+.dockerignore
+docker-compose.yml
+docker-entrypoint.sh
+
+# ==============================================================================
+# Celery & Task Queue (Deferred)
+# ==============================================================================
 celery_app.py
 tasks/
 celerybeat-schedule
 celerybeat.pid
 
-# Logs & Temporary Files
+# ==============================================================================
+# Logs, Temporary Files & IDEs
+# ==============================================================================
 scratch/
 architecture_flow.md
 *.log
+*.tmp
+*.temp
 .obsidian/
 .vscode/
 .idea/
+.cursor/
+.agents/
 *.swp
 *.swo
 .DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini

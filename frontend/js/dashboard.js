@@ -81,8 +81,18 @@
   let activeJobDetailId = null; // set when a job card is opened on the All Jobs page — shows an in-page detail view instead of a modal
   let jobDetailCache = {}; // job id -> full detail (incl. description), fetched on demand from GET /api/linkedin-jobs/{id}
 
+  // Global CXO Radar State
+  let activeCxoCategory = 'all'; // 'all' | 'joined' | 'resigned' | 'ceo' | 'tech' | 'finance' | 'multi'
+  let cxoDirectoryLimit = 20; // default initial fresh CXOs to display before 'Show More' pagination
+  let activeCxoSearch = '';
+  let globalCxosList = []; // indexed for drawer / jump
+  let cxoMovementsStore = { total: 0, counts: { all: 0, joined: 0, resigned: 0, retired: 0, promoted: 0 }, movements: [] };
+  let activeMovementTab = 'all'; // 'all' | 'joined' | 'resigned' | 'retired' | 'promoted'
+
   const DIGEST_SECTIONS = [
     { id: 'step_guide', label: 'Workflow Guide Bar', icon: 'bi-signpost-split', desc: 'Step-by-step 4-step sales exploration guide' },
+    { id: 'cxo_matrix', label: 'C-Suite & CXO Leadership Matrix', icon: 'bi-person-badge-fill', desc: 'Cross-account C-Suite mapping, peer clusters & current company tenure' },
+    { id: 'cxo_movements', label: 'Executive Movements & Transitions (Joined / Resigned)', icon: 'bi-arrow-left-right', desc: 'Live tracked executive appointments, departures, and role transitions' },
     { id: 'recently_updated', label: 'Recently Updated Accounts', icon: 'bi-clock-history', desc: 'Accounts with fresh scrapes & pipeline updates' },
     { id: 'most_mapped', label: 'Most-Mapped Accounts', icon: 'bi-people-fill', desc: 'Deepest organizational charts and contact coverage' },
     { id: 'social_digest', label: 'Social & Content Intelligence', icon: 'bi-broadcast-pin', desc: 'Captured social discourse & LLM synthesized themes' },
@@ -96,6 +106,8 @@
   function loadDigestSectionVisibility() {
     const defaults = {
       step_guide: true,
+      cxo_matrix: true,
+      cxo_movements: true,
       recently_updated: true,
       most_mapped: true,
       social_digest: true,
@@ -224,8 +236,8 @@
       <details class="alert-hierarchy">
         <summary>Org hierarchy — ${esc(h.scopeName)} (${h.total} contact${h.total !== 1 ? 's' : ''})</summary>
         ${h.isLob ? (h.subLobs.length
-          ? `<div class="chip-row" style="margin:8px 0;">${h.subLobs.map(s => `<span class="chip"><i class="bi bi-diagram-2"></i> ${esc(s.name)}</span>`).join('')}</div>`
-          : `<div class="hierarchy-note"><i class="bi bi-info-circle"></i> No sub-divisions mapped for this LOB.</div>`) : ''}
+        ? `<div class="chip-row" style="margin:8px 0;">${h.subLobs.map(s => `<span class="chip"><i class="bi bi-diagram-2"></i> ${esc(s.name)}</span>`).join('')}</div>`
+        : `<div class="hierarchy-note"><i class="bi bi-info-circle"></i> No sub-divisions mapped for this LOB.</div>`) : ''}
         ${h.groups.map(g => `
           <div class="hierarchy-group">
             <div class="hierarchy-group-label">${esc(g.label)} <span class="hierarchy-group-count">${g.people.length}</span></div>
@@ -672,7 +684,7 @@
     const icon = btn.querySelector('i');
     function setIcon(theme) { icon.className = theme === 'dark' ? 'bi bi-sun' : 'bi bi-moon-stars'; }
     let saved = null;
-    try { saved = localStorage.getItem('scraperTheme'); } catch (e) {}
+    try { saved = localStorage.getItem('scraperTheme'); } catch (e) { }
     if (saved) {
       document.documentElement.setAttribute('data-theme', saved);
       setIcon(saved);
@@ -681,7 +693,7 @@
       const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
       document.documentElement.setAttribute('data-theme', next);
       setIcon(next);
-      try { localStorage.setItem('scraperTheme', next); } catch (e) {}
+      try { localStorage.setItem('scraperTheme', next); } catch (e) { }
     });
   })();
 
@@ -707,18 +719,23 @@
     }
   }
 
-  async function loadAccounts() {
+  async function loadAccounts(silent = false) {
+    const refreshBtn = el('refreshDashboardBtn');
+    const refreshIcon = el('refreshIcon');
+    if (refreshIcon && !silent) refreshIcon.classList.add('spin-anim');
+
     try {
       // Deep link: /?view=jobs opens the All Job Postings browser directly on load.
       const wantsJobsView = window.location.search === '?view=jobs';
-      // Any other query string (stale/unsupported) resets to a clean root URL on hard-refresh.
       if (window.location.search && !wantsJobsView) {
         history.replaceState(null, '', window.location.pathname);
       }
 
-      const [acctRes, contentRes] = await Promise.all([
-        fetch('/api/accounts'),
-        fetch('/api/content').catch(() => null)
+      const ts = Date.now();
+      const [acctRes, contentRes, movementsRes] = await Promise.all([
+        fetch(`/api/accounts?_t=${ts}`, { cache: 'no-store' }),
+        fetch(`/api/content?_t=${ts}`, { cache: 'no-store' }).catch(() => null),
+        fetch(`/api/cxo-movements?_t=${ts}`, { cache: 'no-store' }).catch(() => null)
       ]);
       if (!acctRes.ok) throw new Error('Failed to load accounts');
       const data = await acctRes.json();
@@ -727,21 +744,52 @@
       if (contentRes && contentRes.ok) {
         contentStore = await contentRes.json();
       }
+      if (movementsRes && movementsRes.ok) {
+        cxoMovementsStore = await movementsRes.json();
+      }
 
       renderTopbarTicker();
       renderNavTree();
+
       if (wantsJobsView) {
-        await openAllJobsPage();
+        if (!silent) await openAllJobsPage();
       } else {
-        renderDigest();
+        if (activeAccountId === null) {
+          renderDigest();
+          if (dashPeople && !dashPeople.classList.contains('d-none')) {
+            dashPeople.innerHTML = renderGlobalCxoRadar();
+          }
+        } else if (!silent) {
+          renderSelection();
+        }
+      }
+      if (!silent && refreshBtn) {
+        showToast('Synced latest CXO and account intelligence from database');
       }
     } catch (err) {
       console.error(err);
-      navTree.innerHTML = '<div class="nav-empty">Error loading accounts. Ensure the API is running.</div>';
-      dashEmpty.classList.add('digest-mode');
-      dashEmpty.innerHTML = '<div class="empty-block"><div class="empty-block-icon"><i class="bi bi-exclamation-triangle"></i></div><div class="empty-block-text">Could not load account data. Ensure the API server is running.</div></div>';
+      if (!silent) {
+        navTree.innerHTML = '<div class="nav-empty">Error loading accounts. Ensure the API is running.</div>';
+        dashEmpty.classList.add('digest-mode');
+        dashEmpty.innerHTML = '<div class="empty-block"><div class="empty-block-icon"><i class="bi bi-exclamation-triangle"></i></div><div class="empty-block-text">Could not load account data. Ensure the API server is running.</div></div>';
+      }
+    } finally {
+      if (refreshIcon) refreshIcon.classList.remove('spin-anim');
     }
   }
+
+  // Hook manual refresh button in topbar
+  const refreshDashboardBtn = el('refreshDashboardBtn');
+  if (refreshDashboardBtn) {
+    refreshDashboardBtn.addEventListener('click', () => loadAccounts(false));
+  }
+
+  // Background live polling every 30 seconds for real-time fresh CXO data
+  setInterval(() => {
+    if (document.visibilityState === 'visible') {
+      loadAccounts(true);
+    }
+  }, 30000);
 
   function timeAgo(isoDate) {
     if (!isoDate) return null;
@@ -787,12 +835,24 @@
     const visibleCount = DIGEST_SECTIONS.filter(s => digestSectionVisibility[s.id] !== false).length;
 
     const showStepGuide = digestSectionVisibility.step_guide !== false;
+    const showCxoMatrix = digestSectionVisibility.cxo_matrix !== false;
+    const showCxoMovements = digestSectionVisibility.cxo_movements !== false;
     const showRecent = digestSectionVisibility.recently_updated !== false;
     const showMapped = digestSectionVisibility.most_mapped !== false;
     const showSocial = digestSectionVisibility.social_digest !== false;
     const showAlerts = digestSectionVisibility.sales_alerts !== false;
     const showDomain = digestSectionVisibility.domain_expansion !== false;
     const showJobs = digestSectionVisibility.linkedin_jobs !== false;
+
+    let cxoMatrixHtml = '';
+    if (showCxoMatrix) {
+      cxoMatrixHtml = renderCxoLeadershipMatrix();
+    }
+
+    let cxoMovementsHtml = '';
+    if (showCxoMovements) {
+      cxoMovementsHtml = renderCxoMovementsSection();
+    }
 
     let topAccountsHtml = '';
     if (showRecent || showMapped) {
@@ -934,8 +994,8 @@
                 </div>
                 <div class="digest-customize-list">
                   ${DIGEST_SECTIONS.map(s => {
-                    const isChecked = digestSectionVisibility[s.id] !== false;
-                    return `
+      const isChecked = digestSectionVisibility[s.id] !== false;
+      return `
                       <label class="digest-customize-item ${isChecked ? 'active' : ''}">
                         <input type="checkbox" class="digest-section-cb" data-section-id="${s.id}" ${isChecked ? 'checked' : ''}>
                         <i class="bi ${s.icon} item-icon"></i>
@@ -945,7 +1005,7 @@
                         </div>
                       </label>
                     `;
-                  }).join('')}
+    }).join('')}
                 </div>
               </div>
             </div>
@@ -963,6 +1023,10 @@
           <button type="button" class="step-guide-hide-btn" data-hide-section="step_guide" title="Hide workflow guide"><i class="bi bi-x-lg"></i></button>
         </div>
       ` : ''}
+
+      ${cxoMatrixHtml}
+
+      ${cxoMovementsHtml}
 
       ${topAccountsHtml}
 
@@ -1189,16 +1253,16 @@
       const lobsHtml = isOpen ? `
         <div class="nav-lobs">
           ${lobs.map(l => {
-            const isLobActive = activeAccountId === a.id && activeLobId === l.id;
-            const lobContacts = (l.personas || []).length;
-            return `
+        const isLobActive = activeAccountId === a.id && activeLobId === l.id;
+        const lobContacts = (l.personas || []).length;
+        return `
               <button type="button" class="nav-lob-card ${isLobActive ? 'active' : ''}" data-acct="${a.id}" data-lob="${l.id}" title="View ${esc(l.name)} division">
                 <span class="nav-lob-title"><i class="bi bi-folder2"></i> ${esc(l.name)}</span>
                 ${lobContacts ? `<span class="nav-lob-badge">${lobContacts}</span>` : ''}
               </button>
               ${(l.subLobs || []).length ? `<div class="nav-sublobs">${(l.subLobs || []).map(s => `<div class="nav-sublob-row">${esc(s.name)}</div>`).join('')}</div>` : ''}
             `;
-          }).join('') || '<div class="nav-sublob-row">No lines of business</div>'}
+      }).join('') || '<div class="nav-sublob-row">No lines of business</div>'}
         </div>` : '';
 
       return `
@@ -1332,6 +1396,38 @@
     renderSelection();
   }
   dashEmpty.addEventListener('click', function (e) {
+    const movTabBtn = e.target.closest('[data-movement-tab]');
+    if (movTabBtn) {
+      activeMovementTab = movTabBtn.dataset.movementTab;
+      renderDigest();
+      return;
+    }
+
+    const cxoShowMoreBtn = e.target.closest('#cxoShowMoreBtn');
+    if (cxoShowMoreBtn) {
+      cxoDirectoryLimit += 20;
+      renderDigest();
+      return;
+    }
+
+    const cxoShowAllBtn = e.target.closest('#cxoShowAllBtn');
+    if (cxoShowAllBtn) {
+      cxoDirectoryLimit = 9999;
+      renderDigest();
+      return;
+    }
+
+    const cxoShowLessBtn = e.target.closest('#cxoShowLessBtn');
+    if (cxoShowLessBtn) {
+      cxoDirectoryLimit = 20;
+      renderDigest();
+      const cxoSection = document.querySelector('[data-hide-section="cxo_matrix"]')?.closest('.panel');
+      if (cxoSection) {
+        cxoSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+      return;
+    }
+
     const viewAllJobsBtn = e.target.closest('#viewAllJobsBtn');
     if (viewAllJobsBtn) {
       openAllJobsPage();
@@ -1435,11 +1531,13 @@
 
     const account = accounts.find(a => a.id === activeAccountId);
     if (!account) {
-      if (dashBody) dashBody.classList.add('no-account');
-      if (dashPeople) dashPeople.classList.add('d-none');
+      if (dashBody) dashBody.classList.remove('no-account');
+      if (dashPeople) {
+        dashPeople.classList.remove('d-none');
+        dashPeople.innerHTML = renderGlobalCxoRadar();
+      }
       dashEmpty.classList.remove('d-none');
       dashContent.classList.add('d-none');
-      if (dashPeople) dashPeople.innerHTML = '';
       renderDigest();
       syncUrlState();
       return;
@@ -1565,7 +1663,7 @@
             <span class="signal-text">${esc(s.text)}</span>
             ${s.detail ? '<span class="signal-badge-btn"><span>Explore Details</span> <i class="bi bi-chevron-right"></i></span>' : ''}
           </button>`).join('')
-          : `<div class="empty-block"><div class="empty-block-icon"><i class="bi bi-search"></i></div><div class="empty-block-text">No signals detected yet for this ${lob ? 'line of business' : 'account'}.</div></div>`}
+        : `<div class="empty-block"><div class="empty-block-icon"><i class="bi bi-search"></i></div><div class="empty-block-text">No signals detected yet for this ${lob ? 'line of business' : 'account'}.</div></div>`}
       </div>
     `;
   }
@@ -2100,7 +2198,7 @@
     // 2. Level 2: C-Suite & Board Level Direct Reports
     const cSuiteReports = [];
     const directNames = new Set((tree.direct_reports || []).map(r => r.full_name));
-    
+
     allPersonas.forEach(p => {
       if (p.name === rootName) return;
       const isC = (p.tier || '').toLowerCase().includes('c') || /director of board|board member|chairman|vice chair|lead consultant/i.test(p.title || '') || directNames.has(p.name);
@@ -2821,7 +2919,7 @@
         <div class="job-browser-filters">${chips}</div>
         <div class="job-page-grid">
           ${jobsLoading ? `<div class="empty-block"><div class="empty-block-icon"><i class="bi bi-hourglass-split"></i></div><div class="empty-block-text">Loading…</div></div>`
-            : (jobs.length ? jobs.map(j => renderJobBrowserCard(j)).join('') : `<div class="empty-block"><div class="empty-block-icon"><i class="bi bi-linkedin"></i></div><div class="empty-block-text">No job postings match your filters.</div></div>`)}
+        : (jobs.length ? jobs.map(j => renderJobBrowserCard(j)).join('') : `<div class="empty-block"><div class="empty-block-icon"><i class="bi bi-linkedin"></i></div><div class="empty-block-text">No job postings match your filters.</div></div>`)}
         </div>
         ${totalPages > 1 ? `
           <div class="job-pagination">
@@ -3020,7 +3118,7 @@
     // Signal trigger
     const chip = e.target.closest('[data-signal-idx]');
     if (chip) { const s = currentSignals[Number(chip.dataset.signalIdx)]; if (s) openSignalModal(s); return; }
-    
+
     // Jump LOB trigger
     const lobBtn = e.target.closest('[data-jump-lob]');
     if (lobBtn) {
@@ -3168,19 +3266,535 @@
     `;
   }
 
+  function renderCxoLeadershipMatrix() {
+    const allCxos = getAllCxos();
+    const cSuite = allCxos.length;
+    const ceos = allCxos.filter(c => /\b(ceo|chief executive|founder|co-founder|president)\b/i.test(c.title || '')).length;
+    const tech = allCxos.filter(c => /\b(cto|cio|technology|information|digital|engineering|ai)\b/i.test(c.title || '')).length;
+    const finance = allCxos.filter(c => /\b(cfo|finance|financial|treasur)\b/i.test(c.title || '')).length;
+
+    // Accounts with most CXOs mapped
+    const companyCxos = {};
+    allCxos.forEach(c => {
+      if (!companyCxos[c.accountId]) companyCxos[c.accountId] = { accountId: c.accountId, name: c.accountName, ticker: c.accountTicker, cxos: [] };
+      companyCxos[c.accountId].cxos.push(c);
+    });
+    const sortedCompanies = Object.values(companyCxos).sort((a, b) => b.cxos.length - a.cxos.length).slice(0, 4);
+
+    return `
+      <div class="panel">
+        <div class="panel-title">
+          <span><i class="bi bi-person-badge-fill" style="color:var(--brand);"></i> C-Suite &amp; CXO Leadership Coverage</span>
+          <div class="panel-title-tools">
+            <span class="context-badge live"><i class="bi bi-diagram-3-fill"></i> Central DB</span>
+            <button type="button" class="panel-hide-btn" data-hide-section="cxo_matrix" title="Hide this section from dashboard"><i class="bi bi-x-lg"></i></button>
+          </div>
+        </div>
+        <p class="section-desc">Executive decision-makers mapped across tracked enterprises. Track leadership density, alumni movement, and verify whether leaders share the same organization.</p>
+        
+        <div class="chip-row" style="margin-bottom:12px;">
+          <span class="chip" title="Total C-level leaders"><i class="bi bi-people-fill"></i> <strong>${cSuite}</strong> CXOs Mapped</span>
+          <span class="chip" title="Chief Executive Officers & Founders"><i class="bi bi-award-fill"></i> <strong>${ceos}</strong> CEOs / Founders</span>
+          <span class="chip" title="Chief Technology & Information Officers"><i class="bi bi-cpu-fill"></i> <strong>${tech}</strong> CTOs / CIOs</span>
+          <span class="chip" title="Chief Financial Officers"><i class="bi bi-cash-stack"></i> <strong>${finance}</strong> CFOs</span>
+        </div>
+
+        ${sortedCompanies.length ? `
+          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:10px; margin-top:10px;">
+            ${sortedCompanies.map(co => `
+              <div style="background:var(--input-bg); border:1px solid var(--border-color); border-radius:var(--radius-sm); padding:10px 12px;">
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+                  <span style="font-weight:700; font-size:.82rem; color:var(--text-primary);"><i class="bi bi-building"></i> ${esc(co.name)}</span>
+                  <span class="pill pill-brand" style="font-size:.62rem;">${co.cxos.length} CXOs</span>
+                </div>
+                <div style="font-size:.72rem; color:var(--text-secondary); margin-bottom:8px; line-height:1.5;">
+                  ${co.cxos.slice(0, 3).map(c => `• <strong>${esc(c.name)}</strong> (${esc(c.title || 'Leader')})`).join('<br>')}
+                  ${co.cxos.length > 3 ? `<div style="color:var(--text-muted); margin-top:2px;">+${co.cxos.length - 3} more C-levels</div>` : ''}
+                </div>
+                <button type="button" class="alert-view-account" data-jump-account="${co.accountId}" style="width:100%; justify-content:center; padding:4px 8px; font-size:.72rem;">
+                  Open Account Org Chart <i class="bi bi-arrow-right"></i>
+                </button>
+              </div>
+            `).join('')}
+          </div>
+
+          <!-- CXO Leadership Directory Table -->
+          <div style="margin-top:18px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
+              <div>
+                <span style="font-weight:800; font-size:.92rem; color:var(--text-primary);"><i class="bi bi-person-lines-fill" style="color:var(--brand);"></i> Central Database CXO Leadership Directory</span>
+                <div style="font-size:.74rem; color:var(--text-secondary); margin-top:2px;">Tracked C-Suite stakeholders, same-company clusters, and executive movement signals.</div>
+              </div>
+              <span class="context-badge live"><i class="bi bi-check2-all"></i> ${allCxos.length} Leaders Mapped</span>
+            </div>
+
+            <div class="cxo-table-container">
+              <table class="cxo-table">
+                <thead>
+                  <tr>
+                    <th style="width: 28%;">Executive Leader</th>
+                    <th style="width: 32%;">Designation / Role</th>
+                    <th style="width: 25%;">Current Organization</th>
+                    <th style="width: 15%;">Movement Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${allCxos.slice(0, cxoDirectoryLimit).map((c, idx) => {
+                    const mov = (cxoMovementsStore.movements || []).find(m => (m.person_name || '').toLowerCase().trim() === (c.name || '').toLowerCase().trim());
+                    const coCount = (companyCxos[c.accountId]?.cxos?.length) || 1;
+                    return `
+                      <tr>
+                        <td>
+                          <div class="cxo-table-person" data-global-cxo-idx="${idx}" title="Click to open AI Call-Prep Dossier">
+                            <div class="cxo-table-avatar">${esc(initials(c.name))}</div>
+                            <div>
+                              <div style="font-weight:700; color:var(--text-primary); font-size:.85rem;">${esc(c.name)}</div>
+                              <span class="tag tag-csuite" style="font-size:.58rem; padding:1px 5px; margin-top:2px;">C-Suite</span>
+                            </div>
+                          </div>
+                        </td>
+                        <td>
+                          <span style="color:var(--text-primary); font-weight:600; font-size:.8rem;">${esc(c.title || 'Executive Leadership')}</span>
+                        </td>
+                        <td>
+                          <button type="button" class="cxo-company-btn" data-jump-account="${c.accountId}" style="font-size:.74rem;">
+                            ${esc(c.accountName)} <i class="bi bi-box-arrow-up-right"></i>
+                          </button>
+                          ${coCount >= 2 ? `<div style="font-size:.65rem; color:var(--brand); font-weight:700; margin-top:3px;"><i class="bi bi-diagram-3-fill"></i> ${coCount} CXOs at firm</div>` : ''}
+                        </td>
+                        <td>
+                          ${mov ? `
+                            <span class="movement-badge ${(mov.event_type || 'joined').toLowerCase()}">
+                              ${(mov.event_type || '').toLowerCase() === 'joined' ? '🟢 Joined' : ((mov.event_type || '').toLowerCase() === 'resigned' ? '🔴 Resigned' : ((mov.event_type || '').toLowerCase() === 'retired' ? '🟡 Retired' : '🔵 Promoted'))}
+                            </span>
+                            ${mov.effective_date ? `<div style="font-size:.64rem; color:var(--text-muted); margin-top:2px;">Eff: ${esc(mov.effective_date)}</div>` : ''}
+                            ${mov.new_company ? `<div style="font-size:.64rem; color:var(--text-secondary); margin-top:2px;">➔ ${esc(mov.new_company)}</div>` : ''}
+                          ` : `<span class="pill" style="font-size:.66rem; background:rgba(0,186,136,.1); color:var(--success); font-weight:700;"><i class="bi bi-check-circle-fill"></i> Active</span>`}
+                        </td>
+                      </tr>
+                    `;
+                  }).join('')}
+                </tbody>
+              </table>
+            </div>
+
+            <!-- CXO Directory Pagination Controls -->
+            ${allCxos.length > 20 ? `
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-top:12px; padding:12px 16px; background:var(--surface-color); border:1px solid var(--border-color); border-radius:var(--radius-sm); flex-wrap:wrap; gap:10px;">
+                <div style="font-size:.78rem; color:var(--text-secondary); display:flex; align-items:center; gap:8px;">
+                  <i class="bi bi-list-check" style="color:var(--brand); font-size:1rem;"></i>
+                  <span>Showing <strong>${Math.min(cxoDirectoryLimit, allCxos.length)}</strong> of <strong>${allCxos.length}</strong> fresh CXO leaders</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  ${cxoDirectoryLimit < allCxos.length ? `
+                    <button type="button" id="cxoShowMoreBtn" class="pill pill-brand" style="cursor:pointer; border:none; padding:6px 15px; font-size:.76rem; font-weight:700; display:inline-flex; align-items:center; gap:6px;">
+                      <i class="bi bi-chevron-double-down"></i> Show More (+${Math.min(20, allCxos.length - cxoDirectoryLimit)})
+                    </button>
+                    <button type="button" id="cxoShowAllBtn" class="pill" style="cursor:pointer; background:var(--input-bg); color:var(--text-primary); border:1px solid var(--border-color); padding:6px 12px; font-size:.76rem; font-weight:600;">
+                      Show All (${allCxos.length})
+                    </button>
+                  ` : `
+                    <button type="button" id="cxoShowLessBtn" class="pill" style="cursor:pointer; background:var(--input-bg); color:var(--text-primary); border:1px solid var(--border-color); padding:6px 15px; font-size:.76rem; font-weight:600; display:inline-flex; align-items:center; gap:6px;">
+                      <i class="bi bi-chevron-up"></i> Show Less (Top 20)
+                    </button>
+                  `}
+                </div>
+              </div>
+            ` : ''}
+          </div>
+        ` : '<div class="empty-block" style="padding:10px 0;"><div class="empty-block-text">No CXO contacts mapped in central database yet.</div></div>'}
+      </div>
+    `;
+  }
+
+  function renderCxoMovementsSection() {
+    const movements = cxoMovementsStore.movements || [];
+    const counts = cxoMovementsStore.counts || { all: movements.length, joined: 0, resigned: 0, retired: 0, promoted: 0 };
+
+    // Filter by activeMovementTab
+    let filtered = movements;
+    if (activeMovementTab !== 'all') {
+      filtered = filtered.filter(m => (m.event_type || '').toLowerCase() === activeMovementTab);
+    }
+
+    const tabs = [
+      { id: 'all', label: 'All Transitions', icon: 'bi-arrow-left-right', count: counts.all || movements.length },
+      { id: 'joined', label: 'Joined / New Hires', icon: 'bi-person-plus-fill', count: counts.joined || 0 },
+      { id: 'resigned', label: 'Resigned / Departures', icon: 'bi-person-dash-fill', count: counts.resigned || 0 },
+      { id: 'retired', label: 'Retired', icon: 'bi-clock-history', count: counts.retired || 0 },
+      { id: 'promoted', label: 'Promoted', icon: 'bi-arrow-up-circle-fill', count: counts.promoted || 0 }
+    ].map(t => `
+      <button type="button" class="tab-btn ${activeMovementTab === t.id ? 'active' : ''}" data-movement-tab="${t.id}">
+        <i class="bi ${t.icon}"></i> ${esc(t.label)} <span class="tab-badge">${t.count}</span>
+      </button>
+    `).join('');
+
+    return `
+      <div class="panel">
+        <div class="panel-title">
+          <span><i class="bi bi-arrow-left-right" style="color:var(--brand);"></i> Executive Leadership Transitions &amp; CXO Movements</span>
+          <div class="panel-title-tools">
+            <span class="context-badge live"><i class="bi bi-broadcast"></i> Live Signal Monitor</span>
+            <button type="button" class="panel-hide-btn" data-hide-section="cxo_movements" title="Hide this section from dashboard"><i class="bi bi-x-lg"></i></button>
+          </div>
+        </div>
+        <p class="section-desc">Track real-time executive appointments, departures, and role movements across enterprise accounts.</p>
+
+        <div class="sales-tabs" style="margin-bottom:12px; border-bottom:1px solid var(--border-color);">${tabs}</div>
+
+        ${filtered.length ? `
+          <div class="movement-grid">
+            ${filtered.map(m => {
+      const evt = (m.event_type || 'joined').toLowerCase();
+      const evtLabel = evt === 'joined' ? '🟢 Joined' : (evt === 'resigned' ? '🔴 Resigned' : (evt === 'retired' ? '🟡 Retired' : '🔵 Promoted'));
+      return `
+                <div class="movement-card event-${evt}">
+                  <div>
+                    <div class="movement-card-header">
+                      <div>
+                        <div class="movement-person">${esc(m.person_name)}</div>
+                        <div class="movement-designation">${esc(m.designation || 'Executive Leadership')}</div>
+                      </div>
+                      <span class="movement-badge ${evt}">${evtLabel}</span>
+                    </div>
+
+                    <div class="movement-meta-row">
+                      <div class="movement-meta-item">
+                        <i class="bi bi-building"></i>
+                        <span><strong>Company:</strong> ${esc(m.company_name)}</span>
+                        ${m.account_id ? `<button type="button" class="cxo-company-btn" data-jump-account="${m.account_id}" style="margin-left:4px; font-size:.65rem; padding:1px 5px;">View Org <i class="bi bi-arrow-right"></i></button>` : ''}
+                      </div>
+                      ${m.effective_date ? `
+                        <div class="movement-meta-item">
+                          <i class="bi bi-calendar3"></i>
+                          <span><strong>Timing / Date:</strong> ${esc(m.effective_date)}</span>
+                        </div>` : ''}
+                      ${m.previous_role ? `
+                        <div class="movement-meta-item">
+                          <i class="bi bi-briefcase"></i>
+                          <span><strong>Previous Role / Tenure:</strong> ${esc(m.previous_role)}</span>
+                        </div>` : ''}
+                      ${m.new_company ? `
+                        <div class="movement-meta-item">
+                          <i class="bi bi-box-arrow-up-right"></i>
+                          <span><strong>New Organization:</strong> ${esc(m.new_company)}</span>
+                        </div>` : ''}
+                    </div>
+
+                    ${m.context ? `<div class="movement-context">${esc(m.context)}</div>` : ''}
+                  </div>
+
+                  <div class="movement-footer">
+                    <span class="movement-source"><i class="bi bi-newspaper"></i> ${esc(m.source || m.publisher_domain || 'News Wire')}</span>
+                    ${m.article_url ? `<a href="${esc(m.article_url)}" target="_blank" class="movement-link">Source Article <i class="bi bi-box-arrow-up-right"></i></a>` : ''}
+                  </div>
+                </div>
+              `;
+    }).join('')}
+          </div>
+        ` : `
+          <div class="empty-block" style="padding:20px 10px; text-align:center;">
+            <div class="empty-block-icon" style="font-size:1.6rem; color:var(--text-muted); margin-bottom:6px;"><i class="bi bi-arrow-left-right"></i></div>
+            <div style="font-weight:700; font-size:.88rem; color:var(--text-primary); margin-bottom:4px;">No movements in this category</div>
+            <div style="font-size:.76rem; color:var(--text-secondary);">Scraper will populate transitions automatically when news / PR releases are detected for tracked accounts.</div>
+          </div>
+        `}
+      </div>
+    `;
+  }
+
+  function getAllCxos() {
+    const cxos = [];
+    const seen = new Set();
+
+    // 1. From account personas in DB
+    accounts.forEach(a => {
+      const allP = dedupePersonas([...(a.personas || []), ...((a.lobs || []).flatMap(l => l.personas || []))]);
+      allP.forEach(p => {
+        const title = (p.title || '').toLowerCase();
+        const tier = (p.tier || '').toLowerCase();
+        const isCxo = tier.includes('c-suite') || tier.includes('c_suite') || tier === 'c' ||
+          /\b(chief|ceo|cto|cio|cfo|coo|ciso|cmo|cro|cdo|president|founder|managing director|board member|chairman|vice chair|lead consultant)\b/i.test(title);
+        const normName = (p.name || '').toLowerCase().trim();
+        if (isCxo && normName && !seen.has(normName)) {
+          seen.add(normName);
+          cxos.push({
+            ...p,
+            accountId: a.id,
+            accountName: a.name || a.legal_name || 'Enterprise',
+            accountTicker: a.ticker || a.stock_symbol || null,
+            accountDomain: a.domain || null
+          });
+        }
+      });
+    });
+
+    // 2. From cxo_movements in DB (ensures new joiners/resignations are never missed)
+    (cxoMovementsStore.movements || []).forEach(m => {
+      const normName = (m.person_name || '').toLowerCase().trim();
+      if (normName && !seen.has(normName)) {
+        seen.add(normName);
+        const acct = accounts.find(a => a.id === m.account_id || (a.key && a.key === m.target_key) || (a.name && a.name.toLowerCase() === (m.company_name || '').toLowerCase()));
+        cxos.push({
+          id: m.id ? `mov-${m.id}` : normName,
+          name: m.person_name,
+          title: m.designation || 'Executive Leadership',
+          tier: 'C-Suite',
+          prior_company: m.previous_role || (m.event_type === 'resigned' ? `➔ Moved to ${m.new_company || 'New Firm'}` : null),
+          accountId: acct ? acct.id : (m.account_id || 1),
+          accountName: acct ? (acct.name || acct.legal_name) : (m.company_name || 'Enterprise'),
+          accountTicker: acct ? acct.ticker : null,
+          accountDomain: m.publisher_domain || null,
+          email: null,
+          phone: null,
+          linkedin_url: m.article_url || null,
+          personalized_icebreaker: m.context || null
+        });
+      }
+    });
+
+    return cxos;
+  }
+
+  function filterGlobalCxos(cxos, cat, query) {
+    let filtered = cxos;
+    const movements = cxoMovementsStore.movements || [];
+
+    if (cat === 'joined') {
+      const joinedNames = new Set(movements.filter(m => (m.event_type || '').toLowerCase() === 'joined').map(m => (m.person_name || '').toLowerCase().trim()));
+      filtered = filtered.filter(c => joinedNames.has((c.name || '').toLowerCase().trim()));
+    } else if (cat === 'resigned') {
+      const resignedNames = new Set(movements.filter(m => (m.event_type || '').toLowerCase() === 'resigned').map(m => (m.person_name || '').toLowerCase().trim()));
+      filtered = filtered.filter(c => resignedNames.has((c.name || '').toLowerCase().trim()));
+    } else if (cat === 'ceo') {
+      filtered = filtered.filter(c => /\b(ceo|chief executive|founder|co-founder|president)\b/i.test(c.title || ''));
+    } else if (cat === 'tech') {
+      filtered = filtered.filter(c => /\b(cto|cio|technology|information|digital|engineering|ai)\b/i.test(c.title || ''));
+    } else if (cat === 'finance') {
+      filtered = filtered.filter(c => /\b(cfo|finance|financial|treasur)\b/i.test(c.title || ''));
+    } else if (cat === 'multi') {
+      const companyCounts = {};
+      cxos.forEach(c => { companyCounts[c.accountId] = (companyCounts[c.accountId] || 0) + 1; });
+      filtered = filtered.filter(c => (companyCounts[c.accountId] || 0) >= 2);
+    }
+
+    const q = (query || '').trim().toLowerCase();
+    if (q) {
+      filtered = filtered.filter(c =>
+        (c.name || '').toLowerCase().includes(q) ||
+        (c.title || '').toLowerCase().includes(q) ||
+        (c.accountName || '').toLowerCase().includes(q) ||
+        (c.prior_company || '').toLowerCase().includes(q) ||
+        (c.city || '').toLowerCase().includes(q) ||
+        (c.country || '').toLowerCase().includes(q)
+      );
+    }
+    return filtered;
+  }
+
+  function renderGlobalCxoRadar() {
+    const allCxos = getAllCxos();
+    const companyCounts = {};
+    allCxos.forEach(c => {
+      companyCounts[c.accountId] = (companyCounts[c.accountId] || 0) + 1;
+    });
+
+    const movements = cxoMovementsStore.movements || [];
+    const joinedCount = movements.filter(m => (m.event_type || '').toLowerCase() === 'joined').length;
+    const resignedCount = movements.filter(m => (m.event_type || '').toLowerCase() === 'resigned').length;
+
+    const filtered = filterGlobalCxos(allCxos, activeCxoCategory, activeCxoSearch);
+    globalCxosList = filtered;
+
+    const catCounts = {
+      all: allCxos.length,
+      joined: joinedCount,
+      resigned: resignedCount,
+      ceo: allCxos.filter(c => /\b(ceo|chief executive|founder|co-founder|president)\b/i.test(c.title || '')).length,
+      tech: allCxos.filter(c => /\b(cto|cio|technology|information|digital|engineering|ai)\b/i.test(c.title || '')).length,
+      finance: allCxos.filter(c => /\b(cfo|finance|financial|treasur)\b/i.test(c.title || '')).length,
+      multi: allCxos.filter(c => (companyCounts[c.accountId] || 0) >= 2).length
+    };
+
+    const chips = [
+      { id: 'all', label: 'All C-Suite', icon: 'bi-person-badge', count: catCounts.all },
+      ...(joinedCount > 0 ? [{ id: 'joined', label: '🟢 Joined', icon: 'bi-person-plus-fill', count: catCounts.joined }] : []),
+      ...(resignedCount > 0 ? [{ id: 'resigned', label: '🔴 Resigned', icon: 'bi-person-dash-fill', count: catCounts.resigned }] : []),
+      { id: 'ceo', label: 'CEOs & Founders', icon: 'bi-award', count: catCounts.ceo },
+      { id: 'tech', label: 'CTOs & CIOs', icon: 'bi-cpu', count: catCounts.tech },
+      { id: 'finance', label: 'CFOs', icon: 'bi-cash-coin', count: catCounts.finance },
+      { id: 'multi', label: 'Same-Co (2+)', icon: 'bi-diagram-3-fill', count: catCounts.multi }
+    ].map(ch => `
+      <button type="button" class="cxo-cat-chip ${activeCxoCategory === ch.id ? 'active' : ''}" data-cxo-cat="${ch.id}">
+        <i class="bi ${ch.icon}"></i> ${esc(ch.label)} <span class="cxo-chip-count">${ch.count}</span>
+      </button>
+    `).join('');
+
+    return `
+      <!-- Global CXO Header -->
+      <div class="panel-title" style="margin-top:2px;">
+        <span><i class="bi bi-person-badge-fill" style="color:var(--brand);"></i> Global CXO Radar</span>
+        <span class="context-badge live">${filtered.length} mapped</span>
+      </div>
+      <p class="section-desc" style="margin-bottom:8px;">
+        Track C-Suite leaders, current company employment, peer clusters, and previous corporate tenure across your database.
+      </p>
+
+      <div class="contact-search">
+        <i class="bi bi-search"></i>
+        <input type="text" id="cxoSearchInput" placeholder="Filter by CXO, company, title, or alumni..." value="${esc(activeCxoSearch)}" autocomplete="off">
+      </div>
+
+      <div class="cxo-filter-chips">${chips}</div>
+
+      <div id="globalCxosContainer" class="cxo-cards-list">
+        ${renderGlobalCxoCards(filtered, companyCounts)}
+      </div>
+    `;
+  }
+
+  function renderGlobalCxoCards(cxos, companyCounts) {
+    if (!cxos.length) {
+      return `
+        <div class="empty-block" style="padding:24px 12px; text-align:center;">
+          <div class="empty-block-icon" style="font-size:1.5rem; margin-bottom:6px;"><i class="bi bi-people"></i></div>
+          <div class="empty-block-text">No CXO executives match your current search or category filter.</div>
+        </div>
+      `;
+    }
+
+    const movMap = {};
+    (cxoMovementsStore.movements || []).forEach(m => {
+      if (m.person_name) {
+        movMap[m.person_name.toLowerCase().trim()] = m;
+      }
+    });
+
+    return cxos.map((c, idx) => {
+      const coCount = companyCounts[c.accountId] || 1;
+      const hasDoss = hasDossier(c);
+      const isMulti = coCount >= 2;
+      const mov = movMap[(c.name || '').toLowerCase().trim()];
+
+      return `
+        <div class="cxo-card ${isMulti ? 'has-peers' : ''}">
+          <div class="cxo-card-main" data-global-cxo-idx="${idx}" title="Click to open AI Call-Prep Dossier">
+            <div class="contact-avatar">${esc(initials(c.name))}</div>
+            <div class="contact-body">
+              <div class="contact-name">
+                ${esc(c.name || 'Executive')}
+                ${hasDoss ? '<i class="bi bi-stars dossier-badge" title="AI Call-Prep Dossier available"></i>' : ''}
+                <span class="tag tag-csuite">C-Suite</span>
+              </div>
+              <div class="contact-title">${esc(c.title || 'Executive Leadership')}</div>
+
+              <!-- Movement Status Badge (if joined or resigned) -->
+              ${mov ? `
+                <div style="margin: 4px 0;">
+                  <span class="movement-badge ${(mov.event_type || 'joined').toLowerCase()}">
+                    ${(mov.event_type || '').toLowerCase() === 'joined' ? '🟢 Joined' : ((mov.event_type || '').toLowerCase() === 'resigned' ? '🔴 Resigned' : esc(mov.event_type))}
+                  </span>
+                  ${mov.effective_date ? `<span style="font-size:.66rem; color:var(--text-muted); margin-left:3px;">Eff: ${esc(mov.effective_date)}</span>` : ''}
+                  ${mov.new_company ? `<span style="font-size:.66rem; color:var(--text-secondary); margin-left:3px;">➔ ${esc(mov.new_company)}</span>` : ''}
+                </div>
+              ` : ''}
+
+              <!-- Current Company Employment -->
+              <div class="cxo-company-row">
+                <span class="cxo-meta-label"><i class="bi bi-building-check"></i> Current:</span>
+                <button type="button" class="cxo-company-btn" data-jump-account="${c.accountId}" title="Jump to ${esc(c.accountName)} in account center">
+                  ${esc(c.accountName)} ${c.accountTicker ? `<span class="ticker-pill">${esc(c.accountTicker)}</span>` : ''} <i class="bi bi-box-arrow-up-right"></i>
+                </button>
+              </div>
+
+              <!-- Same-Company Peer Cluster Badge -->
+              ${isMulti ? `
+                <div class="cxo-peer-row">
+                  <span class="cxo-peer-tag"><i class="bi bi-diagram-3-fill"></i> ${coCount} CXOs at this company</span>
+                </div>
+              ` : ''}
+
+              <!-- Prior Company / Career Movement -->
+              ${c.prior_company ? `
+                <div class="cxo-prior-row">
+                  <span class="cxo-meta-label"><i class="bi bi-clock-history"></i> Prior:</span>
+                  <span class="cxo-prior-text">${esc(c.prior_company)}</span>
+                </div>
+              ` : ''}
+
+              <!-- Location -->
+              ${(c.city || c.country) ? `
+                <div class="cxo-location-row">
+                  <i class="bi bi-geo-alt"></i> ${esc([c.city, c.country].filter(Boolean).join(', '))}
+                </div>
+              ` : ''}
+            </div>
+            <i class="bi bi-chevron-right contact-chevron"></i>
+          </div>
+
+          <!-- Quick Action Buttons -->
+          <div class="contact-actions">
+            <a class="icon-btn ${c.email ? '' : 'disabled'}" ${c.email ? `href="mailto:${esc(c.email)}"` : ''} title="${c.email ? 'Email ' + esc(c.name) : 'No email on file'}"><i class="bi bi-envelope"></i></a>
+            <a class="icon-btn ${c.phone ? '' : 'disabled'}" ${c.phone ? `href="tel:${esc(c.phone)}"` : ''} title="${c.phone ? 'Call ' + esc(c.name) : 'No phone on file'}"><i class="bi bi-telephone"></i></a>
+            <a class="icon-btn ${c.linkedin_url ? '' : 'disabled'}" ${c.linkedin_url ? `href="${esc(c.linkedin_url)}" target="_blank"` : ''} title="${c.linkedin_url ? 'LinkedIn Profile' : 'No LinkedIn on file'}"><i class="bi bi-linkedin"></i></a>
+            <button type="button" class="cxo-prep-btn" data-global-cxo-idx="${idx}" title="Open AI Call-Prep Dossier">
+              <i class="bi bi-stars"></i> Call Prep
+            </button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
   dashPeople.addEventListener('input', function (e) {
-    if (e.target.id !== 'contactSearchInput') return;
-    const filtered = filterContacts(allAccountPersonas, e.target.value);
-    el('contactsListContainer').innerHTML = renderContactsList(filtered);
+    if (e.target.id === 'contactSearchInput') {
+      const filtered = filterContacts(allAccountPersonas, e.target.value);
+      el('contactsListContainer').innerHTML = renderContactsList(filtered);
+    } else if (e.target.id === 'cxoSearchInput') {
+      activeCxoSearch = e.target.value;
+      const allCxos = getAllCxos();
+      const companyCounts = {};
+      allCxos.forEach(c => { companyCounts[c.accountId] = (companyCounts[c.accountId] || 0) + 1; });
+      const filtered = filterGlobalCxos(allCxos, activeCxoCategory, activeCxoSearch);
+      globalCxosList = filtered;
+      const container = el('globalCxosContainer');
+      if (container) container.innerHTML = renderGlobalCxoCards(filtered, companyCounts);
+    }
   });
 
   dashPeople.addEventListener('click', async function (e) {
+    // 1. CXO Category filter chip
+    const cxoCatBtn = e.target.closest('[data-cxo-cat]');
+    if (cxoCatBtn) {
+      activeCxoCategory = cxoCatBtn.dataset.cxoCat;
+      dashPeople.innerHTML = renderGlobalCxoRadar();
+      return;
+    }
+
+    // 2. Global CXO jump to account
+    const jumpBtn = e.target.closest('[data-jump-account]');
+    if (jumpBtn) {
+      jumpToAccount(Number(jumpBtn.dataset.jumpAccount));
+      return;
+    }
+
+    // 3. Global CXO open dossier drawer
+    const globalCxoCard = e.target.closest('[data-global-cxo-idx]');
+    if (globalCxoCard) {
+      const p = globalCxosList[Number(globalCxoCard.dataset.globalCxoIdx)];
+      if (p) openContactDrawer(p);
+      return;
+    }
+
+    // 4. Account-level contact card drawer
     const contactBtn = e.target.closest('[data-contact-idx]');
     if (contactBtn) {
       const p = currentPersonas[Number(contactBtn.dataset.contactIdx)];
       if (p) openContactDrawer(p);
       return;
     }
+
+    // 5. Account-level Diffbot enrichment
     const diffbotBtn = e.target.closest('#fetchDiffbotBtn');
     if (diffbotBtn) {
       const account = accounts.find(a => a.id === Number(diffbotBtn.dataset.acct));
@@ -3210,9 +3824,11 @@
       }
       return;
     }
+
+    // 6. Jump to explorer
     const explorerBtn = e.target.closest('#openExplorerBtn');
     if (explorerBtn) {
-      try { await navigator.clipboard.writeText(explorerBtn.dataset.name); } catch (err) {}
+      try { await navigator.clipboard.writeText(explorerBtn.dataset.name); } catch (err) { }
       showToast('Account name copied — paste it into the Explorer search bar');
       window.open('/pipline/', '_blank');
     }

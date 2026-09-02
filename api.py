@@ -50,14 +50,15 @@ from serializers.lob_serializer import LOBSerializer
 from serializers.persona_serializer import PersonaSerializer
 
 from db.connection import get_session
-from db.models import Account, Lob, SubLob, Persona, Post, Digest, OpportunitySignal, WeeklyDigestSnapshot, LinkedInJob
+from db.models import Account, Lob, SubLob, Persona, Post, Digest, OpportunitySignal, WeeklyDigestSnapshot, LinkedInJob, CxoMovement
 from db.schemas import AccountSchema, LobSchema, PersonaSchema
 from db.repositories import AccountRepository, LobRepository, PersonaRepository
 from db.importer import import_run_to_db
 from main import run_pipeline
 
 try:
-    from fastapi import FastAPI, APIRouter, HTTPException, Query, Body
+    from fastapi import FastAPI, APIRouter, HTTPException, Query, Body, Response
+    from fastapi.responses import FileResponse
     from fastapi.middleware.cors import CORSMiddleware
     from pydantic import BaseModel, Field
     FASTAPI_AVAILABLE = True
@@ -243,12 +244,15 @@ if FASTAPI_AVAILABLE:
             session.close()
 
     @account_router.get("")
-    def list_all_accounts_with_hierarchy():
+    def list_all_accounts_with_hierarchy(response: Response):
         """
         [Page Initialization (loadData())]:
         Queries PostgreSQL (accounts, lobs, sub_lobs, personas), formats full metadata,
         and provides complete structured enterprise account dossiers with nested LOBs and personas.
         """
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
         session = get_session()
         try:
             accounts = session.query(Account).order_by(Account.id.desc()).all()
@@ -450,15 +454,20 @@ if FASTAPI_AVAILABLE:
                     "bounce_rate": acct.bounce_rate,
                     "visit_duration": acct.visit_duration,
                     "page_views_per_visit": acct.page_views_per_visit,
-                    "c_suite_count": acct.c_suite_count,
-                    "vp_count": acct.vp_count,
-                    "director_count": acct.director_count,
-                    "manager_count": acct.manager_count
+                    "c_suite_count": acct.c_suite_count or len([p for p in personas_list if (p.get("tier") or "").lower() in ["c-suite", "c_suite", "c"] or any(w in (p.get("title") or "").lower() for w in ["chief", "president", "ceo", "chairman", "board"])]),
+                    "vp_count": acct.vp_count or len([p for p in personas_list if "vp" in (p.get("tier") or "").lower() or "vice president" in (p.get("title") or "").lower()]),
+                    "director_count": acct.director_count or len([p for p in personas_list if "director" in (p.get("tier") or "").lower() or "director" in (p.get("title") or "").lower()]),
+                    "manager_count": acct.manager_count or len([p for p in personas_list if "manager" in (p.get("tier") or "").lower() or "manager" in (p.get("title") or "").lower()])
                 })
 
             return {"accounts": result}
         finally:
             session.close()
+
+    @app.get("/api/accounts", tags=["1. Account Level"])
+    def list_all_accounts_alias(response: Response):
+        """Plural alias for /api/account list endpoint."""
+        return list_all_accounts_with_hierarchy(response)
 
     @account_router.get("/{account_id}")
     def get_account_from_db(account_id: int):
@@ -1692,6 +1701,141 @@ if FASTAPI_AVAILABLE:
             return detail
         finally:
             session.close()
+
+    # ══════════════════════════════════════════════════════
+    # CXO MOVEMENTS & TRANSITIONS ENDPOINTS
+    # ══════════════════════════════════════════════════════
+    def _serialize_cxo_movement(m: CxoMovement, acct: Optional[Account] = None) -> Dict[str, Any]:
+        return {
+            "id": m.id,
+            "target_key": m.target_key,
+            "company_name": m.company_name,
+            "person_name": m.person_name,
+            "designation": m.designation,
+            "event_type": (m.event_type or "").lower().strip(),
+            "effective_date": m.effective_date,
+            "previous_role": m.previous_role,
+            "new_company": m.new_company,
+            "context": m.context,
+            "source": m.source,
+            "publisher_domain": m.publisher_domain,
+            "article_title": m.article_title,
+            "article_url": m.article_url,
+            "extraction_status": m.extraction_status,
+            "published_at": m.published_at,
+            "first_seen": m.first_seen.isoformat() if m.first_seen else None,
+            "last_seen": m.last_seen.isoformat() if m.last_seen else None,
+            "new_in_last_run": m.new_in_last_run,
+            "account_id": acct.id if acct else None,
+            "account_name": (acct.legal_name or acct.display_name) if acct else m.company_name
+        }
+
+    @app.get("/api/cxo-movements", tags=["6. CXO Movements"])
+    def get_cxo_movements(
+        response: Response,
+        target_key: Optional[str] = None,
+        event_type: Optional[str] = None,
+        q: Optional[str] = None,
+        limit: int = 100
+    ):
+        """Retrieve executive transitions (joined, resigned, retired, promoted) across accounts."""
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        session = get_session()
+        try:
+            query = session.query(CxoMovement)
+            if target_key:
+                query = query.filter(CxoMovement.target_key == target_key)
+            if event_type and event_type.lower() != "all":
+                query = query.filter(CxoMovement.event_type.ilike(event_type))
+            if q and q.strip():
+                term = f"%{q.strip()}%"
+                query = query.filter(
+                    (CxoMovement.person_name.ilike(term)) |
+                    (CxoMovement.company_name.ilike(term)) |
+                    (CxoMovement.designation.ilike(term)) |
+                    (CxoMovement.context.ilike(term)) |
+                    (CxoMovement.previous_role.ilike(term)) |
+                    (CxoMovement.new_company.ilike(term))
+                )
+
+            all_records = query.order_by(CxoMovement.first_seen.desc().nullslast()).limit(limit).all()
+            target_map = _build_target_key_to_account_map(session)
+
+            counts = {"all": len(all_records), "joined": 0, "resigned": 0, "retired": 0, "promoted": 0}
+            serialized = []
+            for r in all_records:
+                evt = (r.event_type or "").lower().strip()
+                if evt in counts:
+                    counts[evt] += 1
+                acct = target_map.get(r.target_key)
+                serialized.append(_serialize_cxo_movement(r, acct))
+
+            return {
+                "total": len(serialized),
+                "counts": counts,
+                "movements": serialized
+            }
+        finally:
+            session.close()
+
+    @app.get("/api/accounts/{account_id}/cxo-movements", tags=["6. CXO Movements"])
+    def get_account_cxo_movements(account_id: int):
+        """Retrieve executive transitions for a specific account."""
+        session = get_session()
+        try:
+            acct = session.query(Account).filter_by(id=account_id).first()
+            if not acct:
+                raise HTTPException(status_code=404, detail="Account not found.")
+            keys = [acct.key, (acct.stock_symbol or "").lower(), slugify(acct.display_name), slugify(acct.legal_name)]
+            keys = [k for k in keys if k]
+            movements = (session.query(CxoMovement)
+                         .filter(CxoMovement.target_key.in_(keys))
+                         .order_by(CxoMovement.first_seen.desc().nullslast())
+                         .all())
+            return {
+                "account_id": account_id,
+                "account_name": acct.legal_name or acct.display_name,
+                "total": len(movements),
+                "movements": [_serialize_cxo_movement(m, acct) for m in movements]
+            }
+        finally:
+            session.close()
+
+
+    @app.get("/api/database/download", tags=["7. Database Operations"])
+    @app.get("/api/database/download/sql", tags=["7. Database Operations"])
+    def download_database_sql():
+        """Download the complete PostgreSQL SQL database dump file."""
+        sql_path = PIPELINE_ROOT / "sales_ai_database_export.sql"
+        if not sql_path.exists():
+            # Regenerate if missing
+            try:
+                from subprocess import run
+                run([sys.executable, str(PIPELINE_ROOT / "export_db.py")], check=True)
+            except Exception:
+                pass
+        if not sql_path.exists():
+            raise HTTPException(status_code=404, detail="Database export file not found.")
+        return FileResponse(
+            path=str(sql_path),
+            filename="sales_ai_database_export.sql",
+            media_type="application/sql"
+        )
+
+    @app.get("/api/database/download/json", tags=["7. Database Operations"])
+    def download_database_json():
+        """Download the complete database in JSON format."""
+        json_path = PIPELINE_ROOT / "sales_ai_database_export.json"
+        if not json_path.exists():
+            raise HTTPException(status_code=404, detail="Database JSON export file not found.")
+        return FileResponse(
+            path=str(json_path),
+            filename="sales_ai_database_export.json",
+            media_type="application/json"
+        )
+
 
     # ══════════════════════════════════════════════════════
     # FRONTEND STATIC UI MOUNT
