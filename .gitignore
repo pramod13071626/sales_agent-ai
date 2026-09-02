@@ -32,6 +32,12 @@ data/
 *.json
 !requirements.json
 !package.json
+!package-lock.json
+!.eslintrc.json
+!.stylelintrc.json
+
+# Node & Frontend Lint Tooling
+node_modules/
 
 # ==============================================================================
 # Python, Virtual Environments & Bytecode
@@ -41,6 +47,7 @@ venv/
 env/
 ENV/
 virtualenv/
+sales_agent-ai/
 __pycache__/
 *.py[cod]
 *$py.class

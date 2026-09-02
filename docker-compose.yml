@@ -1,0 +1,35 @@
+# Local development convenience only — brings up both apps together so
+# the cross-links between them (MERGE_PLAN.md Phase 3) work without
+# running two `python ...` processes by hand.
+#
+# This is NOT either app's production deployment path:
+#   - content_pipeline keeps its own apps/content_pipeline/docker-compose.yml
+#     (+ Caddy/TLS) for that — see apps/content_pipeline/DEPLOY.md.
+#   - This file has no reverse proxy; both services bind straight to host
+#     ports for local use.
+#
+# Deliberately NOT included:
+#   - Postgres: both apps already point at real Postgres today (Neon and/or
+#     local, per each app's own .env / MERGE_PLAN.md Phase 1's toggle) —
+#     adding a containerized Postgres here would just be a third database.
+#   - Redis/Celery: not implemented yet in this app (celery_app.py, tasks/
+#     are gitignored placeholders) — nothing would consume it.
+services:
+  content_pipeline:
+    build: ./apps/content_pipeline
+    env_file:
+      - ./apps/content_pipeline/.env
+    ports:
+      - "8001:8080"
+    volumes:
+      - content_pipeline_output:/app/output
+
+  sales_ai:
+    build: .
+    env_file:
+      - ./.env
+    ports:
+      - "8000:8000"
+
+volumes:
+  content_pipeline_output:

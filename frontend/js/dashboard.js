@@ -1,6 +1,12 @@
 (function () {
   'use strict';
 
+  // Cross-app link to the content pipeline app (MERGE_PLAN.md Phase 3).
+  // Override with ?content_pipeline=<url> or window.CONTENT_PIPELINE_URL
+  // set before this script runs — falls back to the local dev default.
+  const CONTENT_PIPELINE_URL = new URLSearchParams(window.location.search).get('content_pipeline') ||
+    window.CONTENT_PIPELINE_URL || 'http://127.0.0.1:8001';
+
   const el = (id) => document.getElementById(id);
   const dashBody = el('dashBody');
   const dashNav = el('dashNav');
@@ -727,7 +733,12 @@
     try {
       // Deep link: /?view=jobs opens the All Job Postings browser directly on load.
       const wantsJobsView = window.location.search === '?view=jobs';
-      if (window.location.search && !wantsJobsView) {
+      // Deep link from the content pipeline app (MERGE_PLAN.md Phase 3):
+      // /?account_key=<key> opens that account, matched by its `key` column
+      // since the linking app only knows the string key, not this app's numeric account id.
+      const deepLinkAccountKey = new URLSearchParams(window.location.search).get('account_key');
+      // Any other query string (stale/unsupported) resets to a clean root URL on hard-refresh.
+      if (window.location.search && !wantsJobsView && !deepLinkAccountKey) {
         history.replaceState(null, '', window.location.pathname);
       }
 
@@ -751,9 +762,13 @@
       renderTopbarTicker();
       renderNavTree();
 
+      const deepLinkAccount = deepLinkAccountKey && accounts.find(a => a.key === deepLinkAccountKey);
       if (wantsJobsView) {
         if (!silent) await openAllJobsPage();
+      } else if (deepLinkAccount) {
+        jumpToAccount(deepLinkAccount.id); // also corrects the URL to ?account=<id> via syncUrlState()
       } else {
+        if (deepLinkAccountKey) history.replaceState(null, '', window.location.pathname); // unknown key — don't leave a dead link in the address bar
         if (activeAccountId === null) {
           renderDigest();
           if (dashPeople && !dashPeople.classList.contains('d-none')) {
@@ -813,13 +828,8 @@
       return;
     }
 
-    const cSuite = accounts.reduce((s, a) => s + (a.c_suite_count || 0), 0);
-    const vp = accounts.reduce((s, a) => s + (a.vp_count || 0), 0);
-    const director = accounts.reduce((s, a) => s + (a.director_count || 0), 0);
-    const manager = accounts.reduce((s, a) => s + (a.manager_count || 0), 0);
     const industries = new Set();
     accounts.forEach(a => (a.industries || []).forEach(i => industries.add(i)));
-    const scoredCount = accounts.filter(a => a.heat_score != null).length;
 
     const recentlyUpdated = [...accounts]
       .filter(a => a.extracted_at)
@@ -828,9 +838,6 @@
     const topByContacts = [...accounts]
       .sort((a, b) => (b.total_contacts_captured || 0) - (a.total_contacts_captured || 0))
       .slice(0, 6);
-
-    const realDigestCount = Object.values(contentStore.digests || {}).filter(d => !isDryRunDigest(d)).length;
-    const totalPosts = Object.values(contentStore.posts || {}).reduce((s, arr) => s + arr.length, 0);
 
     const visibleCount = DIGEST_SECTIONS.filter(s => digestSectionVisibility[s.id] !== false).length;
 
@@ -2126,6 +2133,23 @@
 
   function renderOrgChart(account, lob) {
     if (lob) {
+      // Function expression (not a declaration) so it stays scoped to this
+      // `if` block without tripping no-inner-declarations — a second,
+      // differently-defaulted nodeCard exists further down in the
+      // corporate-level branch of this same function, so a hoisted
+      // declaration here would collide with it.
+      const nodeCard = (node, isRoot) => {
+        const name = node.full_name || node.name || 'Executive';
+        const title = node.job_title || node.title || (isRoot ? 'Operating Head' : 'Stakeholder');
+        const tags = [node.seniority_tier || node.tier, node.decision_authority ? `Decision: ${node.decision_authority}` : null].filter(Boolean);
+        return `
+          <button type="button" class="orgchart-node ${isRoot ? 'orgchart-root-node' : ''}" data-persona-name="${esc(name)}">
+            <div class="orgchart-avatar">${esc(initials(name))}</div>
+            <div class="orgchart-name">${esc(name)}</div>
+            <div class="orgchart-title">${esc(title)}</div>
+            ${tags.length ? `<div class="orgchart-tags">${tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>` : ''}
+          </button>`;
+      };
       const lobPersonas = dedupePersonas(lob.personas || []);
       const headName = lob.head || lob.operating_head;
 
@@ -2156,19 +2180,6 @@
           <div class="empty-block-icon"><i class="bi bi-diagram-2"></i></div>
           <div class="empty-block-text">No verified reporting-line tree captured yet for <strong>${esc(lob.name)}</strong>.</div>
         </div>`;
-      }
-
-      function nodeCard(node, isRoot) {
-        const name = node.full_name || node.name || 'Executive';
-        const title = node.job_title || node.title || (isRoot ? 'Operating Head' : 'Stakeholder');
-        const tags = [node.seniority_tier || node.tier, node.decision_authority ? `Decision: ${node.decision_authority}` : null].filter(Boolean);
-        return `
-          <button type="button" class="orgchart-node ${isRoot ? 'orgchart-root-node' : ''}" data-persona-name="${esc(name)}">
-            <div class="orgchart-avatar">${esc(initials(name))}</div>
-            <div class="orgchart-name">${esc(name)}</div>
-            <div class="orgchart-title">${esc(title)}</div>
-            ${tags.length ? `<div class="orgchart-tags">${tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>` : ''}
-          </button>`;
       }
 
       return `
@@ -2523,11 +2534,23 @@
 
     return `
       <div class="content-meta">${esc(metaBits)}</div>
+      ${renderContentPipelineLink(targetKey)}
       <div class="content-channel-grid">
         ${channels.map(renderChannelCard).join('')}
       </div>
       <div class="content-provenance"><i class="bi bi-info-circle"></i> Source: ${esc(digestEntry.llm || 'unknown')}</div>
     `;
+  }
+
+  // Opens the live content pipeline app (not just this DB snapshot) so a
+  // rep can trigger a fresh scrape/digest run, or use its copy-to-clipboard
+  // sales email + talking points UI, without leaving the sales workflow to
+  // go find that app.
+  function renderContentPipelineLink(targetKey) {
+    const url = `${CONTENT_PIPELINE_URL}/frontend/?account=${encodeURIComponent(targetKey)}`;
+    return `<a href="${esc(url)}" target="_blank" rel="noopener" class="content-pipeline-link">
+      <i class="bi bi-box-arrow-up-right"></i> Open in Content Pipeline
+    </a>`;
   }
 
   function renderChannelCard(ch) {

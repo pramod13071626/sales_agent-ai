@@ -9,7 +9,7 @@
 
   /* Surfaces */
   --content-bg: #F7F8FA;
-  --panel-bg: #FFFFFF;
+  --panel-bg: #FFF;
   --panel-border: #E8EAED;
   --input-bg: #F2F4F7;
   --badge-bg: #F2F4F7;
@@ -85,7 +85,7 @@ body {
 
 body {
   margin: 0;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: Inter, system-ui, -apple-system, sans-serif;
   background: var(--content-bg);
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
@@ -1558,7 +1558,6 @@ body {
   background: var(--brand);
   color: #fff;
 }
-
 /* ── Quick Outreach Arsenal Bar ─────────────────────────────── */
 .quick-arsenal {
   display: flex;
@@ -1680,14 +1679,14 @@ body {
 
 .tab-btn.active {
   background: var(--brand);
-  color: #ffffff;
+  color: #fff;
   border-color: var(--brand);
   box-shadow: 0 3px 10px rgba(0, 97, 255, 0.28);
   transform: translateY(-1px);
 }
 
 .tab-btn.active i {
-  color: #ffffff;
+  color: #fff;
 }
 
 .tab-badge {
@@ -1706,7 +1705,7 @@ body {
 
 .tab-btn.active .tab-badge {
   background: rgba(255, 255, 255, 0.25);
-  color: #ffffff;
+  color: #fff;
   border-color: rgba(255, 255, 255, 0.4);
 }
 
@@ -2220,7 +2219,6 @@ body {
   background: var(--panel-bg);
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 }
-
 .signal-modal-title {
   font-size: 1rem;
   font-weight: 700;
@@ -3446,6 +3444,24 @@ body {
   font-size: .72rem;
   color: var(--text-muted);
   margin-bottom: 10px;
+}
+
+.content-pipeline-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: .78rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--brand);
+  border-radius: 6px;
+  color: var(--brand);
+  text-decoration: none;
+}
+
+.content-pipeline-link:hover {
+  background: var(--brand-soft);
 }
 
 .content-provenance {
