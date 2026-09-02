@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="light">
+
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -8,113 +9,125 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
   <link rel="stylesheet" href="css/dashboard.css?v=2.4">
 </head>
+
 <body>
 
-<div class="global-loading-bar" id="globalLoadingBar"></div>
+  <div class="global-loading-bar" id="globalLoadingBar"></div>
 
-<div class="dash-shell">
+  <div class="dash-shell">
 
-  <header class="dash-topbar">
-    <div class="topbar-brand">
-      <div class="topbar-icon"><i class="bi bi-diagram-3-fill"></i></div>
-      <div>
-        <div class="topbar-title">Sales Intelligence Dashboard</div>
-        <div class="topbar-sub">Account Command Center</div>
+    <header class="dash-topbar">
+      <div class="topbar-brand">
+        <div class="topbar-icon"><i class="bi bi-diagram-3-fill"></i></div>
+        <div>
+          <div class="topbar-title">Sales Intelligence Dashboard</div>
+          <div class="topbar-sub">Account Command Center</div>
+        </div>
       </div>
-    </div>
-    <div class="topbar-actions">
-      <a href="/pipline/" class="topbar-link"><i class="bi bi-compass"></i> Account Explorer <i class="bi bi-box-arrow-up-right"></i></a>
-      <button id="themeToggle" class="topbar-theme-btn" title="Toggle theme"><i class="bi bi-moon-stars"></i></button>
-    </div>
-  </header>
+      <div class="topbar-actions">
+        <a href="/pipline/" class="topbar-link"><i class="bi bi-compass"></i> Account Explorer <i
+            class="bi bi-box-arrow-up-right"></i></a>
+        <button id="themeToggle" class="topbar-theme-btn" title="Toggle theme"><i class="bi bi-moon-stars"></i></button>
+      </div>
 
-  <div class="dash-body no-account" id="dashBody">
+    </header>
 
-    <!-- ── Left Column — Account Navigator ─────────────────────── -->
-    <aside class="dash-nav" id="dashNav">
-      <!-- Navigator Header & Search -->
-      <div class="nav-header">
-        <div class="nav-header-row">
-          <span class="nav-header-label"><i class="bi bi-buildings"></i> Accounts</span>
-          <button type="button" class="nav-collapse-btn" id="navCollapseBtn" title="Collapse navigator">
-            <i class="bi bi-layout-sidebar-reverse" id="navCollapseIcon"></i>
+    <div class="dash-body no-account" id="dashBody">
+
+      <!-- ── Left Column — Account Navigator ─────────────────────── -->
+      <aside class="dash-nav" id="dashNav">
+        <!-- Navigator Header & Search -->
+        <div class="nav-header">
+          <div class="nav-header-row">
+            <span class="nav-header-label"><i class="bi bi-buildings"></i> Accounts</span>
+            <button type="button" class="nav-collapse-btn" id="navCollapseBtn" title="Collapse navigator">
+              <i class="bi bi-layout-sidebar-reverse" id="navCollapseIcon"></i>
+            </button>
+          </div>
+          <div class="nav-search-wrap nav-collapsible">
+            <i class="bi bi-search nav-search-icon"></i>
+            <input id="navSearch" type="text" placeholder="Search accounts, tickers, industries..." autocomplete="off">
+            <button type="button" class="nav-search-clear d-none" id="navSearchClear" title="Clear search"><i
+                class="bi bi-x-circle-fill"></i></button>
+          </div>
+        </div>
+
+        <!-- Toolbar: Count + Sort + Expand -->
+        <div class="nav-toolbar">
+          <span class="nav-count-label" id="navAccountCount">Accounts (0)</span>
+          <div class="nav-tool-actions">
+            <select id="navSortSelect" class="nav-sort-select" title="Sort accounts">
+              <option value="score">Sort: Top Score</option>
+              <option value="name">Sort: Name (A-Z)</option>
+              <option value="contacts">Sort: Most Contacts</option>
+              <option value="recent">Sort: Recently Updated</option>
+            </select>
+            <button type="button" class="nav-tool-btn" id="navToggleAllTree" title="Expand / Collapse all accounts"><i
+                class="bi bi-arrows-expand"></i></button>
+          </div>
+        </div>
+
+        <!-- Global Command Digest Quick Jump Button -->
+        <div class="nav-digest-wrap">
+          <button type="button" class="nav-digest-btn" id="navDigestBtn">
+            <span class="nav-digest-icon"><i class="bi bi-bar-chart-line-fill"></i></span>
+            <div class="nav-digest-info">
+              <div class="nav-digest-title">Global Accounts Dashboard</div>
+              <div class="nav-digest-sub">Cross-Account Command Center</div>
+            </div>
+            <i class="bi bi-chevron-right nav-digest-arrow"></i>
           </button>
         </div>
-        <div class="nav-search-wrap nav-collapsible">
-          <i class="bi bi-search nav-search-icon"></i>
-          <input id="navSearch" type="text" placeholder="Search accounts, tickers, industries..." autocomplete="off">
-          <button type="button" class="nav-search-clear d-none" id="navSearchClear" title="Clear search"><i class="bi bi-x-circle-fill"></i></button>
-        </div>
-      </div>
 
-      <!-- Toolbar: Count + Sort + Expand -->
-      <div class="nav-toolbar">
-        <span class="nav-count-label" id="navAccountCount">Accounts (0)</span>
-        <div class="nav-tool-actions">
-          <select id="navSortSelect" class="nav-sort-select" title="Sort accounts">
-            <option value="score">Sort: Top Score</option>
-            <option value="name">Sort: Name (A-Z)</option>
-            <option value="contacts">Sort: Most Contacts</option>
-            <option value="recent">Sort: Recently Updated</option>
-          </select>
-          <button type="button" class="nav-tool-btn" id="navToggleAllTree" title="Expand / Collapse all accounts"><i class="bi bi-arrows-expand"></i></button>
-        </div>
-      </div>
-
-      <!-- Global Command Digest Quick Jump Button -->
-      <div class="nav-digest-wrap">
-        <button type="button" class="nav-digest-btn" id="navDigestBtn">
-          <span class="nav-digest-icon"><i class="bi bi-bar-chart-line-fill"></i></span>
-          <div class="nav-digest-info">
-            <div class="nav-digest-title">Global Accounts Dashboard</div>
-            <div class="nav-digest-sub">Cross-Account Command Center</div>
+        <!-- Account Tree List -->
+        <div class="nav-tree" id="navTree">
+          <div class="nav-loading">
+            <div class="spinner-sm"></div> Loading accounts…
           </div>
-          <i class="bi bi-chevron-right nav-digest-arrow"></i>
-        </button>
-      </div>
+        </div>
+      </aside>
 
-      <!-- Account Tree List -->
-      <div class="nav-tree" id="navTree">
-        <div class="nav-loading"><div class="spinner-sm"></div> Loading accounts…</div>
-      </div>
-    </aside>
+      <!-- ── Center Column — Account Intelligence ────────────────── -->
+      <main class="dash-main">
+        <div class="dash-empty" id="dashEmpty">
+          <div class="main-loading">
+            <div class="spinner-md"></div> Loading dashboard…
+          </div>
+        </div>
+        <div class="dash-content d-none" id="dashContent"></div>
+      </main>
 
-    <!-- ── Center Column — Account Intelligence ────────────────── -->
-    <main class="dash-main">
-      <div class="dash-empty" id="dashEmpty">
-        <div class="main-loading"><div class="spinner-md"></div> Loading dashboard…</div>
-      </div>
-      <div class="dash-content d-none" id="dashContent"></div>
-    </main>
+      <!-- ── Right Column — People & Social ──────────────────────── -->
+      <aside class="dash-people d-none" id="dashPeople"></aside>
 
-    <!-- ── Right Column — People & Social ──────────────────────── -->
-    <aside class="dash-people d-none" id="dashPeople"></aside>
-
-  </div>
-</div>
-
-<div class="toast" id="toast"></div>
-
-<div class="drawer-backdrop" id="drawerBackdrop"></div>
-<aside class="contact-drawer" id="contactDrawer">
-  <div class="drawer-header">
-    <div class="drawer-title" id="drawerTitle">Contact</div>
-    <button type="button" class="drawer-close" id="drawerClose" title="Close"><i class="bi bi-x-lg"></i></button>
-  </div>
-  <div class="drawer-pinned" id="drawerPinned"></div>
-  <div class="drawer-body" id="drawerBody"></div>
-</aside>
-
-<div class="signal-modal-backdrop" id="signalModalBackdrop">
-  <div class="signal-modal" id="signalModal">
-    <div class="signal-modal-header">
-      <div class="signal-modal-title" id="signalModalTitle">Signal</div>
-      <button type="button" class="drawer-close" id="signalModalClose" title="Close"><i class="bi bi-x-lg"></i></button>
     </div>
-    <div class="signal-modal-body" id="signalModalBody"></div>
   </div>
-</div>
 
-<script src="js/dashboard.js?v=2.4"></script>
+  <div class="toast" id="toast"></div>
+
+  <div class="drawer-backdrop" id="drawerBackdrop"></div>
+  <aside class="contact-drawer" id="contactDrawer">
+    <div class="drawer-header">
+      <div class="drawer-title" id="drawerTitle">Contact</div>
+      <button type="button" class="drawer-close" id="drawerClose" title="Close"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div class="drawer-pinned" id="drawerPinned"></div>
+    <div class="drawer-body" id="drawerBody"></div>
+  </aside>
+
+  <div class="signal-modal-backdrop" id="signalModalBackdrop">
+    <div class="signal-modal" id="signalModal">
+      <div class="signal-modal-header">
+        <div class="signal-modal-title" id="signalModalTitle">Signal</div>
+        <button type="button" class="drawer-close" id="signalModalClose" title="Close"><i
+            class="bi bi-x-lg"></i></button>
+      </div>
+      <div class="signal-modal-body" id="signalModalBody"></div>
+    </div>
+  </div>
+
+  <script src="js/dashboard.js?v=3.3"></script>
+
 </body>
+
 </html>
