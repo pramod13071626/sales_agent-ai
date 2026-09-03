@@ -14,6 +14,7 @@ from db.models.digest import Digest
 from db.models.opportunity_signal import OpportunitySignal
 from db.models.weekly_digest import WeeklyDigestSnapshot
 from db.models.linkedin_job import LinkedInJob
+from db.models.cxo_movement import CxoMovement
 
 __all__ = ["Base", "Account", "Lob", "SubLob", "Persona", "PipelineRun", "Post", "Digest",
-           "OpportunitySignal", "WeeklyDigestSnapshot", "LinkedInJob"]
+           "OpportunitySignal", "WeeklyDigestSnapshot", "LinkedInJob", "CxoMovement"]
