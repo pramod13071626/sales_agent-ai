@@ -1856,7 +1856,7 @@ if FASTAPI_AVAILABLE:
 
         @app.get("/", response_class=HTMLResponse, include_in_schema=False)
         async def dashboard_home(request: Request):
-            return templates.TemplateResponse("index.html", {"request": request})
+            return templates.TemplateResponse(request, "index.html")
 
         css_dir = frontend_dir / "css"
         js_dir = frontend_dir / "js"
