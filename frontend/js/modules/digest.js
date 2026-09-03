@@ -9,8 +9,50 @@ import { esc, timeAgo, isDryRunDigest, resolveAccountTargetKey, resolvePersonaTa
 import { showToast } from './toast.js';
 import { getAccountContentEntries, matchOfferings, renderAlertCards } from './alerts.js';
 import { computeDomainExpansionOpportunities } from './opportunities.js';
-import { getAccountJobs, renderJobCard } from './jobs.js';
+import { renderJobCard } from './jobs.js';
 import { renderSkeleton } from './skeleton.js';
+
+// social_digest and sales_alerts are the only digest sections that genuinely need
+// real full-text posts/digests across every account (keyword/theme matching over
+// actual content) — everything else renders from the account summaries already in
+// state.accounts. Rather than main.js bulk-fetching /api/content for every account
+// on every page load, it's fetched here, once, the first time either of those two
+// sections actually scrolls into view (see the `prefetch` hook in SECTION_RENDERERS
+// and renderSection below).
+let bulkContentPromise = null;
+function ensureBulkContentLoaded() {
+  if (state.bulkContentLoaded) return Promise.resolve();
+  if (!bulkContentPromise) {
+    bulkContentPromise = fetch('/api/content')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data) {
+          Object.assign(state.contentStore.digests, data.digests || {});
+          Object.assign(state.contentStore.posts, data.posts || {});
+          Object.assign(state.contentStore.jobs, data.jobs || {});
+        }
+      })
+      .catch(err => console.error('Failed to load cross-account content', err))
+      .finally(() => { state.bulkContentLoaded = true; });
+  }
+  return bulkContentPromise;
+}
+
+// linkedin_jobs needs recent postings across every account, but never full
+// description text — GET /api/linkedin-jobs is already exactly this (lean summary
+// dicts with account_id/account_name embedded, server-side sorted/paginated), so
+// this section sources from it directly instead of the bulk content fetch above.
+let recentJobsCache = null;
+async function ensureRecentJobsLoaded() {
+  if (recentJobsCache) return;
+  try {
+    const res = await fetch('/api/linkedin-jobs?sort=newest&page_size=8');
+    recentJobsCache = res.ok ? ((await res.json()).jobs || []) : [];
+  } catch (err) {
+    console.error('Failed to load recent jobs', err);
+    recentJobsCache = [];
+  }
+}
 
 function saveDigestSectionVisibility() {
   try {

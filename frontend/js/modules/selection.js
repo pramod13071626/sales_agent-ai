@@ -9,6 +9,48 @@ import { renderPeople } from './people-panel.js';
 import { renderAllJobsPage, openAllJobsPage } from './jobs-browser.js';
 import { syncOpportunitySignals } from './opportunities.js';
 import { syncWeeklyUpdate } from './weekly-update.js';
+import { renderSkeleton } from './skeleton.js';
+
+// Full per-account detail (persona dossiers, LOB financials/patents, org chart) is
+// intentionally NOT included in the bulk /api/accounts payload (see api.py's
+// _serialize_account_summary) — fetched once here, on first selection, and merged
+// into the existing state.accounts entry in place so every other module's
+// `.find(a => a.id === ...)` call sites keep working unchanged.
+async function ensureAccountDetail(accountId) {
+  const acct = state.accounts.find(a => a.id === accountId);
+  if (!acct || acct._detailLoaded) return acct;
+  try {
+    const res = await fetch(`/api/accounts/${accountId}`);
+    if (res.ok) {
+      Object.assign(acct, await res.json());
+    }
+  } catch (err) {
+    console.error('Failed to load account detail', err);
+  }
+  acct._detailLoaded = true; // don't retry on every re-selection even if the fetch failed
+  return acct;
+}
+
+// Same idea for this account's posts/digests/jobs slice (see api.py's new
+// GET /api/accounts/{id}/content) — main.js no longer bulk-fetches /api/content
+// for every account up front.
+async function ensureAccountContent(account) {
+  if (state.contentLoadedAccountIds.has(account.id)) return;
+  try {
+    const res = await fetch(`/api/accounts/${account.id}/content`);
+    if (res.ok) {
+      const data = await res.json();
+      Object.assign(state.contentStore.digests, data.digests || {});
+      Object.assign(state.contentStore.posts, data.posts || {});
+      Object.assign(state.contentStore.jobs, data.jobs || {});
+    }
+  } catch (err) {
+    console.error('Failed to load account content', err);
+  }
+  state.contentLoadedAccountIds.add(account.id);
+}
+
+let selectionRequestId = 0;
 
 // ── Data loading & Dynamic URL Endpoint Tracking ────────────
 export function syncUrlState() {
@@ -41,7 +83,7 @@ export function jumpToAccount(id) {
   renderSelection();
 }
 
-export function renderSelection() {
+export async function renderSelection() {
   closeContactDrawer();
 
   if (state.activeView === 'allJobs') {
@@ -65,12 +107,24 @@ export function renderSelection() {
     syncUrlState();
     return;
   }
-  const lob = state.activeLobId ? (account.lobs || []).find(l => l.id === state.activeLobId) : null;
 
   if (dashBody) dashBody.classList.remove('no-account');
   if (dashPeople) dashPeople.classList.remove('d-none');
   dashEmpty.classList.add('d-none');
   dashContent.classList.remove('d-none');
+
+  // Guards against a slow fetch from a previous selection clobbering a newer one
+  // if the user switches accounts again before it resolves.
+  const requestId = ++selectionRequestId;
+  if (!account._detailLoaded) {
+    dashContent.innerHTML = renderSkeleton('cards');
+    dashPeople.innerHTML = '';
+  }
+
+  await Promise.all([ensureAccountDetail(account.id), ensureAccountContent(account)]);
+  if (requestId !== selectionRequestId || state.activeAccountId !== account.id) return;
+
+  const lob = state.activeLobId ? (account.lobs || []).find(l => l.id === state.activeLobId) : null;
   dashContent.innerHTML = renderCenter(account, lob);
   dashPeople.innerHTML = renderPeople(account, lob);
   syncUrlState();

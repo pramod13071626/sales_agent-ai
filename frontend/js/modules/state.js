@@ -49,6 +49,8 @@ export const state = {
   currentSignals: [], // Account Signals currently rendered in the center panel, indexed for the modal
   allAccountPersonas: [], // unfiltered persona list for the currently rendered right panel, for search
   contentStore: { digests: {}, posts: {}, jobs: {} }, // real scraped posts, LLM digests + LinkedIn job postings, keyed by target_key
+  contentLoadedAccountIds: new Set(), // account ids whose slice of contentStore has already been fetched via ensureAccountContent — avoids re-fetching on every tab switch
+  bulkContentLoaded: false, // whether the cross-account /api/content fetch (ensureBulkContentLoaded in digest.js) has run yet
   opportunityHistory: {}, // accountId -> { growth_theme: [signal...], domain_expansion: [signal...] }, synced from the backend
   weeklyUpdateHistory: {}, // accountId -> [weekly update snapshot...] newest first, synced from the backend
   allJobsCache: null, // latest page response from GET /api/linkedin-jobs — server-side filtered/sorted/paginated, refetched whenever a filter or page changes

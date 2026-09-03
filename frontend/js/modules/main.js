@@ -29,18 +29,21 @@ async function loadAccounts() {
       history.replaceState(null, '', window.location.pathname);
     }
 
-    const [acctRes, contentRes, movementsRes] = await Promise.all([
+    // Note: /api/content (every post/job/digest for every account) is NOT fetched
+    // here anymore — it's cross-account content, only needed by the digest's
+    // social_digest/sales_alerts sections, and is fetched lazily by digest.js
+    // the first time either of those sections scrolls into view (see
+    // ensureBulkContentLoaded in digest.js). Per-account content is fetched
+    // on demand when an account is selected (see ensureAccountContent in
+    // selection.js).
+    const [acctRes, movementsRes] = await Promise.all([
       fetch('/api/accounts'),
-      fetch('/api/content').catch(() => null),
       fetch('/api/cxo-movements').catch(() => null)
     ]);
     if (!acctRes.ok) throw new Error('Failed to load accounts');
     const data = await acctRes.json();
     state.accounts = data.accounts || [];
 
-    if (contentRes && contentRes.ok) {
-      state.contentStore = await contentRes.json();
-    }
     if (movementsRes && movementsRes.ok) {
       state.cxoMovementsStore = await movementsRes.json();
     }
