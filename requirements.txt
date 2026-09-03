@@ -19,6 +19,7 @@ psycopg2-binary>=2.9.9
 # API Server Layer (Frontend UI Endpoints)
 fastapi>=0.100.0
 uvicorn>=0.22.0
+jinja2>=3.1.0
 
 # Distributed Task Queue & Scheduling (15-Day Refresh Cycles)
 celery>=5.3.0

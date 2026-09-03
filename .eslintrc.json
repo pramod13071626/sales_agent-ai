@@ -23,5 +23,11 @@
   "rules": {
     "no-unused-vars": ["warn", { "args": "none" }],
     "no-empty": ["error", { "allowEmptyCatch": true }]
-  }
+  },
+  "overrides": [
+    {
+      "files": ["frontend/js/modules/**/*.js"],
+      "parserOptions": { "sourceType": "module", "ecmaVersion": 2021 }
+    }
+  ]
 }
