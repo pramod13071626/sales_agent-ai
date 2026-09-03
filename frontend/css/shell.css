@@ -1,0 +1,120 @@
+/* ── Shell / Topbar ─────────────────────────────────────────── */
+.dash-shell { display: flex; flex-direction: column; height: 100vh; }
+
+.dash-topbar {
+  flex-shrink: 0;
+  height: var(--topbar-height);
+  background: var(--topbar-bg);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  color: #fff;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+  box-shadow: 0 1px 0 rgba(0,0,0,.2);
+  z-index: 100;
+}
+
+.topbar-brand { display: flex; align-items: center; gap: 12px; }
+
+.topbar-icon {
+  width: 36px; height: 36px;
+  border-radius: var(--radius-sm);
+  background: var(--brand);
+  display: grid; place-items: center;
+  font-size: 1rem; color: #fff;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(0,97,255,.4);
+}
+
+.topbar-title {
+  font-weight: 700;
+  font-size: .95rem;
+  letter-spacing: -.01em;
+  color: #F8FAFC;
+  line-height: 1.2;
+}
+.topbar-sub {
+  font-size: .7rem;
+  color: rgba(255,255,255,.45);
+  font-weight: 400;
+  margin-top: 1px;
+}
+
+.topbar-ticker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.topbar-ticker-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+.topbar-ticker-pill i {
+  color: var(--brand-light);
+}
+
+.topbar-actions { display: flex; align-items: center; gap: 8px; }
+
+.topbar-link {
+  font-size: .78rem;
+  font-weight: 600;
+  color: rgba(255,255,255,.8);
+  text-decoration: none;
+  padding: 6px 14px;
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: var(--radius-sm);
+  transition: var(--transition);
+  display: flex; align-items: center; gap: 6px;
+}
+.topbar-link:hover {
+  background: rgba(255,255,255,.12);
+  color: #fff;
+  border-color: rgba(255,255,255,.3);
+}
+
+.topbar-theme-btn {
+  width: 34px; height: 34px;
+  border-radius: var(--radius-sm);
+  font-size: .88rem;
+  background: rgba(255,255,255,.07);
+  border: 1px solid rgba(255,255,255,.12);
+  color: rgba(255,255,255,.7);
+  cursor: pointer;
+  transition: var(--transition);
+  display: grid; place-items: center;
+}
+.topbar-theme-btn:hover {
+  background: rgba(255,255,255,.13);
+  color: #fff;
+}
+
+/* ── Body Layout ────────────────────────────────────────────── */
+.dash-body {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+  width: 100%;
+}
+
+
+/* ── Global fetch-activity indicator (top progress bar) ──────── */
+.global-loading-bar {
+  position: fixed; top: 0; left: 0; height: 3px; width: 0%;
+  background: var(--brand); z-index: 2000;
+  opacity: 0; transition: width 0.25s ease, opacity 0.2s ease;
+  pointer-events: none;
+}
+.global-loading-bar.active { opacity: 1; width: 70%; }
+.global-loading-bar.done { width: 100%; transition: width 0.2s ease, opacity 0.3s ease 0.15s; opacity: 0; }
+

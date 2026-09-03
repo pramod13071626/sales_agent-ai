@@ -1,0 +1,52 @@
+/* ── Shimmer / Skeleton Loaders ───────────────────────────────
+   Shown by digest.js while a digest section's real content is being
+   rendered (see the IntersectionObserver-based lazy render). Built
+   entirely from existing design tokens so it auto-adapts to dark theme. */
+
+.skeleton-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--border-color) 25%, var(--panel-border) 37%, var(--border-color) 63%);
+  background-size: 400% 100%;
+  border-radius: var(--radius-sm);
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+    background-position: 50% 50%;
+  }
+}
+
+/* Text-line bars — used for prose-like content (e.g. the Social Digest summary). */
+.skeleton-line {
+  height: 12px;
+}
+.skeleton-line--60 { width: 60%; }
+.skeleton-line--80 { width: 80%; }
+.skeleton-line--100 { width: 100%; }
+
+/* Card-shaped block — matches the .digest-list-row single-line item layout used by
+   Recently Updated / Most-Mapped / Recent LinkedIn Jobs. */
+.skeleton-card {
+  height: 40px;
+  border-radius: var(--radius-xs);
+}
+
+/* Taller row — matches the .alert-card / .opportunity-card multi-line layout used by
+   Global Sales Alerts / Emerging Domain Expansion. */
+.skeleton-list-row {
+  height: 88px;
+  border-radius: var(--radius-sm);
+}
