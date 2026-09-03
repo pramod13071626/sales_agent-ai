@@ -15,6 +15,7 @@ function loadDigestSectionVisibility() {
     social_digest: true,
     sales_alerts: true,
     domain_expansion: true,
+    cxo_movements: true,
     linkedin_jobs: true
   };
   try {
@@ -62,4 +63,6 @@ export const state = {
   activeJobDetailId: null, // set when a job card is opened on the All Jobs page — shows an in-page detail view instead of a modal
   jobDetailCache: {}, // job id -> full detail (incl. description), fetched on demand from GET /api/linkedin-jobs/{id}
   digestSectionVisibility: loadDigestSectionVisibility(),
+  cxoMovementsStore: { total: 0, counts: { all: 0, joined: 0, resigned: 0, retired: 0, promoted: 0 }, movements: [] },
+  activeMovementTab: 'all', // 'all' | 'joined' | 'resigned' | 'retired' | 'promoted'
 };

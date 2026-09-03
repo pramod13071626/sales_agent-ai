@@ -11,6 +11,7 @@ export const DIGEST_SECTIONS = [
   { id: 'social_digest', label: 'Social & Content Intelligence', icon: 'bi-broadcast-pin', desc: 'Captured social discourse & LLM synthesized themes' },
   { id: 'sales_alerts', label: 'Global Sales Alerts (StradIT Fit)', icon: 'bi-lightning-charge-fill', desc: 'AI service alignment opportunities across accounts' },
   { id: 'domain_expansion', label: 'Emerging Domain Expansion', icon: 'bi-rocket-takeoff-fill', desc: 'Trending enterprise tech initiatives & custom solutions' },
+  { id: 'cxo_movements', label: 'Executive Leadership Transitions & CXO Movements', icon: 'bi-arrow-left-right', desc: 'Live tracked executive appointments, departures, and role movements' },
   { id: 'linkedin_jobs', label: 'Recent LinkedIn Job Postings', icon: 'bi-linkedin', desc: 'Newest scraped job postings across all tracked accounts' }
 ];
 

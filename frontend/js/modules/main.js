@@ -29,9 +29,10 @@ async function loadAccounts() {
       history.replaceState(null, '', window.location.pathname);
     }
 
-    const [acctRes, contentRes] = await Promise.all([
+    const [acctRes, contentRes, movementsRes] = await Promise.all([
       fetch('/api/accounts'),
-      fetch('/api/content').catch(() => null)
+      fetch('/api/content').catch(() => null),
+      fetch('/api/cxo-movements').catch(() => null)
     ]);
     if (!acctRes.ok) throw new Error('Failed to load accounts');
     const data = await acctRes.json();
@@ -39,6 +40,9 @@ async function loadAccounts() {
 
     if (contentRes && contentRes.ok) {
       state.contentStore = await contentRes.json();
+    }
+    if (movementsRes && movementsRes.ok) {
+      state.cxoMovementsStore = await movementsRes.json();
     }
 
     renderTopbarTicker();

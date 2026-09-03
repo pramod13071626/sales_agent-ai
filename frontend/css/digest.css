@@ -501,3 +501,187 @@
   color: var(--text-muted);
 }
 
+/* ── CXO Movements (ported from dev's feature-cxo-pipline) ──────
+   Only .movement-* and .cxo-company-btn are actually referenced by
+   digest.js's renderCxoMovementsBody() — several sibling .cxo-* classes
+   in the original dashboard.css (cxo-cat-chip, cxo-card, cxo-peer-row,
+   etc.) were unreferenced by any JS and were not carried over. */
+.cxo-company-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: inherit;
+  font-size: .74rem;
+  font-weight: 700;
+  color: var(--brand);
+  background: var(--brand-soft);
+  border: 1px solid rgba(0, 97, 255, 0.15);
+  border-radius: var(--radius-xs);
+  padding: 2px 6px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.cxo-company-btn:hover {
+  background: var(--brand);
+  color: #fff;
+}
+
+.movement-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: .64rem;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: var(--radius-xs);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+
+.movement-badge.joined {
+  background: rgba(0, 186, 136, 0.14);
+  color: #007A5A;
+  border: 1px solid rgba(0, 186, 136, 0.3);
+}
+
+.movement-badge.resigned {
+  background: rgba(255, 77, 79, 0.14);
+  color: #CC0002;
+  border: 1px solid rgba(255, 77, 79, 0.3);
+}
+
+.movement-badge.retired {
+  background: rgba(245, 166, 35, 0.14);
+  color: #B45309;
+  border: 1px solid rgba(245, 166, 35, 0.3);
+}
+
+.movement-badge.promoted {
+  background: rgba(0, 97, 255, 0.14);
+  color: var(--brand);
+  border: 1px solid rgba(0, 97, 255, 0.3);
+}
+
+.movement-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.movement-card {
+  background: var(--panel-bg);
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  transition: var(--transition);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.movement-card:hover {
+  border-color: rgba(0, 97, 255, .35);
+  box-shadow: var(--shadow);
+  transform: translateY(-1px);
+}
+
+.movement-card.event-joined {
+  border-left: 3.5px solid var(--success);
+}
+
+.movement-card.event-resigned {
+  border-left: 3.5px solid var(--danger);
+}
+
+.movement-card.event-retired {
+  border-left: 3.5px solid var(--warning);
+}
+
+.movement-card.event-promoted {
+  border-left: 3.5px solid var(--brand);
+}
+
+.movement-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.movement-person {
+  font-size: .88rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.movement-designation {
+  font-size: .74rem;
+  color: var(--text-secondary);
+  margin-top: 1px;
+}
+
+.movement-context {
+  font-size: .78rem;
+  color: var(--text-primary);
+  line-height: 1.5;
+  background: var(--input-bg);
+  border-radius: var(--radius-xs);
+  padding: 8px 10px;
+  margin: 8px 0;
+  border-left: 2.5px solid var(--border-mid);
+}
+
+.movement-meta-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: .72rem;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.movement-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.movement-meta-item i {
+  color: var(--text-muted);
+  width: 14px;
+  text-align: center;
+}
+
+.movement-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color);
+  font-size: .72rem;
+  margin-top: auto;
+}
+
+.movement-source {
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.movement-link {
+  color: var(--brand);
+  text-decoration: none;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.movement-link:hover {
+  text-decoration: underline;
+}
+

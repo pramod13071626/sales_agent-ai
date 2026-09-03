@@ -174,6 +174,92 @@ function renderGlobalRecentJobsBody() {
     + '<button type="button" class="alert-view-account" id="viewAllJobsBtn" style="margin-top:12px;"><i class="bi bi-grid-3x3-gap"></i> View All Job Postings</button>';
 }
 
+// Ported from dev's feature-cxo-pipline branch (originally inline in the pre-refactor
+// dashboard.js). Data is fetched once, upfront, alongside contentStore (see main.js) —
+// switching tabs re-renders the whole digest via renderDigest(), same as the
+// customize-menu hide/show actions, so no separate lazy-fetch is needed here.
+function renderCxoMovementsBody() {
+  const movements = state.cxoMovementsStore.movements || [];
+  const counts = state.cxoMovementsStore.counts || { all: movements.length, joined: 0, resigned: 0, retired: 0, promoted: 0 };
+
+  let filtered = movements;
+  if (state.activeMovementTab !== 'all') {
+    filtered = filtered.filter(m => (m.event_type || '').toLowerCase() === state.activeMovementTab);
+  }
+
+  const tabs = [
+    { id: 'all', label: 'All', icon: 'bi-arrow-left-right', count: counts.all || movements.length },
+    { id: 'joined', label: 'Joined', icon: 'bi-person-plus-fill', count: counts.joined || 0 },
+    { id: 'resigned', label: 'Resigned', icon: 'bi-person-dash-fill', count: counts.resigned || 0 },
+    { id: 'retired', label: 'Retired', icon: 'bi-clock-history', count: counts.retired || 0 },
+    { id: 'promoted', label: 'Promoted', icon: 'bi-arrow-up-circle-fill', count: counts.promoted || 0 }
+  ].map(t => `
+    <button type="button" class="tab-btn ${state.activeMovementTab === t.id ? 'active' : ''}" data-movement-tab="${t.id}" style="padding:6px 10px; font-size:.74rem;">
+      <i class="bi ${t.icon}"></i> ${esc(t.label)} <span class="tab-badge">${t.count}</span>
+    </button>
+  `).join('');
+
+  const cards = filtered.length ? `
+    <div class="movement-grid" style="max-height:580px; overflow-y:auto; padding-right:4px; grid-template-columns:1fr; gap:10px;">
+      ${filtered.map(m => {
+        const evt = (m.event_type || 'joined').toLowerCase();
+        const evtLabel = evt === 'joined' ? '🟢 Joined' : (evt === 'resigned' ? '🔴 Resigned' : (evt === 'retired' ? '🟡 Retired' : '🔵 Promoted'));
+        return `
+          <div class="movement-card event-${evt}">
+            <div>
+              <div class="movement-card-header">
+                <div>
+                  <div class="movement-person">${esc(m.person_name)}</div>
+                  <div class="movement-designation">${esc(m.designation || 'Executive Leadership')}</div>
+                </div>
+                <span class="movement-badge ${evt}">${evtLabel}</span>
+              </div>
+
+              <div class="movement-meta-row">
+                <div class="movement-meta-item">
+                  <i class="bi bi-building"></i>
+                  <span><strong>Company:</strong> ${esc(m.company_name)}</span>
+                  ${m.account_id ? `<button type="button" class="cxo-company-btn" data-jump-account="${m.account_id}" style="margin-left:4px; font-size:.65rem; padding:1px 5px;">View Org <i class="bi bi-arrow-right"></i></button>` : ''}
+                </div>
+                ${m.effective_date ? `
+                  <div class="movement-meta-item">
+                    <i class="bi bi-calendar3"></i>
+                    <span><strong>Timing / Date:</strong> ${esc(m.effective_date)}</span>
+                  </div>` : ''}
+                ${m.previous_role ? `
+                  <div class="movement-meta-item">
+                    <i class="bi bi-briefcase"></i>
+                    <span><strong>Previous Role / Tenure:</strong> ${esc(m.previous_role)}</span>
+                  </div>` : ''}
+                ${m.new_company ? `
+                  <div class="movement-meta-item">
+                    <i class="bi bi-box-arrow-up-right"></i>
+                    <span><strong>New Organization:</strong> ${esc(m.new_company)}</span>
+                  </div>` : ''}
+              </div>
+
+              ${m.context ? `<div class="movement-context">${esc(m.context)}</div>` : ''}
+            </div>
+
+            <div class="movement-footer">
+              <span class="movement-source"><i class="bi bi-newspaper"></i> ${esc(m.source || m.publisher_domain || 'News Wire')}</span>
+              ${m.article_url ? `<a href="${esc(m.article_url)}" target="_blank" class="movement-link">Source Article <i class="bi bi-box-arrow-up-right"></i></a>` : ''}
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  ` : `
+    <div class="empty-block" style="padding:20px 10px; text-align:center;">
+      <div class="empty-block-icon" style="font-size:1.6rem; color:var(--text-muted); margin-bottom:6px;"><i class="bi bi-arrow-left-right"></i></div>
+      <div style="font-weight:700; font-size:.88rem; color:var(--text-primary); margin-bottom:4px;">No movements in this category</div>
+      <div style="font-size:.76rem; color:var(--text-secondary);">Transitions will appear here when executive appointments or departures occur.</div>
+    </div>
+  `;
+
+  return `<div class="sales-tabs" style="margin-bottom:12px; border-bottom:1px solid var(--border-color); gap:3px;">${tabs}</div>${cards}`;
+}
+
 // id -> { render: () => htmlString, skeleton: 'cards'|'list-rows'|'lines' }
 const SECTION_RENDERERS = {
   recently_updated: { render: renderRecentlyUpdatedBody, skeleton: 'cards' },
@@ -181,6 +267,7 @@ const SECTION_RENDERERS = {
   social_digest: { render: renderContentDigestSummary, skeleton: 'lines' },
   sales_alerts: { render: renderGlobalSalesAlertsBody, skeleton: 'list-rows' },
   domain_expansion: { render: renderGlobalDomainExpansionBody, skeleton: 'list-rows' },
+  cxo_movements: { render: renderCxoMovementsBody, skeleton: 'list-rows' },
   linkedin_jobs: { render: renderGlobalRecentJobsBody, skeleton: 'cards' },
 };
 
@@ -223,6 +310,13 @@ dashEmpty.addEventListener('click', function (e) {
   if (retryBtn) {
     const container = retryBtn.closest('.digest-section-body');
     if (container) renderSection(container);
+    return;
+  }
+
+  const movTabBtn = e.target.closest('[data-movement-tab]');
+  if (movTabBtn) {
+    state.activeMovementTab = movTabBtn.dataset.movementTab;
+    renderDigest();
   }
 });
 
@@ -251,6 +345,7 @@ export function renderDigest() {
   const showSocial = state.digestSectionVisibility.social_digest !== false;
   const showAlerts = state.digestSectionVisibility.sales_alerts !== false;
   const showDomain = state.digestSectionVisibility.domain_expansion !== false;
+  const showCxoMovements = state.digestSectionVisibility.cxo_movements !== false;
   const showJobs = state.digestSectionVisibility.linkedin_jobs !== false;
 
   let topAccountsHtml = '';
@@ -342,19 +437,38 @@ export function renderDigest() {
     `;
   }
 
-  let jobsHtml = '';
-  if (showJobs) {
-    jobsHtml = `
-      <div class="panel">
-        <div class="panel-title">
-          <span><i class="bi bi-linkedin"></i> Recent LinkedIn Job Postings</span>
-          <div class="panel-title-tools">
-            <span class="context-badge live"><i class="bi bi-broadcast"></i> Across All Accounts</span>
-            <button type="button" class="panel-hide-btn" data-hide-section="linkedin_jobs" title="Hide this section from dashboard"><i class="bi bi-x-lg"></i></button>
+  let movementsAndJobsHtml = '';
+  if (showCxoMovements || showJobs) {
+    const gridClass = (showCxoMovements && showJobs) ? 'digest-grid-2' : 'digest-grid-1';
+    movementsAndJobsHtml = `
+      <div class="${gridClass}">
+        ${showCxoMovements ? `
+          <div class="panel">
+            <div class="panel-title">
+              <span><i class="bi bi-arrow-left-right" style="color:var(--brand);"></i> Executive Leadership Transitions &amp; CXO Movements</span>
+              <div class="panel-title-tools">
+                <span class="context-badge live"><i class="bi bi-broadcast"></i> Live Signal Monitor</span>
+                <button type="button" class="panel-hide-btn" data-hide-section="cxo_movements" title="Hide this section from dashboard"><i class="bi bi-x-lg"></i></button>
+              </div>
+            </div>
+            <p class="section-desc">Track real-time executive appointments, departures, and role movements across enterprise accounts.</p>
+            ${sectionBody('cxo_movements')}
           </div>
-        </div>
-        <p class="section-desc">Newest scraped job postings across every tracked account — a hiring-activity signal worth flagging on calls.</p>
-        ${sectionBody('linkedin_jobs')}
+        ` : ''}
+
+        ${showJobs ? `
+          <div class="panel">
+            <div class="panel-title">
+              <span><i class="bi bi-linkedin"></i> Recent LinkedIn Job Postings</span>
+              <div class="panel-title-tools">
+                <span class="context-badge live"><i class="bi bi-broadcast"></i> Across All Accounts</span>
+                <button type="button" class="panel-hide-btn" data-hide-section="linkedin_jobs" title="Hide this section from dashboard"><i class="bi bi-x-lg"></i></button>
+              </div>
+            </div>
+            <p class="section-desc">Newest scraped job postings across every tracked account — a hiring-activity signal worth flagging on calls.</p>
+            ${sectionBody('linkedin_jobs')}
+          </div>
+        ` : ''}
       </div>
     `;
   }
@@ -421,7 +535,7 @@ export function renderDigest() {
 
     ${opportunitiesHtml}
 
-    ${jobsHtml}
+    ${movementsAndJobsHtml}
 
     ${noSectionsVisible ? `
       <div class="empty-block" style="padding: 36px 20px; text-align: center;">
