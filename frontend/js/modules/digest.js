@@ -200,19 +200,14 @@ function renderGlobalDomainExpansionBody() {
 }
 
 function renderGlobalRecentJobsBody() {
-  const rows = [];
-  state.accounts.forEach(a => {
-    getAccountJobs(a).forEach(j => rows.push({ account: a, job: j }));
-  });
-  rows.sort((x, y) => new Date(y.job.first_seen || y.job.posted_date || 0) - new Date(x.job.first_seen || x.job.posted_date || 0));
-  const top = rows.slice(0, 8);
-  if (!top.length) {
+  const jobs = recentJobsCache || [];
+  if (!jobs.length) {
     return `<div class="empty-block">
       <div class="empty-block-icon"><i class="bi bi-linkedin"></i></div>
       <div class="empty-block-text">No LinkedIn job postings captured yet across any account.</div>
     </div>`;
   }
-  return top.map(({ account, job }) => renderJobCard(job, { showAccountLink: true, accountId: account.id, accountName: account.name })).join('')
+  return jobs.map(j => renderJobCard(j, { showAccountLink: true, accountId: j.account_id, accountName: j.account_name })).join('')
     + '<button type="button" class="alert-view-account" id="viewAllJobsBtn" style="margin-top:12px;"><i class="bi bi-grid-3x3-gap"></i> View All Job Postings</button>';
 }
 
@@ -220,9 +215,41 @@ function renderGlobalRecentJobsBody() {
 // dashboard.js). Data is fetched once, upfront, alongside contentStore (see main.js) —
 // switching tabs re-renders the whole digest via renderDigest(), same as the
 // customize-menu hide/show actions, so no separate lazy-fetch is needed here.
+// A movement's real-world date — effective_date is the primary field ("when this
+// happened"), falling back to published_at/first_seen only if it's missing.
+function movementDateRaw(m) {
+  return m.effective_date || m.published_at || m.first_seen || null;
+}
+
+// Year comparison is done on the raw string prefix rather than `new Date(...).
+// getFullYear()` — effective_date is a bare "YYYY-MM-DD" with no time zone, and
+// parsing that as UTC then reading back the LOCAL year can shift it by a day
+// (and a year, right at the boundary) depending on the viewer's time zone.
+function movementYear(m) {
+  const raw = movementDateRaw(m);
+  if (!raw) return null;
+  const year = parseInt(String(raw).slice(0, 4), 10);
+  return Number.isFinite(year) ? year : null;
+}
+
+function movementSortValue(m) {
+  const raw = movementDateRaw(m);
+  return raw ? (new Date(raw).getTime() || 0) : 0;
+}
+
 function renderCxoMovementsBody() {
-  const movements = state.cxoMovementsStore.movements || [];
-  const counts = state.cxoMovementsStore.counts || { all: movements.length, joined: 0, resigned: 0, retired: 0, promoted: 0 };
+  const currentYear = new Date().getFullYear();
+  const movements = (state.cxoMovementsStore.movements || [])
+    .filter(m => movementYear(m) === currentYear)
+    .sort((a, b) => movementSortValue(b) - movementSortValue(a));
+
+  // Recomputed from the current-year set, not the server's all-time counts —
+  // the tab badges should match what's actually shown below.
+  const counts = { all: movements.length, joined: 0, resigned: 0, retired: 0, promoted: 0 };
+  movements.forEach(m => {
+    const evt = (m.event_type || '').toLowerCase();
+    if (counts[evt] !== undefined) counts[evt]++;
+  });
 
   let filtered = movements;
   if (state.activeMovementTab !== 'all') {
@@ -294,8 +321,8 @@ function renderCxoMovementsBody() {
   ` : `
     <div class="empty-block" style="padding:20px 10px; text-align:center;">
       <div class="empty-block-icon" style="font-size:1.6rem; color:var(--text-muted); margin-bottom:6px;"><i class="bi bi-arrow-left-right"></i></div>
-      <div style="font-weight:700; font-size:.88rem; color:var(--text-primary); margin-bottom:4px;">No movements in this category</div>
-      <div style="font-size:.76rem; color:var(--text-secondary);">Transitions will appear here when executive appointments or departures occur.</div>
+      <div style="font-weight:700; font-size:.88rem; color:var(--text-primary); margin-bottom:4px;">No ${currentYear} movements in this category</div>
+      <div style="font-size:.76rem; color:var(--text-secondary);">Showing ${currentYear} executive transitions only. Older movements are still on file per-account.</div>
     </div>
   `;
 
@@ -306,20 +333,21 @@ function renderCxoMovementsBody() {
 const SECTION_RENDERERS = {
   recently_updated: { render: renderRecentlyUpdatedBody, skeleton: 'cards' },
   most_mapped: { render: renderMostMappedBody, skeleton: 'cards' },
-  social_digest: { render: renderContentDigestSummary, skeleton: 'lines' },
-  sales_alerts: { render: renderGlobalSalesAlertsBody, skeleton: 'list-rows' },
+  social_digest: { render: renderContentDigestSummary, skeleton: 'lines', prefetch: ensureBulkContentLoaded },
+  sales_alerts: { render: renderGlobalSalesAlertsBody, skeleton: 'list-rows', prefetch: ensureBulkContentLoaded },
   domain_expansion: { render: renderGlobalDomainExpansionBody, skeleton: 'list-rows' },
   cxo_movements: { render: renderCxoMovementsBody, skeleton: 'list-rows' },
-  linkedin_jobs: { render: renderGlobalRecentJobsBody, skeleton: 'cards' },
+  linkedin_jobs: { render: renderGlobalRecentJobsBody, skeleton: 'cards', prefetch: ensureRecentJobsLoaded },
 };
 
 let observer = null;
 
-function renderSection(container) {
+async function renderSection(container) {
   const sectionId = container.dataset.sectionId;
   const entry = SECTION_RENDERERS[sectionId];
   if (!entry) return;
   try {
+    if (entry.prefetch) await entry.prefetch();
     container.innerHTML = entry.render();
   } catch (err) {
     console.error(`Digest section "${sectionId}" failed to render`, err);
@@ -493,7 +521,7 @@ export function renderDigest() {
                 <button type="button" class="panel-hide-btn" data-hide-section="cxo_movements" title="Hide this section from dashboard"><i class="bi bi-x-lg"></i></button>
               </div>
             </div>
-            <p class="section-desc">Track real-time executive appointments, departures, and role movements across enterprise accounts.</p>
+            <p class="section-desc">Track this year's executive appointments, departures, and role movements across enterprise accounts, most recent first.</p>
             ${sectionBody('cxo_movements')}
           </div>
         ` : ''}
