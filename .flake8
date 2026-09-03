@@ -1,6 +1,10 @@
 [flake8]
 max-line-length = 120
-extend-ignore = E203, W503
+# E402: this codebase deliberately does sys.path.insert()/append() before
+# local imports throughout (db/connection.py, api.py, main.py, ...) so the
+# local package resolves regardless of cwd. Same exception already made for
+# pylint's equivalent wrong-import-position in .pylintrc.
+extend-ignore = E203, W503, E402
 exclude =
     sales_agent-ai,
     output,

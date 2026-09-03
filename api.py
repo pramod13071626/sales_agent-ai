@@ -57,9 +57,10 @@ from db.importer import import_run_to_db
 from main import run_pipeline
 
 try:
-    from fastapi import FastAPI, APIRouter, HTTPException, Query, Body, Response
-    from fastapi.responses import FileResponse
+    from fastapi import FastAPI, APIRouter, HTTPException, Query, Body, Response, Request
+    from fastapi.responses import FileResponse, HTMLResponse
     from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.templating import Jinja2Templates
     from pydantic import BaseModel, Field
     FASTAPI_AVAILABLE = True
 except ImportError:
@@ -776,7 +777,7 @@ if FASTAPI_AVAILABLE:
             person_slug = slugify(parsed_name)
             run_dirs = config.get_run_output_dirs(parsed_company or "persona_run")
             person_file = run_dirs["enriched_personas_company_dir"] / f"{company_slug}_corporate_{person_slug}_enriched.json"
-            PipelineSerializer.save_json(person_entry, person_file)
+            MasterSerializer.save_json(person_entry, person_file)
 
             return {
                 "status": "staged",
@@ -1838,12 +1839,34 @@ if FASTAPI_AVAILABLE:
 
 
     # ══════════════════════════════════════════════════════
-    # FRONTEND STATIC UI MOUNT
+    # FRONTEND UI: Jinja2-templated shell + static assets
     # ══════════════════════════════════════════════════════
+    # The dashboard shell (frontend/templates/index.html) is composed from
+    # partials (topbar/nav/drawer/modal) and rendered server-side; everything
+    # it actually renders (accounts, digest sections, etc.) still comes from
+    # the JSON APIs below via frontend/js/modules/. CSS/JS/the separate
+    # Account Explorer app stay plain static files — only the shell itself
+    # needed templating, so we mount those under their own sub-paths instead
+    # of the old single mount at "/" (which would now collide with the
+    # explicit "/" route below).
     from fastapi.staticfiles import StaticFiles
     frontend_dir = Path(__file__).resolve().parent / "frontend"
     if frontend_dir.exists():
-        app.mount("/", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")
+        templates = Jinja2Templates(directory=str(frontend_dir / "templates"))
+
+        @app.get("/", response_class=HTMLResponse, include_in_schema=False)
+        async def dashboard_home(request: Request):
+            return templates.TemplateResponse("index.html", {"request": request})
+
+        css_dir = frontend_dir / "css"
+        js_dir = frontend_dir / "js"
+        pipline_dir = frontend_dir / "pipline"
+        if css_dir.exists():
+            app.mount("/css", StaticFiles(directory=str(css_dir)), name="frontend-css")
+        if js_dir.exists():
+            app.mount("/js", StaticFiles(directory=str(js_dir)), name="frontend-js")
+        if pipline_dir.exists():
+            app.mount("/pipline", StaticFiles(directory=str(pipline_dir), html=True), name="frontend-pipline")
 
 
 if __name__ == "__main__":
