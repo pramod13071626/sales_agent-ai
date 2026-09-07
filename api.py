@@ -1418,7 +1418,7 @@ if FASTAPI_AVAILABLE:
                 digest_row.digest if digest_row else None,
                 posts_list, career_events,
             )
-            filename = f"{slugify(persona_dict['name'])}-profile.pdf"
+            filename = f"{slugify(persona_dict['name'])}-personality-report.pdf"
             return Response(
                 content=pdf_bytes,
                 media_type="application/pdf",

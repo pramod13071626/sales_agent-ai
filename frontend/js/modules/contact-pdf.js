@@ -14,7 +14,7 @@ export function triggerPersonaPdfDownload(persona) {
   showToast('Generating PDF…');
   const a = document.createElement('a');
   a.href = `/api/personas/${persona.id}/profile.pdf`;
-  a.download = `${slugify(persona.name || 'contact')}-profile.pdf`;
+  a.download = `${slugify(persona.name || 'contact')}-personality-report.pdf`;
   document.body.appendChild(a);
   a.click();
   a.remove();

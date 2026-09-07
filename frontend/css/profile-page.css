@@ -1,74 +1,773 @@
-/* Full-page contact profile (opened via the drawer's "View Profile" button —
-   see contact-drawer.js / profile-page.js / full-profile.js). Each section
-   is its own widget/panel using the same .panel/.panel-title classes as the
-   main dashboard (digest.css), laid out full-width instead of squeezed into
-   the drawer's narrow sidebar. */
-
+/* ── Full-Page Executive Contact Profile ─────────────────────── */
 body.profile-page-body {
   background: var(--content-bg);
   min-height: 100vh;
+  color: var(--text-primary);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
+/* ── Top Bar ─────────────────────────────────────────────────── */
 .profile-page-topbar {
-  display: flex; align-items: center; gap: 16px;
-  padding: 14px 24px; border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 28px;
+  border-bottom: 1px solid var(--border-color);
   background: var(--panel-bg);
-  position: sticky; top: 0; z-index: 10;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  backdrop-filter: blur(8px);
 }
 .profile-page-back {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-size: .82rem; font-weight: 600; color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: .84rem;
+  font-weight: 600;
+  color: var(--text-secondary);
   text-decoration: none;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--input-bg);
+  transition: var(--transition);
 }
-.profile-page-back:hover { color: var(--brand); }
+.profile-page-back:hover {
+  color: var(--brand);
+  background: var(--brand-soft);
+}
 .profile-page-brand {
-  font-size: .82rem; font-weight: 700; color: var(--text-muted);
-  display: inline-flex; align-items: center; gap: 6px;
+  font-size: .86rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.profile-page-brand i {
+  color: var(--brand);
+  font-size: 1.05rem;
+}
+.profile-page-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
+/* ── Main Container ─────────────────────────────────────────── */
 .profile-page-main {
-  max-width: 1400px;
+  max-width: 1440px;
   margin: 0 auto;
-  padding: 24px 28px 60px;
+  padding: 24px 28px 80px;
 }
 
 .profile-page-loading {
-  display: flex; align-items: center; justify-content: center; gap: 10px;
-  margin: 80px auto; color: var(--text-muted); font-size: .85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 100px auto;
+  color: var(--text-secondary);
+  font-size: .9rem;
+  font-weight: 500;
 }
 .profile-page-spinner {
-  width: 22px; height: 22px; border-radius: 50%;
-  border: 3px solid var(--border-color); border-top-color: var(--brand);
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 3px solid var(--border-color);
+  border-top-color: var(--brand);
   animation: profile-page-spin .7s linear infinite;
 }
 @keyframes profile-page-spin { to { transform: rotate(360deg); } }
 
 .profile-page-error {
-  margin: 60px auto; max-width: 480px; text-align: center;
-  color: var(--text-secondary); font-size: .85rem;
+  margin: 80px auto;
+  max-width: 520px;
+  padding: 24px;
+  border-radius: var(--radius-md);
+  background: var(--panel-bg);
+  border: 1px solid var(--border-color);
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: .88rem;
+  box-shadow: var(--shadow);
 }
 
-.profile-hero { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; }
-.profile-hero .drawer-contact-header { margin-bottom: 0; }
-.profile-avatar-lg { width: 64px; height: 64px; font-size: 1.4rem; }
-.profile-hero .drawer-actions { margin-bottom: 0; flex-wrap: wrap; }
-.profile-hero .drawer-action { flex: 0 0 auto; min-width: 110px; }
-
-/* Two-column widgets (Contact Info + AI Call-Prep Dossier) side by side on
-   wide screens, stacking on narrow ones — the wider Personality Profile and
-   Social Activity panels always span the full width below. */
-.profile-widget-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
-  gap: 16px;
+/* ── Executive Hero Card ─────────────────────────────────────── */
+.profile-hero-card {
+  background: var(--panel-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 24px 28px;
+  margin-bottom: 20px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
 }
-.profile-widget-grid > .panel { margin-bottom: 0; }
-
-.profile-post-group { margin-top: 14px; }
-.profile-post-group:first-child { margin-top: 0; }
-.profile-post-group .post-card-list {
+.profile-hero-identity {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex: 1 1 450px;
+}
+.profile-avatar-xl {
+  width: 76px;
+  height: 76px;
+  min-width: 76px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, var(--brand), #4f46e5);
+  color: #fff;
+  font-size: 1.6rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(0, 97, 255, 0.25);
+  letter-spacing: -0.5px;
+}
+.profile-hero-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.profile-hero-name {
+  font-size: 1.45rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  letter-spacing: -0.3px;
+}
+.profile-hero-name i.bi-stars {
+  color: var(--brand);
+  font-size: 1.1rem;
+}
+.profile-hero-title {
+  font-size: .95rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.profile-hero-company {
+  font-size: .85rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.profile-hero-meta-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
   margin-top: 6px;
+}
+.meta-badge {
+  font-size: .75rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: var(--radius-xs);
+  background: var(--input-bg);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.meta-badge.badge-csuite {
+  background: rgba(0, 97, 255, 0.08);
+  color: var(--brand);
+  border-color: rgba(0, 97, 255, 0.2);
+}
+.meta-badge.badge-authority {
+  background: rgba(0, 186, 136, 0.08);
+  color: var(--success);
+  border-color: rgba(0, 186, 136, 0.2);
+}
+
+.profile-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.profile-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: .82rem;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--input-bg);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  text-decoration: none;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.profile-action-btn:hover:not(.disabled) {
+  background: var(--brand-soft);
+  color: var(--brand);
+  border-color: var(--brand-light);
+}
+.profile-action-btn.btn-primary {
+  background: var(--brand);
+  color: #fff;
+  border-color: var(--brand);
+  box-shadow: 0 2px 6px rgba(0, 97, 255, 0.2);
+}
+.profile-action-btn.btn-primary:hover {
+  background: var(--brand-hover);
+}
+.profile-action-btn.disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+/* ── Bento Grid Layout ───────────────────────────────────────── */
+.profile-bento-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 10px;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+@media (max-width: 1080px) {
+  .profile-bento-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.profile-bento-col {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.profile-widget {
+  background: var(--panel-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 22px 24px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: relative;
+}
+
+.profile-widget-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+.profile-widget-title {
+  font-size: .96rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.profile-widget-title i {
+  color: var(--brand);
+  font-size: 1.1rem;
+}
+.profile-widget-tag {
+  font-size: .74rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: var(--radius-xs);
+  background: var(--input-bg);
+  color: var(--text-secondary);
+}
+
+/* ── Archetype & Synthesis ───────────────────────────────────── */
+.archetype-banner {
+  background: linear-gradient(135deg, rgba(0, 97, 255, 0.06), rgba(99, 102, 241, 0.08));
+  border: 1px solid rgba(0, 97, 255, 0.15);
+  border-radius: var(--radius-md);
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.archetype-label {
+  font-size: .72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--brand);
+}
+.archetype-name {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+.archetype-desc {
+  font-size: .84rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.executive-prose {
+  font-size: .86rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+/* ── Executive Personality Profile Styles ─────────────────────── */
+.personality-summary-card {
+  background: var(--input-bg);
+  border: 1px solid var(--border-color);
+  border-left: 4px solid var(--brand);
+  border-radius: var(--radius-md);
+  padding: 14px 18px;
+  margin-bottom: 6px;
+}
+.personality-summary-title {
+  font-size: .88rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.personality-summary-title i {
+  color: var(--brand);
+  font-size: 1rem;
+}
+.personality-summary-text {
+  font-size: .86rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.personality-sections-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.personality-section-card {
+  background: var(--panel-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.02);
+}
+.personality-sec-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.personality-sec-title {
+  font-size: .88rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.personality-sec-title i {
+  color: var(--brand);
+  font-size: .95rem;
+}
+.personality-sec-body {
+  font-size: .85rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  margin: 0;
+}
+.personality-basis-list {
+  margin: 6px 0 0 0;
+  padding-left: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.personality-basis-list li {
+  font-size: .81rem;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.personality-basis-list li::before {
+  content: "•";
+  color: var(--brand);
+  font-weight: bold;
+  font-size: 1.1rem;
+  line-height: 1.1;
+  flex-shrink: 0;
+}
+.personality-basis-list a {
+  color: var(--brand);
+  text-decoration: none;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.personality-basis-list a:hover {
+  text-decoration: underline;
+}
+
+/* ── How to Approach (Playbook) ──────────────────────────────── */
+.playbook-box {
+  background: var(--input-bg);
+  border: 1px solid var(--border-color);
+  border-left: 4px solid var(--brand);
+  border-radius: var(--radius-md);
+  padding: 14px 18px;
+  margin-top: 4px;
+}
+.playbook-title {
+  font-size: .88rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.playbook-title i {
+  color: var(--brand);
+  font-size: 1rem;
+}
+.playbook-list {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.playbook-list li {
+  font-size: .84rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.playbook-list li::before {
+  content: "→";
+  color: var(--brand);
+  font-weight: bold;
+  font-size: .95rem;
+  line-height: 1.3;
+  flex-shrink: 0;
+}
+.playbook-list strong {
+  color: var(--text-primary);
+}
+
+/* ── Big Five Gauges ─────────────────────────────────────────── */
+.big-five-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.trait-meter-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.trait-meter-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: .82rem;
+}
+.trait-meter-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.trait-meter-score {
+  font-weight: 700;
+  color: var(--brand);
+  font-size: .8rem;
+  background: var(--brand-soft);
+  padding: 1px 6px;
+  border-radius: var(--radius-xs);
+}
+.trait-meter-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--input-bg);
+  overflow: hidden;
+  position: relative;
+}
+.trait-meter-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--brand), #4f46e5);
+  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.trait-meter-evidence {
+  font-size: .76rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+  margin-top: 1px;
+}
+
+/* ── Interactive Tabs ────────────────────────────────────────── */
+.profile-tabs-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--input-bg);
+  padding: 4px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+}
+.profile-tab-btn {
+  flex: 1;
+  text-align: center;
+  padding: 7px 12px;
+  font-size: .82rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: var(--transition);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.profile-tab-btn:hover {
+  color: var(--text-primary);
+}
+.profile-tab-btn.active {
+  background: var(--panel-bg);
+  color: var(--brand);
+  box-shadow: var(--shadow);
+}
+.profile-tab-pane {
+  display: none;
+  flex-direction: column;
+  gap: 14px;
+}
+.profile-tab-pane.active {
+  display: flex;
+}
+
+/* ── Icebreaker Quote Card ───────────────────────────────────── */
+.icebreaker-card {
+  background: linear-gradient(135deg, rgba(0, 97, 255, 0.04), rgba(0, 186, 136, 0.04));
+  border: 1px dashed var(--brand-light);
+  border-radius: var(--radius-md);
+  padding: 16px 18px;
+  position: relative;
+}
+.icebreaker-label {
+  font-size: .74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--brand);
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.icebreaker-quote {
+  font-size: .92rem;
+  font-style: italic;
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+
+/* ── Objections & Battlecards ────────────────────────────────── */
+.battlecard-item {
+  background: var(--input-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.battlecard-header {
+  font-size: .82rem;
+  font-weight: 700;
+  color: var(--danger);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.battlecard-body {
+  font-size: .82rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+/* ── Blind Spots & Caution Callout ───────────────────────────── */
+.blind-spots-card {
+  background: rgba(245, 166, 35, 0.08);
+  border: 1px solid rgba(245, 166, 35, 0.3);
+  border-left: 4px solid var(--warning);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+}
+.blind-spots-title {
+  font-size: .82rem;
+  font-weight: 700;
+  color: #c07a00;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.blind-spots-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: .81rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+.blind-spots-list li {
+  margin-bottom: 4px;
+}
+
+/* ── Multi-Channel Feed ──────────────────────────────────────── */
+.channel-filters-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.channel-filter-pill {
+  font-size: .8rem;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: var(--radius-xl);
+  background: var(--input-bg);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: var(--transition);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.channel-filter-pill:hover {
+  background: var(--panel-bg);
+  color: var(--brand);
+}
+.channel-filter-pill.active {
+  background: var(--brand);
+  color: #fff;
+  border-color: var(--brand);
+  box-shadow: 0 2px 8px rgba(0, 97, 255, 0.25);
+}
+.channel-filter-pill .pill-count {
+  font-size: .72rem;
+  padding: 1px 6px;
+  border-radius: var(--radius-xl);
+  background: rgba(0,0,0,0.1);
+}
+.channel-filter-pill.active .pill-count {
+  background: rgba(255,255,255,0.25);
+  color: #fff;
+}
+
+.profile-feed-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+  margin-top: 10px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.profile-feed-grid .post-card {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.profile-feed-grid .post-card-body {
+  word-break: break-word;
+  overflow-wrap: break-word;
+  overflow: hidden;
+}
+
+/* ── Pagination Bar ─────────────────────────────────────────── */
+.profile-pagination-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 14px;
+  margin-top: 8px;
+  border-top: 1px solid var(--border-color);
+  width: 100%;
+  box-sizing: border-box;
+}
+.profile-pagination-info {
+  font-size: .81rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+.profile-pagination-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.profile-page-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .8rem;
+  font-weight: 600;
+  padding: 5px 11px;
+  min-width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  background: var(--input-bg);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: var(--transition);
+}
+.profile-page-nav-btn:hover:not(:disabled) {
+  background: var(--brand-soft);
+  color: var(--brand);
+  border-color: var(--brand-light);
+}
+.profile-page-nav-btn.active {
+  background: var(--brand);
+  color: #fff;
+  border-color: var(--brand);
+  box-shadow: 0 2px 6px rgba(0, 97, 255, 0.25);
+}
+.profile-page-nav-btn:disabled {
+  opacity: .4;
+  cursor: not-allowed;
 }

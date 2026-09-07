@@ -113,7 +113,7 @@ export function renderContactDrawer(p) {
 
     <div id="drawer-sec-profiles">
       <div class="drawer-section drawer-section-muted">
-        <div class="drawer-section-title"><i class="bi bi-activity"></i> Psychological Profile</div>
+        <div class="drawer-section-title"><i class="bi bi-activity"></i> Executive Psychological Profile</div>
         ${renderPlaceholderProfile('Not available — no data source for psychological profiling is connected.')}
       </div>
 
