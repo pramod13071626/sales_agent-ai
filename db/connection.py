@@ -23,6 +23,7 @@ engine = create_engine(
     echo=False
 )
 
+
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 

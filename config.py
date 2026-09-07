@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
 
+
 # PostgreSQL Database Configuration
 POSTGRES_DB = os.getenv("POSTGRES_DB", "sales_ai")
 POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
