@@ -13,6 +13,7 @@ from .prompts import (
     PERSON_CHANNEL_GUIDANCE,
     PERSON_CHANNEL_SYSTEM,
     PERSON_EMAIL_SYSTEM,
+    PERSONALITY_PROFILE_SYSTEM,
 )
 
 
@@ -33,12 +34,15 @@ _LONG_TEXT_CHANNELS = {"newsroom", "blog", "rss", "linkedin_jobs"}
 # press release.
 _CAPABILITY_CHANNELS = {"newsroom", "blog", "news", "rss", "linkedin_jobs"}
 
-# These two channels routinely carry 20 posts (the CLI/API default cap), most
-# of which never get cited in the final digest anyway. Capping input here
-# cuts token cost roughly in half for the two highest-volume channels with
-# minimal loss — the newest/most relevant posts are what select_posts already
-# prioritises first.
-_HIGH_VOLUME_CAP = {"news": 12, "blog": 12}
+# These channels routinely carry far more posts than the analysis actually
+# needs, most of which never get cited in the final digest anyway. Capping
+# input here cuts token cost with minimal loss — the newest/most relevant
+# posts are what select_posts already prioritises first. sec_mentions and
+# sec are capped hardest: for a person digest they're overwhelmingly
+# repetitive filing-metadata rows (third-party N-PX proxy votes; bare Form 4
+# filing dates) with almost no per-row signal, so a high cap there is nearly
+# pure token cost for no analytical benefit.
+_HIGH_VOLUME_CAP = {"news": 12, "blog": 12, "sec_mentions": 10, "sec": 10}
 
 
 def _post_line(post: Dict[str, Any], channel: str = "") -> str:
@@ -185,5 +189,53 @@ def build_email(
         "Channel summaries:\n\n" + "\n\n".join(blocks)
     )
     return client.complete_json(system, prompt)
+
+
+def build_personality_profile(
+    client: LLMClient,
+    subject: str,
+    bio: Dict[str, Any],
+    channels: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Second-stage synthesis over an already-extracted person digest —
+    Executive Summary + the four Executive Profile sub-sections. See
+    PERSONALITY_PROFILE_SYSTEM for why this is a separate, explicitly-scoped
+    prompt rather than an extension of the ordinary PERSON_CHANNEL_SYSTEM
+    pass.
+    """
+    bio_lines = [f"Name: {subject}"]
+    if bio.get("title"):
+        bio_lines.append(f"Title: {bio['title']}")
+    if bio.get("location"):
+        bio_lines.append(f"Location: {bio['location']}")
+    if bio.get("education"):
+        bio_lines.append(f"Education: {bio['education']}")
+    if bio.get("communication_style"):
+        bio_lines.append(f"Noted communication style: {bio['communication_style']}")
+    for event in bio.get("career", []):
+        bio_lines.append(f"Career event: {event}")
+
+    blocks = []
+    for ch in channels:
+        observed = "\n".join(
+            f"  - {o.get('fact', '')} [{o.get('source_url', '')}]"
+            for o in (ch.get("observed") or [])[:8]
+        )
+        blocks.append(
+            f"## {ch['channel_label']} ({ch['posts_considered']} posts, "
+            f"evidence: {ch.get('evidence_strength', 'unrated')})\n"
+            f"Evidence note: {ch.get('evidence_note', '')}\n"
+            f"Summary: {ch.get('summary', '')}\n"
+            f"Observed facts:\n{observed or '  (none recorded)'}\n"
+            f"Interpretation: {ch.get('interpretation', '')}\n"
+        )
+
+    prompt = (
+        f"Person: {subject}\n\n"
+        "Biographical facts:\n" + "\n".join(f"- {l}" for l in bio_lines) + "\n\n"
+        "Per-channel summaries (already fact-checked against source posts):\n\n"
+        + "\n\n".join(blocks)
+    )
+    return client.complete_json(PERSONALITY_PROFILE_SYSTEM, prompt)
 
 

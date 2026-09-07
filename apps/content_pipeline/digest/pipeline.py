@@ -13,7 +13,7 @@ import db
 from . import cache
 from .llm_client import LLMClient, LLMError, channel_model, describe_config
 from .renderer import render_markdown
-from .selection import build_email, select_posts, summarize_channel
+from .selection import build_email, build_personality_profile, select_posts, summarize_channel
 
 
 def run(
@@ -42,10 +42,18 @@ def run(
 
     store = ScrapeStore(path)
     if not store.exists:
-        cli_flag = " --person" if is_person else ""
-        raise FileNotFoundError(
-            f"No store at {path}. Run: python main.py scrape {key}{cli_flag} --limit 20"
-        )
+        # No local JSON store on this machine — fall back to Postgres, which
+        # is the shared source of truth (same pattern the API server already
+        # uses in main.py for GET /api/store).
+        db_doc = db.get_store(key)
+        if db_doc:
+            store.doc = db_doc
+        else:
+            cli_flag = " --person" if is_person else ""
+            raise FileNotFoundError(
+                f"No store at {path} and nothing in the database for '{key}'. "
+                f"Run: python main.py scrape {key}{cli_flag} --limit 20"
+            )
 
     channel_client = LLMClient(model=channel_model())
     # The email step aggregates every channel's output in one call, so it
@@ -117,6 +125,34 @@ def run(
             "data_gaps": [f"Email synthesis error: {e}"],
         }
 
+    personality_profile = None
+    if is_person:
+        bio = db.get_person_bio(key) or {}
+        # Unlike the per-channel calls above, this step has no natural
+        # "new_in_last_run" filter of its own — without caching it re-spent
+        # a full LLM call on every single digest run even when every channel
+        # below was itself a 100% cache hit (nothing had changed).
+        profile_sig = cache.content_signature({"bio": bio, "channels": channels})
+        cached_profile = cache.get(key, "__personality_profile__", profile_sig) if use_cache else None
+        if cached_profile is not None:
+            print("   personality profile  unchanged since last digest, reusing cached synthesis")
+            personality_profile = cached_profile
+        else:
+            try:
+                print("   personality profile  synthesising…")
+                personality_profile = build_personality_profile(
+                    email_client, target["display_name"], bio, channels
+                )
+                if use_cache:
+                    cache.put(key, "__personality_profile__", profile_sig, personality_profile)
+            except LLMError as e:
+                print(f"   personality profile  ❌ {e}")
+                personality_profile = {
+                    "executive_summary": "Not generated — synthesis failed this run.",
+                    "executive_profile": {},
+                    "caveats": [f"Personality profile synthesis error: {e}"],
+                }
+
     digest = {
         "company": target["display_name"],
         "company_key": key,
@@ -135,6 +171,8 @@ def run(
         "email": email,
         "channels": channels,
     }
+    if personality_profile is not None:
+        digest["personality_profile"] = personality_profile
 
     os.makedirs(out_dir, exist_ok=True)
     json_path = os.path.join(out_dir, f"{key}_digest.json")

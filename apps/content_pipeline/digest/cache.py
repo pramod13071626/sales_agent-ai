@@ -33,6 +33,17 @@ def signature(channel: str, posts: List[Dict[str, Any]]) -> str:
     return hashlib.sha256("|".join(ids).encode("utf-8")).hexdigest()
 
 
+def content_signature(obj: Any) -> str:
+    """Fingerprint of an arbitrary JSON-serialisable object, for a cache
+    caller whose key isn't a list of posts — e.g. the Personality Profile
+    step, which depends on the bio facts plus every channel's already-
+    summarised output rather than on posts directly.
+    """
+    return hashlib.sha256(
+        json.dumps(obj, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()
+
+
 def get(target_key: str, channel: str, sig: str) -> Optional[Dict[str, Any]]:
     path = _cache_path(target_key)
     if not os.path.exists(path):

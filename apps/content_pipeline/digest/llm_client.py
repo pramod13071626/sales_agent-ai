@@ -4,7 +4,8 @@ The digest pipeline only needs one operation — send a prompt, get text back �
 so each provider is a small adapter behind `LLMClient.complete()`. Pick the
 provider with `LLM_PROVIDER` in .env; each reads its own API key.
 
-Supported: anthropic (default), openai, ollama (local, no key), dry-run.
+Supported: anthropic (default), openai, openrouter, ollama (local, no key),
+dry-run.
 """
 import json
 import os
@@ -34,6 +35,15 @@ PROVIDERS: Dict[str, Dict[str, Any]] = {
         "key_env": None,
         "default_model": "llama3.1",
     },
+    # OpenRouter speaks the same chat-completions shape as OpenAI, just at a
+    # different URL/key — free-tier models (":free" suffix) cost nothing but
+    # have no separate cheap tier of their own, so channel_model() just falls
+    # back to this same default for both channel and email calls.
+    "openrouter": {
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "key_env": "OPENROUTER_API_KEY",
+        "default_model": "nvidia/nemotron-3-super-120b-a12b:free",
+    },
 }
 
 # Per-channel calls (extract facts from one channel's posts) run far more
@@ -58,7 +68,13 @@ def channel_model(provider: str = None) -> str:
     override = os.getenv("CHANNEL_LLM_MODEL")
     if override:
         return override
-    return _CHEAP_MODELS.get(provider) or PROVIDERS.get(provider, {}).get("default_model")
+    if provider in _CHEAP_MODELS:
+        return _CHEAP_MODELS[provider]
+    # No dedicated cheap tier for this provider (e.g. ollama, openrouter) —
+    # respect a plain LLM_MODEL override before falling back to the
+    # provider's hardcoded default, same as LLMClient() does for the email
+    # call. Without this, LLM_MODEL silently only affected the email step.
+    return os.getenv("LLM_MODEL") or PROVIDERS.get(provider, {}).get("default_model")
 
 
 class LLMError(RuntimeError):
@@ -123,6 +139,16 @@ class LLMClient:
             # run instead of just skipping this one channel.
             raise LLMError(f"{self.provider} timed out after {self.timeout}s") from e
 
+        # OpenRouter (and some other gateways) can return HTTP 200 with an
+        # embedded {"error": ...} body instead of a real HTTP error status —
+        # e.g. "Upstream error from <provider>: Service temporarily
+        # overloaded" when the free-tier backing model is over capacity.
+        # Without this check that surfaced as an opaque KeyError('choices').
+        if isinstance(payload, dict) and "error" in payload:
+            err = payload["error"]
+            msg = err.get("message") if isinstance(err, dict) else str(err)
+            raise LLMError(f"{self.provider} returned an error: {msg}")
+
         return self._extract_text(payload)
 
     def complete_json(self, system: str, user: str) -> Dict[str, Any]:
@@ -159,7 +185,13 @@ class LLMClient:
                 {"x-api-key": self.api_key, "anthropic-version": "2023-06-01"},
             )
 
-        if self.provider == "openai":
+        if self.provider in ("openai", "openrouter"):
+            headers = {"Authorization": f"Bearer {self.api_key}"}
+            if self.provider == "openrouter":
+                # Not required for the API to accept the request, but part of
+                # OpenRouter's etiquette for identifying free-tier traffic.
+                headers["HTTP-Referer"] = "http://localhost"
+                headers["X-Title"] = "sales-agent-ai digest pipeline"
             return (
                 {
                     "model": self.model,
@@ -169,7 +201,7 @@ class LLMClient:
                         {"role": "user", "content": user},
                     ],
                 },
-                {"Authorization": f"Bearer {self.api_key}"},
+                headers,
             )
 
         # ollama
@@ -189,7 +221,7 @@ class LLMClient:
         if self.provider == "anthropic":
             blocks = payload.get("content", [])
             return "".join(b.get("text", "") for b in blocks if b.get("type") == "text")
-        if self.provider == "openai":
+        if self.provider in ("openai", "openrouter"):
             return payload["choices"][0]["message"]["content"]
         return payload.get("message", {}).get("content", "")
 

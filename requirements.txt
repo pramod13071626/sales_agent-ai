@@ -27,3 +27,6 @@ redis>=5.0.0
 
 # HTTP & API Testing Client
 httpx>=0.25.0
+
+# PDF Generation (contact profile "Download PDF")
+reportlab>=4.0.0

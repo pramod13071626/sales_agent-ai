@@ -530,3 +530,95 @@ def has_digest(target_key: str) -> bool:
         return False
     finally:
         conn.close()
+
+
+def get_person_bio(person_key: str):
+    """Biographical context for the Personality Profile feature — read-only,
+    from the `personas`/`cxo_movements` tables that belong to the sibling
+    sales_ai app's schema (see MERGE_PLAN.md), not this app's own tables.
+    Both apps share the same Postgres database, so this is a plain cross-app
+    read, not a new integration; returns None if either table is absent
+    (e.g. a fresh/local-only database that only ever ran this app).
+    """
+    conn = _connect()
+    if conn is None:
+        return None
+    try:
+        with conn.cursor() as cur:
+            # Two source rows can exist per person (e.g. Diffbot + Crunchbase
+            # imports) — coalesce across them rather than picking one, since
+            # either can be missing fields the other has.
+            cur.execute(
+                """
+                SELECT title, degree, institution, prior_company,
+                       communication_style, city, state, country
+                FROM personas
+                WHERE key = %s
+                ORDER BY (degree IS NULL), (communication_style IS NULL)
+                """,
+                (person_key,),
+            )
+            rows = cur.fetchall()
+            if not rows:
+                return None
+
+            def first_non_null(idx):
+                for row in rows:
+                    if row[idx]:
+                        return row[idx]
+                return None
+
+            title = first_non_null(0)
+            degree = first_non_null(1)
+            institution = first_non_null(2)
+            prior_company = first_non_null(3)
+            communication_style = first_non_null(4)
+            location = ", ".join(
+                p for p in (first_non_null(5), first_non_null(6), first_non_null(7)) if p
+            )
+
+            full_name = None
+            cur.execute("SELECT full_name FROM personas WHERE key = %s LIMIT 1", (person_key,))
+            name_row = cur.fetchone()
+            if name_row:
+                full_name = name_row[0]
+
+            career = []
+            if full_name:
+                cur.execute(
+                    """
+                    SELECT event_type, designation, previous_role, effective_date, context
+                    FROM cxo_movements
+                    WHERE person_name = %s
+                    ORDER BY effective_date DESC NULLS LAST
+                    """,
+                    (full_name,),
+                )
+                for event_type, designation, previous_role, effective_date, context in cur.fetchall():
+                    bits = [b for b in (
+                        f"{effective_date}: {event_type}" if effective_date else event_type,
+                        f"to {designation}" if designation else None,
+                        f"(previously {previous_role})" if previous_role else None,
+                        context,
+                    ) if b]
+                    career.append(" — ".join(bits) if len(bits) > 1 else (bits[0] if bits else None))
+            career = [c for c in career if c]
+
+            education = None
+            if degree or institution:
+                education = ", ".join(p for p in (degree, institution) if p)
+                if prior_company and prior_company.lower() != "tier-1 global financial institution":
+                    education += f"; prior role at {prior_company}"
+
+            return {
+                "title": title,
+                "location": location or None,
+                "education": education,
+                "communication_style": communication_style,
+                "career": career,
+            }
+    except Exception as e:
+        print(f"⚠️  [DB] Could not read person bio for '{person_key}' ({e})")
+        return None
+    finally:
+        conn.close()

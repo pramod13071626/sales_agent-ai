@@ -55,6 +55,7 @@ from db.models import Account, Lob, SubLob, Persona, Post, Digest, OpportunitySi
 from db.schemas import AccountSchema, LobSchema, PersonaSchema
 from db.repositories import AccountRepository, LobRepository, PersonaRepository
 from db.importer import import_run_to_db
+from pdf_export import build_persona_profile_pdf
 from main import run_pipeline
 
 try:
@@ -1365,6 +1366,67 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
+    @app.get("/api/personas/{persona_id}/profile.pdf", tags=["3. Personas & Buying Committee"])
+    def download_persona_profile_pdf(persona_id: int):
+        """Server-side "Download PDF" for a contact's full profile (contact
+        info, career history, AI call-prep dossier, Personality Profile, and
+        every captured post) — generated fresh from the database each time
+        with ReportLab, not a client-side screenshot of whatever happens to
+        be on screen."""
+        session = get_session()
+        try:
+            p = session.query(Persona).filter_by(id=persona_id).first()
+            if not p:
+                raise HTTPException(status_code=404, detail="Persona not found.")
+            acct = session.query(Account).filter_by(id=p.account_id).first()
+            target_key = p.key or slugify(p.full_name or "")
+
+            digest_row = session.query(Digest).filter_by(target_key=target_key).first() if target_key else None
+            posts = (session.query(Post)
+                     .filter_by(target_key=target_key)
+                     .order_by(Post.channel, Post.rank)
+                     .all()) if target_key else []
+            movements = (session.query(CxoMovement)
+                         .filter(CxoMovement.person_name.ilike(f"%{p.full_name}%"))
+                         .order_by(CxoMovement.effective_date.desc().nullslast())
+                         .all()) if p.full_name else []
+
+            persona_dict = {
+                "name": p.full_name or p.display_name or "Executive", "title": p.title,
+                "email": p.email, "phone": p.phone, "linkedin_url": p.linkedin_url,
+                "city": p.city, "state": p.state, "country": p.country,
+                "decision_authority": p.decision_authority, "budget_authority": p.budget_authority,
+                "seniority_raw": p.seniority_raw, "skills": p.skills or [],
+                "personalized_icebreaker": p.personalized_icebreaker,
+                "value_proposition": p.value_proposition, "communication_style": p.communication_style,
+                "target_kpis": p.target_kpis or [], "operational_pain_points": p.operational_pain_points or [],
+                "key_objections": p.key_objections or [],
+            }
+            account_dict = {"name": acct.display_name or acct.legal_name} if acct else None
+            posts_list = [{
+                "channel": post.channel, "published_at": post.published_at,
+                "body": post.body, "post_url": post.post_url,
+            } for post in posts]
+            career_events = [{
+                "event_type": m.event_type, "designation": m.designation,
+                "previous_role": m.previous_role, "effective_date": m.effective_date,
+                "context": m.context,
+            } for m in movements]
+
+            pdf_bytes = build_persona_profile_pdf(
+                persona_dict, account_dict,
+                digest_row.digest if digest_row else None,
+                posts_list, career_events,
+            )
+            filename = f"{slugify(persona_dict['name'])}-profile.pdf"
+            return Response(
+                content=pdf_bytes,
+                media_type="application/pdf",
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            )
+        finally:
+            session.close()
+
     @app.get("/api/accounts/{account_id}/signals", tags=["1. Accounts"])
     def get_account_intelligence_signals(account_id: int):
         """Retrieve multi-source intelligence, firmographics, heat scores, and traffic telemetry."""
@@ -1908,7 +1970,15 @@ if FASTAPI_AVAILABLE:
             acct = session.query(Account).filter_by(id=account_id).first()
             if not acct:
                 raise HTTPException(status_code=404, detail="Account not found.")
-            keys = [acct.key, (acct.stock_symbol or "").lower(), slugify(acct.display_name), slugify(acct.legal_name)]
+            # Persona-level content (per-contact digests like the Personality
+            # Profile, and their own captured posts) is stored under each
+            # person's own target_key (e.g. "robin_vince"), not the account's
+            # — without including those here, the contact drawer's Recent
+            # Social Media Activity / Personality Profile sections always
+            # found nothing, no matter how much persona-level data existed.
+            persona_keys = [p.key or slugify(p.full_name) for p in (acct.personas or [])]
+            keys = [acct.key, (acct.stock_symbol or "").lower(), slugify(acct.display_name),
+                    slugify(acct.legal_name), *persona_keys]
             keys = [k for k in keys if k]
 
             digests_by_key = {}
@@ -2035,6 +2105,14 @@ if FASTAPI_AVAILABLE:
         @app.get("/", response_class=HTMLResponse, include_in_schema=False)
         async def dashboard_home(request: Request):
             return templates.TemplateResponse(request, "index.html")
+
+        @app.get("/profile", response_class=HTMLResponse, include_in_schema=False)
+        async def contact_profile_page(request: Request):
+            """Standalone full-page contact profile — opened via the contact
+            drawer's "View Profile" button (?account=<id>&persona_id=<id>).
+            Reuses the same drawer markup/rendering as the dashboard's
+            sliding drawer; see frontend/js/modules/profile-page.js."""
+            return templates.TemplateResponse(request, "profile.html")
 
         css_dir = frontend_dir / "css"
         js_dir = frontend_dir / "js"

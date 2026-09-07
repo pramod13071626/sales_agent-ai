@@ -76,6 +76,11 @@
 .dossier-quote { font-size: .78rem; font-style: italic; color: var(--text-primary); line-height: 1.55; }
 .dossier-text { font-size: .78rem; color: var(--text-primary); line-height: 1.55; }
 
+.profile-basis-list { margin: 6px 0 0; padding-left: 18px; }
+.profile-basis-list li { font-size: .72rem; color: var(--text-secondary); line-height: 1.6; }
+.profile-basis-list li a { color: var(--brand); text-decoration: none; }
+.profile-basis-list li a:hover { text-decoration: underline; }
+
 .icon-btn {
   width: 28px; height: 28px; border-radius: var(--radius-sm);
   display: grid; place-items: center;
@@ -198,9 +203,9 @@
 }
 .drawer-contact-title { font-size: .82rem; color: var(--text-secondary); margin-top: 2px; }
 
-.drawer-actions { display: flex; gap: 8px; margin-bottom: 14px; }
+.drawer-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
 .drawer-action {
-  flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
+  flex: 1 1 auto; min-width: 96px; display: flex; align-items: center; justify-content: center; gap: 6px;
   font-size: .78rem; font-weight: 600; font-family: inherit; text-decoration: none;
   padding: 9px; border-radius: var(--radius-sm);
   border: 1.5px solid var(--border-color);

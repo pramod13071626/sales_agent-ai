@@ -8,14 +8,20 @@ import { computeSignals } from './signals.js';
 import { getAccountContentEntries, matchOfferings } from './alerts.js';
 import { renderSelection } from './selection.js';
 
+// Accounts temporarily hidden from the left nav (still loaded in state.accounts —
+// other views like the digest and topbar ticker are unaffected).
+const HIDDEN_NAV_ACCOUNT_NAMES = new Set(['BlackRock, Inc.']);
+
 export function renderNavTree() {
   const q = (navSearch.value || '').trim().toLowerCase();
   if (navSearchClear) navSearchClear.classList.toggle('d-none', !q);
 
-  if (filterCountAll) filterCountAll.textContent = state.accounts.length;
+  const visibleAccounts = state.accounts.filter(a => !HIDDEN_NAV_ACCOUNT_NAMES.has(a.name));
+
+  if (filterCountAll) filterCountAll.textContent = visibleAccounts.length;
   if (navDigestBtn) navDigestBtn.classList.toggle('active', state.activeAccountId === null);
 
-  let filtered = state.accounts.filter(a => {
+  let filtered = visibleAccounts.filter(a => {
     // Search matching
     if (q) {
       const text = `${a.name || ''} ${a.ticker || ''} ${a.legal_name || ''} ${(a.industries || []).join(' ')}`.toLowerCase();

@@ -1,63 +1,18 @@
 import { state } from './state.js';
 import { el, drawerTitle, drawerPinned, drawerBody, contactDrawer, drawerBackdrop } from './dom.js';
-import { CHANNEL_ICON, CHANNEL_LABEL } from './constants.js';
-import { esc, initials, resolvePersonaTargetKey, isDryRunDigest } from './utils.js';
-import { renderChannelCard } from './content-panel.js';
+import { esc, initials, resolvePersonaTargetKey } from './utils.js';
 import { closeSignalModal } from './signal-modal.js';
+import { triggerPersonaPdfDownload } from './contact-pdf.js';
+import {
+  hasDossier,
+  renderDossier,
+  renderPostCard,
+  renderPersonaContentSummary,
+  renderPlaceholderProfile,
+  renderPersonalityProfile
+} from './profile-render.js';
 
-export function hasDossier(p) {
-  return !!(p.personalized_icebreaker || p.value_proposition || p.communication_style ||
-    (p.target_kpis && p.target_kpis.length) || (p.operational_pain_points && p.operational_pain_points.length) ||
-    (p.key_objections && p.key_objections.length) || p.prior_company || p.degree || p.institution);
-}
-
-export function renderDossier(p) {
-  if (!hasDossier(p)) {
-    return `<div class="dossier-empty">No AI call-prep dossier generated yet for ${esc(p.name || 'this contact')}. Use "Fetch" on their card in the Account Explorer to generate one.</div>`;
-  }
-  const chipGroup = (title, icon, items) => (items && items.length)
-    ? `<div class="dossier-block"><div class="dossier-label"><i class="bi ${icon}"></i> ${esc(title)}</div><div class="chip-row">${items.map(i => `<span class="chip">${esc(i)}</span>`).join('')}</div></div>`
-    : '';
-  const background = [p.prior_company ? `Previously at ${p.prior_company}` : '', (p.degree || p.institution) ? `${p.degree || 'Degree'}${p.institution ? ', ' + p.institution : ''}` : '']
-    .filter(Boolean).join(' • ');
-
-  return `
-    ${p.personalized_icebreaker ? `<div class="dossier-block"><div class="dossier-label"><i class="bi bi-chat-quote"></i> Icebreaker</div><div class="dossier-quote">"${esc(p.personalized_icebreaker)}"</div></div>` : ''}
-    ${p.value_proposition ? `<div class="dossier-block"><div class="dossier-label"><i class="bi bi-bullseye"></i> Value Proposition</div><div class="dossier-text">${esc(p.value_proposition)}</div></div>` : ''}
-    ${p.communication_style ? `<div class="dossier-block"><div class="dossier-label"><i class="bi bi-chat-dots"></i> Communication Style</div><div class="dossier-text">${esc(p.communication_style)}</div></div>` : ''}
-    ${chipGroup('Target KPIs', 'bi-flag', p.target_kpis)}
-    ${chipGroup('Operational Pain Points', 'bi-exclamation-triangle', p.operational_pain_points)}
-    ${chipGroup('Likely Objections', 'bi-shield-x', p.key_objections)}
-    ${background ? `<div class="dossier-block"><div class="dossier-label"><i class="bi bi-mortarboard"></i> Background</div><div class="dossier-text">${esc(background)}</div></div>` : ''}
-  `;
-}
-
-export function renderPostCard(post) {
-  const icon = CHANNEL_ICON[post.channel] || 'bi-globe2';
-  const label = CHANNEL_LABEL[post.channel] || post.channel;
-  const eng = post.engagement || {};
-  const engBits = [
-    eng.likes != null ? `<span><i class="bi bi-hand-thumbs-up"></i> ${eng.likes}</span>` : '',
-    eng.comments != null ? `<span><i class="bi bi-chat"></i> ${eng.comments}</span>` : '',
-    eng.shares != null ? `<span><i class="bi bi-share"></i> ${eng.shares}</span>` : ''
-  ].filter(Boolean).join('');
-  const body = (post.body || '').length > 260 ? post.body.slice(0, 260) + '…' : (post.body || '');
-
-  return `
-    <div class="post-card">
-      <div class="post-card-header">
-        <span class="post-card-channel"><i class="bi ${icon}"></i> ${esc(label)}</span>
-        ${post.published_at ? `<span class="post-card-date">${esc(post.published_at)}</span>` : ''}
-      </div>
-      ${post.author ? `<div class="post-card-author">${esc(post.author)}</div>` : ''}
-      ${body ? `<p class="post-card-body">${esc(body)}</p>` : ''}
-      <div class="post-card-footer">
-        ${engBits ? `<span class="post-card-engagement">${engBits}</span>` : '<span></span>'}
-        ${post.post_url ? `<a href="${esc(post.post_url)}" target="_blank">Open <i class="bi bi-box-arrow-up-right"></i></a>` : ''}
-      </div>
-    </div>
-  `;
-}
+export { hasDossier, renderDossier, renderPostCard, renderPersonalityProfile, renderPlaceholderProfile };
 
 export function renderSocialActivity(p) {
   const handles = [];
@@ -86,41 +41,6 @@ export function renderSocialActivity(p) {
   `;
 }
 
-export function renderPersonaContentSummary(digestEntry, posts) {
-  if (!posts.length && !digestEntry) return '';
-
-  if (digestEntry && !isDryRunDigest(digestEntry)) {
-    const channels = (digestEntry.digest && digestEntry.digest.channels) || [];
-    if (channels.length) {
-      return `<div class="content-channel-grid" style="margin-bottom:12px;">${channels.map(renderChannelCard).join('')}</div>`;
-    }
-  }
-
-  if (!posts.length) return '';
-
-  // No usable AI digest — summarize what was actually captured, no invented text.
-  const byChannel = {};
-  posts.forEach(post => { (byChannel[post.channel] = byChannel[post.channel] || []).push(post); });
-  const dates = posts.map(post => post.published_at).filter(Boolean);
-
-  return `
-    <div class="content-provenance" style="margin-bottom:8px;">
-      <i class="bi bi-info-circle"></i> ${digestEntry ? 'AI digest wasn’t generated for this contact (no LLM configured on the source run)' : 'No AI digest generated yet'} — showing a summary of captured activity instead.
-    </div>
-    <div class="chip-row" style="margin-bottom:12px;">
-      ${Object.entries(byChannel).map(([ch, arr]) => `<span class="chip"><i class="bi ${CHANNEL_ICON[ch] || 'bi-globe2'}"></i> ${esc(CHANNEL_LABEL[ch] || ch)}: ${arr.length}</span>`).join('')}
-      ${dates.length ? `<span class="chip"><i class="bi bi-calendar3"></i> Most recent: ${esc(dates[0])}</span>` : ''}
-    </div>
-  `;
-}
-
-export function renderPlaceholderProfile(reason) {
-  return `<div class="empty-block" style="padding:16px 4px;">
-    <div class="empty-block-icon"><i class="bi bi-slash-circle"></i></div>
-    <div class="empty-block-text">${esc(reason)}</div>
-  </div>`;
-}
-
 export function renderDrawerPinned(p) {
   const tag = p.tier || p.decision_authority || (p.departments && p.departments[0]) || null;
   const dossierReady = hasDossier(p);
@@ -138,6 +58,8 @@ export function renderDrawerPinned(p) {
       <a class="drawer-action ${p.email ? '' : 'disabled'}" ${p.email ? `href="mailto:${esc(p.email)}"` : ''}><i class="bi bi-envelope"></i> Email</a>
       <a class="drawer-action ${p.phone ? '' : 'disabled'}" ${p.phone ? `href="tel:${esc(p.phone)}"` : ''}><i class="bi bi-telephone"></i> Call</a>
       <a class="drawer-action ${p.linkedin_url ? '' : 'disabled'}" ${p.linkedin_url ? `href="${esc(p.linkedin_url)}" target="_blank"` : ''}><i class="bi bi-linkedin"></i> LinkedIn</a>
+      <button type="button" class="drawer-action ${p.id == null ? 'disabled' : ''}" id="drawerViewProfileBtn"><i class="bi bi-arrow-up-right-square"></i> View Profile</button>
+      <button type="button" class="drawer-action" id="drawerDownloadPdfBtn"><i class="bi bi-file-earmark-pdf"></i> Download PDF</button>
     </div>
 
     <div class="drawer-jumpnav">
@@ -150,6 +72,7 @@ export function renderDrawerPinned(p) {
 }
 
 export function renderContactDrawer(p) {
+  const targetKey = resolvePersonaTargetKey(p);
   const meta = [
     p.decision_authority ? `Decision authority: ${p.decision_authority}` : '',
     p.budget_authority ? `Budget authority: ${p.budget_authority}` : '',
@@ -194,9 +117,9 @@ export function renderContactDrawer(p) {
         ${renderPlaceholderProfile('Not available — no data source for psychological profiling is connected.')}
       </div>
 
-      <div class="drawer-section drawer-section-muted">
+      <div class="drawer-section" id="drawer-sec-personality">
         <div class="drawer-section-title"><i class="bi bi-person-lines-fill"></i> Personality Profile</div>
-        ${renderPlaceholderProfile('Not available — no personality-assessment source (e.g. DISC/Big Five) is connected.')}
+        ${renderPersonalityProfile(targetKey ? state.contentStore.digests[targetKey] : null)}
       </div>
     </div>
   `;
@@ -209,11 +132,13 @@ export function openContactDrawer(p) {
   drawerBody.scrollTop = 0;
   contactDrawer.classList.add('open');
   drawerBackdrop.classList.add('open');
+  state.activeDrawerPersona = p;
 }
 
 export function closeContactDrawer() {
   contactDrawer.classList.remove('open');
   drawerBackdrop.classList.remove('open');
+  state.activeDrawerPersona = null;
 }
 
 el('drawerClose').addEventListener('click', closeContactDrawer);
@@ -225,6 +150,21 @@ document.addEventListener('keydown', (e) => {
 });
 
 contactDrawer.addEventListener('click', function (e) {
+  const downloadBtn = e.target.closest('#drawerDownloadPdfBtn');
+  if (downloadBtn) {
+    if (state.activeDrawerPersona) triggerPersonaPdfDownload(state.activeDrawerPersona);
+    return;
+  }
+
+  const viewProfileBtn = e.target.closest('#drawerViewProfileBtn');
+  if (viewProfileBtn) {
+    const p = state.activeDrawerPersona;
+    if (p && p.id != null && state.activeAccountId != null) {
+      window.open(`/profile?account=${encodeURIComponent(state.activeAccountId)}&persona_id=${encodeURIComponent(p.id)}`, '_blank', 'noopener');
+    }
+    return;
+  }
+
   const jumpBtn = e.target.closest('[data-jump]');
   if (!jumpBtn) return;
   const target = drawerBody.querySelector(`#${jumpBtn.dataset.jump}`);

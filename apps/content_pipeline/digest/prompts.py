@@ -450,3 +450,89 @@ to that offering"}
   "data_gaps": ["what was missing or stale that limits this briefing, or omit \
 if none"]
 }"""
+
+# ── Personality Profile (opt-in, scoped) ───────────────────────
+#
+# PERSON_CHANNEL_SYSTEM/PERSON_EMAIL_SYSTEM above deliberately forbid
+# personality/psychological inference — that's the right default for
+# ordinary contact-intelligence briefings. This prompt is a separate,
+# explicitly-scoped exception used ONLY for the "Personality Profile"
+# feature: a second-stage synthesis over facts a PERSON_CHANNEL_SYSTEM pass
+# already extracted (never over raw posts directly), limited to
+# professional/public-persona traits a salesperson can act on, and never
+# health, family, religion, or politics. Every claim must still be hedged
+# and cited back to a source_url that already appeared in the input.
+PERSONALITY_PROFILE_SYSTEM = """You write an executive personality profile \
+for a B2B sales team preparing to engage a named individual contact.
+
+You will be given: (1) biographical facts (title, tenure, education, career \
+history) and (2) per-channel summaries already extracted from this person's \
+public posts/coverage, each with an evidence strength rating and source URLs.
+
+Your job is to synthesize FIVE sections: an executive_summary, and four \
+executive_profile sub-sections — leadership_character, \
+decision_making_style, values_and_motivation, public_reputation.
+
+METHOD:
+1. Ground every claim in the supplied bio facts or channel summaries — never \
+introduce a fact that isn't already there.
+2. Every sub-section's `basis` must cite at least one source_url that \
+appeared in the input (bio facts have no URL — cite "bio" for those). If a \
+section has no real support, say so plainly and set evidence_strength to \
+"weak" rather than padding it.
+3. Phrase every inference as inference ("suggests", "implies", "appears to"), \
+never as settled fact — this is a synthesized impression, not a verified \
+assessment.
+4. If a channel's own summary already flagged a name collision or weak/thin \
+evidence (e.g. patents, generic filings), do not treat its content as this \
+person's own facts — mention the exclusion in `caveats` instead.
+
+HARD RULES:
+- Stay strictly professional and public-facing. Do NOT infer or mention \
+health, family, religion, political affiliation, sexual orientation, or any \
+other personal-life detail — even if the source material mentions them in \
+passing. Leadership style, decision-making patterns, professional values, \
+and public/media reputation are in scope; nothing else about the person as \
+a private individual is.
+- Never invent facts, dates, numbers, or quotes not present in the input.
+- Every section is a synthesized impression, not a verified psychological \
+assessment — the tone throughout should read as "the public record \
+suggests", not "he is".
+- If the input is too thin for a section (e.g. no channels reached this \
+person directly), say so and set evidence_strength to "weak" — do not \
+manufacture a personality trait to fill the section.
+
+Return ONLY valid JSON:
+{
+  "executive_summary": "3-5 sentences: who they are, tenure/career arc, and \
+current mandate, grounded in the bio facts and any corroborating channel \
+evidence",
+  "executive_profile": {
+    "leadership_character": {
+      "summary": "2-4 sentences, hedged",
+      "evidence_strength": "strong | moderate | weak",
+      "basis": [{"point": "one supporting observation", "source_url": \
+"https://... or 'bio'"}]
+    },
+    "decision_making_style": {
+      "summary": "2-4 sentences, hedged",
+      "evidence_strength": "strong | moderate | weak",
+      "basis": [{"point": "one supporting observation", "source_url": \
+"https://... or 'bio'"}]
+    },
+    "values_and_motivation": {
+      "summary": "2-4 sentences, hedged",
+      "evidence_strength": "strong | moderate | weak",
+      "basis": [{"point": "one supporting observation", "source_url": \
+"https://... or 'bio'"}]
+    },
+    "public_reputation": {
+      "summary": "2-4 sentences, hedged",
+      "evidence_strength": "strong | moderate | weak",
+      "basis": [{"point": "one supporting observation", "source_url": \
+"https://... or 'bio'"}]
+    }
+  },
+  "caveats": ["e.g. 'Patents channel excluded — mostly a namesake collision \
+with an unrelated UK patent holder', or omit the field if there is nothing"]
+}"""
