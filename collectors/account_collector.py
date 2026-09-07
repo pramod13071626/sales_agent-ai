@@ -822,40 +822,165 @@ def fetch_latest_10k_chunks(
 
         sections_extracted = {}
 
-        # Item 1: Business Overview
-        item1_match = re.search(
-            (
-            r"(?:Item\s+1\.\s+Business|ITEM\s+1\.\s+BUSINESS)"
-            r"(.*?)(?:Item\s+1A\.|ITEM\s+1A\.|Item\s+2\.|ITEM\s+2\.)"
-        ),
-            plain_text,
-            re.DOTALL | re.IGNORECASE,
-        )
-        if item1_match:
-            sections_extracted["Item 1 - Business"] = item1_match.group(1).strip()
+        def extract_longest_section(patterns: List[str], min_len: int = 100) -> Optional[str]:
+            longest = ""
+            for pat in patterns:
+                for match in re.finditer(pat, plain_text, re.DOTALL | re.IGNORECASE):
+                    content = match.group(1).strip()
+                    if len(content) > len(longest):
+                        longest = content
+            return longest if len(longest) >= min_len else None
+
+        # Item 1: Business Overview (match longest body section, not TOC)
+        item1_text = extract_longest_section([
+            r"(?:Item\s+1\.\s+Business|ITEM\s+1\.\s+BUSINESS)(.*?)(?:Item\s+1A\.|ITEM\s+1A\.|Item\s+2\.|ITEM\s+2\.)",
+            r"(?:Item\s+1\s*[-–]\s*Business|ITEM\s+1\s*[-–]\s*BUSINESS)(.*?)(?:Item\s+1A|ITEM\s+1A|Item\s+2|ITEM\s+2)",
+        ])
+        if item1_text:
+            sections_extracted["Item 1 - Business"] = item1_text
         else:
             sections_extracted["Overview"] = plain_text[:8000].strip()
 
         # Item 1A: Risk Factors
-        item1a_match = re.search(
-            (
-            r"(?:Item\s+1A\.\s+Risk\s+Factors|ITEM\s+1A\.\s+RISK\s+FACTORS)"
-            r"(.*?)(?:Item\s+1B\.|ITEM\s+1B\.|Item\s+2\.|ITEM\s+2\.)"
-        ),
-            plain_text,
-            re.DOTALL | re.IGNORECASE,
-        )
-        if item1a_match:
-            sections_extracted["Item 1A - Risk Factors"] = item1a_match.group(1).strip()
+        item1a_text = extract_longest_section([
+            r"(?:Item\s+1A\.\s+Risk\s+Factors|ITEM\s+1A\.\s+RISK\s+FACTORS)(.*?)(?:Item\s+1B\.|ITEM\s+1B\.|Item\s+2\.|ITEM\s+2\.)",
+            r"(?:Item\s+1A\s*[-–]\s*Risk\s+Factors)(.*?)(?:Item\s+1B|Item\s+2)",
+        ])
+        # If Item 1A incorporates by reference or is brief, search for MD&A / main Risk Factors
+        if not item1a_text or len(item1a_text) < 500:
+            mda_risk_text = extract_longest_section([
+                r"(?:Risk\s+Factors|MD&A\s+[–\-]\s+Risk\s+Factors)(.*?)(?:Item\s+1B|Item\s+2|Item\s+7A|Item\s+8|\bGlossary\b)",
+            ])
+            if mda_risk_text and len(mda_risk_text) > (len(item1a_text) if item1a_text else 0):
+                item1a_text = mda_risk_text
+
+        if item1a_text:
+            sections_extracted["Item 1A - Risk Factors"] = item1a_text
 
         # Item 7: Management's Discussion & Analysis (MD&A)
-        item7_pattern = (
-            r"(?:Item\s+7\.\s+Management['’]s\s+Discussion|ITEM\s+7\.\s+MANAGEMENT['’]S\s+DISCUSSION)"
-            r"(.*?)(?:Item\s+7A\.|ITEM\s+7A\.|Item\s+8\.|ITEM\s+8\.)"
-        )
-        item7_match = re.search(item7_pattern, plain_text, re.DOTALL | re.IGNORECASE)
-        if item7_match:
-            sections_extracted["Item 7 - MD&A"] = item7_match.group(1).strip()
+        item7_text = extract_longest_section([
+            r"(?:Item\s+7\.\s+Management['’]s\s+Discussion|ITEM\s+7\.\s+MANAGEMENT['’]S\s+DISCUSSION)(.*?)(?:Item\s+7A\.|ITEM\s+7A\.|Item\s+8\.|ITEM\s+8\.)",
+            r"(?:Item\s+7\s*[-–]\s*Management['’]s\s+Discussion)(.*?)(?:Item\s+7A|Item\s+8)",
+        ])
+        if item7_text:
+            sections_extracted["Item 7 - MD&A"] = item7_text
+
+        # Item 10: Directors, Executive Officers & Corporate Governance
+        item10_text = extract_longest_section([
+            r"(?:Item\s+10\.\s+Directors,\s+Executive\s+Officers|ITEM\s+10\.\s+DIRECTORS,\s+EXECUTIVE\s+OFFICERS|INFORMATION\s+ABOUT\s+OUR\s+EXECUTIVE\s+OFFICERS)(.*?)(?:Item\s+11\.|ITEM\s+11\.|Item\s+12\.|ITEM\s+12\.|Part\s+IV|SIGNATURES)",
+            r"(?:Executive\s+Officers\s+of\s+the\s+Registrant|Executive\s+Officers)(.*?)(?:Item\s+1A|Item\s+2|Item\s+11|Item\s+12|Part\s+II)",
+        ])
+        if item10_text:
+            sections_extracted["Item 10 - Executive Officers"] = item10_text
+
+        # ── Structured Extraction: Executive Officers & Risk Disclosures ──
+        structured_execs = []
+        exec_source_text = sections_extracted.get("Item 10 - Executive Officers") or plain_text
+        if exec_source_text:
+            seen_officer_names = set()
+
+            # Pattern A: Table-style "Rajashree Datta 48 Ms. Datta has served as..."
+            table_pat = r"(?:^|\.\s+|\n)([A-Z][a-zA-Z\.\s]{2,30})\s+(\d{2})\s+((?:(?:Mr\.|Ms\.|Dr\.)?\s*.*?(?:has served as|served as|serves as|is)\s+)?([^\.\n]{5,150}))"
+            for tm in re.finditer(table_pat, exec_source_text):
+                raw_name = tm.group(1).strip()
+                clean_name = re.sub(r"^(?:[A-Za-z0-9,\s]+(?:\.|\band\b|\bfrom\b)\s+)+", "", raw_name).strip()
+                if not clean_name:
+                    clean_name = raw_name
+                age_val = tm.group(2)
+                bio_snippet = tm.group(3).strip()
+
+                if (
+                    len(clean_name.split()) >= 2
+                    and len(clean_name) > 4
+                    and clean_name.lower() not in seen_officer_names
+                    and not any(
+                        w in clean_name.lower()
+                        for w in [
+                            "the company", "directors", "officers", "board", "committee",
+                            "table of", "name age", "item", "part", "section", "risk officer",
+                            "financial statement"
+                        ]
+                    )
+                ):
+                    seen_officer_names.add(clean_name.lower())
+                    # Extract clean title from bio snippet if available
+                    title_match = re.search(r"(?:serves\s+as|served\s+as|is\s+(?:the\s+)?)([^\.,\n]{5,80})(?:since|\bfrom\b|\band\b|\.|\,|$)", bio_snippet, re.IGNORECASE)
+                    parsed_title = title_match.group(1).strip() if title_match else bio_snippet[:70]
+                    structured_execs.append(
+                        {
+                            "name": clean_name,
+                            "title": parsed_title,
+                            "age": int(age_val) if age_val else None,
+                            "bio_summary": bio_snippet[:200],
+                            "source": "SEC Form 10-K Item 10 / Executive Officers Disclosure",
+                        }
+                    )
+
+            # Pattern B: Inline comma format "Robin Vince, age 53, President and Chief Executive Officer"
+            inline_pat = r"([A-Z][a-zA-Z\.\s]{2,35})\s*[,|\(]\s*(?:age\s*)?(\d{2})?\s*[,|\)]\s*(?:is|has\s+served\s+as|serves\s+as)?\s*([^\.\n]{5,120})\."
+            for om in re.finditer(inline_pat, exec_source_text):
+                o_name = om.group(1).strip()
+                o_age = om.group(2)
+                o_title = om.group(3).strip()
+                o_name_clean = re.sub(r"\s+", " ", o_name).strip()
+
+                if (
+                    len(o_name_clean.split()) >= 2
+                    and len(o_name_clean) > 4
+                    and o_name_clean.lower() not in seen_officer_names
+                    and not any(
+                        w in o_name_clean.lower()
+                        for w in [
+                            "the company", "directors", "officers", "executive", "board",
+                            "committee", "table of", "item", "part", "section", "financial",
+                            "statement", "name age"
+                        ]
+                    )
+                ):
+                    seen_officer_names.add(o_name_clean.lower())
+                    structured_execs.append(
+                        {
+                            "name": o_name_clean,
+                            "title": o_title,
+                            "age": int(o_age) if o_age else None,
+                            "bio_summary": f"{o_name_clean} serves as {o_title}.",
+                            "source": "SEC Form 10-K Item 10 / Executive Officers Disclosure",
+                        }
+                    )
+
+        # Structured Item 1A Risk Factors into categorized items
+        structured_risks = []
+        raw_risk_text = sections_extracted.get("Item 1A - Risk Factors", "")
+        if raw_risk_text:
+            risk_paragraphs = [
+                rp.strip()
+                for rp in re.split(r"(?:&#8226;|\n\s*•|\n\s*-\s*|\n\s*\n)", raw_risk_text)
+                if len(rp.strip()) > 60
+            ]
+            for rp in risk_paragraphs[:30]:
+                rt_match = re.match(r"^([^\.\n]{15,140}\.?)", rp)
+                r_title = rt_match.group(1).strip() if rt_match else rp[:100] + "..."
+
+                rp_lower = rp.lower()
+                if any(k in rp_lower for k in ["cyber", "technology", "information security", "data breach", "cloud", "ai", "artificial intelligence", "system failure", "ransomware", "outage", "disruption"]):
+                    category = "Cyber & Technology Risk"
+                elif any(k in rp_lower for k in ["regulation", "regulatory", "capital", "compliance", "sec", "fdic", "federal reserve", "basel", "legal", "sanctions", "litigation", "law"]):
+                    category = "Regulatory & Compliance Risk"
+                elif any(k in rp_lower for k in ["credit", "liquidity", "market", "interest rate", "inflation", "volatility", "counterparty", "trading", "asset quality", "currency"]):
+                    category = "Market & Financial Risk"
+                elif any(k in rp_lower for k in ["geopolitical", "war", "climate", "esg", "reputation", "talent", "retention", "competition", "merger", "operational", "processing"]):
+                    category = "Strategic & Operational Risk"
+                else:
+                    category = "General Enterprise Risk"
+
+                structured_risks.append(
+                    {
+                        "risk_title": r_title,
+                        "risk_category": category,
+                        "summary": rp[:300] + ("..." if len(rp) > 300 else ""),
+                        "full_text": rp,
+                    }
+                )
 
         all_chunks = []
         for sec_name, sec_text in sections_extracted.items():
@@ -879,6 +1004,10 @@ def fetch_latest_10k_chunks(
             "primary_document_url": doc_url,
             "total_chunks": len(all_chunks),
             "sections_found": list(sections_extracted.keys()),
+            "structured_executive_officers": structured_execs,
+            "structured_risk_disclosures": structured_risks,
+            "total_officers_extracted": len(structured_execs),
+            "total_risks_extracted": len(structured_risks),
             "chunks": all_chunks,
         }
 
@@ -1211,22 +1340,54 @@ def fetch_sec_exhibit_21_subsidiaries(
 # ═════════════════════════════════════════════════════════════════════
 
 
+def is_commercial_operating_lob(name: str) -> bool:
+    """
+    Determines if a legal entity name represents an active commercial operating business unit / LOB
+    versus a passive special purpose vehicle (SPV), nominee, or financing shell.
+    """
+    if not name:
+        return False
+    name_lower = name.lower()
+
+    # Passive shell / vehicle patterns
+    passive_keywords = [
+        "nominee", "funding llc", "special purpose", "spv", "conduit",
+        "securitisation", "securitization", "issuer", "financing",
+        "shelf", "escrow", "repack", "pass-through", "statutory trust",
+        "capital trust", "liquidity llc", "subordinated notes"
+    ]
+    if any(pk in name_lower for pk in passive_keywords):
+        return False
+
+    # Active commercial operating LOB patterns
+    commercial_keywords = [
+        "wealth management", "asset management", "investment management",
+        "securities", "bank", "trust company", "capital markets",
+        "advisors", "advisory", "services", "technology", "clearing",
+        "custody", "brokerage", "asset servicing", "investor solutions",
+        "global markets", "fund management", "holdings", "partners",
+        "international", "direct", "digital", "solutions", "corporation",
+        "insurance", "consulting", "logistics", "software"
+    ]
+    return any(ck in name_lower for ck in commercial_keywords)
+
+
 def fetch_gleif_ownership_tree(
-    company_name: str, raw_dir: Optional[Path] = None, max_children: int = 15
+    company_name: str, raw_dir: Optional[Path] = None, max_children: int = 50
 ) -> Dict[str, Any]:
     """
     100% Dynamic GLEIF (G20-mandated LEI Database) Resolver.
     Queries the official open GLEIF API (https://api.gleif.org) for:
-    - Master 20-character LEI Code
-    - Legal Entity Name & Registered Global Address
+    - Master 20-character LEI Code & Legal Form
+    - Registration Authority Entity ID & Managing LOU
+    - Legal Entity Name & Registered Global Address & Jurisdiction
     - Direct Parent Entity & Ultimate Controlling Parent
-    - Child Legal Subsidiaries (Ownership Graph)
+    - Child Legal Subsidiaries (Ownership Graph) with Commercial LOB Classification
     """
     if not company_name:
         return {"status": "error", "message": "No company name provided."}
 
     print(f"[*] [GLEIF Resolver] Querying global LEI records for '{company_name}'...")
-    encoded_name = urllib.parse.quote_plus(company_name)
     enc_name = urllib.parse.quote_plus(company_name)
     gleif_search_url = f"https://api.gleif.org/api/v1/lei-records?filter[entity.legalName]={enc_name}&page[size]=1"
 
@@ -1264,6 +1425,15 @@ def fetch_gleif_ownership_tree(
         jurisdiction = entity_attr.get("jurisdiction")
         category = entity_attr.get("category")
 
+        # Legal Form and Registration Authority Details
+        legal_form_data = entity_attr.get("legalForm", {})
+        legal_form_id = legal_form_data.get("id")
+        legal_form_name = legal_form_data.get("name") or legal_form_data.get("otherLegalForm")
+        reg_auth_id = reg_attr.get("registrationAuthorityEntityId") or reg_attr.get("registrationAuthority", {}).get("registrationAuthorityId")
+        managing_lou = reg_attr.get("managingLou")
+        registration_date = reg_attr.get("initialRegistrationDate")
+        country = legal_address.get("country")
+
         direct_parent_link = (
             primary_record.get("relationships", {})
             .get("direct-parent", {})
@@ -1279,39 +1449,74 @@ def fetch_gleif_ownership_tree(
 
         # ── Fetch Direct Child Subsidiaries if Available ──
         child_subsidiaries = []
+        structured_child_lobs = []
         if lei:
             children_url = (
-            f"https://api.gleif.org/api/v1/lei-records/{lei}/direct-children?page[size]={max_children}"
-        )
+                f"https://api.gleif.org/api/v1/lei-records/{lei}/direct-children?page[size]={max_children}"
+            )
             try:
                 c_res = requests.get(children_url, headers=headers, timeout=15)
                 if c_res.status_code == 200:
                     c_data = c_res.json()
                     for c_item in c_data.get("data", []):
-                        c_attr = c_item.get("attributes", {}).get("entity", {})
-                        child_subsidiaries.append(
-                            {
-                                "lei": c_item.get("attributes", {}).get("lei"),
-                                "legal_name": c_attr.get("legalName", {}).get("name"),
-                                "jurisdiction": c_attr.get("jurisdiction"),
-                                "country": c_attr.get("legalAddress", {}).get("country"),
-                                "status": c_attr.get("status"),
-                                "relationship_type": "Direct Child Entity (GLEIF Level 2)",
-                            }
-                        )
+                        c_entity = c_item.get("attributes", {}).get("entity", {})
+                        c_reg = c_item.get("attributes", {}).get("registration", {})
+                        c_legal_name = c_entity.get("legalName", {}).get("name")
+                        c_lei = c_item.get("attributes", {}).get("lei") or c_item.get("id")
+                        c_jurisdiction = c_entity.get("jurisdiction")
+                        c_country = c_entity.get("legalAddress", {}).get("country")
+                        c_status = c_entity.get("status")
+                        c_legal_form_dict = c_entity.get("legalForm", {})
+                        c_legal_form = c_legal_form_dict.get("name") or c_legal_form_dict.get("otherLegalForm") or c_legal_form_dict.get("id")
+                        c_reg_auth = c_reg.get("registrationAuthorityEntityId") or c_reg.get("registrationAuthority", {}).get("registrationAuthorityId")
+                        is_comm = is_commercial_operating_lob(c_legal_name or "")
+
+                        child_obj = {
+                            "lei": c_lei,
+                            "legal_name": c_legal_name,
+                            "legal_form": c_legal_form,
+                            "registration_authority_id": c_reg_auth,
+                            "jurisdiction": c_jurisdiction,
+                            "country": c_country,
+                            "status": c_status,
+                            "is_commercial_lob": is_comm,
+                            "relationship_type": "Direct Child Entity (GLEIF Level 2)",
+                        }
+                        child_subsidiaries.append(child_obj)
+
+                        if is_comm and c_legal_name:
+                            structured_child_lobs.append({
+                                "lob_name": c_legal_name,
+                                "lei": c_lei,
+                                "legal_form": c_legal_form,
+                                "jurisdiction": c_jurisdiction,
+                                "country": c_country,
+                                "classification": "Commercial Operating Subsidiary / Division",
+                                "source": "GLEIF Global LEI Registry",
+                            })
             except Exception as e:
                 print(f"[!] [GLEIF Resolver] Notice fetching child entities: {e}")
 
+        commercial_count = sum(1 for c in child_subsidiaries if c.get("is_commercial_lob"))
+        passive_count = len(child_subsidiaries) - commercial_count
+
         print(
-            f"[+] [GLEIF Resolver] Matched LEI '{lei}' with {len(child_subsidiaries)} registered child entities."
+            f"[+] [GLEIF Resolver] Matched LEI '{lei}' with {len(child_subsidiaries)} registered child entities "
+            f"({commercial_count} commercial LOBs, {passive_count} passive entities)."
         )
 
         return {
             "status": "success",
             "lei": lei,
             "legal_name": legal_name,
+            "legal_form_id": legal_form_id,
+            "legal_form_name": legal_form_name,
+            "registration_authority_id": reg_auth_id,
+            "managing_lou": managing_lou,
+            "registration_date": registration_date,
             "entity_status": entity_status,
             "jurisdiction": jurisdiction,
+            "country": country,
             "category": category,
             "legal_address": {
                 "address_lines": legal_address.get("addressLines", []),
@@ -1328,6 +1533,9 @@ def fetch_gleif_ownership_tree(
             "direct_parent_relationship_url": direct_parent_link,
             "ultimate_parent_relationship_url": ultimate_parent_link,
             "total_child_entities_found": len(child_subsidiaries),
+            "commercial_operating_lobs_count": commercial_count,
+            "passive_entity_count": passive_count,
+            "structured_child_lobs": structured_child_lobs,
             "child_entities": child_subsidiaries,
         }
 

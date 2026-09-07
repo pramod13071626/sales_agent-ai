@@ -51,14 +51,10 @@ from serializers.persona_serializer import PersonaSerializer
 
 from sqlalchemy.orm import selectinload
 from db.connection import get_session
-<<<<<<< Updated upstream
-from db.models import Account, Lob, SubLob, Persona, Post, Digest, OpportunitySignal, WeeklyDigestSnapshot, LinkedInJob, CxoMovement
-=======
 from db.models import (
     Account, Lob, SubLob, Persona, Post, Digest, OpportunitySignal,
-    WeeklyDigestSnapshot, LinkedInJob,
+    WeeklyDigestSnapshot, LinkedInJob, CxoMovement,
 )
->>>>>>> Stashed changes
 from db.schemas import AccountSchema, LobSchema, PersonaSchema
 from db.repositories import (
     AccountRepository, LobRepository, PersonaRepository,
@@ -96,6 +92,10 @@ if FASTAPI_AVAILABLE:
     # ══════════════════════════════════════════════════════
     # REQUEST / RESPONSE MODELS
     # ══════════════════════════════════════════════════════
+    class AccountCreateRequest(BaseModel):
+        company_name: str
+        domain: Optional[str] = None
+
     class AccountFetchRequest(BaseModel):
         company_name: str
         target_url: Optional[str] = None
@@ -207,6 +207,69 @@ if FASTAPI_AVAILABLE:
     # TAB 1: ACCOUNT LEVEL ENDPOINTS
     # ══════════════════════════════════════════════════════
     account_router = APIRouter(prefix="/api/account", tags=["1. Account Level"])
+
+    @account_router.post("/create")
+    def create_account_stub(req: AccountCreateRequest):
+        """[Tab 1 - Add Account Modal]: Creates or fetches an Account row in PostgreSQL with an official ID."""
+        session = get_session()
+        try:
+            clean_name = req.company_name.strip()
+            slug = slugify(clean_name)
+            clean_dom = (
+                req.domain.replace("https://", "").replace("http://", "").split("/")[0].strip().lower()
+                if req.domain
+                else None
+            )
+
+            # Check if account already exists by key, name, or domain
+            from sqlalchemy import or_
+            filters = [
+                Account.key == slug,
+                Account.display_name.ilike(clean_name),
+            ]
+            if clean_dom:
+                filters.extend([
+                    Account.domain == clean_dom,
+                    Account.primary_domain == clean_dom,
+                ])
+
+            existing = session.query(Account).filter(or_(*filters)).first()
+            if existing:
+                return {
+                    "status": "exists",
+                    "account_id": existing.id,
+                    "key": existing.key,
+                    "name": existing.display_name,
+                    "domain": existing.primary_domain or existing.domain,
+                    "message": f"Account '{existing.display_name}' already registered in database (ID: {existing.id}).",
+                }
+
+            # Create new minimal account row
+            new_account = Account(
+                key=slug,
+                display_name=clean_name,
+                legal_name=clean_name,
+                domain=clean_dom,
+                primary_domain=clean_dom,
+                website_url=f"https://{clean_dom}" if clean_dom else None,
+            )
+            session.add(new_account)
+            session.commit()
+            session.refresh(new_account)
+
+            return {
+                "status": "created",
+                "account_id": new_account.id,
+                "key": new_account.key,
+                "name": new_account.display_name,
+                "domain": new_account.primary_domain,
+                "message": f"Account '{new_account.display_name}' created successfully in database (ID: {new_account.id}).",
+            }
+        except Exception as e:
+            session.rollback()
+            raise HTTPException(status_code=500, detail=f"Account creation failed: {str(e)}")
+        finally:
+            session.close()
 
     @account_router.post("/fetch")
     def fetch_account_data(req: AccountFetchRequest):
@@ -655,16 +718,6 @@ if FASTAPI_AVAILABLE:
         response.headers["Expires"] = "0"
         session = get_session()
         try:
-<<<<<<< Updated upstream
-            accounts = (session.query(Account)
-                        .options(
-                            selectinload(Account.personas),
-                            selectinload(Account.lobs).selectinload(Lob.sub_lobs)
-                        )
-                        .order_by(Account.id.desc())
-                        .all())
-            return {"accounts": [_serialize_account_summary(acct) for acct in accounts]}
-=======
             accounts = session.query(Account).order_by(Account.id.desc()).all()
             result = []
             for acct in accounts:
@@ -912,7 +965,6 @@ if FASTAPI_AVAILABLE:
                 })
 
             return {"accounts": result}
->>>>>>> Stashed changes
         finally:
             session.close()
 

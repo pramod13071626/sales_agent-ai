@@ -144,13 +144,8 @@ $(function () {
 
     // Populate Hero Info
     $('#heroAvatar').text(getInitials(activeAccount.name));
-    $('#accountName').text(activeAccount.name);
     $('#accountTicker').text(activeAccount.ticker || 'Enterprise');
-<<<<<<< Updated upstream
-    $('#accountRevenue').text(activeAccount.revenue || 'Revenue N/A');
-=======
     $('#accountRevenue').text(activeAccount.revenue || activeAccount.funding || '—');
->>>>>>> Stashed changes
     $('#accountLocation').text(activeAccount.location || 'Location N/A');
     $('#accountDesc').text(activeAccount.desc || 'No description available.');
 
@@ -179,9 +174,6 @@ $(function () {
       });
     }
     
-<<<<<<< Updated upstream
-    $('#lobSection').removeClass('d-none');
-=======
     // Show LOB section — hide it for brand-new accounts that haven't been pulled yet
     if (activeAccount._isNew) {
       $('#lobSection').addClass('d-none');
@@ -199,7 +191,6 @@ $(function () {
 
     // Render Complete Enterprise Hierarchy at Account Level
     renderPersonaCards(activeAccount.personas || [], `${activeAccount.name} — Enterprise Leadership Hierarchy`);
->>>>>>> Stashed changes
   });
 
   // 3. Handle LOB Card Selection
@@ -1130,8 +1121,6 @@ $(function () {
     }
   });
 
-<<<<<<< Updated upstream
-=======
   function renderField(label, value, opts = {}) {
     if (value === null || value === undefined || value === '') {
       return `<div class="detail-field${opts.span2 ? ' span-2' : ''}"><div class="detail-label">${label}</div><div class="detail-val" style="color:var(--text-muted);font-style:italic;">—</div></div>`;
@@ -1693,6 +1682,7 @@ $(function () {
         state.message = `<span style="color:#10b981;">💾 Saved to database — Account ID: ${data.account_id || '—'}</span>`;
         $btn.html('💾 Dumped ✔').prop('disabled', false);
         $status.html(state.message);
+        showNotification(`💾 Account <strong>${esc(activeAccount.name)}</strong> enriched data saved to database (ID: ${data.account_id})`, 'success');
 
         // Reload sidebar so the updated account name/revenue appears
         setTimeout(() => { loadData(); }, 800);
@@ -1708,7 +1698,29 @@ $(function () {
     }
   });
 
-  // ─── Add New Account (Modal → Pipeline Panel) ────────────────────────────
+  // ─── Notification Toast Helper ──────────────────────────────────────────
+  function showNotification(message, type = 'success') {
+    const isSuccess = type === 'success';
+    const icon = isSuccess ? 'bi-check-circle-fill' : 'bi-exclamation-triangle-fill';
+    const bg = isSuccess
+      ? 'linear-gradient(135deg,#059669,#10b981)'
+      : 'linear-gradient(135deg,#dc2626,#ef4444)';
+
+    const $toast = $(`
+      <div class="fade-in" style="pointer-events:auto;min-width:280px;max-width:380px;background:${bg};color:#fff;padding:12px 18px;border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,0.18);display:flex;align-items:center;gap:12px;font-size:0.85rem;font-weight:600;transition:all 0.3s ease;">
+        <i class="bi ${icon}" style="font-size:1.15rem;"></i>
+        <div style="flex:1;line-height:1.35;">${message}</div>
+      </div>
+    `);
+    $('#toastNotificationContainer').append($toast);
+    setTimeout(() => {
+      $toast.fadeOut(400, function () {
+        $(this).remove();
+      });
+    }, 4500);
+  }
+
+  // ─── Add New Account (Modal → Immediate DB Creation → Pipeline Panel) ────
 
   // Open modal
   $('#addNewAccountBtn').on('click', function () {
@@ -1727,8 +1739,9 @@ $(function () {
     }
   });
 
-  // Start Pipeline button — close modal, render new account pipeline view
-  $('#startNewAccountBtn').on('click', function () {
+  // Start Pipeline button — persists account stub to DB, closes modal, renders pipeline view
+  $('#startNewAccountBtn').on('click', async function () {
+    const $btn = $(this);
     const companyName = $('#newAccountName').val().trim();
     if (!companyName) {
       $('#newAccountName').addClass('is-invalid').trigger('focus');
@@ -1737,56 +1750,79 @@ $(function () {
     $('#newAccountName').removeClass('is-invalid');
     const domain = $('#newAccountDomain').val().trim().replace(/^https?:\/\//, '').replace(/\/$/, '');
 
-    // Close modal first
-    bootstrap.Modal.getInstance(document.getElementById('addAccountModal')).hide();
+    const originalBtnText = $btn.html();
+    $btn.html('<i class="bi bi-hourglass-split"></i> Creating in DB...').prop('disabled', true);
 
-    // Reset staged data for fresh start
-    accountStagedData = null;
+    try {
+      // 1. Persist initial account row in PostgreSQL immediately so it has an official ID and survives page refresh
+      const res = await fetch('/api/account/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          company_name: companyName,
+          domain: domain || null
+        })
+      });
 
-    // Use a unique temp id so it doesn't clash with any DB id
-    const tempId = `new_${Date.now()}`;
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: Failed to create account`);
+      }
+      const data = await res.json();
+      const realId = data.account_id;
 
-    // Build temp account object — flows through normal account handler
-    const tempAccount = {
-      id: tempId,
-      name: companyName,
-      domain: domain || null,
-      primary_domain: domain || null,
-      website_url: domain ? `https://${domain}` : null,
-      ticker: 'NEW',
-      revenue: domain || 'Domain not set',
-      location: '—',
-      desc: 'Not in database yet. Run Pull → Validate → Dump to onboard this account.',
-      lobs: [],
-      personas: [],
-      _isNew: true   // flag used by click handler to hide LOB section
-    };
+      // Close modal
+      bootstrap.Modal.getInstance(document.getElementById('addAccountModal')).hide();
+      $btn.html(originalBtnText).prop('disabled', false);
 
-    // Reset action state keyed to this temp id
-    actionStateStore[`account_${tempId}`] = { pulled: false, validated: false, dumped: false, score: null, message: '' };
+      // Show top-right floating success toast
+      showNotification(
+        `✅ Account <strong>${esc(companyName)}</strong> created successfully (ID: ${realId})`,
+        'success'
+      );
 
-    // Inject temp account at top of MOCK_DATA so the click handler can find it
-    // Remove any previous temp account first
-    MOCK_DATA.accounts = (MOCK_DATA.accounts || []).filter(a => !String(a.id).startsWith('new_'));
-    MOCK_DATA.accounts.unshift(tempAccount);
+      // Reset staged data for fresh start
+      accountStagedData = null;
 
-    // Prepend a sidebar item for this temp account at the top of #accountList
-    $('#accountList .account-item[data-id^="new_"]').remove();
-    const $tempItem = $(`
-      <button type="button" class="account-item fade-in" data-id="${tempId}" style="border-left:3px solid #0ea5e9;">
-        <div class="acct-avatar" style="background:linear-gradient(135deg,#0ea5e9,#6366f1);color:#fff;">${esc(getInitials(companyName))}</div>
-        <div class="acct-info">
-          <div class="acct-name">${esc(companyName)}</div>
-          <div style="font-size:.65rem;color:#0ea5e9;font-weight:600;margin-top:1px;">NEW — Pending</div>
-        </div>
-      </button>
-    `);
-    $('#accountList').prepend($tempItem);
+      // Build account object with official database ID
+      const newAccountObj = {
+        id: realId,
+        key: data.key || companyName.toLowerCase().replace(/[^a-z0-9]+/g, '_'),
+        name: companyName,
+        domain: domain || null,
+        primary_domain: domain || null,
+        website_url: domain ? `https://${domain}` : null,
+        ticker: 'NEW',
+        revenue: domain || 'Domain not set',
+        location: '—',
+        desc: 'Account registered in database. Run Pull → Validate → Dump to enrich with 11 sources.',
+        lobs: [],
+        personas: [],
+        _isNew: true
+      };
 
-    // Trigger the standard account click handler — it clears all existing content (BNY panels, LOBs, intel-tags) properly
-    $tempItem.trigger('click');
+      // Reset action state keyed to this official DB id
+      actionStateStore[`account_${realId}`] = {
+        pulled: false,
+        validated: false,
+        dumped: false,
+        score: null,
+        message: ''
+      };
+
+      // Add to MOCK_DATA.accounts (replacing any duplicate if present)
+      MOCK_DATA.accounts = (MOCK_DATA.accounts || []).filter(a => a.id !== realId);
+      MOCK_DATA.accounts.unshift(newAccountObj);
+
+      // Re-render sidebar and activate the newly created account
+      renderSidebar();
+      $(`#accountList .account-item[data-id="${realId}"]`).trigger('click');
+
+    } catch (err) {
+      console.error('Account creation error:', err);
+      $btn.html(originalBtnText).prop('disabled', false);
+      showNotification(`❌ Error creating account: ${esc(err.message)}`, 'error');
+    }
   });
 
->>>>>>> Stashed changes
 });
 

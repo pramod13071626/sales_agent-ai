@@ -16,13 +16,8 @@ from db.models.weekly_digest import WeeklyDigestSnapshot
 from db.models.linkedin_job import LinkedInJob
 from db.models.cxo_movement import CxoMovement
 
-<<<<<<< Updated upstream
-__all__ = ["Base", "Account", "Lob", "SubLob", "Persona", "PipelineRun", "Post", "Digest",
-           "OpportunitySignal", "WeeklyDigestSnapshot", "LinkedInJob", "CxoMovement"]
-=======
 __all__ = [
     "Base", "Account", "Lob", "SubLob", "Persona", "PipelineRun",
     "Post", "Digest", "OpportunitySignal", "WeeklyDigestSnapshot",
-    "LinkedInJob",
+    "LinkedInJob", "CxoMovement",
 ]
->>>>>>> Stashed changes
