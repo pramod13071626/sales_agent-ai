@@ -20,7 +20,10 @@ from db.models.refresh_token import RefreshToken
 from db.models.password_reset_token import PasswordResetToken
 from db.models.audit_log import AuditLog
 from db.models.user_account_access import UserAccountAccess
+from db.models.action_item import ActionItem
+from db.models.action_item_reminder import ActionItemReminder
 
 __all__ = ["Base", "Account", "Lob", "SubLob", "Persona", "PipelineRun", "Post", "Digest",
            "OpportunitySignal", "WeeklyDigestSnapshot", "LinkedInJob", "CxoMovement",
-           "User", "RefreshToken", "PasswordResetToken", "AuditLog", "UserAccountAccess"]
+           "User", "RefreshToken", "PasswordResetToken", "AuditLog", "UserAccountAccess",
+           "ActionItem", "ActionItemReminder"]

@@ -328,3 +328,23 @@ def require_persona_account_access(persona_id: int, user: User = Depends(get_cur
         return user
     finally:
         session.close()
+
+
+def require_action_item_account_access(item_id: int, user: User = Depends(get_current_user)) -> User:
+    """Same as require_account_access, but for a route keyed by an
+    action_items id — resolves the item's account first, then applies the
+    same check. See ACTION_ITEMS_IMPLEMENTATION_PLAN.md §2."""
+    if user.role == "super_admin":
+        return user
+    session = get_session()
+    try:
+        from db.models import ActionItem
+        item = session.query(ActionItem).filter_by(id=item_id).first()
+        if not item:
+            raise HTTPException(status_code=404, detail="Action item not found")
+        allowed = session.query(UserAccountAccess).filter_by(user_id=user.id, account_id=item.account_id).first()
+        if not allowed:
+            raise HTTPException(status_code=403, detail="You do not have access to this account")
+        return user
+    finally:
+        session.close()

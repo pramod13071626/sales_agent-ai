@@ -27,3 +27,6 @@ export const signalModalBackdrop = el('signalModalBackdrop');
 export const signalModalTitle = el('signalModalTitle');
 export const signalModalBody = el('signalModalBody');
 export const globalLoadingBar = el('globalLoadingBar');
+export const myTasksDrawer = el('myTasksDrawer');
+export const myTasksDrawerBackdrop = el('myTasksDrawerBackdrop');
+export const myTasksDrawerBody = el('myTasksDrawerBody');

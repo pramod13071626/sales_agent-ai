@@ -52,7 +52,7 @@ from serializers.persona_serializer import PersonaSerializer
 
 from sqlalchemy.orm import selectinload
 from db.connection import get_session
-from db.models import Account, Lob, SubLob, Persona, Post, Digest, OpportunitySignal, WeeklyDigestSnapshot, LinkedInJob, CxoMovement, User, AuditLog
+from db.models import Account, Lob, SubLob, Persona, Post, Digest, OpportunitySignal, WeeklyDigestSnapshot, LinkedInJob, CxoMovement, User, AuditLog, ActionItem, ActionItemReminder
 from db.schemas import AccountSchema, LobSchema, PersonaSchema
 from db.repositories import AccountRepository, LobRepository, PersonaRepository
 from db.importer import import_run_to_db
@@ -436,6 +436,14 @@ if FASTAPI_AVAILABLE:
             active_users = session.query(User).filter_by(is_active=True).count()
             super_admin_count = session.query(User).filter_by(role="super_admin").count()
             total_accounts = session.query(Account).count()
+            open_action_items = session.query(ActionItem).filter(
+                ActionItem.status.in_(("open", "in_progress"))
+            ).count()
+            overdue_action_items = session.query(ActionItem).filter(
+                ActionItem.status.in_(("open", "in_progress")),
+                ActionItem.due_date.isnot(None),
+                ActionItem.due_date < datetime.now(timezone.utc),
+            ).count()
 
             recent_logins = (session.query(User)
                               .filter(User.last_login_at.isnot(None))
@@ -457,6 +465,8 @@ if FASTAPI_AVAILABLE:
                 "inactive_users": total_users - active_users,
                 "super_admin_count": super_admin_count,
                 "total_accounts": total_accounts,
+                "open_action_items": open_action_items,
+                "overdue_action_items": overdue_action_items,
                 "recent_logins": [
                     {"id": u.id, "email": u.email, "full_name": u.full_name,
                      "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None}
@@ -582,6 +592,23 @@ if FASTAPI_AVAILABLE:
         confidence: Optional[str] = None
         data_gaps: List[str] = []
         do_not_say: List[str] = []
+
+    class ActionItemCreateRequest(BaseModel):
+        title: str
+        description: Optional[str] = None
+        persona_id: Optional[int] = None
+        priority: str = "medium"  # high | medium | low
+        due_date: Optional[str] = None  # ISO 8601
+        assigned_to_id: Optional[int] = None
+
+    class ActionItemUpdateRequest(BaseModel):
+        title: Optional[str] = None
+        description: Optional[str] = None
+        persona_id: Optional[int] = None
+        status: Optional[str] = None  # open | in_progress | done | cancelled
+        priority: Optional[str] = None
+        due_date: Optional[str] = None
+        assigned_to_id: Optional[int] = None
 
     # ══════════════════════════════════════════════════════
     # TAB 1: ACCOUNT LEVEL ENDPOINTS
@@ -2016,6 +2043,300 @@ if FASTAPI_AVAILABLE:
         except Exception as e:
             session.rollback()
             raise HTTPException(status_code=500, detail=f"Weekly update sync failed: {str(e)}")
+        finally:
+            session.close()
+
+    # ══════════════════════════════════════════════════════
+    # ACTION ITEMS — client-specific work-list (see
+    # ACTION_ITEMS_IMPLEMENTATION_PLAN.md)
+    # ══════════════════════════════════════════════════════
+    def _serialize_action_item(item: ActionItem) -> Dict[str, Any]:
+        now = datetime.now(timezone.utc)
+        due = item.due_date
+        is_overdue = bool(
+            due and item.status not in ("done", "cancelled")
+            and (due if due.tzinfo else due.replace(tzinfo=timezone.utc)) < now
+        )
+        return {
+            "id": item.id,
+            "account_id": item.account_id,
+            "persona_id": item.persona_id,
+            "persona_name": item.persona.full_name if item.persona else None,
+            "title": item.title,
+            "description": item.description,
+            "status": item.status,
+            "priority": item.priority,
+            "due_date": item.due_date.isoformat() if item.due_date else None,
+            "is_overdue": is_overdue,
+            "assigned_to_id": item.assigned_to_id,
+            "assigned_to_name": (item.assigned_to.full_name or item.assigned_to.email) if item.assigned_to else None,
+            "created_by_id": item.created_by_id,
+            "created_by_name": (item.created_by.full_name or item.created_by.email) if item.created_by else None,
+            "source": item.source,
+            "source_ref_id": item.source_ref_id,
+            "completed_at": item.completed_at.isoformat() if item.completed_at else None,
+            "created_at": item.created_at.isoformat() if item.created_at else None,
+            "updated_at": item.updated_at.isoformat() if item.updated_at else None,
+        }
+
+    def _parse_due_date(raw: Optional[str]) -> Optional[datetime]:
+        if not raw:
+            return None
+        try:
+            dt = datetime.fromisoformat(raw)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"due_date is not a valid ISO datetime: {raw}")
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+    @app.get("/api/accounts/{account_id}/action-items", tags=["8. Action Items"])
+    def list_account_action_items(
+        account_id: int,
+        status: Optional[str] = None,
+        assigned_to_id: Optional[int] = None,
+        persona_id: Optional[int] = None,
+        user: User = Depends(auth.require_account_access),
+    ):
+        """List this account's work-list items, optionally filtered by
+        status, assignee, or a specific contact."""
+        session = get_session()
+        try:
+            query = (session.query(ActionItem)
+                     .options(selectinload(ActionItem.persona), selectinload(ActionItem.assigned_to),
+                              selectinload(ActionItem.created_by))
+                     .filter_by(account_id=account_id))
+            if status:
+                query = query.filter(ActionItem.status == status)
+            if assigned_to_id:
+                query = query.filter(ActionItem.assigned_to_id == assigned_to_id)
+            if persona_id:
+                query = query.filter(ActionItem.persona_id == persona_id)
+            items = query.order_by(ActionItem.due_date.asc().nullslast(), ActionItem.created_at.desc()).all()
+            return {"account_id": account_id, "action_items": [_serialize_action_item(i) for i in items]}
+        finally:
+            session.close()
+
+    @app.post("/api/accounts/{account_id}/action-items", tags=["8. Action Items"])
+    def create_account_action_item(
+        account_id: int, body: ActionItemCreateRequest,
+        user: User = Depends(auth.require_account_access),
+    ):
+        if body.priority not in ("high", "medium", "low"):
+            raise HTTPException(status_code=400, detail="priority must be 'high', 'medium', or 'low'")
+        session = get_session()
+        try:
+            if body.persona_id is not None:
+                persona = session.query(Persona).filter_by(id=body.persona_id, account_id=account_id).first()
+                if not persona:
+                    raise HTTPException(status_code=400, detail="persona_id does not belong to this account")
+            item = ActionItem(
+                account_id=account_id, persona_id=body.persona_id, title=body.title,
+                description=body.description, priority=body.priority,
+                due_date=_parse_due_date(body.due_date), assigned_to_id=body.assigned_to_id,
+                created_by_id=user.id, source="manual",
+            )
+            session.add(item)
+            session.commit()
+            session.refresh(item)
+            item = (session.query(ActionItem)
+                    .options(selectinload(ActionItem.persona), selectinload(ActionItem.assigned_to),
+                             selectinload(ActionItem.created_by))
+                    .filter_by(id=item.id).first())
+            return _serialize_action_item(item)
+        except HTTPException:
+            raise
+        except Exception as e:
+            session.rollback()
+            raise HTTPException(status_code=500, detail=f"Could not create action item: {e}")
+        finally:
+            session.close()
+
+    @app.patch("/api/action-items/{item_id}", tags=["8. Action Items"])
+    def update_action_item(
+        item_id: int, body: ActionItemUpdateRequest, background_tasks: BackgroundTasks,
+        user: User = Depends(auth.require_action_item_account_access),
+    ):
+        session = get_session()
+        try:
+            item = (session.query(ActionItem)
+                    .options(selectinload(ActionItem.persona), selectinload(ActionItem.assigned_to),
+                             selectinload(ActionItem.created_by))
+                    .filter_by(id=item_id).first())
+            if not item:
+                raise HTTPException(status_code=404, detail="Action item not found")
+
+            if body.status is not None:
+                # 'pending_review' is deliberately excluded here — it's only
+                # ever set by the LLM-suggestion write path, and only ever
+                # left via the dedicated /approve or /reject endpoints below,
+                # never a generic field edit. See
+                # ACTION_ITEMS_LLM_SUGGESTIONS_PLAN.md §1.
+                if body.status not in ("open", "in_progress", "done", "cancelled"):
+                    raise HTTPException(status_code=400, detail="status must be open, in_progress, done, or cancelled")
+                item.status = body.status
+                item.completed_at = datetime.now(timezone.utc) if body.status == "done" else None
+            if body.priority is not None:
+                if body.priority not in ("high", "medium", "low"):
+                    raise HTTPException(status_code=400, detail="priority must be 'high', 'medium', or 'low'")
+                item.priority = body.priority
+            if body.title is not None:
+                item.title = body.title
+            if body.description is not None:
+                item.description = body.description
+            if body.due_date is not None:
+                item.due_date = _parse_due_date(body.due_date)
+            if body.persona_id is not None:
+                persona = session.query(Persona).filter_by(id=body.persona_id, account_id=item.account_id).first()
+                if not persona:
+                    raise HTTPException(status_code=400, detail="persona_id does not belong to this account")
+                item.persona_id = body.persona_id
+
+            reassigned = body.assigned_to_id is not None and body.assigned_to_id != item.assigned_to_id
+            if body.assigned_to_id is not None:
+                item.assigned_to_id = body.assigned_to_id
+
+            session.commit()
+            session.refresh(item)
+
+            if reassigned and item.assigned_to and item.assigned_to.email:
+                base_url = os.getenv("APP_BASE_URL", "http://localhost:8000")
+                due_line = f" Due {item.due_date.date().isoformat()}." if item.due_date else ""
+                background_tasks.add_task(
+                    email_sender.send_email,
+                    item.assigned_to.email, f"Action item assigned to you: {item.title}",
+                    f"Hi {item.assigned_to.full_name or item.assigned_to.email},\n\n"
+                    f"You've been assigned an action item on {item.account.display_name or item.account.legal_name}.\n\n"
+                    f"{item.title}\n{item.description or ''}\n{due_line}\n\n"
+                    f"View it here: {base_url}/?account={item.account_id}\n",
+                    html_body=email_sender.render_html(
+                        "New action item assigned to you",
+                        [f"Hi {item.assigned_to.full_name or item.assigned_to.email},",
+                         f"You've been assigned an action item on {item.account.display_name or item.account.legal_name}:",
+                         item.title] + ([item.description] if item.description else []),
+                        cta_label="View Account", cta_url=f"{base_url}/?account={item.account_id}",
+                        footnote=due_line.strip() or None,
+                    ),
+                )
+                s2 = get_session()
+                try:
+                    s2.add(ActionItemReminder(action_item_id=item.id, reminder_type="assigned",
+                                               sent_to_user_id=item.assigned_to_id))
+                    s2.commit()
+                except Exception:
+                    s2.rollback()
+                finally:
+                    s2.close()
+
+            return _serialize_action_item(item)
+        except HTTPException:
+            raise
+        except Exception as e:
+            session.rollback()
+            raise HTTPException(status_code=500, detail=f"Could not update action item: {e}")
+        finally:
+            session.close()
+
+    @app.post("/api/action-items/{item_id}/approve", tags=["8. Action Items"])
+    def approve_action_item(item_id: int, user: User = Depends(auth.require_action_item_account_access)):
+        """Turns an LLM-suggested item (status='pending_review') into a real
+        task, assigned to whoever approved it. See
+        ACTION_ITEMS_LLM_SUGGESTIONS_PLAN.md §1 — approval is a dedicated
+        endpoint, not a generic status PATCH, so it's always one deliberate
+        action rather than a side effect of an unrelated field edit."""
+        session = get_session()
+        try:
+            item = (session.query(ActionItem)
+                    .options(selectinload(ActionItem.persona), selectinload(ActionItem.assigned_to),
+                             selectinload(ActionItem.created_by))
+                    .filter_by(id=item_id).first())
+            if not item:
+                raise HTTPException(status_code=404, detail="Action item not found")
+            if item.status != "pending_review":
+                raise HTTPException(status_code=400, detail="Only a pending-review item can be approved")
+            item.status = "open"
+            item.assigned_to_id = user.id
+            session.commit()
+            session.refresh(item)
+            return _serialize_action_item(item)
+        finally:
+            session.close()
+
+    @app.post("/api/action-items/{item_id}/reject", tags=["8. Action Items"])
+    def reject_action_item(item_id: int, user: User = Depends(auth.require_action_item_account_access)):
+        """Dismisses an LLM-suggested item without ever making it a real
+        task — sets status='cancelled' so it's excluded from every existing
+        open/overdue query with no schema change, rather than deleting it
+        outright (keeps a record of what the model suggested)."""
+        session = get_session()
+        try:
+            item = (session.query(ActionItem)
+                    .options(selectinload(ActionItem.persona), selectinload(ActionItem.assigned_to),
+                             selectinload(ActionItem.created_by))
+                    .filter_by(id=item_id).first())
+            if not item:
+                raise HTTPException(status_code=404, detail="Action item not found")
+            if item.status != "pending_review":
+                raise HTTPException(status_code=400, detail="Only a pending-review item can be rejected")
+            item.status = "cancelled"
+            session.commit()
+            session.refresh(item)
+            return _serialize_action_item(item)
+        finally:
+            session.close()
+
+    @app.post("/api/action-items/{item_id}/complete", tags=["8. Action Items"])
+    def complete_action_item(item_id: int, user: User = Depends(auth.require_action_item_account_access)):
+        session = get_session()
+        try:
+            item = (session.query(ActionItem)
+                    .options(selectinload(ActionItem.persona), selectinload(ActionItem.assigned_to),
+                             selectinload(ActionItem.created_by))
+                    .filter_by(id=item_id).first())
+            if not item:
+                raise HTTPException(status_code=404, detail="Action item not found")
+            item.status = "done"
+            item.completed_at = datetime.now(timezone.utc)
+            session.commit()
+            session.refresh(item)
+            return _serialize_action_item(item)
+        finally:
+            session.close()
+
+    @app.delete("/api/action-items/{item_id}", tags=["8. Action Items"])
+    def delete_action_item(item_id: int, user: User = Depends(auth.require_action_item_account_access)):
+        session = get_session()
+        try:
+            item = session.query(ActionItem).filter_by(id=item_id).first()
+            if not item:
+                raise HTTPException(status_code=404, detail="Action item not found")
+            session.delete(item)
+            session.commit()
+            return {"ok": True}
+        finally:
+            session.close()
+
+    @app.get("/api/me/action-items", tags=["8. Action Items"])
+    def list_my_action_items(status: Optional[str] = None, user: User = Depends(auth.get_current_user)):
+        """Cross-account 'My Tasks' — every action item assigned to the
+        caller, restricted to accounts they can actually see (super_admin
+        gets everything; anyone else only what's been granted to them)."""
+        session = get_session()
+        try:
+            query = (session.query(ActionItem)
+                     .options(selectinload(ActionItem.persona), selectinload(ActionItem.assigned_to),
+                              selectinload(ActionItem.created_by), selectinload(ActionItem.account))
+                     .filter(ActionItem.assigned_to_id == user.id))
+            if user.role != "super_admin":
+                accessible_ids = auth.get_accessible_account_ids(session, user.id)
+                query = query.filter(ActionItem.account_id.in_(accessible_ids)) if accessible_ids else query.filter(False)
+            if status:
+                query = query.filter(ActionItem.status == status)
+            items = query.order_by(ActionItem.due_date.asc().nullslast(), ActionItem.created_at.desc()).all()
+            results = []
+            for i in items:
+                d = _serialize_action_item(i)
+                d["account_name"] = i.account.display_name or i.account.legal_name if i.account else None
+                results.append(d)
+            return {"action_items": results}
         finally:
             session.close()
 

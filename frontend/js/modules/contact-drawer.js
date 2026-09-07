@@ -11,6 +11,7 @@ import {
   renderPlaceholderProfile,
   renderPersonalityProfile
 } from './profile-render.js';
+import { renderPersonaActionItems, ensureAccountActionItems, handleActionItemClick } from './action-items.js';
 
 export { hasDossier, renderDossier, renderPostCard, renderPersonalityProfile, renderPlaceholderProfile };
 
@@ -66,6 +67,7 @@ export function renderDrawerPinned(p) {
       <button type="button" class="drawer-jump-btn active" data-jump="drawer-sec-overview">Overview</button>
       <button type="button" class="drawer-jump-btn" data-jump="drawer-sec-dossier">Call Prep</button>
       <button type="button" class="drawer-jump-btn" data-jump="drawer-sec-social">Social</button>
+      <button type="button" class="drawer-jump-btn" data-jump="drawer-sec-actions">Tasks</button>
       <button type="button" class="drawer-jump-btn" data-jump="drawer-sec-profiles">Profiles</button>
     </div>
   `;
@@ -111,6 +113,11 @@ export function renderContactDrawer(p) {
       ${renderSocialActivity(p)}
     </div>
 
+    <div class="drawer-section" id="drawer-sec-actions">
+      <div class="drawer-section-title"><i class="bi bi-list-check"></i> Action Items</div>
+      <div id="personaActionItemsWrap">${renderPersonaActionItems(state.accounts.find(a => a.id === p.account_id), p)}</div>
+    </div>
+
     <div id="drawer-sec-profiles">
       <div class="drawer-section drawer-section-muted">
         <div class="drawer-section-title"><i class="bi bi-activity"></i> Executive Psychological Profile</div>
@@ -133,6 +140,17 @@ export function openContactDrawer(p) {
   contactDrawer.classList.add('open');
   drawerBackdrop.classList.add('open');
   state.activeDrawerPersona = p;
+
+  // Action items are fetched on demand (not part of the bulk /api/accounts
+  // payload) — repaint just that section once they arrive, same pattern as
+  // the account tab's syncActionItemsTab.
+  if (p.account_id != null) {
+    ensureAccountActionItems(p.account_id).then(() => {
+      if (state.activeDrawerPersona !== p) return; // drawer moved on to someone else
+      const wrap = el('personaActionItemsWrap');
+      if (wrap) wrap.innerHTML = renderPersonaActionItems(state.accounts.find(a => a.id === p.account_id), p);
+    });
+  }
 }
 
 export function closeContactDrawer() {
@@ -149,10 +167,18 @@ document.addEventListener('keydown', (e) => {
   closeSignalModal();
 });
 
-contactDrawer.addEventListener('click', function (e) {
+contactDrawer.addEventListener('click', async function (e) {
   const downloadBtn = e.target.closest('#drawerDownloadPdfBtn');
   if (downloadBtn) {
     if (state.activeDrawerPersona) triggerPersonaPdfDownload(state.activeDrawerPersona);
+    return;
+  }
+
+  const p = state.activeDrawerPersona;
+  const account = p ? state.accounts.find(a => a.id === p.account_id) : null;
+  if (account && await handleActionItemClick(e, account)) {
+    const wrap = el('personaActionItemsWrap');
+    if (wrap) wrap.innerHTML = renderPersonaActionItems(account, p);
     return;
   }
 

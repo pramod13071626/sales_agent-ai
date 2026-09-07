@@ -11,6 +11,7 @@ Schema is created lazily on first successful connection — no separate
 migration step.
 """
 import json
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 
 from config import DATABASE_URL
@@ -620,5 +621,116 @@ def get_person_bio(person_key: str):
     except Exception as e:
         print(f"⚠️  [DB] Could not read person bio for '{person_key}' ({e})")
         return None
+    finally:
+        conn.close()
+
+
+def get_person_identity(person_key: str):
+    """Returns (persona_id, account_id) for a person, or (None, None) if not
+    found. Separate from get_person_bio() so that function's existing return
+    shape (consumed by build_personality_profile) doesn't change — this is
+    only needed by the newer create_llm_suggested_action_items() below.
+    """
+    conn = _connect()
+    if conn is None:
+        return None, None
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, account_id FROM personas WHERE key = %s "
+                "ORDER BY (account_id IS NULL) LIMIT 1",
+                (person_key,),
+            )
+            row = cur.fetchone()
+            return (row[0], row[1]) if row else (None, None)
+    except Exception as e:
+        print(f"⚠️  [DB] Could not resolve persona identity for '{person_key}' ({e})")
+        return None, None
+    finally:
+        conn.close()
+
+
+def create_llm_suggested_action_items(person_key: str, suggestions: list):
+    """Writes LLM-suggested action items for one person into the sibling
+    sales_ai app's `action_items` table — a plain cross-app INSERT, same
+    pattern as get_person_bio()'s cross-app SELECT (both apps share one
+    Postgres database; see MERGE_PLAN.md). Each row is created with
+    status='pending_review' and no assignee: a human must explicitly
+    approve or reject it via the main app's API before it becomes a real,
+    assigned task. See ACTION_ITEMS_LLM_SUGGESTIONS_PLAN.md §1/§5.
+
+    `suggestions` is the list returned by
+    digest.selection.build_action_item_suggestions() — each item has
+    title/description/priority/suggested_due_days/rationale/source_url.
+    The table has no dedicated rationale/source_url columns (avoiding a
+    schema change for this), so both are folded into `description`.
+
+    Returns the number of rows actually inserted (0 if the persona can't be
+    resolved, or every suggestion is a duplicate of one already stored).
+    """
+    if not suggestions:
+        return 0
+    persona_id, account_id = get_person_identity(person_key)
+    if persona_id is None or account_id is None:
+        print(f"⚠️  [DB] Could not resolve persona/account for '{person_key}' — skipping action item suggestions")
+        return 0
+
+    conn = _connect()
+    if conn is None:
+        return 0
+    inserted = 0
+    try:
+        with conn.cursor() as cur:
+            for s in suggestions:
+                title = (s.get("title") or "").strip()
+                if not title:
+                    continue
+                # Dedup: an LLM re-run on unchanged data (or a run with
+                # caching bypassed, e.g. --all-posts) would otherwise create
+                # a fresh duplicate suggestion every time — the digest-level
+                # content_signature cache only prevents re-*calling* the
+                # LLM, not re-*inserting* a result it already returned once.
+                cur.execute(
+                    "SELECT 1 FROM action_items WHERE persona_id = %s AND source = 'llm_suggested' "
+                    "AND title = %s LIMIT 1",
+                    (persona_id, title),
+                )
+                if cur.fetchone():
+                    continue
+
+                priority = s.get("priority") if s.get("priority") in ("high", "medium", "low") else "medium"
+                try:
+                    due_days = int(s.get("suggested_due_days"))
+                except (TypeError, ValueError):
+                    due_days = None
+                due_date = (datetime.now(timezone.utc) + timedelta(days=due_days)) if due_days is not None else None
+
+                description = s.get("description") or ""
+                rationale = s.get("rationale")
+                source_url = s.get("source_url")
+                extra = []
+                if rationale:
+                    extra.append(f"Why: {rationale}")
+                if source_url and source_url != "bio":
+                    extra.append(f"Source: {source_url}")
+                if extra:
+                    description = (description + "\n\n" + " — ".join(extra)).strip()
+
+                cur.execute(
+                    """
+                    INSERT INTO action_items
+                        (account_id, persona_id, title, description, status,
+                         priority, due_date, source, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, 'pending_review', %s, %s, 'llm_suggested', now(), now())
+                    """,
+                    (account_id, persona_id, title[:500], description or None, priority, due_date),
+                )
+                inserted += 1
+        conn.commit()
+        return inserted
+    except Exception as e:
+        conn.rollback()
+        print(f"⚠️  [DB] Could not write action item suggestions for '{person_key}' ({e})")
+        return 0
     finally:
         conn.close()

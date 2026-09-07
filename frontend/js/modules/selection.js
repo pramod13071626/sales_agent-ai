@@ -9,6 +9,7 @@ import { renderPeople } from './people-panel.js';
 import { renderAllJobsPage, openAllJobsPage } from './jobs-browser.js';
 import { syncOpportunitySignals } from './opportunities.js';
 import { syncWeeklyUpdate } from './weekly-update.js';
+import { syncActionItemsTab } from './action-items.js';
 import { renderSkeleton } from './skeleton.js';
 
 // Full per-account detail (persona dossiers, LOB financials/patents, org chart) is
@@ -130,6 +131,7 @@ export async function renderSelection() {
   syncUrlState();
   if (state.activeSalesTab === 'alerts') syncOpportunitySignals(account);
   if (state.activeSalesTab === 'weekly') syncWeeklyUpdate(account);
+  if (state.activeSalesTab === 'action-items') syncActionItemsTab(account);
 }
 
 dashEmpty.addEventListener('click', function (e) {
