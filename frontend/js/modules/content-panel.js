@@ -1,5 +1,5 @@
 import { state } from './state.js';
-import { CONTENT_PIPELINE_URL, CHANNEL_ICON, CHANNEL_LABEL, STRENGTH_PILL } from './constants.js';
+import { CHANNEL_ICON, CHANNEL_LABEL, STRENGTH_PILL } from './constants.js';
 import { esc, isDryRunDigest, resolveAccountTargetKey, timeAgo } from './utils.js';
 
 export function renderContentPanel(account) {
@@ -29,24 +29,13 @@ export function renderContentPanel(account) {
 
   return `
     <div class="content-meta">${esc(metaBits)}</div>
-    ${renderContentPipelineLink(targetKey)}
     <div class="content-channel-grid">
       ${channels.map(renderChannelCard).join('')}
     </div>
-    <div class="content-provenance"><i class="bi bi-info-circle"></i> Source: ${esc(digestEntry.llm || 'unknown')}</div>
   `;
+
 }
 
-// Opens the live content pipeline app (not just this DB snapshot) so a
-// rep can trigger a fresh scrape/digest run, or use its copy-to-clipboard
-// sales email + talking points UI, without leaving the sales workflow to
-// go find that app.
-export function renderContentPipelineLink(targetKey) {
-  const url = `${CONTENT_PIPELINE_URL}/frontend/?account=${encodeURIComponent(targetKey)}`;
-  return `<a href="${esc(url)}" target="_blank" rel="noopener" class="content-pipeline-link">
-    <i class="bi bi-box-arrow-up-right"></i> Open in Content Pipeline
-  </a>`;
-}
 
 export function renderChannelCard(ch) {
   const icon = CHANNEL_ICON[ch.channel] || 'bi-globe2';
