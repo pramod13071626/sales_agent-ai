@@ -712,14 +712,22 @@ $(function () {
       stagedDataStore[key] = data.person;
       return data.person;
     } else {
-      // For LOB
-      stagedDataStore[key] = {
-        key: key,
-        name: rawData.name,
-        account_id: activeAccount ? activeAccount.id : null,
-        desc: rawData.desc
-      };
-      return stagedDataStore[key];
+      // For LOB: Fetch live multi-source enriched LOB data
+      const res = await fetch('/api/lobs/fetch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          account_id: activeAccount ? activeAccount.id : null,
+          company_name: activeAccount ? activeAccount.name : '',
+          lob_name: rawData.name || rawData.lob_name || key,
+          lob_domain: rawData.domain || rawData.primary_domain || null
+        })
+      });
+      if (!res.ok) throw new Error('Failed to fetch LOB intelligence');
+      const data = await res.json();
+      const enrichedLob = data.lob || (data.lobs && data.lobs[0]) || rawData;
+      stagedDataStore[key] = enrichedLob;
+      return enrichedLob;
     }
   }
 
@@ -770,7 +778,8 @@ $(function () {
         state.pulled = true;
       }
 
-      const res = await fetch('/api/personas/validate-single', {
+      const validateUrl = entityType === 'persona' ? '/api/personas/validate-single' : '/api/lobs/validate-single';
+      const res = await fetch(validateUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(stagedData)
@@ -809,13 +818,24 @@ $(function () {
 
     try {
       const stagedData = stagedDataStore[key] || (entityType === 'persona' ? activePersona : activeLob);
-      const res = await fetch('/api/personas/dump-single-db', {
+      let dumpUrl = '/api/personas/dump-single-db';
+      let payload = {
+        account_id: activeAccount ? activeAccount.id : 1,
+        person_data: stagedData
+      };
+
+      if (entityType === 'lob') {
+        dumpUrl = '/api/lobs/dump-single-db';
+        payload = {
+          account_id: activeAccount ? activeAccount.id : 1,
+          lob_data: stagedData
+        };
+      }
+
+      const res = await fetch(dumpUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          account_id: activeAccount ? activeAccount.id : 1,
-          person_data: stagedData
-        })
+        body: JSON.stringify(payload)
       });
       const data = await res.json();
 

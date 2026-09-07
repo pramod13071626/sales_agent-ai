@@ -146,7 +146,11 @@ $(function () {
     $('#heroAvatar').text(getInitials(activeAccount.name));
     $('#accountName').text(activeAccount.name);
     $('#accountTicker').text(activeAccount.ticker || 'Enterprise');
+<<<<<<< Updated upstream
     $('#accountRevenue').text(activeAccount.revenue || 'Revenue N/A');
+=======
+    $('#accountRevenue').text(activeAccount.revenue || activeAccount.funding || '—');
+>>>>>>> Stashed changes
     $('#accountLocation').text(activeAccount.location || 'Location N/A');
     $('#accountDesc').text(activeAccount.desc || 'No description available.');
 
@@ -175,7 +179,27 @@ $(function () {
       });
     }
     
+<<<<<<< Updated upstream
     $('#lobSection').removeClass('d-none');
+=======
+    // Show LOB section — hide it for brand-new accounts that haven't been pulled yet
+    if (activeAccount._isNew) {
+      $('#lobSection').addClass('d-none');
+    } else {
+      $('#lobSection').removeClass('d-none');
+    }
+    // Render Account Pipeline Panel (Pull → Validate → Dump) above the intel-tag sections
+    renderAccountPipelinePanel(activeAccount);
+    // Hide intel-tag section for new accounts (no data yet)
+    if (activeAccount._isNew) {
+      $('#accountDataSection').addClass('d-none').empty();
+    } else {
+      $('#accountDataSection').html(renderAccountDataSection(activeAccount)).removeClass('d-none');
+    }
+
+    // Render Complete Enterprise Hierarchy at Account Level
+    renderPersonaCards(activeAccount.personas || [], `${activeAccount.name} — Enterprise Leadership Hierarchy`);
+>>>>>>> Stashed changes
   });
 
   // 3. Handle LOB Card Selection
@@ -669,14 +693,22 @@ $(function () {
       stagedDataStore[key] = data.person;
       return data.person;
     } else {
-      // For LOB
-      stagedDataStore[key] = {
-        key: key,
-        name: rawData.name,
-        account_id: activeAccount ? activeAccount.id : null,
-        desc: rawData.desc
-      };
-      return stagedDataStore[key];
+      // For LOB: Fetch live multi-source enriched LOB data
+      const res = await fetch('/api/lobs/fetch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          account_id: activeAccount ? activeAccount.id : null,
+          company_name: activeAccount ? activeAccount.name : '',
+          lob_name: rawData.name || rawData.lob_name || key,
+          lob_domain: rawData.domain || rawData.primary_domain || null
+        })
+      });
+      if (!res.ok) throw new Error('Failed to fetch LOB intelligence');
+      const data = await res.json();
+      const enrichedLob = data.lob || (data.lobs && data.lobs[0]) || rawData;
+      stagedDataStore[key] = enrichedLob;
+      return enrichedLob;
     }
   }
 
@@ -727,7 +759,8 @@ $(function () {
         state.pulled = true;
       }
 
-      const res = await fetch('/api/personas/validate-single', {
+      const validateUrl = entityType === 'persona' ? '/api/personas/validate-single' : '/api/lobs/validate-single';
+      const res = await fetch(validateUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(stagedData)
@@ -766,13 +799,24 @@ $(function () {
 
     try {
       const stagedData = stagedDataStore[key] || (entityType === 'persona' ? activePersona : activeLob);
-      const res = await fetch('/api/personas/dump-single-db', {
+      let dumpUrl = '/api/personas/dump-single-db';
+      let payload = {
+        account_id: activeAccount ? activeAccount.id : 1,
+        person_data: stagedData
+      };
+
+      if (entityType === 'lob') {
+        dumpUrl = '/api/lobs/dump-single-db';
+        payload = {
+          account_id: activeAccount ? activeAccount.id : 1,
+          lob_data: stagedData
+        };
+      }
+
+      const res = await fetch(dumpUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          account_id: activeAccount ? activeAccount.id : 1,
-          person_data: stagedData
-        })
+        body: JSON.stringify(payload)
       });
       const data = await res.json();
 
@@ -1086,5 +1130,663 @@ $(function () {
     }
   });
 
+<<<<<<< Updated upstream
+=======
+  function renderField(label, value, opts = {}) {
+    if (value === null || value === undefined || value === '') {
+      return `<div class="detail-field${opts.span2 ? ' span-2' : ''}"><div class="detail-label">${label}</div><div class="detail-val" style="color:var(--text-muted);font-style:italic;">—</div></div>`;
+    }
+    if (opts.url && value) {
+      const display = opts.urlLabel || (typeof value === 'string' && value.length > 60 ? value.substring(0, 60) + '...' : value);
+      return `<div class="detail-field${opts.span2 ? ' span-2' : ''}"><div class="detail-label">${label}</div><div class="detail-val"><a href="${esc(value)}" target="_blank" style="word-break:break-all;">${esc(display)} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;"></i></a></div></div>`;
+    }
+    if (opts.chips && Array.isArray(value) && value.length) {
+      return `<div class="detail-field${opts.span2 ? ' span-2' : ''}"><div class="detail-label">${label}</div><div class="detail-val">${value.map(v => `<span class="data-tag">${esc(String(v))}</span>`).join(' ')}</div></div>`;
+    }
+    if (opts.json && typeof value === 'object') {
+      return `<div class="detail-field span-2"><div class="detail-label">${label}</div><div class="detail-val">${renderJsonSmart(label, value)}</div></div>`;
+    }
+    return `<div class="detail-field${opts.span2 ? ' span-2' : ''}"><div class="detail-label">${label}</div><div class="detail-val">${esc(String(value))}</div></div>`;
+  }
+
+  // Smart JSONB renderer — detects known structures and renders them as cards
+  function renderJsonSmart(label, data) {
+    if (!data) return '<span style="color:var(--text-muted);font-style:italic;">—</span>';
+    const lbl = label.toLowerCase();
+
+    // ── Employment History (array of role objects)
+    if (lbl.includes('employment') && Array.isArray(data) && data.length) {
+      return `<div class="json-card-list">${data.map(job => {
+        const title = job.title || job.role || 'Role';
+        const company = job.company || job.organization || '';
+        const start = job.start_date || job.from || '';
+        const end = job.end_date || job.to || (job.is_current ? 'Present' : '');
+        const desc = job.description || '';
+        return `<div class="json-card">
+          <div class="json-card-title"><i class="bi bi-briefcase"></i> ${esc(title)}</div>
+          ${company ? `<div class="json-card-sub">${esc(company)}</div>` : ''}
+          ${(start || end) ? `<div class="json-card-meta"><i class="bi bi-calendar3"></i> ${esc(start)}${start && end ? ' → ' : ''}${esc(end)}</div>` : ''}
+          ${desc ? `<div class="json-card-desc">${esc(desc)}</div>` : ''}
+        </div>`;
+      }).join('')}</div>`;
+    }
+
+    // ── Education History (array of education objects)
+    if (lbl.includes('education') && Array.isArray(data) && data.length) {
+      return `<div class="json-card-list">${data.map(edu => {
+        const degree = edu.degree || edu.qualification || '';
+        const institution = edu.institution || edu.school || edu.university || '';
+        const field = edu.field_of_study || edu.major || edu.field || '';
+        const year = edu.graduation_year || edu.year || edu.end_date || '';
+        return `<div class="json-card">
+          <div class="json-card-title"><i class="bi bi-mortarboard"></i> ${esc(degree || 'Degree')}</div>
+          ${institution ? `<div class="json-card-sub">${esc(institution)}</div>` : ''}
+          ${field ? `<div class="json-card-meta"><i class="bi bi-book"></i> ${esc(field)}</div>` : ''}
+          ${year ? `<div class="json-card-meta"><i class="bi bi-calendar3"></i> ${esc(String(year))}</div>` : ''}
+        </div>`;
+      }).join('')}</div>`;
+    }
+
+    // ── Financial Snippets / Technologies / Competitors / Patents (array of strings or objects)
+    if (Array.isArray(data)) {
+      if (data.length === 0) return '<span style="color:var(--text-muted);font-style:italic;">—</span>';
+      // Array of strings → chips
+      if (typeof data[0] === 'string') {
+        return data.map(v => `<span class="data-tag">${esc(v)}</span>`).join(' ');
+      }
+      // Array of objects → card list
+      return `<div class="json-card-list">${data.map(item => {
+        if (typeof item === 'string') return `<div class="json-card"><div class="json-card-desc">${esc(item)}</div></div>`;
+        const entries = Object.entries(item).filter(([k,v]) => v !== null && v !== undefined && v !== '');
+        return `<div class="json-card">${entries.map(([k, v]) =>
+          `<div class="json-card-row"><span class="json-card-key">${esc(k.replace(/_/g, ' '))}</span><span class="json-card-value">${esc(String(v))}</span></div>`
+        ).join('')}</div>`;
+      }).join('')}</div>`;
+    }
+
+    // ── Plain object → key-value card
+    if (typeof data === 'object' && !Array.isArray(data)) {
+      const entries = Object.entries(data).filter(([k,v]) => v !== null && v !== undefined && v !== '');
+      if (entries.length === 0) return '<span style="color:var(--text-muted);font-style:italic;">—</span>';
+      return `<div class="json-card">${entries.map(([k, v]) => {
+        const val = typeof v === 'object' ? JSON.stringify(v) : String(v);
+        return `<div class="json-card-row"><span class="json-card-key">${esc(k.replace(/_/g, ' '))}</span><span class="json-card-value">${esc(val)}</span></div>`;
+      }).join('')}</div>`;
+    }
+
+    return `<span>${esc(String(data))}</span>`;
+  }
+
+  // ─── Batch Sequential Pipeline (Pull All → Validate All → Dump All) ─────
+
+  // Batch state tracking
+  let lobBatchState = { pulled: false, validated: false, dumped: false, running: false, stagedData: [] };
+  let personaBatchState = { pulled: false, validated: false, dumped: false, running: false, stagedData: [] };
+
+  // Reset batch state when account changes
+  function resetBatchStates() {
+    lobBatchState = { pulled: false, validated: false, dumped: false, running: false, stagedData: [] };
+    personaBatchState = { pulled: false, validated: false, dumped: false, running: false, stagedData: [] };
+
+    // Reset LOB buttons
+    $('#lobBatchPull').prop('disabled', false).removeClass('running done').html('<i class="bi bi-cloud-arrow-down"></i> Pull All');
+    $('#lobBatchValidate').prop('disabled', true).removeClass('running done').html('<i class="bi bi-shield-check"></i> Validate All');
+    $('#lobBatchDump').prop('disabled', true).removeClass('running done').html('<i class="bi bi-database-check"></i> Dump All');
+    $('#lobBatchProgress').addClass('d-none');
+
+    // Reset Persona buttons
+    $('#personaBatchPull').prop('disabled', false).removeClass('running done').html('<i class="bi bi-cloud-arrow-down"></i> Pull All');
+    $('#personaBatchValidate').prop('disabled', true).removeClass('running done').html('<i class="bi bi-shield-check"></i> Validate All');
+    $('#personaBatchDump').prop('disabled', true).removeClass('running done').html('<i class="bi bi-database-check"></i> Dump All');
+    $('#personaBatchProgress').addClass('d-none');
+  }
+
+  // Hook into account selection to reset batch states
+  const origAccountClick = $(document).data('events');
+  $(document).on('click', '.account-item', function () {
+    setTimeout(resetBatchStates, 100);
+  });
+
+  // ─── Sequential LOB Batch Pipeline ───────────────────────────────────────
+
+  async function runBatchLobPipeline(action) {
+    if (!activeAccount || lobBatchState.running) return;
+    const lobs = activeAccount.lobs || [];
+    if (lobs.length === 0) return;
+
+    lobBatchState.running = true;
+    const $progress = $('#lobBatchProgress').removeClass('d-none');
+    const $fill = $('#lobProgressFill');
+    const $status = $('#lobBatchStatus');
+
+    // Set progress bar color based on action
+    $fill.removeClass('validate dump');
+    if (action === 'validate') $fill.addClass('validate');
+    if (action === 'dump') $fill.addClass('dump');
+
+    const $pullBtn = $('#lobBatchPull');
+    const $validateBtn = $('#lobBatchValidate');
+    const $dumpBtn = $('#lobBatchDump');
+
+    let successCount = 0;
+    let failCount = 0;
+
+    // Disable all batch buttons during run
+    $pullBtn.prop('disabled', true);
+    $validateBtn.prop('disabled', true);
+    $dumpBtn.prop('disabled', true);
+
+    const actionBtn = action === 'pull' ? $pullBtn : (action === 'validate' ? $validateBtn : $dumpBtn);
+    const actionLabel = action === 'pull' ? 'Pulling' : (action === 'validate' ? 'Validating' : 'Dumping');
+    actionBtn.addClass('running').html(`<i class="bi bi-hourglass-split"></i> ${actionLabel}...`);
+
+    for (let i = 0; i < lobs.length; i++) {
+      const lob = lobs[i];
+      const pct = Math.round(((i) / lobs.length) * 100);
+      $fill.css('width', pct + '%');
+      $status.html(`<span class="batch-count">${i + 1}/${lobs.length}</span> ${actionLabel}: <strong>${esc(lob.name)}</strong>... <span class="batch-success">${successCount} ✔</span>${failCount ? ` <span class="batch-fail">${failCount} ✘</span>` : ''}`);
+
+      // Highlight the current LOB card
+      $(`.lob-card[data-lob-id="${lob.id}"]`).addClass('active');
+
+      try {
+        if (action === 'pull') {
+          const lobKey = `lob_${lob.id}`;
+          const staged = {
+            key: lobKey,
+            name: lob.name,
+            account_id: activeAccount.id,
+            desc: lob.desc || lob.overview
+          };
+          // Call LOB fetch API
+          const res = await fetch('/api/lobs/fetch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              account_id: activeAccount.id,
+              company_name: activeAccount.name,
+              lob_name: lob.name,
+              lob_domain: lob.domain || null
+            })
+          });
+          if (res.ok) {
+            const data = await res.json();
+            lobBatchState.stagedData[i] = data.lob || data || staged;
+            successCount++;
+          } else {
+            lobBatchState.stagedData[i] = staged;
+            successCount++; // Stage with local data as fallback
+          }
+        } else if (action === 'validate') {
+          const staged = lobBatchState.stagedData[i] || lob;
+          const res = await fetch('/api/lobs/validate-single', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(staged)
+          });
+          if (res.ok) {
+            const data = await res.json();
+            lobBatchState.stagedData[i] = lobBatchState.stagedData[i] || lob;
+            lobBatchState.stagedData[i]._score = data.score;
+            successCount++;
+          } else {
+            successCount++; // Continue even on validation errors
+          }
+        } else if (action === 'dump') {
+          const staged = lobBatchState.stagedData[i] || lob;
+          const res = await fetch('/api/lobs/dump-single-db', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              account_id: activeAccount.id,
+              lob_data: staged
+            })
+          });
+          if (res.ok) {
+            successCount++;
+          } else {
+            failCount++;
+          }
+        }
+      } catch (err) {
+        console.error(`Batch ${action} failed for LOB "${lob.name}":`, err);
+        failCount++;
+      }
+
+      // Un-highlight
+      $(`.lob-card[data-lob-id="${lob.id}"]`).removeClass('active');
+    }
+
+    // Complete
+    $fill.css('width', '100%');
+    $status.html(`<strong>✔ Complete:</strong> <span class="batch-success">${successCount} succeeded</span>${failCount ? ` · <span class="batch-fail">${failCount} failed</span>` : ''} out of ${lobs.length} LOBs`);
+    actionBtn.removeClass('running').addClass('done');
+
+    if (action === 'pull') {
+      lobBatchState.pulled = true;
+      actionBtn.html('<i class="bi bi-cloud-arrow-down"></i> Pulled ✔');
+      $validateBtn.prop('disabled', false);
+    } else if (action === 'validate') {
+      lobBatchState.validated = true;
+      actionBtn.html('<i class="bi bi-shield-check"></i> Validated ✔');
+      $dumpBtn.prop('disabled', false);
+    } else if (action === 'dump') {
+      lobBatchState.dumped = true;
+      actionBtn.html('<i class="bi bi-database-check"></i> Dumped ✔');
+    }
+
+    lobBatchState.running = false;
+  }
+
+  // ─── Sequential Persona Batch Pipeline ───────────────────────────────────
+
+  async function runBatchPersonaPipeline(action) {
+    if (!activeAccount || personaBatchState.running) return;
+
+    // Get current personas (could be filtered by LOB)
+    const personas = activeLob
+      ? [...(activeLob.personas || []), ...((activeLob.subLobs || []).flatMap(s => s.personas || []))]
+      : (activeAccount.personas || []);
+    if (personas.length === 0) return;
+
+    personaBatchState.running = true;
+    const $progress = $('#personaBatchProgress').removeClass('d-none');
+    const $fill = $('#personaProgressFill');
+    const $status = $('#personaBatchStatus');
+
+    $fill.removeClass('validate dump');
+    if (action === 'validate') $fill.addClass('validate');
+    if (action === 'dump') $fill.addClass('dump');
+
+    const $pullBtn = $('#personaBatchPull');
+    const $validateBtn = $('#personaBatchValidate');
+    const $dumpBtn = $('#personaBatchDump');
+
+    let successCount = 0;
+    let failCount = 0;
+
+    $pullBtn.prop('disabled', true);
+    $validateBtn.prop('disabled', true);
+    $dumpBtn.prop('disabled', true);
+
+    const actionBtn = action === 'pull' ? $pullBtn : (action === 'validate' ? $validateBtn : $dumpBtn);
+    const actionLabel = action === 'pull' ? 'Pulling' : (action === 'validate' ? 'Validating' : 'Dumping');
+    actionBtn.addClass('running').html(`<i class="bi bi-hourglass-split"></i> ${actionLabel}...`);
+
+    for (let i = 0; i < personas.length; i++) {
+      const p = personas[i];
+      const personaName = p.name || p.full_name || 'Contact';
+      const pct = Math.round(((i) / personas.length) * 100);
+      $fill.css('width', pct + '%');
+      $status.html(`<span class="batch-count">${i + 1}/${personas.length}</span> ${actionLabel}: <strong>${esc(personaName)}</strong>... <span class="batch-success">${successCount} ✔</span>${failCount ? ` <span class="batch-fail">${failCount} ✘</span>` : ''}`);
+
+      // Highlight the current persona card
+      const pKey = p.key || `persona_${p.id || i}`;
+      $(`.persona-card[data-key="${pKey}"]`).addClass('active');
+
+      try {
+        if (action === 'pull') {
+          const res = await fetch('/api/personas/fetch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              key: (personaName).toLowerCase().replace(/\s+/g, '_'),
+              display_name: personaName,
+              linkedin_url: p.linkedin_url || null,
+              account_id: activeAccount.id,
+              enrich_ai_dossier: true
+            })
+          });
+          if (res.ok) {
+            const data = await res.json();
+            personaBatchState.stagedData[i] = data.person || data;
+            successCount++;
+          } else {
+            personaBatchState.stagedData[i] = p;
+            successCount++;
+          }
+        } else if (action === 'validate') {
+          const staged = personaBatchState.stagedData[i] || p;
+          const res = await fetch('/api/personas/validate-single', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(staged)
+          });
+          if (res.ok) {
+            const data = await res.json();
+            personaBatchState.stagedData[i] = personaBatchState.stagedData[i] || p;
+            personaBatchState.stagedData[i]._score = data.score;
+            successCount++;
+          } else {
+            successCount++;
+          }
+        } else if (action === 'dump') {
+          const staged = personaBatchState.stagedData[i] || p;
+          const res = await fetch('/api/personas/dump-single-db', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              account_id: activeAccount.id,
+              person_data: staged
+            })
+          });
+          if (res.ok) {
+            successCount++;
+          } else {
+            failCount++;
+          }
+        }
+      } catch (err) {
+        console.error(`Batch ${action} failed for persona "${personaName}":`, err);
+        failCount++;
+      }
+
+      // Un-highlight
+      $(`.persona-card[data-key="${pKey}"]`).removeClass('active');
+    }
+
+    // Complete
+    $fill.css('width', '100%');
+    $status.html(`<strong>✔ Complete:</strong> <span class="batch-success">${successCount} succeeded</span>${failCount ? ` · <span class="batch-fail">${failCount} failed</span>` : ''} out of ${personas.length} personas`);
+    actionBtn.removeClass('running').addClass('done');
+
+    if (action === 'pull') {
+      personaBatchState.pulled = true;
+      actionBtn.html('<i class="bi bi-cloud-arrow-down"></i> Pulled ✔');
+      $validateBtn.prop('disabled', false);
+    } else if (action === 'validate') {
+      personaBatchState.validated = true;
+      actionBtn.html('<i class="bi bi-shield-check"></i> Validated ✔');
+      $dumpBtn.prop('disabled', false);
+    } else if (action === 'dump') {
+      personaBatchState.dumped = true;
+      actionBtn.html('<i class="bi bi-database-check"></i> Dumped ✔');
+    }
+
+    personaBatchState.running = false;
+  }
+
+  // ─── Batch Button Click Handlers ─────────────────────────────────────────
+
+  // LOB batch buttons
+  $('#lobBatchPull').on('click', function () { runBatchLobPipeline('pull'); });
+  $('#lobBatchValidate').on('click', function () { runBatchLobPipeline('validate'); });
+  $('#lobBatchDump').on('click', function () { runBatchLobPipeline('dump'); });
+
+  // Persona batch buttons
+  $('#personaBatchPull').on('click', function () { runBatchPersonaPipeline('pull'); });
+  $('#personaBatchValidate').on('click', function () { runBatchPersonaPipeline('validate'); });
+  $('#personaBatchDump').on('click', function () { runBatchPersonaPipeline('dump'); });
+
+  // ─── Account Pipeline Panel (Pull → Validate → Dump) ────────────────────
+
+  let accountStagedData = null; // Stores staged account data between steps
+
+  function renderAccountPipelinePanel(account) {
+    if (!account) return;
+
+    // Always remove any previous panel before rendering — prevents stacking on account switch
+    $('#accountPipelinePanel').remove();
+
+    const acctKey = `account_${account.id}`;
+    const state = getActionState(acctKey);
+
+    const validateDisabled = !state.pulled ? 'disabled' : '';
+    const dumpDisabled = !state.validated ? 'disabled' : '';
+
+    const panelHtml = `
+      <div class="detail-panel fade-in" id="accountPipelinePanel" data-entity-type="account" data-key="${acctKey}" style="margin-bottom:18px;">
+        <div class="detail-panel-header" style="display:flex;align-items:flex-start;gap:14px;">
+          <div style="flex:1;">
+            <span class="pill pill-brand detail-panel-badge"><i class="bi bi-buildings"></i> Account Data Pipeline</span>
+            <h2 class="detail-panel-title">${esc(account.name)}</h2>
+            <p class="detail-panel-subtitle">Enterprise firmographics — 11-source live enrichment (SEC, GLEIF, Crunchbase, Diffbot, Glassdoor, Wikipedia &amp; more)</p>
+          </div>
+          <div class="detail-panel-actions-wrapper">
+            <div class="detail-panel-actions">
+              <button type="button" class="panel-btn panel-btn-pull acct-btn-pull" title="Pull live firmographics from 11 sources — SEC EDGAR, GLEIF, Apify Crunchbase, Glassdoor, Diffbot KG, Serper, Wikipedia, OpenCorporates, FMP, CourtListener, FEC"><i class="bi bi-cloud-arrow-down"></i> Pull</button>
+              <button type="button" class="panel-btn panel-btn-validate acct-btn-validate" ${validateDisabled} title="Validate completeness and data quality score across all 89 columns"><i class="bi bi-shield-check"></i> Validate</button>
+              <button type="button" class="panel-btn panel-btn-dump acct-btn-dump" ${dumpDisabled} title="Persist all enriched account data into PostgreSQL accounts table"><i class="bi bi-database-check"></i> Dump DB</button>
+            </div>
+            <div class="panel-status-msg" id="acctPanelStatusMsg">${state.message || 'Ready for data ingestion cycle.'}</div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Inject before the accountDataSection intel-tag pills
+    $('#accountDataSection').before(panelHtml);
+  }
+
+  // Account Pull Button
+  $(document).on('click', '.acct-btn-pull', async function () {
+    if (!activeAccount) return;
+    const acctKey = `account_${activeAccount.id}`;
+    const state = getActionState(acctKey);
+    const $btn = $(this);
+    const $status = $('#acctPanelStatusMsg');
+
+    $btn.html('<i class="bi bi-hourglass-split"></i> Pulling...').prop('disabled', true);
+    $status.html('<span style="color:var(--text-muted);">Contacting 11 sources — SEC, GLEIF, Crunchbase, Diffbot, Glassdoor... this may take 30–60 sec</span>');
+
+    try {
+      const domain = activeAccount.primary_domain || activeAccount.domain || activeAccount.website_url || '';
+      const res = await fetch('/api/account/fetch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          company_name: activeAccount.name,
+          target_url: domain
+        })
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      // Stage the account data for validate/dump steps
+      accountStagedData = data.account || data;
+
+      state.pulled = true;
+      state.message = '<span style="color:#10b981;">📥 Pulled ✔ &mdash; Data staged from 11 sources</span>';
+      $btn.html('📥 Pulled ✔').prop('disabled', false);
+      $('.acct-btn-validate').prop('disabled', false);
+      $status.html(state.message);
+
+      // Show discovered LOB names from SEC Exhibit 21 + GLEIF
+      const discoveredLobs = accountStagedData.discovered_lob_names || [];
+      if (discoveredLobs.length > 0) {
+        const lobHtml = discoveredLobs.slice(0, 20).map(n =>
+          `<span class="data-tag" style="font-size:.72rem;"><i class="bi bi-folder2"></i> ${esc(n)}</span>`
+        ).join(' ') + (discoveredLobs.length > 20 ? `<span class="data-tag" style="font-size:.72rem;">+${discoveredLobs.length - 20} more</span>` : '');
+        $('#acctLobChips').html(lobHtml);
+      }
+
+      // Show known personas returned from DB
+      const knownPersonas = accountStagedData.known_personas || [];
+      if (knownPersonas.length > 0) {
+        const pHtml = knownPersonas.slice(0, 8).map(p =>
+          `<span class="data-tag" style="font-size:.72rem;"><i class="bi bi-person"></i> ${esc(p.name)}</span>`
+        ).join(' ') + (knownPersonas.length > 8 ? `<span class="data-tag" style="font-size:.72rem;">+${knownPersonas.length - 8} more</span>` : '');
+        $('#acctPersonaChips').html(pHtml);
+      }
+
+      // Re-render intel-tag panels with freshly pulled data so panels show live values
+      const freshAccount = Object.assign({}, activeAccount, accountStagedData);
+      $('#accountDataSection').html(renderAccountDataSection(freshAccount)).removeClass('d-none');
+
+    } catch (e) {
+      console.error('Account pull error:', e);
+      state.message = `<span style="color:#ef4444;">Pull failed — ${esc(e.message)}</span>`;
+      $btn.html('<i class="bi bi-cloud-arrow-down"></i> Pull').prop('disabled', false);
+      $status.html(state.message);
+    }
+  });
+
+  // Account Validate Button
+  $(document).on('click', '.acct-btn-validate', async function () {
+    if (!activeAccount) return;
+    const acctKey = `account_${activeAccount.id}`;
+    const state = getActionState(acctKey);
+    const $btn = $(this);
+    const $status = $('#acctPanelStatusMsg');
+
+    $btn.html('<i class="bi bi-hourglass-split"></i> Validating...').prop('disabled', true);
+    $status.html('<span style="color:var(--text-muted);">Running quality checks across 89 columns...</span>');
+
+    try {
+      const payload = accountStagedData || {};
+      const res = await fetch('/api/account/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      state.validated = true;
+      state.score = data.score;
+
+      const scoreColor = data.score >= 75 ? '#10b981' : (data.score >= 50 ? '#f59e0b' : '#ef4444');
+      const readyBadge = data.ready_for_db
+        ? '<span style="color:#10b981;font-size:.72rem;">✔ Ready for DB</span>'
+        : '<span style="color:#f59e0b;font-size:.72rem;">⚠ Partial — proceed with caution</span>';
+      let msg = `<span style="color:${scoreColor};">🔍 Quality Score: ${data.score}/100</span> ${readyBadge}`;
+      if (data.warnings && data.warnings.length > 0) {
+        msg += ` <span style="color:#ef4444;font-size:.72rem;">(${esc(data.warnings[0])})</span>`;
+      }
+      state.message = msg;
+
+      $btn.html('🔍 Validated ✔').prop('disabled', false);
+      $('.acct-btn-dump').prop('disabled', false);
+      $status.html(state.message);
+
+    } catch (e) {
+      console.error('Account validate error:', e);
+      state.message = `<span style="color:#ef4444;">Validation failed — ${esc(e.message)}</span>`;
+      $btn.html('<i class="bi bi-shield-check"></i> Validate').prop('disabled', false);
+      $status.html(state.message);
+    }
+  });
+
+  // Account Dump DB Button
+  $(document).on('click', '.acct-btn-dump', async function () {
+    if (!activeAccount) return;
+    const acctKey = `account_${activeAccount.id}`;
+    const state = getActionState(acctKey);
+    const $btn = $(this);
+    const $status = $('#acctPanelStatusMsg');
+
+    $btn.html('<i class="bi bi-hourglass-split"></i> Saving...').prop('disabled', true);
+    $status.html('<span style="color:var(--text-muted);">Writing to PostgreSQL accounts table...</span>');
+
+    try {
+      const payload = accountStagedData || {};
+      const res = await fetch('/api/account/dump-db', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_data: payload })
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      if (data.status === 'success') {
+        state.dumped = true;
+        state.message = `<span style="color:#10b981;">💾 Saved to database — Account ID: ${data.account_id || '—'}</span>`;
+        $btn.html('💾 Dumped ✔').prop('disabled', false);
+        $status.html(state.message);
+
+        // Reload sidebar so the updated account name/revenue appears
+        setTimeout(() => { loadData(); }, 800);
+      } else {
+        throw new Error(data.message || 'DB write returned non-success status');
+      }
+
+    } catch (e) {
+      console.error('Account dump error:', e);
+      state.message = `<span style="color:#ef4444;">Dump failed — ${esc(e.message)}</span>`;
+      $btn.html('<i class="bi bi-database-check"></i> Dump DB').prop('disabled', false);
+      $status.html(state.message);
+    }
+  });
+
+  // ─── Add New Account (Modal → Pipeline Panel) ────────────────────────────
+
+  // Open modal
+  $('#addNewAccountBtn').on('click', function () {
+    $('#newAccountName').val('');
+    $('#newAccountDomain').val('');
+    const modal = new bootstrap.Modal(document.getElementById('addAccountModal'));
+    modal.show();
+    setTimeout(() => { $('#newAccountName').trigger('focus'); }, 400);
+  });
+
+  // Enter key in form fields triggers Start
+  $('#addAccountForm').on('keydown', function (e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      $('#startNewAccountBtn').trigger('click');
+    }
+  });
+
+  // Start Pipeline button — close modal, render new account pipeline view
+  $('#startNewAccountBtn').on('click', function () {
+    const companyName = $('#newAccountName').val().trim();
+    if (!companyName) {
+      $('#newAccountName').addClass('is-invalid').trigger('focus');
+      return;
+    }
+    $('#newAccountName').removeClass('is-invalid');
+    const domain = $('#newAccountDomain').val().trim().replace(/^https?:\/\//, '').replace(/\/$/, '');
+
+    // Close modal first
+    bootstrap.Modal.getInstance(document.getElementById('addAccountModal')).hide();
+
+    // Reset staged data for fresh start
+    accountStagedData = null;
+
+    // Use a unique temp id so it doesn't clash with any DB id
+    const tempId = `new_${Date.now()}`;
+
+    // Build temp account object — flows through normal account handler
+    const tempAccount = {
+      id: tempId,
+      name: companyName,
+      domain: domain || null,
+      primary_domain: domain || null,
+      website_url: domain ? `https://${domain}` : null,
+      ticker: 'NEW',
+      revenue: domain || 'Domain not set',
+      location: '—',
+      desc: 'Not in database yet. Run Pull → Validate → Dump to onboard this account.',
+      lobs: [],
+      personas: [],
+      _isNew: true   // flag used by click handler to hide LOB section
+    };
+
+    // Reset action state keyed to this temp id
+    actionStateStore[`account_${tempId}`] = { pulled: false, validated: false, dumped: false, score: null, message: '' };
+
+    // Inject temp account at top of MOCK_DATA so the click handler can find it
+    // Remove any previous temp account first
+    MOCK_DATA.accounts = (MOCK_DATA.accounts || []).filter(a => !String(a.id).startsWith('new_'));
+    MOCK_DATA.accounts.unshift(tempAccount);
+
+    // Prepend a sidebar item for this temp account at the top of #accountList
+    $('#accountList .account-item[data-id^="new_"]').remove();
+    const $tempItem = $(`
+      <button type="button" class="account-item fade-in" data-id="${tempId}" style="border-left:3px solid #0ea5e9;">
+        <div class="acct-avatar" style="background:linear-gradient(135deg,#0ea5e9,#6366f1);color:#fff;">${esc(getInitials(companyName))}</div>
+        <div class="acct-info">
+          <div class="acct-name">${esc(companyName)}</div>
+          <div style="font-size:.65rem;color:#0ea5e9;font-weight:600;margin-top:1px;">NEW — Pending</div>
+        </div>
+      </button>
+    `);
+    $('#accountList').prepend($tempItem);
+
+    // Trigger the standard account click handler — it clears all existing content (BNY panels, LOBs, intel-tags) properly
+    $tempItem.trigger('click');
+  });
+
+>>>>>>> Stashed changes
 });
 

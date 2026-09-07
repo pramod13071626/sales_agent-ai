@@ -121,7 +121,7 @@ class FullEnrichService:
         return 4, "manager"
 
     @classmethod
-    def enrich_persona_record(cls, person_dict: Dict[str, Any], domain: str = "bny.com") -> Dict[str, Any]:
+    def enrich_persona_record(cls, person_dict: Dict[str, Any], domain: Optional[str] = None, company_name: Optional[str] = None) -> Dict[str, Any]:
         """Maps a raw FullEnrich person response object into our standardized Persona schema with all 68 columns mapped."""
         emp = person_dict.get("employment", {}) or {}
         curr = emp.get("current", {}) or {}
@@ -137,7 +137,7 @@ class FullEnrichService:
         # 2. Titles & Headline
         curr_title = curr.get("title") or person_dict.get("headline") or "Executive"
         headline = person_dict.get("headline") or curr_title
-        curr_comp = (curr.get("company", {}) or {}).get("name") if isinstance(curr.get("company"), dict) else "The Bank of New York Mellon Corporation"
+        curr_comp = (curr.get("company", {}) or {}).get("name") if isinstance(curr.get("company"), dict) else (company_name or "Enterprise Account")
 
         # 3. Tenure & Career Timeline
         timeline = []
@@ -204,7 +204,7 @@ class FullEnrichService:
         raw_skills = person_dict.get("skills", []) or []
         skills = [s.get("name") if isinstance(s, dict) else s for s in raw_skills if s][:6]
         if not skills:
-            skills = [p.strip() for p in re.split(r'[|•\-,/]', f"{curr_title} {headline}") if len(p.strip()) > 3 and not any(k in p.lower() for k in ['bny', 'mellon', 'vice president', 'vp'])][:5]
+            skills = [p.strip() for p in re.split(r'[|\-,/]', f"{curr_title} {headline}") if len(p.strip()) > 3 and not any(k in p.lower() for k in ['vice president', 'vp', 'senior', 'executive', 'director', 'manager', 'lead'])][:5]
 
         # 6. Hierarchy, Departments & Scoring
         h_level, tier = cls.infer_hierarchy(curr_title)
@@ -233,12 +233,12 @@ class FullEnrichService:
             "seniority_raw": tier,
             "hierarchy_level": h_level,
             "departments": departments,
-            "city": loc.get("city") or "New York",
-            "state": loc.get("region") or "NY",
-            "country": loc.get("country") or "United States",
+            "city": loc.get("city"),
+            "state": loc.get("region"),
+            "country": loc.get("country"),
             "email": email,
             "email_status": "verified_pattern",
-            "phone": "+1 212-495-1784",
+            "phone": person_dict.get("phone"),
             "decision_authority": "final" if h_level == 1 else "shared",
             "budget_authority": "full" if h_level == 1 else "technical",
             "skills": skills,
