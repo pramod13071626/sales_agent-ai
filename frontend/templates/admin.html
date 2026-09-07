@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin | Sales Intelligence</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="css/tokens.css?v=3.0">
+  <link rel="stylesheet" href="css/base.css?v=3.0">
+  <link rel="stylesheet" href="css/digest.css?v=3.0">
+  <link rel="stylesheet" href="css/account-detail.css?v=3.0">
+  <link rel="stylesheet" href="css/people-drawer.css?v=3.0">
+  <link rel="stylesheet" href="css/responsive.css?v=3.0">
+  <link rel="stylesheet" href="css/admin-page.css?v=1.0">
+</head>
+<body class="admin-page-body">
+
+<div class="admin-topbar">
+  <span class="admin-brand"><i class="bi bi-shield-lock-fill"></i> Admin Dashboard</span>
+  <button type="button" class="admin-back" id="adminLogoutBtn"><i class="bi bi-box-arrow-right"></i> Logout</button>
+</div>
+
+<main class="admin-main" id="adminMain">
+  <div class="admin-page-loading"><div class="admin-page-spinner"></div> Loading admin dashboard…</div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script type="module" src="js/modules/admin-page.js?v=1.0"></script>
+</body>
+</html>

@@ -17,6 +17,7 @@ Workflow for each level:
 """
 
 import sys
+import os
 import re
 import json
 import math
@@ -51,15 +52,17 @@ from serializers.persona_serializer import PersonaSerializer
 
 from sqlalchemy.orm import selectinload
 from db.connection import get_session
-from db.models import Account, Lob, SubLob, Persona, Post, Digest, OpportunitySignal, WeeklyDigestSnapshot, LinkedInJob, CxoMovement
+from db.models import Account, Lob, SubLob, Persona, Post, Digest, OpportunitySignal, WeeklyDigestSnapshot, LinkedInJob, CxoMovement, User, AuditLog
 from db.schemas import AccountSchema, LobSchema, PersonaSchema
 from db.repositories import AccountRepository, LobRepository, PersonaRepository
 from db.importer import import_run_to_db
 from pdf_export import build_persona_profile_pdf
+import auth
+import email_sender
 from main import run_pipeline
 
 try:
-    from fastapi import FastAPI, APIRouter, HTTPException, Query, Body, Response, Request
+    from fastapi import FastAPI, APIRouter, HTTPException, Query, Body, Response, Request, Depends, BackgroundTasks
     from fastapi.responses import FileResponse, HTMLResponse
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.templating import Jinja2Templates
@@ -76,13 +79,402 @@ if FASTAPI_AVAILABLE:
         version="2.2.0"
     )
 
+    # allow_origins=["*"] together with allow_credentials=True is rejected by
+    # browsers once real credentialed requests (the refresh-token cookie) are
+    # in play — see AUTH_JWT_IMPLEMENTATION_PLAN.md §0. A concrete origin
+    # list is required for auth to work at all.
+    _cors_origins = [o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
+    # Browsers only send Secure cookies over HTTPS — false for plain-http
+    # local dev (localhost included, to work reliably with curl/tools too),
+    # true once this is actually deployed behind HTTPS.
+    _COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").strip().lower() == "true"
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=_cors_origins or ["http://localhost:8000"],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # ══════════════════════════════════════════════════════
+    # AUTHENTICATION (see AUTH_JWT_IMPLEMENTATION_PLAN.md)
+    # ══════════════════════════════════════════════════════
+    class LoginRequest(BaseModel):
+        email: str
+        password: str
+
+    class ForgotPasswordRequest(BaseModel):
+        email: str
+
+    class ResetPasswordRequest(BaseModel):
+        token: str
+        new_password: str
+
+    class CreateUserRequest(BaseModel):
+        email: str
+        full_name: Optional[str] = None
+        password: str
+        role: str = "user"
+
+    class UpdateUserRequest(BaseModel):
+        role: Optional[str] = None
+        is_active: Optional[bool] = None
+
+    def _user_public(u: User) -> Dict[str, Any]:
+        return {
+            "id": u.id, "email": u.email, "full_name": u.full_name,
+            "role": u.role, "is_active": u.is_active,
+            "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
+            "created_at": u.created_at.isoformat() if u.created_at else None,
+        }
+
+    @app.post("/api/auth/login", tags=["0. Authentication"])
+    def login(body: LoginRequest, request: Request, response: Response):
+        session = get_session()
+        try:
+            email = body.email.strip().lower()
+            user = session.query(User).filter(User.email.ilike(email)).first()
+            # Same generic error whether the email doesn't exist or the
+            # password is wrong — never reveal which one it was.
+            invalid = HTTPException(status_code=401, detail="Invalid email or password")
+            if not user or not user.is_active:
+                raise invalid
+            if auth.is_locked_out(user):
+                raise HTTPException(status_code=423, detail="Account temporarily locked due to repeated failed logins")
+            if not auth.verify_password(body.password, user.hashed_password):
+                auth.register_failed_login(session, user)
+                raise invalid
+
+            auth.register_successful_login(session, user)
+            access_token = auth.create_access_token(user)
+            refresh_token = auth.issue_refresh_token(session, user, request)
+            auth.log_audit(session, user.id, "login")
+
+            response.set_cookie(
+                "refresh_token", refresh_token, httponly=True, secure=_COOKIE_SECURE, samesite="lax",
+                max_age=auth.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600, path="/api/auth",
+            )
+            return {"access_token": access_token, "token_type": "bearer", "user": _user_public(user)}
+        finally:
+            session.close()
+
+    @app.post("/api/auth/refresh", tags=["0. Authentication"])
+    def refresh_access_token(request: Request, response: Response):
+        raw_refresh = request.cookies.get("refresh_token")
+        if not raw_refresh:
+            raise HTTPException(status_code=401, detail="No refresh token")
+        session = get_session()
+        try:
+            new_raw, user = auth.verify_and_rotate_refresh_token(session, raw_refresh, request)
+            access_token = auth.create_access_token(user)
+            response.set_cookie(
+                "refresh_token", new_raw, httponly=True, secure=_COOKIE_SECURE, samesite="lax",
+                max_age=auth.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600, path="/api/auth",
+            )
+            return {"access_token": access_token, "token_type": "bearer", "user": _user_public(user)}
+        finally:
+            session.close()
+
+    @app.post("/api/auth/logout", tags=["0. Authentication"])
+    def logout(request: Request, response: Response):
+        raw_refresh = request.cookies.get("refresh_token")
+        if raw_refresh:
+            session = get_session()
+            try:
+                auth.revoke_refresh_token(session, raw_refresh)
+            finally:
+                session.close()
+        response.delete_cookie("refresh_token", path="/api/auth")
+        return {"ok": True}
+
+    @app.get("/api/auth/me", tags=["0. Authentication"])
+    def get_me(user: User = Depends(auth.get_current_user)):
+        return _user_public(user)
+
+    @app.post("/api/auth/forgot-password", tags=["0. Authentication"])
+    def forgot_password(body: ForgotPasswordRequest, background_tasks: BackgroundTasks):
+        """Always returns the same generic response whether or not the
+        email exists — prevents account enumeration via this endpoint."""
+        session = get_session()
+        try:
+            user = session.query(User).filter(User.email.ilike(body.email.strip().lower())).first()
+            if user and user.is_active:
+                reset_token = auth.issue_password_reset_token(session, user)
+                auth.log_audit(session, None, "password_reset_requested", target_user_id=user.id)
+                reset_link = f"{os.getenv('APP_BASE_URL', 'http://localhost:8000')}/reset-password?token={reset_token}"
+                # Sent after the response goes out, not before — a live SMTP
+                # round-trip (real-world: a few seconds against Office365)
+                # must never be what the caller's HTTP request is waiting on.
+                background_tasks.add_task(
+                    email_sender.send_email,
+                    user.email, "Reset your Sales Intelligence password",
+                    f"Hi {user.full_name or user.email},\n\n"
+                    "A password reset was requested for your account. If this wasn't you, "
+                    "you can safely ignore this email.\n\n"
+                    f"Reset your password here (expires in {auth.RESET_TOKEN_EXPIRE_MINUTES} minutes):\n{reset_link}\n",
+                    html_body=email_sender.render_html(
+                        "Reset your password",
+                        [f"Hi {user.full_name or user.email},",
+                         "A password reset was requested for your account. If this wasn't you, "
+                         "you can safely ignore this email — your password will stay unchanged."],
+                        cta_label="Reset Password", cta_url=reset_link,
+                        footnote=f"This link expires in {auth.RESET_TOKEN_EXPIRE_MINUTES} minutes.",
+                    ),
+                )
+            return {"message": "If that email exists, a reset link has been sent."}
+        finally:
+            session.close()
+
+    @app.post("/api/auth/reset-password", tags=["0. Authentication"])
+    def reset_password(body: ResetPasswordRequest):
+        session = get_session()
+        try:
+            user = auth.consume_password_reset_token(session, body.token)
+            user.hashed_password = auth.hash_password(body.new_password)
+            session.commit()
+            # A password reset should end every existing session, including
+            # one an attacker may already hold.
+            auth.revoke_all_refresh_tokens_for_user(session, user.id)
+            auth.log_audit(session, user.id, "password_reset_completed", target_user_id=user.id)
+            return {"message": "Password updated. Please log in again."}
+        finally:
+            session.close()
+
+    # ── Super Admin: user management ─────────────────────────────
+    @app.get("/api/admin/users", tags=["0. Authentication"])
+    def list_users(current: User = Depends(auth.require_role("super_admin"))):
+        session = get_session()
+        try:
+            users = session.query(User).order_by(User.created_at.desc()).all()
+            return {"users": [_user_public(u) for u in users]}
+        finally:
+            session.close()
+
+    @app.post("/api/admin/users", tags=["0. Authentication"])
+    def create_user(body: CreateUserRequest, background_tasks: BackgroundTasks,
+                     current: User = Depends(auth.require_role("super_admin"))):
+        if body.role not in ("super_admin", "user"):
+            raise HTTPException(status_code=400, detail="role must be 'super_admin' or 'user'")
+        session = get_session()
+        try:
+            email = body.email.strip().lower()
+            if session.query(User).filter(User.email.ilike(email)).first():
+                raise HTTPException(status_code=409, detail="A user with this email already exists")
+            new_user = User(
+                email=email, full_name=body.full_name, role=body.role,
+                hashed_password=auth.hash_password(body.password), created_by_id=current.id,
+            )
+            session.add(new_user)
+            session.commit()
+            auth.log_audit(session, current.id, "user_created", target_user_id=new_user.id,
+                            details={"role": body.role})
+
+            base_url = os.getenv("APP_BASE_URL", "http://localhost:8000")
+            access_note = (
+                "As a super_admin, you have access to every account by default."
+                if new_user.role == "super_admin" else
+                "No accounts have been assigned to you yet — a super admin will "
+                "grant access to specific accounts shortly; ask them if you need "
+                "one urgently."
+            )
+            background_tasks.add_task(
+                email_sender.send_email,
+                new_user.email, "Welcome to Sales Intelligence",
+                f"Hi {new_user.full_name or new_user.email},\n\n"
+                f"An account has been created for you on Sales Intelligence by {current.full_name or current.email}.\n\n"
+                f"Email: {new_user.email}\nRole: {new_user.role}\n\n"
+                f"Access: {access_note}\n\n"
+                f"Sign in here: {base_url}/login\n"
+                "You'll receive a separate email shortly to set your own password.\n",
+                html_body=email_sender.render_html(
+                    "Welcome to Sales Intelligence",
+                    [f"Hi {new_user.full_name or new_user.email},",
+                     f"An account has been created for you by {current.full_name or current.email}.",
+                     f"Email: {new_user.email}  •  Role: {new_user.role}",
+                     access_note],
+                    cta_label="Sign In", cta_url=f"{base_url}/login",
+                    footnote="You'll receive a separate email shortly to set your own password.",
+                ),
+            )
+
+            # An admin-set temp password is a worse first-run experience
+            # than the user picking their own — and never having to see the
+            # temp password anywhere (audit log, admin's clipboard) is a
+            # small but real security win.
+            reset_token = auth.issue_password_reset_token(session, new_user)
+            reset_link = f"{base_url}/reset-password?token={reset_token}"
+            background_tasks.add_task(
+                email_sender.send_email,
+                new_user.email, "Set your Sales Intelligence password",
+                f"Hi {new_user.full_name or new_user.email},\n\n"
+                "Set your password to finish setting up your account "
+                f"(expires in {auth.RESET_TOKEN_EXPIRE_MINUTES} minutes):\n{reset_link}\n",
+                html_body=email_sender.render_html(
+                    "Set your password",
+                    [f"Hi {new_user.full_name or new_user.email},",
+                     "One last step to finish setting up your account — choose your own password."],
+                    cta_label="Set Password", cta_url=reset_link,
+                    footnote=f"This link expires in {auth.RESET_TOKEN_EXPIRE_MINUTES} minutes.",
+                ),
+            )
+            return _user_public(new_user)
+        finally:
+            session.close()
+
+    @app.patch("/api/admin/users/{user_id}", tags=["0. Authentication"])
+    def update_user(user_id: int, body: UpdateUserRequest, current: User = Depends(auth.require_role("super_admin"))):
+        session = get_session()
+        try:
+            target = session.query(User).filter_by(id=user_id).first()
+            if not target:
+                raise HTTPException(status_code=404, detail="User not found")
+            if target.id == current.id and body.is_active is False:
+                raise HTTPException(status_code=400, detail="You cannot deactivate your own account")
+
+            details = {}
+            if body.role is not None and body.role != target.role:
+                if body.role not in ("super_admin", "user"):
+                    raise HTTPException(status_code=400, detail="role must be 'super_admin' or 'user'")
+                details["role"] = {"old": target.role, "new": body.role}
+                target.role = body.role
+            if body.is_active is not None and body.is_active != target.is_active:
+                details["is_active"] = {"old": target.is_active, "new": body.is_active}
+                target.is_active = body.is_active
+                if not body.is_active:
+                    auth.revoke_all_refresh_tokens_for_user(session, target.id)
+
+            session.commit()
+            if details:
+                auth.log_audit(session, current.id, "user_updated", target_user_id=target.id, details=details)
+            return _user_public(target)
+        finally:
+            session.close()
+
+    @app.delete("/api/admin/users/{user_id}", tags=["0. Authentication"])
+    def delete_user(user_id: int, current: User = Depends(auth.require_role("super_admin"))):
+        if user_id == current.id:
+            raise HTTPException(status_code=400, detail="You cannot delete your own account")
+        session = get_session()
+        try:
+            target = session.query(User).filter_by(id=user_id).first()
+            if not target:
+                raise HTTPException(status_code=404, detail="User not found")
+            email = target.email
+            # Logged before the delete since AuditLog.target_user_id turns
+            # NULL once the row is gone (ondelete="SET NULL") — the action
+            # should still say who it was after the fact.
+            auth.log_audit(session, current.id, "user_deleted", target_user_id=None, details={"email": email})
+            session.delete(target)
+            session.commit()
+            return {"ok": True}
+        finally:
+            session.close()
+
+    @app.get("/api/admin/users/{user_id}/accounts", tags=["0. Authentication"])
+    def list_user_account_access(user_id: int, current: User = Depends(auth.require_role("super_admin"))):
+        """Every account, flagged with whether this user currently has
+        access — the full picker list, not just their current grants."""
+        session = get_session()
+        try:
+            target = session.query(User).filter_by(id=user_id).first()
+            if not target:
+                raise HTTPException(status_code=404, detail="User not found")
+            granted_ids = set(auth.get_accessible_account_ids(session, user_id))
+            accounts = session.query(Account).order_by(Account.display_name).all()
+            return {
+                "user_id": user_id,
+                "role": target.role,
+                "accounts": [
+                    {
+                        "id": a.id,
+                        "name": a.display_name or a.legal_name or a.key,
+                        "granted": a.id in granted_ids,
+                    }
+                    for a in accounts
+                ],
+            }
+        finally:
+            session.close()
+
+    @app.post("/api/admin/users/{user_id}/accounts/{account_id}", tags=["0. Authentication"])
+    def grant_user_account_access(user_id: int, account_id: int, current: User = Depends(auth.require_role("super_admin"))):
+        session = get_session()
+        try:
+            target = session.query(User).filter_by(id=user_id).first()
+            if not target:
+                raise HTTPException(status_code=404, detail="User not found")
+            account = session.query(Account).filter_by(id=account_id).first()
+            if not account:
+                raise HTTPException(status_code=404, detail="Account not found")
+            created = auth.grant_account_access(session, user_id, account_id, current.id)
+            if created:
+                auth.log_audit(session, current.id, "account_access_granted", target_user_id=user_id,
+                                details={"account_id": account_id, "account_name": account.display_name})
+            return {"ok": True}
+        finally:
+            session.close()
+
+    @app.delete("/api/admin/users/{user_id}/accounts/{account_id}", tags=["0. Authentication"])
+    def revoke_user_account_access(user_id: int, account_id: int, current: User = Depends(auth.require_role("super_admin"))):
+        session = get_session()
+        try:
+            removed = auth.revoke_account_access(session, user_id, account_id)
+            if removed:
+                auth.log_audit(session, current.id, "account_access_revoked", target_user_id=user_id,
+                                details={"account_id": account_id})
+            return {"ok": True}
+        finally:
+            session.close()
+
+    @app.get("/api/admin/stats", tags=["0. Authentication"])
+    def admin_dashboard_stats(current: User = Depends(auth.require_role("super_admin"))):
+        """Usage summary for the admin dashboard: headline counts, most
+        recently active users, and the latest audit trail entries."""
+        session = get_session()
+        try:
+            total_users = session.query(User).count()
+            active_users = session.query(User).filter_by(is_active=True).count()
+            super_admin_count = session.query(User).filter_by(role="super_admin").count()
+            total_accounts = session.query(Account).count()
+
+            recent_logins = (session.query(User)
+                              .filter(User.last_login_at.isnot(None))
+                              .order_by(User.last_login_at.desc())
+                              .limit(10).all())
+            recent_audit = (session.query(AuditLog)
+                             .order_by(AuditLog.created_at.desc())
+                             .limit(20).all())
+            user_ids_in_audit = {e.actor_user_id for e in recent_audit if e.actor_user_id} | \
+                                 {e.target_user_id for e in recent_audit if e.target_user_id}
+            names_by_id = {
+                u.id: (u.full_name or u.email)
+                for u in session.query(User).filter(User.id.in_(user_ids_in_audit)).all()
+            } if user_ids_in_audit else {}
+
+            return {
+                "total_users": total_users,
+                "active_users": active_users,
+                "inactive_users": total_users - active_users,
+                "super_admin_count": super_admin_count,
+                "total_accounts": total_accounts,
+                "recent_logins": [
+                    {"id": u.id, "email": u.email, "full_name": u.full_name,
+                     "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None}
+                    for u in recent_logins
+                ],
+                "recent_audit": [
+                    {
+                        "action": e.action,
+                        "actor": names_by_id.get(e.actor_user_id, "system"),
+                        "target": names_by_id.get(e.target_user_id) if e.target_user_id else None,
+                        "details": e.details,
+                        "created_at": e.created_at.isoformat() if e.created_at else None,
+                    }
+                    for e in recent_audit
+                ],
+            }
+        finally:
+            session.close()
 
     # ══════════════════════════════════════════════════════
     # REQUEST / RESPONSE MODELS
@@ -553,7 +945,7 @@ if FASTAPI_AVAILABLE:
         }
 
     @account_router.get("")
-    def list_all_accounts_with_hierarchy(response: Response):
+    def list_all_accounts_with_hierarchy(response: Response, user: User = Depends(auth.get_current_user)):
         """
         [Page Initialization (loadData())]:
         Queries PostgreSQL (accounts, lobs, sub_lobs, personas) and returns a
@@ -561,30 +953,35 @@ if FASTAPI_AVAILABLE:
         and topbar ticker's cross-account rollups. Full per-account detail
         (persona dossiers, LOB financials/patents, org chart) is fetched
         on-demand via GET /api/accounts/{account_id} once that account is opened.
+
+        A super_admin sees every account; anyone else sees only accounts a
+        super_admin has explicitly granted them (see user_account_access) —
+        a user with zero grants sees an empty list, not an error.
         """
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
         session = get_session()
         try:
-            accounts = (session.query(Account)
-                        .options(
-                            selectinload(Account.personas),
-                            selectinload(Account.lobs).selectinload(Lob.sub_lobs)
-                        )
-                        .order_by(Account.id.desc())
-                        .all())
+            query = session.query(Account).options(
+                selectinload(Account.personas),
+                selectinload(Account.lobs).selectinload(Lob.sub_lobs)
+            )
+            if user.role != "super_admin":
+                accessible_ids = auth.get_accessible_account_ids(session, user.id)
+                query = query.filter(Account.id.in_(accessible_ids)) if accessible_ids else query.filter(False)
+            accounts = query.order_by(Account.id.desc()).all()
             return {"accounts": [_serialize_account_summary(acct) for acct in accounts]}
         finally:
             session.close()
 
     @app.get("/api/accounts", tags=["1. Account Level"])
-    def list_all_accounts_alias(response: Response):
+    def list_all_accounts_alias(response: Response, user: User = Depends(auth.get_current_user)):
         """Plural alias for /api/account list endpoint."""
-        return list_all_accounts_with_hierarchy(response)
+        return list_all_accounts_with_hierarchy(response, user)
 
     @account_router.get("/{account_id}")
-    def get_account_from_db(account_id: int):
+    def get_account_from_db(account_id: int, user: User = Depends(auth.require_account_access)):
         """Retrieves one account's full dossier from DB — complete LOBs and
         personas — fetched on demand when that account is opened."""
         session = get_session()
@@ -1196,12 +1593,12 @@ if FASTAPI_AVAILABLE:
     # ══════════════════════════════════════════════════════
 
     @app.get("/api/accounts/{account_id}", tags=["1. Accounts"])
-    def get_account_by_id(account_id: int):
+    def get_account_by_id(account_id: int, user: User = Depends(auth.require_account_access)):
         """Retrieve a specific enterprise account with its complete profile."""
-        return get_account_from_db(account_id)
+        return get_account_from_db(account_id, user)
 
     @app.get("/api/accounts/{account_id}/lobs", tags=["2. Lines of Business"])
-    def get_account_lines_of_business(account_id: int):
+    def get_account_lines_of_business(account_id: int, user: User = Depends(auth.require_account_access)):
         """Retrieve all Lines of Business (LOBs) and nested sub-divisions for an account."""
         session = get_session()
         try:
@@ -1281,7 +1678,7 @@ if FASTAPI_AVAILABLE:
             session.close()
 
     @app.get("/api/accounts/{account_id}/personas", tags=["3. Personas & Buying Committee"])
-    def get_account_buying_committee(account_id: int):
+    def get_account_buying_committee(account_id: int, user: User = Depends(auth.require_account_access)):
         """Retrieve all executive personas and decision makers mapped to an account."""
         session = get_session()
         try:
@@ -1333,7 +1730,7 @@ if FASTAPI_AVAILABLE:
             session.close()
 
     @app.get("/api/personas/{persona_id}", tags=["3. Personas & Buying Committee"])
-    def get_single_persona_profile(persona_id: int):
+    def get_single_persona_profile(persona_id: int, user: User = Depends(auth.require_persona_account_access)):
         """Retrieve full details and 58-column AI dossier for a specific executive persona."""
         session = get_session()
         try:
@@ -1367,7 +1764,7 @@ if FASTAPI_AVAILABLE:
             session.close()
 
     @app.get("/api/personas/{persona_id}/profile.pdf", tags=["3. Personas & Buying Committee"])
-    def download_persona_profile_pdf(persona_id: int):
+    def download_persona_profile_pdf(persona_id: int, user: User = Depends(auth.require_persona_account_access)):
         """Server-side "Download PDF" for a contact's full profile (contact
         info, career history, AI call-prep dossier, Personality Profile, and
         every captured post) — generated fresh from the database each time
@@ -1428,7 +1825,7 @@ if FASTAPI_AVAILABLE:
             session.close()
 
     @app.get("/api/accounts/{account_id}/signals", tags=["1. Accounts"])
-    def get_account_intelligence_signals(account_id: int):
+    def get_account_intelligence_signals(account_id: int, user: User = Depends(auth.require_account_access)):
         """Retrieve multi-source intelligence, firmographics, heat scores, and traffic telemetry."""
         session = get_session()
         try:
@@ -1488,7 +1885,7 @@ if FASTAPI_AVAILABLE:
         }
 
     @app.get("/api/accounts/{account_id}/opportunities", tags=["1. Accounts"])
-    def get_account_opportunity_signals(account_id: int):
+    def get_account_opportunity_signals(account_id: int, user: User = Depends(auth.require_account_access)):
         """Retrieve the persisted history of growth-whitespace themes and domain-expansion
         product ideas detected for an account, including ones no longer actively recurring."""
         session = get_session()
@@ -1506,7 +1903,7 @@ if FASTAPI_AVAILABLE:
             session.close()
 
     @app.post("/api/accounts/{account_id}/opportunities/sync", tags=["1. Accounts"])
-    def sync_account_opportunity_signals(account_id: int, req: OpportunitySignalSyncRequest):
+    def sync_account_opportunity_signals(account_id: int, req: OpportunitySignalSyncRequest, user: User = Depends(auth.require_account_access)):
         """Upsert the currently-detected opportunity signals for one category (growth_theme or
         domain_expansion). Signals no longer present in `items` are marked inactive rather than
         deleted, so the account keeps a full history of what has been suggested over time."""
@@ -1572,7 +1969,7 @@ if FASTAPI_AVAILABLE:
         }
 
     @app.get("/api/accounts/{account_id}/weekly-updates", tags=["1. Accounts"])
-    def get_account_weekly_updates(account_id: int):
+    def get_account_weekly_updates(account_id: int, user: User = Depends(auth.require_account_access)):
         """Retrieve the archived history of weekly sales update emails for an account, newest first."""
         session = get_session()
         try:
@@ -1585,7 +1982,7 @@ if FASTAPI_AVAILABLE:
             session.close()
 
     @app.post("/api/accounts/{account_id}/weekly-updates/sync", tags=["1. Accounts"])
-    def sync_account_weekly_update(account_id: int, req: WeeklyDigestSyncRequest):
+    def sync_account_weekly_update(account_id: int, req: WeeklyDigestSyncRequest, user: User = Depends(auth.require_account_access)):
         """Archive the current weekly sales update email as a snapshot, if this generation hasn't
         been captured yet. The live `digests` row is overwritten every pipeline run, so this is what
         preserves past weeks' versions instead of losing them."""
@@ -1937,7 +2334,7 @@ if FASTAPI_AVAILABLE:
             session.close()
 
     @app.get("/api/accounts/{account_id}/cxo-movements", tags=["6. CXO Movements"])
-    def get_account_cxo_movements(account_id: int):
+    def get_account_cxo_movements(account_id: int, user: User = Depends(auth.require_account_access)):
         """Retrieve executive transitions for a specific account."""
         session = get_session()
         try:
@@ -1960,7 +2357,7 @@ if FASTAPI_AVAILABLE:
             session.close()
 
     @app.get("/api/accounts/{account_id}/content", tags=["4. Content Intelligence"])
-    def get_account_content_intelligence(account_id: int):
+    def get_account_content_intelligence(account_id: int, user: User = Depends(auth.require_account_access)):
         """Retrieve social listening posts, LLM channel digests, and LinkedIn jobs
         scoped to one account — the on-demand counterpart to /api/content, fetched
         when that account's Social/Content/Jobs tab is opened rather than pulling
@@ -2105,6 +2502,22 @@ if FASTAPI_AVAILABLE:
         @app.get("/", response_class=HTMLResponse, include_in_schema=False)
         async def dashboard_home(request: Request):
             return templates.TemplateResponse(request, "index.html")
+
+        @app.get("/login", response_class=HTMLResponse, include_in_schema=False)
+        async def login_page(request: Request):
+            return templates.TemplateResponse(request, "login.html")
+
+        @app.get("/reset-password", response_class=HTMLResponse, include_in_schema=False)
+        async def reset_password_page(request: Request):
+            return templates.TemplateResponse(request, "reset-password.html")
+
+        @app.get("/admin", response_class=HTMLResponse, include_in_schema=False)
+        async def admin_page(request: Request):
+            """Super-admin dashboard shell — the page itself renders for
+            anyone (no server-side session to gate on), but every
+            /api/admin/* call it makes is independently protected by
+            Depends(auth.require_role("super_admin"))."""
+            return templates.TemplateResponse(request, "admin.html")
 
         @app.get("/profile", response_class=HTMLResponse, include_in_schema=False)
         async def contact_profile_page(request: Request):

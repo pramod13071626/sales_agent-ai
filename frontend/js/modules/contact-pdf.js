@@ -6,18 +6,42 @@
 import { showToast } from './toast.js';
 import { slugify } from './utils.js';
 
-export function triggerPersonaPdfDownload(persona) {
+export async function triggerPersonaPdfDownload(persona) {
   if (!persona || persona.id == null) {
     showToast('Cannot generate PDF — this contact has no id.');
     return;
   }
   showToast('Generating PDF…');
-  const a = document.createElement('a');
-  a.href = `/api/personas/${persona.id}/profile.pdf`;
-  a.download = `${slugify(persona.name || 'contact')}-personality-report.pdf`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+  try {
+    // A plain <a href> navigation can't carry the Authorization header this
+    // endpoint now requires (see AUTH_JWT_IMPLEMENTATION_PLAN.md) — fetch()
+    // goes through fetch-instrumentation.js's patched window.fetch, which
+    // attaches it, then we hand the browser the resulting blob to save.
+    const res = await fetch(`/api/personas/${persona.id}/profile.pdf`);
+    if (res.status === 401) {
+      showToast('Your session expired — please sign in again.');
+      window.location.href = `/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+      return;
+    }
+    if (res.status === 403) {
+      showToast("You don't have access to this account's PDF.");
+      return;
+    }
+    if (!res.ok) throw new Error(`Server returned ${res.status}`);
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${slugify(persona.name || 'contact')}-personality-report.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error('PDF download failed', err);
+    showToast('Could not generate the PDF — see console for details.');
+  }
 }
 
 // Convenience for pages (full-profile.js) that render the button into a

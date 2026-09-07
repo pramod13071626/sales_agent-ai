@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign In | Sales Intelligence</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="css/tokens.css?v=3.0">
+  <link rel="stylesheet" href="css/base.css?v=3.0">
+  <link rel="stylesheet" href="css/auth-pages.css?v=3.1">
+</head>
+<body class="auth-page-body">
+
+<div class="auth-split">
+
+  <div class="auth-split-left">
+    <div class="auth-left-content">
+      <div class="auth-brand"><i class="bi bi-diagram-3-fill"></i> Sales Intelligence</div>
+      <h1 class="auth-left-title">Executive account intelligence, in one place.</h1>
+      <p class="auth-left-subtitle">
+        Buying-committee mapping, AI call-prep dossiers, and real-time signal
+        tracking across every account you own.
+      </p>
+      <ul class="auth-highlights">
+        <li><i class="bi bi-diagram-3"></i> Verified org charts &amp; buying committees</li>
+        <li><i class="bi bi-stars"></i> AI-synthesized Personality Profiles</li>
+        <li><i class="bi bi-broadcast"></i> Live social &amp; filing signal tracking</li>
+        <li><i class="bi bi-shield-check"></i> Role-based access, audited</li>
+      </ul>
+      <div class="auth-stats-row">
+        <div><div class="auth-stat-value">100%</div><div class="auth-stat-label">Role-Based Access</div></div>
+        <div><div class="auth-stat-value">24/7</div><div class="auth-stat-label">Live Signal Tracking</div></div>
+        <div><div class="auth-stat-value">AI</div><div class="auth-stat-label">Synthesized Dossiers</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="auth-split-right">
+    <div class="auth-card">
+      <div class="auth-brand auth-brand-mobile"><i class="bi bi-diagram-3-fill"></i> Sales Intelligence</div>
+
+      <div id="authFormLogin">
+        <h1 class="auth-title">Sign in</h1>
+        <p class="auth-subtitle">Use your account email and password.</p>
+
+        <div class="auth-error" id="loginError" hidden></div>
+
+        <form id="loginForm" autocomplete="on">
+          <label class="auth-label" for="loginEmail">Email</label>
+          <input class="auth-input" type="email" id="loginEmail" name="email" required autocomplete="username">
+
+          <label class="auth-label" for="loginPassword">Password</label>
+          <input class="auth-input" type="password" id="loginPassword" name="password" required autocomplete="current-password">
+
+          <button type="submit" class="auth-submit" id="loginSubmit">Sign In</button>
+        </form>
+
+        <a href="#" class="auth-link" id="showForgotPassword">Forgot your password?</a>
+      </div>
+
+      <div id="authFormForgot" hidden>
+        <h1 class="auth-title">Reset password</h1>
+        <p class="auth-subtitle">Enter your email and we'll send a reset link.</p>
+
+        <div class="auth-error" id="forgotError" hidden></div>
+        <div class="auth-success" id="forgotSuccess" hidden></div>
+
+        <form id="forgotForm">
+          <label class="auth-label" for="forgotEmail">Email</label>
+          <input class="auth-input" type="email" id="forgotEmail" name="email" required autocomplete="username">
+          <button type="submit" class="auth-submit" id="forgotSubmit">Send Reset Link</button>
+        </form>
+
+        <a href="#" class="auth-link" id="showLogin">Back to sign in</a>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script type="module" src="js/modules/login.js?v=1.0"></script>
+</body>
+</html>

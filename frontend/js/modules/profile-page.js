@@ -2,12 +2,14 @@
 // contact drawer's "View Profile" button, see contact-drawer.js). Fetches
 // its own account/persona/content data, renders the modular Bento-Grid dashboard,
 // and wires interactive tabs, channel filtering, and feed pagination.
+import './fetch-instrumentation.js'; // must load first — patches window.fetch to attach the bearer token
 import { state } from './state.js';
 import { el } from './dom.js';
 import { renderFullProfile } from './full-profile.js';
 import { wireProfilePdfDownload } from './contact-pdf.js';
 import { renderPostCard } from './profile-render.js';
 import { resolvePersonaTargetKey } from './utils.js';
+import { refreshAccessToken } from './auth-client.js';
 
 function setupSignalsPagination(container, posts) {
   const PAGE_SIZE = 12;
@@ -167,11 +169,21 @@ async function init() {
 
   backLink.href = `/?account=${encodeURIComponent(accountId)}`;
 
+  await refreshAccessToken(); // this page opens in its own tab — restore the session from the refresh cookie first
+
   try {
     const [acctRes, contentRes] = await Promise.all([
       fetch(`/api/accounts/${accountId}`),
       fetch(`/api/accounts/${accountId}/content`).catch(() => null)
     ]);
+    if (acctRes.status === 401) {
+      window.location.href = `/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+      return;
+    }
+    if (acctRes.status === 403) {
+      main.innerHTML = `<div class="profile-page-error">You don't have access to this account. Ask a super admin to grant it.</div>`;
+      return;
+    }
     if (!acctRes.ok) throw new Error(`Account fetch failed (${acctRes.status})`);
     const account = await acctRes.json();
 

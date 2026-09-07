@@ -12,6 +12,7 @@ import { renderNavTree } from './nav-tree.js';
 import { renderDigest } from './digest.js';
 import { jumpToAccount } from './selection.js';
 import { openAllJobsPage } from './jobs-browser.js';
+import { initTopbarAuth } from './topbar-auth.js';
 
 initThemeToggle();
 
@@ -40,6 +41,10 @@ async function loadAccounts() {
       fetch('/api/accounts'),
       fetch('/api/cxo-movements').catch(() => null)
     ]);
+    if (acctRes.status === 401) {
+      window.location.href = `/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+      return;
+    }
     if (!acctRes.ok) throw new Error('Failed to load accounts');
     const data = await acctRes.json();
     state.accounts = data.accounts || [];
@@ -67,4 +72,21 @@ async function loadAccounts() {
   }
 }
 
-loadAccounts();
+// Account data is now access-controlled server-side (see
+// AUTH_JWT_IMPLEMENTATION_PLAN.md — /api/accounts requires a logged-in user
+// and filters to their granted accounts), so this page requires a session:
+// no session at all -> straight to /login; a super_admin session -> their
+// own dashboard, never the sales Global Accounts Dashboard. Both checks
+// happen before any dashboard rendering starts, so there's no flash of
+// content the visitor isn't meant to see.
+initTopbarAuth().then((user) => {
+  if (!user) {
+    window.location.href = `/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+    return;
+  }
+  if (user.role === 'super_admin') {
+    window.location.replace('/admin');
+    return;
+  }
+  loadAccounts();
+});

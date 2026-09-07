@@ -1,0 +1,115 @@
+/* Super-admin dashboard — user management, per-account access, usage stats.
+   Reuses .panel/.panel-title (digest.css), .metrics-grid/.metric-tile and
+   .chip/.pill (account-detail.css / people-drawer.css); this file only adds
+   what's genuinely new (the users table, the access-grant modal, the
+   activity feed). */
+
+body.admin-page-body { background: var(--content-bg); min-height: 100vh; }
+
+.admin-topbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 14px 24px; border-bottom: 1px solid var(--border-color);
+  background: var(--panel-bg); position: sticky; top: 0; z-index: 10;
+}
+.admin-back {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: .82rem; font-weight: 600; color: var(--text-secondary); text-decoration: none;
+  background: none; border: none; font-family: inherit; cursor: pointer; padding: 0;
+}
+.admin-back:hover { color: var(--brand); }
+.admin-brand { font-size: .82rem; font-weight: 700; color: var(--text-muted); display: inline-flex; align-items: center; gap: 6px; }
+
+.admin-main { max-width: 1200px; margin: 0 auto; padding: 24px 24px 60px; }
+
+.admin-page-loading, .admin-page-error {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  margin: 80px auto; color: var(--text-muted); font-size: .85rem;
+}
+.admin-page-spinner {
+  width: 22px; height: 22px; border-radius: 50%;
+  border: 3px solid var(--border-color); border-top-color: var(--brand);
+  animation: admin-page-spin .7s linear infinite;
+}
+@keyframes admin-page-spin { to { transform: rotate(360deg); } }
+
+/* ── Users table ─────────────────────────────────────────────── */
+.admin-table-wrap { overflow-x: auto; }
+.admin-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+.admin-table th {
+  text-align: left; font-size: .68rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .04em; color: var(--text-muted); padding: 8px 10px;
+  border-bottom: 1px solid var(--border-color); white-space: nowrap;
+}
+.admin-table td { padding: 10px; border-bottom: 1px solid var(--border-color); vertical-align: middle; }
+.admin-table tr:last-child td { border-bottom: none; }
+.admin-user-name { font-weight: 600; color: var(--text-primary); }
+.admin-user-email { font-size: .74rem; color: var(--text-muted); }
+.admin-row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.admin-icon-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: .72rem; font-weight: 600; padding: 5px 10px;
+  border: 1px solid var(--border-color); border-radius: var(--radius-sm);
+  background: var(--panel-bg); color: var(--text-secondary); cursor: pointer;
+  font-family: inherit; transition: var(--transition);
+}
+.admin-icon-btn:hover { background: var(--brand-soft); color: var(--brand); border-color: rgba(0,97,255,.25); }
+.admin-icon-btn.danger:hover { background: rgba(255,77,79,.08); color: var(--danger); border-color: rgba(255,77,79,.2); }
+
+.admin-role-select {
+  font-size: .74rem; font-family: inherit; padding: 4px 6px;
+  border: 1px solid var(--border-color); border-radius: var(--radius-xs);
+  background: var(--input-bg); color: var(--text-primary);
+}
+
+/* ── Create-user inline form ─────────────────────────────────── */
+.admin-create-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; align-items: end; }
+.admin-create-form label { display: block; font-size: .68rem; font-weight: 700; color: var(--text-muted); margin-bottom: 4px; }
+.admin-create-form input, .admin-create-form select {
+  width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: .82rem; font-family: inherit;
+  background: var(--input-bg); border: 1.5px solid var(--border-color); border-radius: var(--radius-sm);
+  color: var(--text-primary);
+}
+.admin-create-form input:focus, .admin-create-form select:focus { outline: none; border-color: var(--brand); background: var(--panel-bg); }
+.admin-create-submit {
+  padding: 9px 16px; font-size: .82rem; font-weight: 700; font-family: inherit;
+  color: #fff; background: var(--brand); border: none; border-radius: var(--radius-sm); cursor: pointer;
+}
+.admin-create-submit:hover { background: var(--brand-hover); }
+.admin-create-submit:disabled { opacity: .6; cursor: not-allowed; }
+.admin-form-error { grid-column: 1 / -1; font-size: .78rem; color: var(--danger); }
+
+/* ── Activity feed ───────────────────────────────────────────── */
+.admin-activity-list { display: flex; flex-direction: column; gap: 10px; }
+.admin-activity-row { display: flex; gap: 10px; font-size: .78rem; padding-bottom: 10px; border-bottom: 1px solid var(--border-color); }
+.admin-activity-row:last-child { border-bottom: none; padding-bottom: 0; }
+.admin-activity-icon { color: var(--brand); flex-shrink: 0; margin-top: 2px; }
+.admin-activity-text { color: var(--text-primary); }
+.admin-activity-time { color: var(--text-muted); font-size: .7rem; margin-top: 2px; }
+
+/* ── Access-grant modal ──────────────────────────────────────── */
+.admin-modal-backdrop {
+  position: fixed; inset: 0; background: rgba(26,29,35,.4);
+  display: none; align-items: center; justify-content: center; z-index: 2000; backdrop-filter: blur(3px);
+}
+.admin-modal-backdrop.open { display: flex; }
+.admin-modal {
+  width: 92%; max-width: 480px; max-height: 80vh; display: flex; flex-direction: column;
+  background: var(--panel-bg); border-radius: var(--radius-md); box-shadow: var(--shadow-modal);
+}
+.admin-modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px; border-bottom: 1px solid var(--border-color);
+}
+.admin-modal-title { font-size: .95rem; font-weight: 700; color: var(--text-primary); }
+.admin-modal-close {
+  width: 28px; height: 28px; border-radius: var(--radius-sm); border: 1.5px solid var(--border-color);
+  background: var(--panel-bg); color: var(--text-secondary); cursor: pointer; display: grid; place-items: center;
+}
+.admin-modal-body { padding: 12px 20px; overflow-y: auto; flex: 1; }
+.admin-access-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 0; border-bottom: 1px solid var(--border-color); font-size: .82rem;
+}
+.admin-access-row:last-child { border-bottom: none; }
+.admin-access-toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; }
