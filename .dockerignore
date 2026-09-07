@@ -1,0 +1,27 @@
+.git
+.gitignore
+.idea
+.vscode
+.env
+*.env.local
+__pycache__/
+*.pyc
+*.pyo
+
+# Local dev venv sitting at the repo root (pyvenv.cfg, Lib/, Scripts/) —
+# not source, and would otherwise bloat the image with Windows binaries.
+sales_agent-ai/
+
+# Runtime data
+output/
+
+# apps/content_pipeline is a separate app with its own Dockerfile/image —
+# this build only needs this app's own code.
+apps/
+
+# Deferred, not implemented yet (see .gitignore) — nothing to copy.
+celery_app.py
+tasks/
+
+MERGE_PLAN.md
+README.md

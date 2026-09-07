@@ -1,0 +1,12 @@
+/* ── Responsive ─────────────────────────────────────────────── */
+@media (max-width: 1200px) {
+  .dash-people { display: none !important; }
+  .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 800px) {
+  .dash-body { flex-direction: column; overflow-y: auto; }
+  .dash-nav { width: 100%; min-width: 100%; max-width: 100%; max-height: 340px; border-right: none; border-bottom: 1px solid var(--border-color); }
+}
+@media (max-width: 900px) {
+  .contact-drawer { width: 100vw; max-width: none; min-width: 0; }
+}

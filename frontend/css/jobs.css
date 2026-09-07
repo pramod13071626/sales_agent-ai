@@ -1,0 +1,101 @@
+/* All LinkedIn Jobs page */
+.job-browser-toolbar {
+  display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;
+}
+.job-search-wrap { position: relative; flex: 1 1 240px; min-width: 200px; }
+.job-search-wrap i {
+  position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
+  color: var(--text-muted); font-size: .8rem; pointer-events: none;
+}
+.job-search-wrap input {
+  width: 100%; box-sizing: border-box; padding: 8px 10px 8px 32px;
+  border: 1.5px solid var(--border-color); border-radius: var(--radius-sm);
+  background: var(--input-bg); color: var(--text-primary);
+  font-family: inherit; font-size: .8rem; outline: none; transition: var(--transition);
+}
+.job-search-wrap input:focus {
+  border-color: var(--brand); background: var(--panel-bg); box-shadow: 0 0 0 3px var(--brand-soft);
+}
+.job-filter-select {
+  flex: 0 1 170px; padding: 8px 10px; border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-sm); background: var(--input-bg); color: var(--text-primary);
+  font-family: inherit; font-size: .78rem; outline: none; cursor: pointer; transition: var(--transition);
+}
+.job-filter-select:focus { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
+.job-browser-filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.job-cat-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: inherit; font-size: .74rem; font-weight: 600;
+  padding: 5px 10px; border-radius: var(--radius-xs);
+  background: var(--input-bg); color: var(--text-secondary);
+  border: 1.5px solid var(--border-color); cursor: pointer; transition: var(--transition);
+}
+.job-cat-chip:hover { border-color: var(--brand); color: var(--text-primary); }
+.job-cat-chip.active { background: var(--brand-soft); border-color: var(--brand); color: var(--brand); }
+.job-cat-count {
+  font-size: .68rem; font-weight: 700; padding: 1px 6px; border-radius: 999px;
+  background: rgba(0,0,0,.06); color: inherit;
+}
+.job-page-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px;
+}
+.job-browser-card {
+  display: block; width: 100%; text-align: left; font-family: inherit; cursor: pointer;
+  background: var(--panel-bg); border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm); padding: 10px 14px; transition: var(--transition);
+}
+.job-browser-card:hover { border-color: var(--brand); background: var(--brand-soft); transform: translateY(-1px); }
+.job-browser-account { font-size: .7rem; font-weight: 700; color: var(--brand); text-transform: uppercase; letter-spacing: .03em; }
+.job-browser-account i { margin-right: 3px; }
+.job-browser-title { font-size: .86rem; font-weight: 700; color: var(--text-primary); margin-top: 3px; }
+.job-browser-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; font-size: .72rem; color: var(--text-muted); }
+.job-detail-back {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: inherit; font-size: .78rem; font-weight: 700; color: var(--brand);
+  background: none; border: none; cursor: pointer; padding: 0; margin-bottom: 14px;
+}
+.job-detail-description { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-color); }
+.job-detail-description-title { font-size: .76rem; font-weight: 700; color: var(--text-primary); margin-bottom: 6px; }
+.job-detail-description p { font-size: .8rem; color: var(--text-secondary); line-height: 1.6; margin: 0 0 8px; }
+.job-detail-description p:last-child { margin-bottom: 0; }
+.job-pagination {
+  display: flex; align-items: center; justify-content: center; gap: 14px;
+  margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border-color);
+}
+.job-page-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: inherit; font-size: .78rem; font-weight: 700; color: var(--text-primary);
+  background: var(--input-bg); border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-sm); padding: 6px 12px; cursor: pointer; transition: var(--transition);
+}
+.job-page-btn:hover:not(:disabled) { border-color: var(--brand); color: var(--brand); }
+.job-page-btn:disabled { opacity: .4; cursor: not-allowed; }
+.job-page-status { font-size: .78rem; color: var(--text-secondary); font-weight: 600; }
+
+/* LinkedIn Job Postings */
+.job-card {
+  background: var(--panel-bg);
+  border: 1px solid var(--border-color);
+  border-left: 3px solid #0A66C2;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+.job-card:last-child { margin-bottom: 0; }
+.job-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.job-card-title { font-weight: 700; font-size: .86rem; color: var(--text-primary); }
+.job-card-company { font-size: .76rem; color: var(--text-secondary); margin-top: 2px; }
+.job-card-company i { color: #0A66C2; margin-right: 3px; }
+.job-card-meta {
+  display: flex; flex-wrap: wrap; gap: 12px;
+  font-size: .72rem; color: var(--text-muted);
+}
+.job-card-actions {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border-color);
+}
+.job-card-actions .alert-view-account { margin-top: 0; width: auto; flex: 1; }
+.job-card-link {
+  font-size: .74rem; font-weight: 700; color: var(--brand);
+  white-space: nowrap; display: inline-flex; align-items: center; gap: 4px;
+}

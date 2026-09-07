@@ -1,0 +1,6 @@
+# Shared dev/CI tooling for both apps (root sales_ai + apps/content_pipeline).
+# Install alongside each app's own requirements.txt — never mix into it.
+ruff>=0.6.0
+mypy>=1.11.0
+pytest>=8.0.0
+pytest-cov>=5.0.0

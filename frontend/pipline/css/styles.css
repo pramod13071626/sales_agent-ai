@@ -19,7 +19,7 @@
 
   /* Surfaces */
   --content-bg: #F7F8FA;
-  --card-bg: #FFFFFF;
+  --card-bg: #FFF;
   --card-border: #E8EAED;
   --card-shadow: 0 1px 2px rgba(0,0,0,.05), 0 2px 8px rgba(0,0,0,.04);
   --card-shadow-hover: 0 4px 12px rgba(0,0,0,.10), 0 8px 24px rgba(0,0,0,.06);
@@ -76,7 +76,7 @@
 *, *::before, *::after { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 body {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: Inter, system-ui, -apple-system, sans-serif;
   background: var(--content-bg);
   color: var(--text-primary);
   margin: 0;

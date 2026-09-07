@@ -1,0 +1,33 @@
+{
+  "root": true,
+  "env": {
+    "browser": true,
+    "es2021": true,
+    "jquery": true
+  },
+  "extends": "eslint:recommended",
+  "parserOptions": {
+    "ecmaVersion": 2021,
+    "sourceType": "script"
+  },
+  "globals": {
+    "bootstrap": "readonly"
+  },
+  "ignorePatterns": [
+    "sales_agent-ai/",
+    "node_modules/",
+    "output/",
+    "apps/content_pipeline/output/",
+    "**/*.min.js"
+  ],
+  "rules": {
+    "no-unused-vars": ["warn", { "args": "none" }],
+    "no-empty": ["error", { "allowEmptyCatch": true }]
+  },
+  "overrides": [
+    {
+      "files": ["frontend/js/modules/**/*.js"],
+      "parserOptions": { "sourceType": "module", "ecmaVersion": 2021 }
+    }
+  ]
+}

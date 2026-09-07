@@ -1,0 +1,74 @@
+/* Full-page contact profile (opened via the drawer's "View Profile" button —
+   see contact-drawer.js / profile-page.js / full-profile.js). Each section
+   is its own widget/panel using the same .panel/.panel-title classes as the
+   main dashboard (digest.css), laid out full-width instead of squeezed into
+   the drawer's narrow sidebar. */
+
+body.profile-page-body {
+  background: var(--content-bg);
+  min-height: 100vh;
+}
+
+.profile-page-topbar {
+  display: flex; align-items: center; gap: 16px;
+  padding: 14px 24px; border-bottom: 1px solid var(--border-color);
+  background: var(--panel-bg);
+  position: sticky; top: 0; z-index: 10;
+}
+.profile-page-back {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: .82rem; font-weight: 600; color: var(--text-secondary);
+  text-decoration: none;
+}
+.profile-page-back:hover { color: var(--brand); }
+.profile-page-brand {
+  font-size: .82rem; font-weight: 700; color: var(--text-muted);
+  display: inline-flex; align-items: center; gap: 6px;
+}
+
+.profile-page-main {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 24px 28px 60px;
+}
+
+.profile-page-loading {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  margin: 80px auto; color: var(--text-muted); font-size: .85rem;
+}
+.profile-page-spinner {
+  width: 22px; height: 22px; border-radius: 50%;
+  border: 3px solid var(--border-color); border-top-color: var(--brand);
+  animation: profile-page-spin .7s linear infinite;
+}
+@keyframes profile-page-spin { to { transform: rotate(360deg); } }
+
+.profile-page-error {
+  margin: 60px auto; max-width: 480px; text-align: center;
+  color: var(--text-secondary); font-size: .85rem;
+}
+
+.profile-hero { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; }
+.profile-hero .drawer-contact-header { margin-bottom: 0; }
+.profile-avatar-lg { width: 64px; height: 64px; font-size: 1.4rem; }
+.profile-hero .drawer-actions { margin-bottom: 0; flex-wrap: wrap; }
+.profile-hero .drawer-action { flex: 0 0 auto; min-width: 110px; }
+
+/* Two-column widgets (Contact Info + AI Call-Prep Dossier) side by side on
+   wide screens, stacking on narrow ones — the wider Personality Profile and
+   Social Activity panels always span the full width below. */
+.profile-widget-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 16px;
+}
+.profile-widget-grid > .panel { margin-bottom: 0; }
+
+.profile-post-group { margin-top: 14px; }
+.profile-post-group:first-child { margin-top: 0; }
+.profile-post-group .post-card-list {
+  margin-top: 6px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 10px;
+}

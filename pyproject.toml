@@ -1,0 +1,32 @@
+[tool.black]
+line-length = 120
+target-version = ["py312"]
+extend-exclude = '''
+(
+    ^/sales_agent-ai/   # committed venv artifacts, never format these
+    | ^/output/
+    | ^/apps/content_pipeline/output/
+)
+'''
+
+[tool.bandit]
+exclude_dirs = ["sales_agent-ai", "output", "apps/content_pipeline/output", "tests", "apps/content_pipeline/tests"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+exclude = ["sales_agent-ai", "output", "apps/content_pipeline/output"]
+# No project code has type hints yet; this starts as a report-only signal
+# in CI (see .github/workflows/code-quality.yml) rather than a hard gate.
+check_untyped_defs = false
+
+[tool.coverage.run]
+branch = true
+omit = [
+    "sales_agent-ai/*",
+    "*/tests/*",
+    "*/output/*",
+]
+
+[tool.coverage.report]
+skip_empty = true

@@ -1,0 +1,18 @@
+{
+  "name": "sales-agent-ai-frontend-tooling",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Frontend lint tooling for the static HTML/jQuery/Bootstrap UIs (frontend/, apps/content_pipeline/frontend/). No build step — these are dev-only linters.",
+  "scripts": {
+    "lint:js": "eslint \"frontend/**/*.js\"",
+    "lint:html": "htmlhint \"frontend/**/*.html\" \"apps/content_pipeline/frontend/**/*.html\"",
+    "lint:css": "stylelint \"frontend/**/*.css\"",
+    "lint": "npm run lint:js && npm run lint:html && npm run lint:css"
+  },
+  "devDependencies": {
+    "eslint": "8.57.1",
+    "htmlhint": "1.1.4",
+    "stylelint": "16.9.0",
+    "stylelint-config-standard": "36.0.1"
+  }
+}

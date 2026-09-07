@@ -1,0 +1,196 @@
+/* ── Section Descriptions & UX Context ──────────────────────── */
+.section-desc {
+  font-size: .78rem; color: var(--text-secondary); line-height: 1.55;
+  margin: 0 0 14px; padding: 0;
+}
+.section-desc i { color: var(--brand); margin-right: 3px; }
+
+/* Info banner — blue tint helper bar */
+.info-banner {
+  display: flex; align-items: flex-start; gap: 10px;
+  background: var(--brand-soft); border: 1px solid rgba(0,97,255,.14);
+  border-radius: var(--radius-sm); padding: 10px 12px;
+  font-size: .78rem; color: var(--text-secondary); line-height: 1.55;
+  margin-bottom: 14px;
+}
+.info-banner i { color: var(--brand); flex-shrink: 0; margin-top: 1px; font-size: .9rem; }
+.info-banner strong { color: var(--text-primary); }
+
+/* Step guide — numbered workflow steps */
+.step-guide {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 16px;
+  box-sizing: border-box;
+}
+.step-guide-item {
+  display: flex; align-items: center; gap: 8px;
+  font-size: .74rem; color: var(--text-secondary);
+  background: var(--panel-bg); border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm); padding: 8px 12px;
+  box-sizing: border-box; min-width: 0;
+}
+.step-guide-num {
+  width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0;
+  background: var(--brand); color: #fff;
+  font-size: .62rem; font-weight: 800;
+  display: grid; place-items: center;
+}
+
+@media (max-width: 992px) {
+  .digest-grid-2 { grid-template-columns: 1fr; }
+  .step-guide { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 600px) {
+  .step-guide { grid-template-columns: 1fr; }
+}
+
+/* Tooltip via title — styled label for info icons */
+.info-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--input-bg); border: 1px solid var(--border-color);
+  color: var(--text-muted); font-size: .6rem; cursor: help;
+  flex-shrink: 0; margin-left: 4px;
+  transition: var(--transition);
+}
+.info-icon:hover { background: var(--brand-soft); color: var(--brand); border-color: rgba(0,97,255,.2); }
+
+/* Context badge — appears in panel-title to denote data source */
+.context-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: .63rem; font-weight: 600; text-transform: none;
+  letter-spacing: 0; padding: 2px 8px;
+  border-radius: var(--radius-xs);
+  background: var(--badge-bg); color: var(--text-muted);
+  border: 1px solid var(--border-color);
+}
+.context-badge.live { background: rgba(0,186,136,.08); color: #007A5A; border-color: rgba(0,186,136,.2); }
+.context-badge.pending { background: rgba(245,166,35,.1); color: #B45309; border-color: rgba(245,166,35,.2); }
+.context-badge.ai { background: var(--brand-soft); color: var(--brand); border-color: rgba(0,97,255,.18); }
+
+/* ── Quick Outreach Arsenal Bar ─────────────────────────────── */
+.quick-arsenal {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;
+  background: linear-gradient(135deg, rgba(0,97,255,.06), rgba(0,97,255,.02));
+  border: 1.5px solid rgba(0,97,255,.2);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  margin-bottom: 16px;
+}
+.quick-arsenal-left {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.quick-arsenal-title {
+  font-size: .78rem; font-weight: 700; color: var(--brand);
+  display: inline-flex; align-items: center; gap: 5px;
+  margin-right: 4px;
+}
+.quick-arsenal-actions {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.arsenal-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: .74rem; font-weight: 600; font-family: inherit;
+  padding: 6px 12px; border-radius: var(--radius-sm);
+  cursor: pointer; transition: var(--transition);
+  border: 1px solid rgba(0,97,255,.2);
+  background: var(--panel-bg); color: var(--brand);
+}
+.arsenal-btn:hover {
+  background: var(--brand); color: #fff; border-color: var(--brand);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0,97,255,.25);
+}
+.arsenal-btn.primary {
+  background: var(--brand); color: #fff; border-color: var(--brand);
+}
+.arsenal-btn.primary:hover {
+  background: var(--brand-hover);
+}
+
+/* ── Workflow Navigation Tabs (Compact) ───────────────────────── */
+.sales-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 14px;
+  padding: 3px 0;
+  overflow-x: auto;
+  border-bottom: 2px solid var(--border-mid);
+}
+
+.tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  font-size: .73rem;
+  font-weight: 700;
+  font-family: inherit;
+  color: var(--text-primary);
+  background: var(--panel-bg);
+  border: 1.5px solid var(--border-mid);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.tab-btn i {
+  font-size: .80rem;
+  color: var(--text-muted);
+  transition: var(--transition);
+}
+
+.tab-btn:hover {
+  background: var(--input-bg);
+  border-color: var(--brand);
+  color: var(--brand);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(0, 97, 255, 0.12);
+}
+
+.tab-btn:hover i {
+  color: var(--brand);
+}
+
+.tab-btn.active {
+  background: var(--brand);
+  color: #fff;
+  border-color: var(--brand);
+  box-shadow: 0 3px 10px rgba(0, 97, 255, 0.28);
+  transform: translateY(-1px);
+}
+
+.tab-btn.active i {
+  color: #fff;
+}
+
+.tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 5px;
+  font-size: .62rem;
+  font-weight: 800;
+  border-radius: 999px;
+  background: var(--brand-soft);
+  color: var(--brand);
+  border: 1px solid rgba(0, 97, 255, 0.2);
+  transition: var(--transition);
+}
+
+.tab-btn.active .tab-badge {
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.tab-btn:active {
+  transform: translateY(0);
+}
+

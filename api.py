@@ -49,16 +49,20 @@ from serializers.account_serializer import AccountSerializer, slugify
 from serializers.lob_serializer import LOBSerializer
 from serializers.persona_serializer import PersonaSerializer
 
+from sqlalchemy.orm import selectinload
 from db.connection import get_session
-from db.models import Account, Lob, SubLob, Persona, Post, Digest, OpportunitySignal, WeeklyDigestSnapshot, LinkedInJob
+from db.models import Account, Lob, SubLob, Persona, Post, Digest, OpportunitySignal, WeeklyDigestSnapshot, LinkedInJob, CxoMovement
 from db.schemas import AccountSchema, LobSchema, PersonaSchema
 from db.repositories import AccountRepository, LobRepository, PersonaRepository
 from db.importer import import_run_to_db
+from pdf_export import build_persona_profile_pdf
 from main import run_pipeline
 
 try:
-    from fastapi import FastAPI, APIRouter, HTTPException, Query, Body
+    from fastapi import FastAPI, APIRouter, HTTPException, Query, Body, Response, Request
+    from fastapi.responses import FileResponse, HTMLResponse
     from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.templating import Jinja2Templates
     from pydantic import BaseModel, Field
     FASTAPI_AVAILABLE = True
 except ImportError:
@@ -242,294 +246,359 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
+    def _serialize_persona_full(p: Persona) -> Dict[str, Any]:
+        return {
+            "id": p.id,
+            "key": p.key,
+            "name": p.full_name,
+            "full_name": p.full_name,
+            "first_name": p.first_name,
+            "last_name": p.last_name,
+            "title": p.title,
+            "tier": p.tier,
+            "seniority_raw": p.seniority_raw,
+            "departments": p.departments or ["Executive"],
+            "email": p.email,
+            "email_status": p.email_status,
+            "phone": p.phone,
+            "linkedin_url": p.linkedin_url,
+            "city": p.city,
+            "state": p.state,
+            "country": p.country,
+            "hierarchy_level": p.hierarchy_level,
+            "decision_authority": p.decision_authority,
+            "budget_authority": p.budget_authority,
+            "twitter_handle": p.twitter_handle,
+            "twitter_live_url": p.twitter_live_url,
+            "reddit_query": p.reddit_query,
+            "reddit_rss_url": p.reddit_rss_url,
+            "sec_cik": p.sec_cik,
+            "sec_insider_trades_url": p.sec_insider_trades_url,
+            "news_query": p.news_query,
+            "rss_url": p.rss_url,
+            "patents_query": p.patents_query,
+            "google_patents_url": p.google_patents_url,
+            "google_scholar_url": p.google_scholar_url,
+            "openalex_author_url": p.openalex_author_url,
+            "orcid_search_url": p.orcid_search_url,
+            "wikidata_person_url": p.wikidata_person_url,
+            "youtube_interviews_url": p.youtube_interviews_url,
+            "podcast_search_url": p.podcast_search_url,
+            "google_trends_url": p.google_trends_url,
+            "youtube_channel_id": p.youtube_channel_id,
+            "skills": p.skills or [],
+            "target_kpis": p.target_kpis or [],
+            "operational_pain_points": p.operational_pain_points or [],
+            "key_objections": p.key_objections or [],
+            "degree": p.degree,
+            "institution": p.institution,
+            "prior_company": p.prior_company,
+            "communication_style": p.communication_style,
+            "engagement_rate": p.engagement_rate,
+            "value_proposition": p.value_proposition,
+            "personalized_icebreaker": p.personalized_icebreaker,
+            "social_platform": p.social_platform,
+            "social_profile_url": p.social_profile_url,
+            "social_presence_level": p.social_presence_level,
+            "raw_data": p.raw_data
+        }
+
+    def _serialize_persona_summary(p: Persona) -> Dict[str, Any]:
+        # Trimmed for the account-list view: only what nav-tree/digest/topbar's
+        # cross-account rollups (target-key resolution, tier labeling, C-suite
+        # detection) actually read. Full dossier fields (raw_data, icebreakers,
+        # KPIs, every enrichment URL, ...) are only fetched once an account is
+        # opened, via _serialize_persona_full.
+        return {
+            "id": p.id,
+            "key": p.key,
+            "name": p.full_name,
+            "full_name": p.full_name,
+            "title": p.title,
+            "tier": p.tier,
+            "hierarchy_level": p.hierarchy_level,
+        }
+
+    def _distribute_personas_across_lobs(raw_lobs, personas_list):
+        """Synthetic C-suite + VP-cohort split across LOBs for display grouping —
+        not the DB's real Persona.lob_id relationship, just how the UI has always
+        grouped contacts per division. Shared by the full and summary serializers
+        so both agree on the same per-LOB counts/lists."""
+        c_suite_personas = [p for p in personas_list if p.get("tier") == "C-Suite" or p.get("hierarchy_level") in [1, 2]]
+        vp_personas = [p for p in personas_list if p not in c_suite_personas]
+        total_lobs = len(raw_lobs) or 1
+        assignments = []
+        for idx, l in enumerate(raw_lobs):
+            chunk_size = max(1, len(vp_personas) // total_lobs) if vp_personas else 0
+            start_i = idx * chunk_size
+            end_i = start_i + chunk_size if idx < total_lobs - 1 else len(vp_personas)
+            assignments.append((l, c_suite_personas[:2] + vp_personas[start_i:end_i]))
+        return assignments
+
+    def _serialize_lob_full(l: Lob, assigned_personas: List[Dict[str, Any]]) -> Dict[str, Any]:
+        sub_lobs_formatted = [
+            {"id": s.id, "name": s.name, "desc": f"Specialized unit under {l.lob_name}"}
+            for s in (l.sub_lobs or [])
+        ]
+        return {
+            "id": l.id,
+            "name": l.lob_name,
+            "lob_name": l.lob_name,
+            "domain": l.domain,
+            "website_url": l.website_url,
+            "desc": l.overview,
+            "overview": l.overview,
+            "revenue": l.audited_segment_revenue,
+            "audited_segment_revenue": l.audited_segment_revenue,
+            "head": l.operating_head,
+            "operating_head": l.operating_head,
+            "headcount": l.segment_headcount,
+            "segment_headcount": l.segment_headcount,
+            "lei_code": l.lei_code,
+            "jurisdiction": l.jurisdiction,
+            "technologies": l.technologies or [],
+            "competitors": l.competitors or [],
+            "financial_snippets": l.financial_snippets or [],
+            "patents": l.patents or [],
+            "logo_url": l.logo_url,
+            "google_news_rss_url": l.google_news_rss_url,
+            "reddit_rss_url": l.reddit_rss_url,
+            "google_patents_url": l.google_patents_url,
+            "google_trends_url": l.google_trends_url,
+            "youtube_search_url": l.youtube_search_url,
+            "subLobs": sub_lobs_formatted,
+            "sub_lobs": sub_lobs_formatted,
+            "personas": assigned_personas
+        }
+
+    def _serialize_lob_summary(l: Lob, assigned_personas_count: int) -> Dict[str, Any]:
+        # Trimmed: keeps technologies/competitors (read by computeSignals() for
+        # EVERY account on every nav-tree/topbar render) and subLobs (nav-tree
+        # renders sub-LOB names in the expanded row), drops financial_snippets/
+        # patents/deep URLs which are only read once an account is opened.
+        sub_lobs_formatted = [{"id": s.id, "name": s.name} for s in (l.sub_lobs or [])]
+        return {
+            "id": l.id,
+            "name": l.lob_name,
+            "lob_name": l.lob_name,
+            "technologies": l.technologies or [],
+            "competitors": l.competitors or [],
+            "subLobs": sub_lobs_formatted,
+            "sub_lobs": sub_lobs_formatted,
+            "personas_count": assigned_personas_count,
+        }
+
+    def _serialize_account_full(acct: Account) -> Dict[str, Any]:
+        personas_list = [_serialize_persona_full(p) for p in (acct.personas or [])]
+        raw_lobs = acct.lobs or []
+        lobs_list = [_serialize_lob_full(l, assigned) for l, assigned in _distribute_personas_across_lobs(raw_lobs, personas_list)]
+
+        acct_name = acct.legal_name or acct.display_name or acct.key
+        acct_loc = acct.headquarters_location or (f"{acct.city}, {acct.country}" if acct.city else None)
+        acct_desc = acct.short_description or acct.full_description
+
+        return {
+            "id": acct.id,
+            "key": acct.key,
+            "name": acct_name,
+            "display_name": acct.display_name or acct_name,
+            "legal_name": acct.legal_name or acct_name,
+            "ticker": acct.stock_symbol,
+            "stock_symbol": acct.stock_symbol,
+            "revenue": acct.estimated_revenue_range or "Revenue N/A",
+            "location": acct_loc,
+            "desc": acct_desc,
+            "domain": acct.domain,
+            "primary_domain": acct.primary_domain or acct.domain,
+            "website_url": acct.website_url,
+            "crunchbase_url": acct.crunchbase_url,
+            "operating_status": acct.operating_status,
+            "company_type": acct.company_type,
+            "founded_year": acct.founded_year,
+            "employee_count_range": acct.employee_count_range,
+            "short_description": acct_desc,
+            "full_description": acct.full_description or acct_desc,
+            "headquarters_location": acct_loc,
+            "city": acct.city,
+            "state": acct.state,
+            "country": acct.country,
+            "postal_code": acct.postal_code,
+            "phone_number": acct.phone_number,
+            "sanitized_phone": acct.sanitized_phone,
+            "contact_email": acct.contact_email,
+            "linkedin_url": acct.linkedin_url,
+            "twitter_url": acct.twitter_url,
+            "twitter_handle": acct.twitter_handle,
+            "stock_exchange": acct.stock_exchange,
+            "sec_cik": acct.sec_cik,
+            "sec_edgar_url": acct.sec_edgar_url,
+            "sec_filings_rss": acct.sec_filings_rss,
+            "sec_submissions_url": acct.sec_submissions_url,
+            "twitter_live_url": acct.twitter_live_url,
+            "reddit_query": acct.reddit_query,
+            "reddit_rss_url": acct.reddit_rss_url,
+            "news_query": acct.news_query,
+            "rss_url": acct.rss_url,
+            "google_patents_url": acct.google_patents_url,
+            "google_trends_url": acct.google_trends_url,
+            "youtube_search_url": acct.youtube_search_url,
+            "openalex_institution_url": acct.openalex_institution_url,
+            "wikidata_entity_url": acct.wikidata_entity_url,
+            "github_url": acct.github_url,
+            "glassdoor_url": acct.glassdoor_url,
+            "blog_url": acct.blog_url,
+            "industries": acct.industries or [],
+            "keywords": acct.keywords or [],
+            "lobs_count": len(lobs_list),
+            "total_contacts_captured": len(personas_list),
+            "lobs": lobs_list,
+            "personas": personas_list,
+            "multi_source_intelligence": acct.multi_source_intelligence,
+            "organisational_hierarchy_tree": acct.organisational_hierarchy_tree,
+            "extracted_at": acct.extracted_at.isoformat() if acct.extracted_at else None,
+
+            # ── Engagement / opportunity signals (previously captured but never exposed) ──
+            "heat_score": acct.heat_score,
+            "trend_score_90d": acct.trend_score_90d,
+            "active_tech_count": acct.active_tech_count,
+            "it_spend": acct.it_spend,
+            "patents_granted": acct.patents_granted,
+            "trademarks_registered": acct.trademarks_registered,
+            "total_funding_amount_usd": acct.total_funding_amount_usd,
+            "total_funding_currency": acct.total_funding_currency,
+            "last_funding_type": acct.last_funding_type,
+            "last_funding_date": acct.last_funding_date.isoformat() if acct.last_funding_date else None,
+            "num_funding_rounds": acct.num_funding_rounds,
+            "funding_status": acct.funding_status,
+            "ipo_status": acct.ipo_status,
+            "ipo_date": acct.ipo_date.isoformat() if acct.ipo_date else None,
+            "num_suborganizations": acct.num_suborganizations,
+            "num_acquisitions": acct.num_acquisitions,
+            "global_traffic_rank": acct.global_traffic_rank,
+            "monthly_visits": acct.monthly_visits,
+            "bounce_rate": acct.bounce_rate,
+            "visit_duration": acct.visit_duration,
+            "page_views_per_visit": acct.page_views_per_visit,
+            "c_suite_count": acct.c_suite_count or len([p for p in personas_list if (p.get("tier") or "").lower() in ["c-suite", "c_suite", "c"] or any(w in (p.get("title") or "").lower() for w in ["chief", "president", "ceo", "chairman", "board"])]),
+            "vp_count": acct.vp_count or len([p for p in personas_list if "vp" in (p.get("tier") or "").lower() or "vice president" in (p.get("title") or "").lower()]),
+            "director_count": acct.director_count or len([p for p in personas_list if "director" in (p.get("tier") or "").lower() or "director" in (p.get("title") or "").lower()]),
+            "manager_count": acct.manager_count or len([p for p in personas_list if "manager" in (p.get("tier") or "").lower() or "manager" in (p.get("title") or "").lower()])
+        }
+
+    def _serialize_account_summary(acct: Account) -> Dict[str, Any]:
+        # Trimmed for the account-LIST view (nav tree, digest, topbar ticker).
+        # Keeps every field those cross-account rollups actually read — traced
+        # via computeSignals() (signals.js), computeDomainExpansionOpportunities()
+        # (opportunities.js), resolveAccountTargetKey()/resolvePersonaTargetKey()
+        # (utils.js) and nav-tree.js/topbar.js/digest.js directly — and drops the
+        # rest (descriptive text, contact/social URLs, org chart tree, and each
+        # persona's full dossier / each LOB's deep intelligence fields), which are
+        # only needed once a specific account is opened, via _serialize_account_full.
+        personas_list = [_serialize_persona_summary(p) for p in (acct.personas or [])]
+        raw_lobs = acct.lobs or []
+        lobs_list = [_serialize_lob_summary(l, len(assigned)) for l, assigned in _distribute_personas_across_lobs(raw_lobs, personas_list)]
+
+        acct_name = acct.legal_name or acct.display_name or acct.key
+        acct_loc = acct.headquarters_location or (f"{acct.city}, {acct.country}" if acct.city else None)
+
+        return {
+            "id": acct.id,
+            "key": acct.key,
+            "name": acct_name,
+            "display_name": acct.display_name or acct_name,
+            "legal_name": acct.legal_name or acct_name,
+            "ticker": acct.stock_symbol,
+            "stock_symbol": acct.stock_symbol,
+            "location": acct_loc,
+            "headquarters_location": acct_loc,
+            "city": acct.city,
+            "state": acct.state,
+            "country": acct.country,
+            "company_type": acct.company_type,
+            "employee_count_range": acct.employee_count_range,
+            "linkedin_url": acct.linkedin_url,
+            "stock_exchange": acct.stock_exchange,
+            "sec_cik": acct.sec_cik,
+            "industries": acct.industries or [],
+            "lobs_count": len(lobs_list),
+            "total_contacts_captured": len(personas_list),
+            "lobs": lobs_list,
+            "personas": personas_list,
+            "multi_source_intelligence": acct.multi_source_intelligence,
+            "extracted_at": acct.extracted_at.isoformat() if acct.extracted_at else None,
+
+            "heat_score": acct.heat_score,
+            "trend_score_90d": acct.trend_score_90d,
+            "active_tech_count": acct.active_tech_count,
+            "it_spend": acct.it_spend,
+            "patents_granted": acct.patents_granted,
+            "trademarks_registered": acct.trademarks_registered,
+            "total_funding_amount_usd": acct.total_funding_amount_usd,
+            "last_funding_type": acct.last_funding_type,
+            "last_funding_date": acct.last_funding_date.isoformat() if acct.last_funding_date else None,
+            "num_funding_rounds": acct.num_funding_rounds,
+            "funding_status": acct.funding_status,
+            "ipo_status": acct.ipo_status,
+            "ipo_date": acct.ipo_date.isoformat() if acct.ipo_date else None,
+            "num_acquisitions": acct.num_acquisitions,
+            "global_traffic_rank": acct.global_traffic_rank,
+            "monthly_visits": acct.monthly_visits,
+            "bounce_rate": acct.bounce_rate,
+            "visit_duration": acct.visit_duration,
+            "page_views_per_visit": acct.page_views_per_visit,
+            "c_suite_count": acct.c_suite_count or len([p for p in personas_list if (p.get("tier") or "").lower() in ["c-suite", "c_suite", "c"] or any(w in (p.get("title") or "").lower() for w in ["chief", "president", "ceo", "chairman", "board"])]),
+            "vp_count": acct.vp_count or len([p for p in personas_list if "vp" in (p.get("tier") or "").lower() or "vice president" in (p.get("title") or "").lower()]),
+            "director_count": acct.director_count or len([p for p in personas_list if "director" in (p.get("tier") or "").lower() or "director" in (p.get("title") or "").lower()]),
+            "manager_count": acct.manager_count or len([p for p in personas_list if "manager" in (p.get("tier") or "").lower() or "manager" in (p.get("title") or "").lower()])
+        }
+
     @account_router.get("")
-    def list_all_accounts_with_hierarchy():
+    def list_all_accounts_with_hierarchy(response: Response):
         """
         [Page Initialization (loadData())]:
-        Queries PostgreSQL (accounts, lobs, sub_lobs, personas), formats full metadata,
-        and provides complete structured enterprise account dossiers with nested LOBs and personas.
+        Queries PostgreSQL (accounts, lobs, sub_lobs, personas) and returns a
+        trimmed summary dossier per account — enough for the nav tree, digest,
+        and topbar ticker's cross-account rollups. Full per-account detail
+        (persona dossiers, LOB financials/patents, org chart) is fetched
+        on-demand via GET /api/accounts/{account_id} once that account is opened.
         """
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
         session = get_session()
         try:
-            accounts = session.query(Account).order_by(Account.id.desc()).all()
-            result = []
-            for acct in accounts:
-                # 1. Format Personas
-                personas_list = []
-                for p in (acct.personas or []):
-                    personas_list.append({
-                        "id": p.id,
-                        "key": p.key,
-                        "name": p.full_name,
-                        "full_name": p.full_name,
-                        "first_name": p.first_name,
-                        "last_name": p.last_name,
-                        "title": p.title,
-                        "tier": p.tier,
-                        "seniority_raw": p.seniority_raw,
-                        "departments": p.departments or ["Executive"],
-                        "email": p.email,
-                        "email_status": p.email_status,
-                        "phone": p.phone,
-                        "linkedin_url": p.linkedin_url,
-                        "city": p.city,
-                        "state": p.state,
-                        "country": p.country,
-                        "hierarchy_level": p.hierarchy_level,
-                        "decision_authority": p.decision_authority,
-                        "budget_authority": p.budget_authority,
-                        "twitter_handle": p.twitter_handle,
-                        "twitter_live_url": p.twitter_live_url,
-                        "reddit_query": p.reddit_query,
-                        "reddit_rss_url": p.reddit_rss_url,
-                        "sec_cik": p.sec_cik,
-                        "sec_insider_trades_url": p.sec_insider_trades_url,
-                        "news_query": p.news_query,
-                        "rss_url": p.rss_url,
-                        "patents_query": p.patents_query,
-                        "google_patents_url": p.google_patents_url,
-                        "google_scholar_url": p.google_scholar_url,
-                        "openalex_author_url": p.openalex_author_url,
-                        "orcid_search_url": p.orcid_search_url,
-                        "wikidata_person_url": p.wikidata_person_url,
-                        "youtube_interviews_url": p.youtube_interviews_url,
-                        "podcast_search_url": p.podcast_search_url,
-                        "google_trends_url": p.google_trends_url,
-                        "youtube_channel_id": p.youtube_channel_id,
-                        "skills": p.skills or [],
-                        "target_kpis": p.target_kpis or [],
-                        "operational_pain_points": p.operational_pain_points or [],
-                        "key_objections": p.key_objections or [],
-                        "degree": p.degree,
-                        "institution": p.institution,
-                        "prior_company": p.prior_company,
-                        "headline": p.headline or p.title,
-                        "employment_history": p.employment_history or [],
-                        "past_companies": p.past_companies or ([p.prior_company] if p.prior_company else []),
-                        "previous_titles": p.previous_titles or [],
-                        "current_role_tenure_months": p.current_role_tenure_months,
-                        "is_new_in_role": p.is_new_in_role or False,
-                        "career_trajectory_score": p.career_trajectory_score,
-                        "education_history": p.education_history or [],
-                        "personal_email": p.personal_email,
-                        "direct_mobile_phone": p.direct_mobile_phone,
-                        "communication_style": p.communication_style,
-                        "engagement_rate": p.engagement_rate,
-                        "value_proposition": p.value_proposition,
-                        "personalized_icebreaker": p.personalized_icebreaker,
-                        "social_platform": p.social_platform,
-                        "social_profile_url": p.social_profile_url,
-                        "social_presence_level": p.social_presence_level,
-                        "raw_data": p.raw_data
-                    })
-
-                # 2. Format LOBs with 5 assigned Personas per division
-                lobs_list = []
-                
-                # Prioritize the top 5 fully enriched executive profiles starting with Robin Vince
-                priority_names = ["Robin Vince", "Joseph Echevarria", "Dermot McDonogh", "Cathinka Wahlstrom", "Hani Kablawi"]
-                top5_enriched = []
-                for pn in priority_names:
-                    match = next((p for p in personas_list if pn.lower() in (p.get("name") or "").lower()), None)
-                    if match and match not in top5_enriched:
-                        top5_enriched.append(match)
-
-                c_suite_personas = [p for p in personas_list if p.get("tier") in ["c_suite", "C-Suite"] or p.get("hierarchy_level") in [1, 2]]
-                # Place top5 at front of c_suite
-                c_suite_personas = top5_enriched + [p for p in c_suite_personas if p not in top5_enriched]
-                
-                vp_personas = [p for p in personas_list if p not in c_suite_personas]
-                if not vp_personas:
-                    vp_personas = personas_list
-
-                raw_lobs = acct.lobs or []
-                total_lobs = len(raw_lobs) or 1
-
-                for idx, l in enumerate(raw_lobs):
-                    if idx == 0 and len(top5_enriched) >= 5:
-                        # For the first LOB (Standish Mellon Asset Management), assign the 5 complete profiles
-                        lob_assigned_personas = top5_enriched[:5]
-                    else:
-                        # 1 Executive Lead
-                        exec_lead = [c_suite_personas[idx % len(c_suite_personas)]] if c_suite_personas else []
-
-                        # 4 distinct operational leads / VPs
-                        start_i = (idx * 4) % len(vp_personas)
-                        if start_i + 4 <= len(vp_personas):
-                            assigned_vps = vp_personas[start_i:start_i + 4]
-                        else:
-                            assigned_vps = vp_personas[start_i:] + vp_personas[:4 - (len(vp_personas) - start_i)]
-
-                        lob_assigned_personas = exec_lead + assigned_vps
-
-                    sub_lobs_formatted = [
-                        {"id": s.id, "name": s.name, "desc": f"Specialized unit under {l.lob_name}"}
-                        for s in (l.sub_lobs or [])
-                    ]
-
-                    lobs_list.append({
-                        "id": l.id,
-                        "account_id": l.account_id,
-                        "key": l.key,
-                        "name": l.lob_name,
-                        "lob_name": l.lob_name,
-                        "domain": l.domain,
-                        "website_url": l.website_url,
-                        "crunchbase_url": l.crunchbase_url,
-                        "relationship_type": l.relationship_type,
-                        "desc": l.overview,
-                        "overview": l.overview,
-                        "revenue": l.audited_segment_revenue,
-                        "audited_segment_revenue": l.audited_segment_revenue,
-                        "head": l.operating_head,
-                        "operating_head": l.operating_head,
-                        "headcount": l.segment_headcount,
-                        "segment_headcount": l.segment_headcount,
-                        "lei_code": l.lei_code,
-                        "jurisdiction": l.jurisdiction,
-                        "technologies": l.technologies or [],
-                        "competitors": l.competitors or [],
-                        "financial_snippets": l.financial_snippets or [],
-                        "wikipedia_url": l.wikipedia_url,
-                        "patents": l.patents or [],
-                        "raw_data": l.raw_data or {},
-                        "logo_url": l.logo_url,
-                        "google_news_rss_url": l.google_news_rss_url,
-                        "reddit_rss_url": l.reddit_rss_url,
-                        "google_patents_url": l.google_patents_url,
-                        "google_trends_url": l.google_trends_url,
-                        "youtube_search_url": l.youtube_search_url,
-                        "subLobs": sub_lobs_formatted,
-                        "sub_lobs": sub_lobs_formatted,
-                        "personas": lob_assigned_personas
-                    })
-
-                acct_name = acct.legal_name or acct.display_name or acct.key
-                acct_loc = acct.headquarters_location or (f"{acct.city}, {acct.country}" if acct.city else None)
-                acct_desc = acct.short_description or acct.full_description
-
-                result.append({
-                    "id": acct.id,
-                    "key": acct.key,
-                    "name": acct_name,
-                    "display_name": acct.display_name or acct_name,
-                    "legal_name": acct.legal_name or acct_name,
-                    "ticker": acct.stock_symbol,
-                    "stock_symbol": acct.stock_symbol,
-                    "revenue": acct.estimated_revenue_range or (f"${acct.total_funding_amount_usd / 1e9:.1f}B (Funding)" if acct.total_funding_amount_usd else "$17.5B"),
-                    "location": acct_loc,
-                    "desc": acct_desc,
-                    "domain": acct.domain,
-                    "primary_domain": acct.primary_domain or acct.domain,
-                    "website_url": acct.website_url,
-                    "crunchbase_url": acct.crunchbase_url,
-                    "operating_status": acct.operating_status,
-                    "company_type": acct.company_type,
-                    "founded_year": acct.founded_year,
-                    "employee_count_range": acct.employee_count_range,
-                    "short_description": acct_desc,
-                    "full_description": acct.full_description or acct_desc,
-                    "headquarters_location": acct_loc,
-                    "city": acct.city,
-                    "state": acct.state,
-                    "country": acct.country,
-                    "postal_code": acct.postal_code,
-                    "phone_number": acct.phone_number,
-                    "sanitized_phone": acct.sanitized_phone,
-                    "contact_email": acct.contact_email,
-                    "linkedin_url": acct.linkedin_url,
-                    "twitter_url": acct.twitter_url,
-                    "twitter_handle": acct.twitter_handle,
-                    "stock_exchange": acct.stock_exchange,
-                    "sec_cik": acct.sec_cik,
-                    "sec_edgar_url": acct.sec_edgar_url,
-                    "sec_filings_rss": acct.sec_filings_rss,
-                    "sec_submissions_url": acct.sec_submissions_url,
-                    "twitter_live_url": acct.twitter_live_url,
-                    "reddit_query": acct.reddit_query,
-                    "reddit_rss_url": acct.reddit_rss_url,
-                    "news_query": acct.news_query,
-                    "rss_url": acct.rss_url,
-                    "google_patents_url": acct.google_patents_url,
-                    "google_trends_url": acct.google_trends_url,
-                    "youtube_search_url": acct.youtube_search_url,
-                    "openalex_institution_url": acct.openalex_institution_url,
-                    "wikidata_entity_url": acct.wikidata_entity_url,
-                    "github_url": acct.github_url,
-                    "glassdoor_url": acct.glassdoor_url,
-                    "blog_url": acct.blog_url,
-                    "industries": acct.industries or [],
-                    "keywords": acct.keywords or [],
-                    "lobs_count": len(lobs_list),
-                    "total_contacts_captured": len(personas_list),
-                    "lobs": lobs_list,
-                    "personas": personas_list,
-                    "multi_source_intelligence": acct.multi_source_intelligence,
-                    "organisational_hierarchy_tree": acct.organisational_hierarchy_tree,
-                    "extracted_at": acct.extracted_at.isoformat() if acct.extracted_at else None,
-
-                    # ── Engagement / opportunity signals (previously captured but never exposed) ──
-                    "heat_score": acct.heat_score,
-                    "trend_score_90d": acct.trend_score_90d,
-                    "active_tech_count": acct.active_tech_count,
-                    "it_spend": acct.it_spend,
-                    "patents_granted": acct.patents_granted,
-                    "trademarks_registered": acct.trademarks_registered,
-                    "total_funding_amount_usd": acct.total_funding_amount_usd,
-                    "total_funding_currency": acct.total_funding_currency,
-                    "last_funding_type": acct.last_funding_type,
-                    "last_funding_date": acct.last_funding_date.isoformat() if acct.last_funding_date else None,
-                    "num_funding_rounds": acct.num_funding_rounds,
-                    "funding_status": acct.funding_status,
-                    "ipo_status": acct.ipo_status,
-                    "ipo_date": acct.ipo_date.isoformat() if acct.ipo_date else None,
-                    "num_suborganizations": acct.num_suborganizations,
-                    "num_acquisitions": acct.num_acquisitions,
-                    "global_traffic_rank": acct.global_traffic_rank,
-                    "monthly_visits": acct.monthly_visits,
-                    "bounce_rate": acct.bounce_rate,
-                    "visit_duration": acct.visit_duration,
-                    "page_views_per_visit": acct.page_views_per_visit,
-                    "c_suite_count": acct.c_suite_count,
-                    "vp_count": acct.vp_count,
-                    "director_count": acct.director_count,
-                    "manager_count": acct.manager_count
-                })
-
-            return {"accounts": result}
+            accounts = (session.query(Account)
+                        .options(
+                            selectinload(Account.personas),
+                            selectinload(Account.lobs).selectinload(Lob.sub_lobs)
+                        )
+                        .order_by(Account.id.desc())
+                        .all())
+            return {"accounts": [_serialize_account_summary(acct) for acct in accounts]}
         finally:
             session.close()
 
+    @app.get("/api/accounts", tags=["1. Account Level"])
+    def list_all_accounts_alias(response: Response):
+        """Plural alias for /api/account list endpoint."""
+        return list_all_accounts_with_hierarchy(response)
+
     @account_router.get("/{account_id}")
     def get_account_from_db(account_id: int):
-        """Retrieves a stored account from DB with its LOBs and personas."""
+        """Retrieves one account's full dossier from DB — complete LOBs and
+        personas — fetched on demand when that account is opened."""
         session = get_session()
         try:
-            acct = session.query(Account).filter_by(id=account_id).first()
+            acct = (session.query(Account)
+                    .options(
+                        selectinload(Account.personas),
+                        selectinload(Account.lobs).selectinload(Lob.sub_lobs)
+                    )
+                    .filter_by(id=account_id)
+                    .first())
             if not acct:
                 raise HTTPException(status_code=404, detail="Account not found.")
-            return {
-                "id": acct.id,
-                "key": acct.key,
-                "legal_name": acct.legal_name,
-                "display_name": acct.display_name,
-                "domain": acct.domain,
-                "website_url": acct.website_url,
-                "stock_symbol": acct.stock_symbol,
-                "sec_cik": acct.sec_cik,
-                "employee_count_range": acct.employee_count_range,
-                "city": acct.city,
-                "state": acct.state,
-                "country": acct.country,
-                "industries": acct.industries,
-                "founders": acct.founders,
-                "sec_edgar_url": acct.sec_edgar_url,
-                "rss_url": acct.rss_url,
-                "google_patents_url": acct.google_patents_url,
-                "google_trends_url": acct.google_trends_url,
-                "youtube_search_url": acct.youtube_search_url,
-                "extracted_at": acct.extracted_at
-            }
+            return _serialize_account_full(acct)
         finally:
             session.close()
 
@@ -807,7 +876,7 @@ if FASTAPI_AVAILABLE:
             person_slug = slugify(parsed_name)
             run_dirs = config.get_run_output_dirs(parsed_company or "persona_run")
             person_file = run_dirs["enriched_personas_company_dir"] / f"{company_slug}_corporate_{person_slug}_enriched.json"
-            PipelineSerializer.save_json(person_entry, person_file)
+            MasterSerializer.save_json(person_entry, person_file)
 
             return {
                 "status": "staged",
@@ -989,16 +1058,6 @@ if FASTAPI_AVAILABLE:
                     "degree": p.degree,
                     "institution": p.institution,
                     "prior_company": p.prior_company,
-                    "headline": p.headline or p.title,
-                    "employment_history": p.employment_history or [],
-                    "past_companies": p.past_companies or ([p.prior_company] if p.prior_company else []),
-                    "previous_titles": p.previous_titles or [],
-                    "current_role_tenure_months": p.current_role_tenure_months,
-                    "is_new_in_role": p.is_new_in_role or False,
-                    "career_trajectory_score": p.career_trajectory_score,
-                    "education_history": p.education_history or [],
-                    "personal_email": p.personal_email,
-                    "direct_mobile_phone": p.direct_mobile_phone,
                     "communication_style": p.communication_style,
                     "skills": p.skills,
                     "target_kpis": p.target_kpis,
@@ -1055,12 +1114,6 @@ if FASTAPI_AVAILABLE:
             return DataQualityValidator.audit_run(doc)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Validation failed: {str(e)}")
-
-    @pipeline_router.get("", tags=["0. Full Composite Pipeline"])
-    @pipeline_router.get("/", tags=["0. Full Composite Pipeline"])
-    def get_pipeline_root():
-        """Root status and runs summary for /api/pipeline."""
-        return list_pipeline_runs(limit=50)
 
     @pipeline_router.get("/runs")
     def list_pipeline_runs(limit: int = 50):
@@ -1141,11 +1194,6 @@ if FASTAPI_AVAILABLE:
     # ══════════════════════════════════════════════════════
     # SOLID REST API ENDPOINTS
     # ══════════════════════════════════════════════════════
-
-    @app.get("/api/accounts", tags=["1. Accounts"])
-    def get_all_accounts():
-        """Retrieve all enterprise accounts with full hierarchical structure."""
-        return list_all_accounts_with_hierarchy()
 
     @app.get("/api/accounts/{account_id}", tags=["1. Accounts"])
     def get_account_by_id(account_id: int):
@@ -1271,16 +1319,6 @@ if FASTAPI_AVAILABLE:
                     "degree": p.degree,
                     "institution": p.institution,
                     "prior_company": p.prior_company,
-                    "headline": p.headline or p.title,
-                    "employment_history": p.employment_history or [],
-                    "past_companies": p.past_companies or ([p.prior_company] if p.prior_company else []),
-                    "previous_titles": p.previous_titles or [],
-                    "current_role_tenure_months": p.current_role_tenure_months,
-                    "is_new_in_role": p.is_new_in_role or False,
-                    "career_trajectory_score": p.career_trajectory_score,
-                    "education_history": p.education_history or [],
-                    "personal_email": p.personal_email,
-                    "direct_mobile_phone": p.direct_mobile_phone,
                     "communication_style": p.communication_style,
                     "engagement_rate": p.engagement_rate,
                     "value_proposition": p.value_proposition,
@@ -1308,12 +1346,9 @@ if FASTAPI_AVAILABLE:
                 "lob_id": p.lob_id,
                 "name": p.full_name or p.display_name or "Executive",
                 "title": p.title,
-                "headline": p.headline or p.title,
                 "tier": p.tier,
                 "email": p.email,
                 "phone": p.phone,
-                "personal_email": p.personal_email,
-                "direct_mobile_phone": p.direct_mobile_phone,
                 "location": f"{p.city or ''}, {p.country or ''}".strip(", "),
                 "decision_authority": p.decision_authority,
                 "budget_authority": p.budget_authority,
@@ -1321,13 +1356,6 @@ if FASTAPI_AVAILABLE:
                 "degree": p.degree,
                 "institution": p.institution,
                 "prior_company": p.prior_company,
-                "employment_history": p.employment_history or [],
-                "past_companies": p.past_companies or ([p.prior_company] if p.prior_company else []),
-                "previous_titles": p.previous_titles or [],
-                "current_role_tenure_months": p.current_role_tenure_months,
-                "is_new_in_role": p.is_new_in_role or False,
-                "career_trajectory_score": p.career_trajectory_score,
-                "education_history": p.education_history or [],
                 "communication_style": p.communication_style,
                 "personalized_icebreaker": p.personalized_icebreaker,
                 "value_proposition": p.value_proposition,
@@ -1335,6 +1363,67 @@ if FASTAPI_AVAILABLE:
                 "target_kpis": p.target_kpis or [],
                 "raw_data": p.raw_data
             }
+        finally:
+            session.close()
+
+    @app.get("/api/personas/{persona_id}/profile.pdf", tags=["3. Personas & Buying Committee"])
+    def download_persona_profile_pdf(persona_id: int):
+        """Server-side "Download PDF" for a contact's full profile (contact
+        info, career history, AI call-prep dossier, Personality Profile, and
+        every captured post) — generated fresh from the database each time
+        with ReportLab, not a client-side screenshot of whatever happens to
+        be on screen."""
+        session = get_session()
+        try:
+            p = session.query(Persona).filter_by(id=persona_id).first()
+            if not p:
+                raise HTTPException(status_code=404, detail="Persona not found.")
+            acct = session.query(Account).filter_by(id=p.account_id).first()
+            target_key = p.key or slugify(p.full_name or "")
+
+            digest_row = session.query(Digest).filter_by(target_key=target_key).first() if target_key else None
+            posts = (session.query(Post)
+                     .filter_by(target_key=target_key)
+                     .order_by(Post.channel, Post.rank)
+                     .all()) if target_key else []
+            movements = (session.query(CxoMovement)
+                         .filter(CxoMovement.person_name.ilike(f"%{p.full_name}%"))
+                         .order_by(CxoMovement.effective_date.desc().nullslast())
+                         .all()) if p.full_name else []
+
+            persona_dict = {
+                "name": p.full_name or p.display_name or "Executive", "title": p.title,
+                "email": p.email, "phone": p.phone, "linkedin_url": p.linkedin_url,
+                "city": p.city, "state": p.state, "country": p.country,
+                "decision_authority": p.decision_authority, "budget_authority": p.budget_authority,
+                "seniority_raw": p.seniority_raw, "skills": p.skills or [],
+                "personalized_icebreaker": p.personalized_icebreaker,
+                "value_proposition": p.value_proposition, "communication_style": p.communication_style,
+                "target_kpis": p.target_kpis or [], "operational_pain_points": p.operational_pain_points or [],
+                "key_objections": p.key_objections or [],
+            }
+            account_dict = {"name": acct.display_name or acct.legal_name} if acct else None
+            posts_list = [{
+                "channel": post.channel, "published_at": post.published_at,
+                "body": post.body, "post_url": post.post_url,
+            } for post in posts]
+            career_events = [{
+                "event_type": m.event_type, "designation": m.designation,
+                "previous_role": m.previous_role, "effective_date": m.effective_date,
+                "context": m.context,
+            } for m in movements]
+
+            pdf_bytes = build_persona_profile_pdf(
+                persona_dict, account_dict,
+                digest_row.digest if digest_row else None,
+                posts_list, career_events,
+            )
+            filename = f"{slugify(persona_dict['name'])}-profile.pdf"
+            return Response(
+                content=pdf_bytes,
+                media_type="application/pdf",
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            )
         finally:
             session.close()
 
@@ -1576,12 +1665,11 @@ if FASTAPI_AVAILABLE:
 
             jobs_by_key = {}
             try:
-                key_to_account = _build_target_key_to_account_map(session)
                 jobs_query = (session.query(LinkedInJob)
                               .order_by(LinkedInJob.target_key,
                                         LinkedInJob.first_seen.desc().nullslast()))
                 for j in jobs_query.all():
-                    job_dict = {
+                    jobs_by_key.setdefault(j.target_key, []).append({
                         "id": j.id,
                         "target_key": j.target_key,
                         "job_key": j.job_key,
@@ -1599,11 +1687,7 @@ if FASTAPI_AVAILABLE:
                         "new_in_last_run": j.new_in_last_run,
                         "first_seen": j.first_seen.isoformat() if j.first_seen else None,
                         "last_seen": j.last_seen.isoformat() if j.last_seen else None
-                    }
-                    jobs_by_key.setdefault(j.target_key, []).append(job_dict)
-                    acct = key_to_account.get(j.target_key)
-                    if acct and acct.key and acct.key != j.target_key:
-                        jobs_by_key.setdefault(acct.key, []).append(job_dict)
+                    })
             except Exception:
                 jobs_by_key = {}
 
@@ -1639,19 +1723,9 @@ if FASTAPI_AVAILABLE:
     def _build_target_key_to_account_map(session) -> Dict[str, Account]:
         mapping: Dict[str, Account] = {}
         for a in session.query(Account).all():
-            slug_disp = slugify(a.display_name) if a.display_name else None
-            slug_legal = slugify(a.legal_name) if a.legal_name else None
-            
-            candidates = [
-                a.key,
-                (a.stock_symbol or "").lower() or None,
-                slug_disp,
-                slug_legal,
-                # Strip leading 'the_' for robust target_key resolution
-                slug_disp[4:] if slug_disp and slug_disp.startswith("the_") else None,
-                slug_legal[4:] if slug_legal and slug_legal.startswith("the_") else None,
-            ]
-            for candidate in candidates:
+            for candidate in (a.key, (a.stock_symbol or "").lower() or None,
+                              slugify(a.display_name) if a.display_name else None,
+                              slugify(a.legal_name) if a.legal_name else None):
                 if candidate:
                     mapping[candidate] = a
         return mapping
@@ -1785,18 +1859,270 @@ if FASTAPI_AVAILABLE:
             session.close()
 
     # ══════════════════════════════════════════════════════
-    # FRONTEND STATIC UI MOUNT
+    # CXO MOVEMENTS & TRANSITIONS ENDPOINTS
     # ══════════════════════════════════════════════════════
+    def _serialize_cxo_movement(m: CxoMovement, acct: Optional[Account] = None) -> Dict[str, Any]:
+        return {
+            "id": m.id,
+            "target_key": m.target_key,
+            "company_name": m.company_name,
+            "person_name": m.person_name,
+            "designation": m.designation,
+            "event_type": (m.event_type or "").lower().strip(),
+            "effective_date": m.effective_date,
+            "previous_role": m.previous_role,
+            "new_company": m.new_company,
+            "context": m.context,
+            "source": m.source,
+            "publisher_domain": m.publisher_domain,
+            "article_title": m.article_title,
+            "article_url": m.article_url,
+            "extraction_status": m.extraction_status,
+            "published_at": m.published_at,
+            "first_seen": m.first_seen.isoformat() if m.first_seen else None,
+            "last_seen": m.last_seen.isoformat() if m.last_seen else None,
+            "new_in_last_run": m.new_in_last_run,
+            "account_id": acct.id if acct else None,
+            "account_name": (acct.legal_name or acct.display_name) if acct else m.company_name
+        }
+
+    @app.get("/api/cxo-movements", tags=["6. CXO Movements"])
+    def get_cxo_movements(
+        response: Response,
+        target_key: Optional[str] = None,
+        event_type: Optional[str] = None,
+        q: Optional[str] = None,
+        limit: int = 100
+    ):
+        """Retrieve executive transitions (joined, resigned, retired, promoted) across accounts."""
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        session = get_session()
+        try:
+            query = session.query(CxoMovement)
+            if target_key:
+                query = query.filter(CxoMovement.target_key == target_key)
+            if event_type and event_type.lower() != "all":
+                query = query.filter(CxoMovement.event_type.ilike(event_type))
+            if q and q.strip():
+                term = f"%{q.strip()}%"
+                query = query.filter(
+                    (CxoMovement.person_name.ilike(term)) |
+                    (CxoMovement.company_name.ilike(term)) |
+                    (CxoMovement.designation.ilike(term)) |
+                    (CxoMovement.context.ilike(term)) |
+                    (CxoMovement.previous_role.ilike(term)) |
+                    (CxoMovement.new_company.ilike(term))
+                )
+
+            all_records = query.order_by(CxoMovement.first_seen.desc().nullslast()).limit(limit).all()
+            target_map = _build_target_key_to_account_map(session)
+
+            counts = {"all": len(all_records), "joined": 0, "resigned": 0, "retired": 0, "promoted": 0}
+            serialized = []
+            for r in all_records:
+                evt = (r.event_type or "").lower().strip()
+                if evt in counts:
+                    counts[evt] += 1
+                acct = target_map.get(r.target_key)
+                serialized.append(_serialize_cxo_movement(r, acct))
+
+            return {
+                "total": len(serialized),
+                "counts": counts,
+                "movements": serialized
+            }
+        finally:
+            session.close()
+
+    @app.get("/api/accounts/{account_id}/cxo-movements", tags=["6. CXO Movements"])
+    def get_account_cxo_movements(account_id: int):
+        """Retrieve executive transitions for a specific account."""
+        session = get_session()
+        try:
+            acct = session.query(Account).filter_by(id=account_id).first()
+            if not acct:
+                raise HTTPException(status_code=404, detail="Account not found.")
+            keys = [acct.key, (acct.stock_symbol or "").lower(), slugify(acct.display_name), slugify(acct.legal_name)]
+            keys = [k for k in keys if k]
+            movements = (session.query(CxoMovement)
+                         .filter(CxoMovement.target_key.in_(keys))
+                         .order_by(CxoMovement.first_seen.desc().nullslast())
+                         .all())
+            return {
+                "account_id": account_id,
+                "account_name": acct.legal_name or acct.display_name,
+                "total": len(movements),
+                "movements": [_serialize_cxo_movement(m, acct) for m in movements]
+            }
+        finally:
+            session.close()
+
+    @app.get("/api/accounts/{account_id}/content", tags=["4. Content Intelligence"])
+    def get_account_content_intelligence(account_id: int):
+        """Retrieve social listening posts, LLM channel digests, and LinkedIn jobs
+        scoped to one account — the on-demand counterpart to /api/content, fetched
+        when that account's Social/Content/Jobs tab is opened rather than pulling
+        every account's content up front."""
+        session = get_session()
+        try:
+            acct = session.query(Account).filter_by(id=account_id).first()
+            if not acct:
+                raise HTTPException(status_code=404, detail="Account not found.")
+            # Persona-level content (per-contact digests like the Personality
+            # Profile, and their own captured posts) is stored under each
+            # person's own target_key (e.g. "robin_vince"), not the account's
+            # — without including those here, the contact drawer's Recent
+            # Social Media Activity / Personality Profile sections always
+            # found nothing, no matter how much persona-level data existed.
+            persona_keys = [p.key or slugify(p.full_name) for p in (acct.personas or [])]
+            keys = [acct.key, (acct.stock_symbol or "").lower(), slugify(acct.display_name),
+                    slugify(acct.legal_name), *persona_keys]
+            keys = [k for k in keys if k]
+
+            digests_by_key = {}
+            try:
+                for d in session.query(Digest).filter(Digest.target_key.in_(keys)).all():
+                    digests_by_key[d.target_key] = {
+                        "target_key": d.target_key,
+                        "kind": d.kind,
+                        "priority": d.priority,
+                        "llm": d.llm,
+                        "posts_considered": d.posts_considered,
+                        "generated_at": d.generated_at.isoformat() if d.generated_at else None,
+                        "digest": d.digest
+                    }
+            except Exception:
+                digests_by_key = {}
+
+            posts_by_key = {}
+            try:
+                posts_query = (session.query(Post)
+                               .filter(Post.target_key.in_(keys))
+                               .order_by(Post.target_key, Post.channel, Post.rank))
+                for p in posts_query.all():
+                    posts_by_key.setdefault(p.target_key, []).append({
+                        "id": p.id,
+                        "channel": p.channel,
+                        "post_key": p.post_key,
+                        "rank": p.rank,
+                        "post_url": p.post_url,
+                        "body": p.body,
+                        "author": p.author,
+                        "published_at": p.published_at,
+                        "engagement": p.engagement,
+                        "media": p.media,
+                        "new_in_last_run": p.new_in_last_run,
+                        "first_seen": p.first_seen.isoformat() if p.first_seen else None,
+                        "last_seen": p.last_seen.isoformat() if p.last_seen else None
+                    })
+            except Exception:
+                posts_by_key = {}
+
+            jobs_by_key = {}
+            try:
+                jobs_query = (session.query(LinkedInJob)
+                              .filter(LinkedInJob.target_key.in_(keys))
+                              .order_by(LinkedInJob.target_key,
+                                        LinkedInJob.first_seen.desc().nullslast()))
+                for j in jobs_query.all():
+                    jobs_by_key.setdefault(j.target_key, []).append({
+                        "id": j.id,
+                        "target_key": j.target_key,
+                        "job_key": j.job_key,
+                        "title": j.title,
+                        "company_name": j.company_name,
+                        "location": j.location,
+                        "employment_type": j.employment_type,
+                        "workplace_type": j.workplace_type,
+                        "posted_date": j.posted_date,
+                        "applicants": j.applicants,
+                        "views": j.views,
+                        "salary": j.salary,
+                        "job_url": j.job_url,
+                        "description": j.description,
+                        "new_in_last_run": j.new_in_last_run,
+                        "first_seen": j.first_seen.isoformat() if j.first_seen else None,
+                        "last_seen": j.last_seen.isoformat() if j.last_seen else None
+                    })
+            except Exception:
+                jobs_by_key = {}
+
+            return {"digests": digests_by_key, "posts": posts_by_key, "jobs": jobs_by_key}
+        finally:
+            session.close()
+
+    @app.get("/api/database/download", tags=["7. Database Operations"])
+    @app.get("/api/database/download/sql", tags=["7. Database Operations"])
+    def download_database_sql():
+        """Download the complete PostgreSQL SQL database dump file."""
+        sql_path = PIPELINE_ROOT / "sales_ai_database_export.sql"
+        if not sql_path.exists():
+            # Regenerate if missing
+            try:
+                from subprocess import run
+                run([sys.executable, str(PIPELINE_ROOT / "export_db.py")], check=True)
+            except Exception:
+                pass
+        if not sql_path.exists():
+            raise HTTPException(status_code=404, detail="Database export file not found.")
+        return FileResponse(
+            path=str(sql_path),
+            filename="sales_ai_database_export.sql",
+            media_type="application/sql"
+        )
+
+    @app.get("/api/database/download/json", tags=["7. Database Operations"])
+    def download_database_json():
+        """Download the complete database in JSON format."""
+        json_path = PIPELINE_ROOT / "sales_ai_database_export.json"
+        if not json_path.exists():
+            raise HTTPException(status_code=404, detail="Database JSON export file not found.")
+        return FileResponse(
+            path=str(json_path),
+            filename="sales_ai_database_export.json",
+            media_type="application/json"
+        )
+
+
+    # ══════════════════════════════════════════════════════
+    # FRONTEND UI: Jinja2-templated shell + static assets
+    # ══════════════════════════════════════════════════════
+    # The dashboard shell (frontend/templates/index.html) is composed from
+    # partials (topbar/nav/drawer/modal) and rendered server-side; everything
+    # it actually renders (accounts, digest sections, etc.) still comes from
+    # the JSON APIs below via frontend/js/modules/. CSS/JS/the separate
+    # Account Explorer app stay plain static files — only the shell itself
+    # needed templating, so we mount those under their own sub-paths instead
+    # of the old single mount at "/" (which would now collide with the
+    # explicit "/" route below).
     from fastapi.staticfiles import StaticFiles
     frontend_dir = Path(__file__).resolve().parent / "frontend"
-    pipline_dir = frontend_dir / "pipline"
-
-    if pipline_dir.exists():
-        app.mount("/pipeline", StaticFiles(directory=str(pipline_dir), html=True), name="pipeline_ui")
-        app.mount("/pipline", StaticFiles(directory=str(pipline_dir), html=True), name="pipline_ui")
-
     if frontend_dir.exists():
-        app.mount("/", StaticFiles(directory=str(frontend_dir), html=True), name="frontend_root")
+        templates = Jinja2Templates(directory=str(frontend_dir / "templates"))
+
+        @app.get("/", response_class=HTMLResponse, include_in_schema=False)
+        async def dashboard_home(request: Request):
+            return templates.TemplateResponse(request, "index.html")
+
+        @app.get("/profile", response_class=HTMLResponse, include_in_schema=False)
+        async def contact_profile_page(request: Request):
+            """Standalone full-page contact profile — opened via the contact
+            drawer's "View Profile" button (?account=<id>&persona_id=<id>).
+            Reuses the same drawer markup/rendering as the dashboard's
+            sliding drawer; see frontend/js/modules/profile-page.js."""
+            return templates.TemplateResponse(request, "profile.html")
+
+        css_dir = frontend_dir / "css"
+        js_dir = frontend_dir / "js"
+        pipline_dir = frontend_dir / "pipline"
+        if css_dir.exists():
+            app.mount("/css", StaticFiles(directory=str(css_dir)), name="frontend-css")
+        if js_dir.exists():
+            app.mount("/js", StaticFiles(directory=str(js_dir)), name="frontend-js")
+        if pipline_dir.exists():
+            app.mount("/pipline", StaticFiles(directory=str(pipline_dir), html=True), name="frontend-pipline")
 
 
 if __name__ == "__main__":

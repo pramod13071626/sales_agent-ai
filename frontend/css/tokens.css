@@ -1,0 +1,73 @@
+/* ── Dropbox Enterprise Design Tokens ───────────────────────── */
+:root {
+  /* Brand */
+  --brand: #0061FF;
+  --brand-hover: #0052D9;
+  --brand-light: #3B82FF;
+  --brand-soft: #EBF3FF;
+  --brand-muted: rgba(0, 97, 255, 0.10);
+
+  /* Surfaces */
+  --content-bg: #F7F8FA;
+  --panel-bg: #FFF;
+  --panel-border: #E8EAED;
+  --input-bg: #F2F4F7;
+  --badge-bg: #F2F4F7;
+
+  /* Shadows */
+  --shadow: 0 1px 2px rgba(0,0,0,.05), 0 2px 8px rgba(0,0,0,.04);
+  --shadow-hover: 0 4px 12px rgba(0,0,0,.10), 0 8px 24px rgba(0,0,0,.06);
+  --shadow-modal: 0 16px 48px rgba(0,0,0,.18), 0 4px 16px rgba(0,0,0,.10);
+
+  /* Text */
+  --text-primary: #1A1D23;
+  --text-secondary: #4B5563;
+  --text-muted: #9CA3AF;
+
+  /* Border */
+  --border-color: #E2E8F0;
+  --border-mid: #CBD5E1;
+  --border-dark: #94A3B8;
+
+  /* Status */
+  --success: #00BA88;
+  --warning: #F5A623;
+  --danger: #FF4D4F;
+
+  /* Shape */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+
+  /* Motion */
+  --transition: all .16s cubic-bezier(.4, 0, .2, 1);
+  --transition-slow: all .28s cubic-bezier(.4, 0, .2, 1);
+
+  /* Chrome */
+  --topbar-bg: #1B2559;
+  --topbar-height: 64px;
+  --nav-width: 320px;
+}
+
+/* ── Dark Theme ─────────────────────────────────────────────── */
+[data-theme="dark"] {
+  --content-bg: #0D1117;
+  --panel-bg: #161B27;
+  --panel-border: #252E45;
+  --shadow: 0 1px 3px rgba(0,0,0,.4), 0 4px 16px rgba(0,0,0,.28);
+  --shadow-hover: 0 4px 12px rgba(0,0,0,.5), 0 8px 32px rgba(0,0,0,.35);
+  --shadow-modal: 0 20px 60px rgba(0,0,0,.6), 0 8px 24px rgba(0,0,0,.4);
+  --text-primary: #F1F5F9;
+  --text-secondary: #94A3B8;
+  --text-muted: #64748B;
+  --border-color: #2D3748;
+  --border-mid: #4A5568;
+  --border-dark: #718096;
+  --input-bg: #1E293B;
+  --badge-bg: #1E293B;
+  --brand-soft: rgba(0, 97, 255, .14);
+  --topbar-bg: #0D1117;
+}
+
