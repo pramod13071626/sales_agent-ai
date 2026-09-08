@@ -1,6 +1,13 @@
-// Mock seed data for the Sales Command Center. Shapes mirror the interfaces below
-// (documented via JSDoc rather than TypeScript — this app's frontend is plain ES
-// modules, no build step, no TS/JSX; see MEMORY / project conventions).
+// Mock seed data for the parts of the Sales Command Center that have no real
+// backend equivalent yet: a scored/dated/categorized "buying signal" feed and
+// a generated playbook. (The KPI strip's account/exec-change numbers, the
+// Account Priority Matrix, and the Exec Movements Timeline are all real —
+// see real-accounts.js and exec-movements.js — this file only backs the
+// Priority Signal Feed and This Week's Playbook.)
+//
+// Shapes mirror the interfaces below (documented via JSDoc rather than
+// TypeScript — this app's frontend is plain ES modules, no build step, no
+// TS/JSX; see MEMORY / project conventions).
 //
 // @typedef {Object} Account
 // @property {string} id
@@ -20,14 +27,6 @@
 // @property {number} signalCount
 // @property {string} summary             one-line "why it matters"
 // @property {Date} detectedAt
-//
-// @typedef {Object} ExecChange
-// @property {string} person
-// @property {string} role
-// @property {"joined"|"resigned"|"promoted"} type
-// @property {string} company
-// @property {Date} date
-// @property {boolean} actioned
 //
 // @typedef {Object} PlaybookAction
 // @property {number} rank
@@ -65,13 +64,6 @@ export const signals = [
   { id: 'sig-10', accountId: 'bny', domain: 'AI', title: 'Automated AI testing pilot', score: 22, signalCount: 7, summary: 'Small internal QA pilot, low signal density, unlikely to progress.', detectedAt: daysAgo(9) },
 ];
 
-/** @type {ExecChange[]} */
-export const execChanges = [
-  { person: 'Candice Nakagawa', role: 'West Family Office Lead', type: 'joined', company: 'Northern Trust', date: daysAgo(6), actioned: true },
-  { person: 'Beata Kirr', role: 'CIO, Global Family Office', type: 'joined', company: 'BNY Mellon', date: daysAgo(11), actioned: true },
-  { person: 'BNY TAM Lead', role: 'Regional TAM Lead', type: 'promoted', company: 'BNY Mellon', date: daysAgo(24), actioned: false },
-];
-
 /** @type {PlaybookAction[]} */
 export const playbookActions = [
   { rank: 1, title: 'Schedule an executive briefing on the Applied AI roadmap', rationale: 'Score 96 signal on a $2.4M account — the hottest movement this week.', impact: 'high', accountId: 'bny', crmSynced: false },
@@ -81,12 +73,14 @@ export const playbookActions = [
   { rank: 5, title: 'Confirm the new TAM contact at BNY Mellon', rationale: 'TAM lead promoted 24 days ago and still unactioned.', impact: 'medium', accountId: 'bny', crmSynced: false },
 ];
 
-/** @type {KpiData} base numbers; per-role scoping is applied in kpi.js */
+/** @type {KpiData} base numbers for the two KPI cards with no real backend
+ * source (there's no deals/opportunities-pipeline table in the DB — "plays"
+ * are the same mock concept as the playbook above). Signal velocity and the
+ * exec-changes card are computed from real data in kpi.js instead. */
 export const kpiBase = {
   signalVelocity: 47,
   velocityDeltaPct: 18,
   velocityTrend: [22, 25, 24, 30, 28, 35, 40, 47],
-  execChangesOpen: execChanges.length,
   playsInMotion: 12,
   playsStalled: 2,
   q4CloseEstimate: 4800000,

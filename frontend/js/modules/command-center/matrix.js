@@ -1,15 +1,12 @@
-import { accounts } from './data.js';
 import { formatMoney } from './utils.js';
 import { ccState } from './state.js';
 import { openDossier } from './drawer.js';
-import { renderFeed } from './feed.js';
+import { loadMatrixAccounts } from './real-accounts.js';
 
 const RADIUS_MIN = 9, RADIUS_MAX = 36;
-const DEAL_MIN = Math.min(...accounts.map(a => a.dealPotential));
-const DEAL_MAX = Math.max(...accounts.map(a => a.dealPotential));
 
-function radiusFor(dealPotential) {
-  const t = (dealPotential - DEAL_MIN) / (DEAL_MAX - DEAL_MIN || 1);
+function radiusFor(dealPotential, dealMin, dealMax) {
+  const t = (dealPotential - dealMin) / (dealMax - dealMin || 1);
   return RADIUS_MIN + t * (RADIUS_MAX - RADIUS_MIN);
 }
 
@@ -70,14 +67,31 @@ const quadrantPlugin = {
   },
 };
 
-export function renderMatrix() {
+export async function renderMatrix() {
   const canvas = document.getElementById('ccMatrixCanvas');
+  const wrap = canvas ? canvas.closest('.cc-matrix-canvas-wrap') : null;
   if (!canvas || typeof Chart === 'undefined') return;
 
+  let accounts;
+  try {
+    accounts = await loadMatrixAccounts();
+  } catch (err) {
+    console.error(err);
+    if (wrap) wrap.innerHTML = '<div class="cc-drawer-empty">Could not load accounts.</div>';
+    return;
+  }
+
+  if (!accounts.length) {
+    if (wrap) wrap.innerHTML = '<div class="cc-drawer-empty">No accounts assigned to you yet — ask an admin to grant you account access.</div>';
+    return;
+  }
+
+  const dealMin = Math.min(...accounts.map(a => a.dealPotential));
+  const dealMax = Math.max(...accounts.map(a => a.dealPotential));
   const data = accounts.map(a => ({
     x: a.signalStrength,
     y: a.engagementRecency,
-    r: radiusFor(a.dealPotential),
+    r: radiusFor(a.dealPotential, dealMin, dealMax),
     account: a,
   }));
 
@@ -126,7 +140,7 @@ export function renderMatrix() {
             title: (items) => items[0].raw.account.name,
             label: (item) => [
               `Composite score: ${item.raw.account.compositeScore}`,
-              `Deal potential: ${formatMoney(item.raw.account.dealPotential)}`,
+              `Deal potential (est.): ${formatMoney(item.raw.account.dealPotential)}`,
             ],
           },
         },
@@ -134,9 +148,7 @@ export function renderMatrix() {
       onClick: (evt, elements) => {
         if (!elements.length) return;
         const point = data[elements[0].index];
-        ccState.activeAccountId = point.account.id;
-        renderFeed();
-        openDossier(point.account.id);
+        openDossier(point.account);
       },
       onHover: (evt, elements) => {
         evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
