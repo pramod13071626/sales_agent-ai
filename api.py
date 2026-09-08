@@ -117,8 +117,11 @@ if FASTAPI_AVAILABLE:
         role: str = "user"
 
     class UpdateUserRequest(BaseModel):
+        full_name: Optional[str] = None
+        email: Optional[str] = None
         role: Optional[str] = None
         is_active: Optional[bool] = None
+        password: Optional[str] = None
 
     def _user_public(u: User) -> Dict[str, Any]:
         return {
@@ -322,7 +325,9 @@ if FASTAPI_AVAILABLE:
             session.close()
 
     @app.patch("/api/admin/users/{user_id}", tags=["0. Authentication"])
-    def update_user(user_id: int, body: UpdateUserRequest, current: User = Depends(auth.require_role("super_admin"))):
+    def update_user(
+        user_id: int, body: UpdateUserRequest, current: User = Depends(auth.require_role("super_admin"))
+    ):
         session = get_session()
         try:
             target = session.query(User).filter_by(id=user_id).first()
@@ -332,16 +337,43 @@ if FASTAPI_AVAILABLE:
                 raise HTTPException(status_code=400, detail="You cannot deactivate your own account")
 
             details = {}
+            if body.full_name is not None:
+                stripped_name = body.full_name.strip() if body.full_name else None
+                if stripped_name != target.full_name:
+                    details["full_name"] = {"old": target.full_name, "new": stripped_name}
+                    target.full_name = stripped_name
+
+            if body.email is not None:
+                new_email = body.email.strip().lower()
+                if not new_email:
+                    raise HTTPException(status_code=400, detail="Email cannot be empty")
+                if new_email != target.email:
+                    existing = session.query(User).filter(User.email == new_email, User.id != target.id).first()
+                    if existing:
+                        raise HTTPException(status_code=400, detail="A user with this email address already exists")
+                    details["email"] = {"old": target.email, "new": new_email}
+                    target.email = new_email
+
             if body.role is not None and body.role != target.role:
                 if body.role not in ("super_admin", "user"):
                     raise HTTPException(status_code=400, detail="role must be 'super_admin' or 'user'")
+                if target.id == current.id and body.role != "super_admin":
+                    raise HTTPException(status_code=400, detail="You cannot demote your own account from super_admin")
                 details["role"] = {"old": target.role, "new": body.role}
                 target.role = body.role
+
             if body.is_active is not None and body.is_active != target.is_active:
                 details["is_active"] = {"old": target.is_active, "new": body.is_active}
                 target.is_active = body.is_active
                 if not body.is_active:
                     auth.revoke_all_refresh_tokens_for_user(session, target.id)
+
+            if body.password:
+                if len(body.password) < 6:
+                    raise HTTPException(status_code=400, detail="Password must be at least 6 characters long")
+                target.password_hash = auth.hash_password(body.password)
+                auth.revoke_all_refresh_tokens_for_user(session, target.id)
+                details["password_changed"] = True
 
             session.commit()
             if details:
@@ -397,7 +429,9 @@ if FASTAPI_AVAILABLE:
             session.close()
 
     @app.post("/api/admin/users/{user_id}/accounts/{account_id}", tags=["0. Authentication"])
-    def grant_user_account_access(user_id: int, account_id: int, current: User = Depends(auth.require_role("super_admin"))):
+    def grant_user_account_access(
+        user_id: int, account_id: int, current: User = Depends(auth.require_role("super_admin"))
+    ):
         session = get_session()
         try:
             target = session.query(User).filter_by(id=user_id).first()
@@ -408,20 +442,26 @@ if FASTAPI_AVAILABLE:
                 raise HTTPException(status_code=404, detail="Account not found")
             created = auth.grant_account_access(session, user_id, account_id, current.id)
             if created:
-                auth.log_audit(session, current.id, "account_access_granted", target_user_id=user_id,
-                                details={"account_id": account_id, "account_name": account.display_name})
+                auth.log_audit(
+                    session, current.id, "account_access_granted", target_user_id=user_id,
+                    details={"account_id": account_id, "account_name": account.display_name}
+                )
             return {"ok": True}
         finally:
             session.close()
 
     @app.delete("/api/admin/users/{user_id}/accounts/{account_id}", tags=["0. Authentication"])
-    def revoke_user_account_access(user_id: int, account_id: int, current: User = Depends(auth.require_role("super_admin"))):
+    def revoke_user_account_access(
+        user_id: int, account_id: int, current: User = Depends(auth.require_role("super_admin"))
+    ):
         session = get_session()
         try:
             removed = auth.revoke_account_access(session, user_id, account_id)
             if removed:
-                auth.log_audit(session, current.id, "account_access_revoked", target_user_id=user_id,
-                                details={"account_id": account_id})
+                auth.log_audit(
+                    session, current.id, "account_access_revoked", target_user_id=user_id,
+                    details={"account_id": account_id}
+                )
             return {"ok": True}
         finally:
             session.close()
@@ -445,15 +485,23 @@ if FASTAPI_AVAILABLE:
                 ActionItem.due_date < datetime.now(timezone.utc),
             ).count()
 
-            recent_logins = (session.query(User)
-                              .filter(User.last_login_at.isnot(None))
-                              .order_by(User.last_login_at.desc())
-                              .limit(10).all())
-            recent_audit = (session.query(AuditLog)
-                             .order_by(AuditLog.created_at.desc())
-                             .limit(20).all())
-            user_ids_in_audit = {e.actor_user_id for e in recent_audit if e.actor_user_id} | \
-                                 {e.target_user_id for e in recent_audit if e.target_user_id}
+            recent_logins = (
+                session.query(User)
+                .filter(User.last_login_at.isnot(None))
+                .order_by(User.last_login_at.desc())
+                .limit(10)
+                .all()
+            )
+            recent_audit = (
+                session.query(AuditLog)
+                .order_by(AuditLog.created_at.desc())
+                .limit(20)
+                .all()
+            )
+            user_ids_in_audit = (
+                {e.actor_user_id for e in recent_audit if e.actor_user_id}
+                | {e.target_user_id for e in recent_audit if e.target_user_id}
+            )
             names_by_id = {
                 u.id: (u.full_name or u.email)
                 for u in session.query(User).filter(User.id.in_(user_ids_in_audit)).all()
@@ -468,8 +516,10 @@ if FASTAPI_AVAILABLE:
                 "open_action_items": open_action_items,
                 "overdue_action_items": overdue_action_items,
                 "recent_logins": [
-                    {"id": u.id, "email": u.email, "full_name": u.full_name,
-                     "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None}
+                    {
+                        "id": u.id, "email": u.email, "full_name": u.full_name,
+                        "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None
+                    }
                     for u in recent_logins
                 ],
                 "recent_audit": [
@@ -482,6 +532,52 @@ if FASTAPI_AVAILABLE:
                     }
                     for e in recent_audit
                 ],
+            }
+        finally:
+            session.close()
+
+    @app.get("/api/admin/audit-logs", tags=["0. Authentication"])
+    def list_admin_audit_logs(
+        limit: int = Query(5, ge=1, le=100),
+        offset: int = Query(0, ge=0),
+        current: User = Depends(auth.require_role("super_admin"))
+    ):
+        """Paginated audit trail endpoint so large audit histories load efficiently in small chunks."""
+        session = get_session()
+        try:
+            total_count = session.query(AuditLog).count()
+            logs = (
+                session.query(AuditLog)
+                .order_by(AuditLog.created_at.desc())
+                .offset(offset)
+                .limit(limit)
+                .all()
+            )
+            user_ids = (
+                {e.actor_user_id for e in logs if e.actor_user_id}
+                | {e.target_user_id for e in logs if e.target_user_id}
+            )
+            names_by_id = {
+                u.id: (u.full_name or u.email)
+                for u in session.query(User).filter(User.id.in_(user_ids)).all()
+            } if user_ids else {}
+
+            return {
+                "total": total_count,
+                "limit": limit,
+                "offset": offset,
+                "has_more": (offset + len(logs)) < total_count,
+                "audit_logs": [
+                    {
+                        "id": e.id,
+                        "action": e.action,
+                        "actor": names_by_id.get(e.actor_user_id, "system"),
+                        "target": names_by_id.get(e.target_user_id) if e.target_user_id else None,
+                        "details": e.details,
+                        "created_at": e.created_at.isoformat() if e.created_at else None,
+                    }
+                    for e in logs
+                ]
             }
         finally:
             session.close()

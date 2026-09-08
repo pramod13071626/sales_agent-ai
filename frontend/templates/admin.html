@@ -1,32 +1,70 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="light">
+
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Admin | Sales Intelligence</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="css/tokens.css?v=3.0">
-  <link rel="stylesheet" href="css/base.css?v=3.0">
-  <link rel="stylesheet" href="css/digest.css?v=3.0">
-  <link rel="stylesheet" href="css/account-detail.css?v=3.0">
-  <link rel="stylesheet" href="css/people-drawer.css?v=3.0">
-  <link rel="stylesheet" href="css/responsive.css?v=3.0">
-  <link rel="stylesheet" href="css/admin-page.css?v=1.0">
+  <link rel="stylesheet" href="css/tokens.css?v=3.4">
+  <link rel="stylesheet" href="css/base.css?v=3.4">
+  <link rel="stylesheet" href="css/shell.css?v=3.4">
+  <link rel="stylesheet" href="css/digest.css?v=3.4">
+  <link rel="stylesheet" href="css/account-detail.css?v=3.4">
+  <link rel="stylesheet" href="css/sections-and-workflow.css?v=3.4">
+  <link rel="stylesheet" href="css/people-drawer.css?v=3.4">
+  <link rel="stylesheet" href="css/responsive.css?v=3.4">
+  <link rel="stylesheet" href="css/admin-page.css?v=3.4">
 </head>
+
 <body class="admin-page-body">
 
-<div class="admin-topbar">
-  <span class="admin-brand"><i class="bi bi-shield-lock-fill"></i> Admin Dashboard</span>
-  <button type="button" class="admin-back" id="adminLogoutBtn"><i class="bi bi-box-arrow-right"></i> Logout</button>
-</div>
+  <header class="dash-topbar">
+    <div class="topbar-brand">
+      <div class="topbar-icon" style="background: linear-gradient(135deg, #0061FF, #4f46e5);"><i
+          class="bi bi-shield-lock-fill"></i></div>
+      <div>
+        <div class="topbar-title">Sales Intelligence Command</div>
+        <div class="topbar-sub">Super Admin Management Console</div>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <div class="topbar-dropdown" id="topbarAccountsDropdown">
+        <button type="button" class="topbar-link topbar-dropdown-btn" id="globalAccountsBtn" title="View organization accounts">
+          <i class="bi bi-buildings"></i>
+          <span>Global Accounts</span>
+          <i class="bi bi-chevron-down dropdown-chevron"></i>
+        </button>
+        <div class="topbar-dropdown-menu d-none" id="globalAccountsMenu">
+          <div class="dropdown-menu-header">
+            <span class="dropdown-header-title"><i class="bi bi-buildings"></i> Organisation Accounts</span>
+            <span class="dropdown-header-badge" id="dropdownAccountCount">...</span>
+          </div>
+          <div class="dropdown-menu-list" id="dropdownAccountList">
+            <div class="dropdown-loading"><div class="spinner-sm"></div> Loading accounts…</div>
+          </div>
+        </div>
+      </div>
+      <a href="/pipline/" class="topbar-link"><i class="bi bi-compass"></i> Pipeline Explorer <i
+          class="bi bi-box-arrow-up-right"></i></a>
+      <span id="topbarAuthUser" class="topbar-auth-user"></span>
+      <button type="button" class="topbar-link topbar-link-btn" id="adminLogoutBtn" title="Sign out"><i
+          class="bi bi-box-arrow-right"></i> Logout</button>
+      <button id="themeToggle" class="topbar-theme-btn" title="Toggle theme"><i class="bi bi-moon-stars"></i></button>
+    </div>
+  </header>
 
-<main class="admin-main" id="adminMain">
-  <div class="admin-page-loading"><div class="admin-page-spinner"></div> Loading admin dashboard…</div>
-</main>
+  <main class="admin-main" id="adminMain">
+    <div class="admin-page-loading">
+      <div class="spinner-md"></div>
+      <span>Loading Admin Command Center…</span>
+    </div>
+  </main>
 
-<div class="toast" id="toast"></div>
+  <div class="toast" id="toast"></div>
 
-<script type="module" src="js/modules/admin-page.js?v=1.0"></script>
+  <script type="module" src="js/modules/admin-page.js?v=3.4"></script>
 </body>
+
 </html>

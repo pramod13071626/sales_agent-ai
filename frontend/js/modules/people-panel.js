@@ -87,9 +87,8 @@ export function renderPeople(account, lob) {
     <div class="panel-title" style="margin-top:18px;">
       <span><i class="bi bi-tools"></i> Account Actions</span>
     </div>
-    <p class="section-desc" style="margin-bottom:8px;">Enrich tech telemetry or navigate to the deep Account Explorer pipeline.</p>
+    <p class="section-desc" style="margin-bottom:8px;">Enrich tech telemetry and company attributes.</p>
     <button type="button" class="action-btn" id="fetchDiffbotBtn" data-acct="${account.id}" title="Run live Diffbot scraping to identify technologies and company attributes"><i class="bi bi-cloud-arrow-down"></i> Enrich with Diffbot Intel</button>
-    <button type="button" class="action-btn secondary" id="openExplorerBtn" data-name="${esc(account.name)}" title="Jump to Account Explorer for deep scraping workflow"><i class="bi bi-box-arrow-up-right"></i> Open in Account Explorer</button>
   `;
 }
 
@@ -134,11 +133,5 @@ dashPeople.addEventListener('click', async function (e) {
       renderSelection();
     }
     return;
-  }
-  const explorerBtn = e.target.closest('#openExplorerBtn');
-  if (explorerBtn) {
-    try { await navigator.clipboard.writeText(explorerBtn.dataset.name); } catch (err) { /* clipboard permission denied — non-critical */ }
-    showToast('Account name copied — paste it into the Explorer search bar');
-    window.open('/pipline/', '_blank');
   }
 });

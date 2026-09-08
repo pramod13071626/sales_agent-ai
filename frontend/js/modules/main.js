@@ -72,20 +72,12 @@ async function loadAccounts() {
   }
 }
 
-// Account data is now access-controlled server-side (see
-// AUTH_JWT_IMPLEMENTATION_PLAN.md — /api/accounts requires a logged-in user
-// and filters to their granted accounts), so this page requires a session:
-// no session at all -> straight to /login; a super_admin session -> their
-// own dashboard, never the sales Global Accounts Dashboard. Both checks
-// happen before any dashboard rendering starts, so there's no flash of
-// content the visitor isn't meant to see.
+// Account data is access-controlled server-side (see AUTH_JWT_IMPLEMENTATION_PLAN.md).
+// Unauthenticated users are redirected to login. Both super_admin (who see all accounts)
+// and regular users (who see their granted accounts) can use the Global Accounts Dashboard.
 initTopbarAuth().then((user) => {
   if (!user) {
     window.location.href = `/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`;
-    return;
-  }
-  if (user.role === 'super_admin') {
-    window.location.replace('/admin');
     return;
   }
   loadAccounts();

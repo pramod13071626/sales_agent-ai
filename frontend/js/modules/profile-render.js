@@ -13,7 +13,7 @@ export function hasDossier(p) {
 
 export function renderDossier(p) {
   if (!hasDossier(p)) {
-    return `<div class="dossier-empty">No AI call-prep dossier generated yet for ${esc(p.name || 'this contact')}. Use "Fetch" on their card in the Account Explorer to generate one.</div>`;
+    return `<div class="dossier-empty">No AI call-prep dossier generated yet for ${esc(p.name || 'this contact')}.</div>`;
   }
   const chipGroup = (title, icon, items) => (items && items.length)
     ? `<div class="dossier-block"><div class="dossier-label"><i class="bi ${icon}"></i> ${esc(title)}</div><div class="chip-row">${items.map(i => `<span class="chip">${esc(i)}</span>`).join('')}</div></div>`
@@ -35,7 +35,7 @@ export function renderDossier(p) {
 // Interactive tabbed version of the call-prep dossier for the full profile page
 export function renderDossierTabs(p) {
   if (!hasDossier(p)) {
-    return `<div class="dossier-empty">No AI call-prep dossier generated yet for ${esc(p.name || 'this contact')}. Use "Fetch" in the Account Explorer to generate one.</div>`;
+    return `<div class="dossier-empty">No AI call-prep dossier generated yet for ${esc(p.name || 'this contact')}.</div>`;
   }
 
   const kpis = p.target_kpis || [];
