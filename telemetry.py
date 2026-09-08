@@ -36,16 +36,11 @@ class RunTelemetry:
             "lobs_count": 0,
             "sublobs_count": 0,
             "personas_count": 0,
-            "tier_breakdown": {
-                "c_suite": 0,
-                "vp_level": 0,
-                "director_level": 0,
-                "manager_level": 0
-            },
+            "tier_breakdown": {"c_suite": 0, "vp_level": 0, "director_level": 0, "manager_level": 0},
             "patents_count": 0,
             "political_contributions_count": 0,
             "board_members_count": 0,
-            "technologies_count": 0
+            "technologies_count": 0,
         }
         self.execution_logs: List[Dict[str, Any]] = []
         self._start_perf_time = time.perf_counter()
@@ -58,7 +53,7 @@ class RunTelemetry:
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "level": level.upper(),
             "stage": stage.upper(),
-            "message": message
+            "message": message,
         }
         if details:
             entry["details"] = details
@@ -68,10 +63,10 @@ class RunTelemetry:
         self,
         vendor: str,
         endpoint: str,
-        credits: int = 1,
+        credits_used: int = 1,
         latency_ms: int = 0,
         status: str = "200_OK",
-        is_billable: bool = True
+        is_billable: bool = True,
     ):
         """Records an API request and tracks credit/token consumption."""
         v = vendor.lower()
@@ -82,7 +77,7 @@ class RunTelemetry:
                 "free_tier_requests": 0,
                 "endpoints_called": [],
                 "average_latency_ms": 0,
-                "total_latency_ms": 0
+                "total_latency_ms": 0,
             }
 
         v_data = self.credits_breakdown[v]
@@ -93,15 +88,15 @@ class RunTelemetry:
         if endpoint not in v_data["endpoints_called"]:
             v_data["endpoints_called"].append(endpoint)
 
-        if is_billable and credits > 0:
-            v_data["credits_consumed"] += credits
-            self.total_credits_used += credits
+        if is_billable and credits_used > 0:
+            v_data["credits_consumed"] += credits_used
+            self.total_credits_used += credits_used
         else:
             v_data["free_tier_requests"] += 1
 
         api_msg = (
             f"[{v.upper()}] {endpoint} ➔ status: {status}, "
-            f"credits: {credits if is_billable else 0}, latency: {latency_ms}ms"
+            f"credits: {credits_used if is_billable else 0}, latency: {latency_ms}ms"
         )
         self.log("INFO", "API_CALL", api_msg)
 
@@ -110,8 +105,7 @@ class RunTelemetry:
         self.quality_score = round(float(score), 2)
         self.quality_grade = grade
         validator_msg = (
-            f"Data Quality Audit Completed. Score: {self.quality_score}/100 "
-            f"(Grade: {self.quality_grade})"
+            f"Data Quality Audit Completed. Score: {self.quality_score}/100 " f"(Grade: {self.quality_grade})"
         )
         self.log("INFO", "VALIDATOR", validator_msg)
 
@@ -125,7 +119,7 @@ class RunTelemetry:
         patents_count: int = 0,
         political_contributions_count: int = 0,
         board_members_count: int = 0,
-        technologies_count: int = 0
+        technologies_count: int = 0,
     ):
         """Updates extracted entities counters."""
         self.entities_extracted["accounts_count"] = accounts_count
@@ -175,13 +169,10 @@ class RunTelemetry:
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
             "duration_seconds": self.duration_seconds,
             "total_credits_used": self.total_credits_used,
-            "credits_breakdown": {
-                "total_billable_credits": self.total_credits_used,
-                "vendors": self.credits_breakdown
-            },
+            "credits_breakdown": {"total_billable_credits": self.total_credits_used, "vendors": self.credits_breakdown},
             "entities_extracted": self.entities_extracted,
             "execution_logs": self.execution_logs,
-            "error_message": self.error_message
+            "error_message": self.error_message,
         }
 
     def save_json(self, save_path: Path):
