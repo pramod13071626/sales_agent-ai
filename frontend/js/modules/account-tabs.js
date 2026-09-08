@@ -12,10 +12,6 @@ import { computeSignals, renderEngagementPanel } from './signals.js';
 import { renderOrgChart } from './org-chart.js';
 import { renderContentPanel } from './content-panel.js';
 import { renderWeeklyUpdateTab } from './weekly-update.js';
-import {
-  renderActionItemsTab, handleActionItemClick, handleActionItemStatusChange,
-  handleActionItemFormSubmit,
-} from './action-items.js';
 import { renderFinancialSnippets } from './financial-snippets.js';
 import { openContactDrawer } from './contact-drawer.js';
 import { openSignalModal, closeSignalModal } from './signal-modal.js';
@@ -335,8 +331,6 @@ export function renderCenter(account, lob) {
   const personas = dedupePersonas(getPersonasFor(account, lob));
   const targetKey = resolveAccountTargetKey(account);
   const postCount = targetKey ? (state.contentStore.posts[targetKey] || []).length : 0;
-  const openActionItemsCount = (state.actionItemsByAccount[account.id] || [])
-    .filter(i => i.status === 'open' || i.status === 'in_progress').length;
 
   let tabContent = '';
   if (state.activeSalesTab === 'committee') {
@@ -351,8 +345,6 @@ export function renderCenter(account, lob) {
     tabContent = renderWeeklyUpdateTab(account);
   } else if (state.activeSalesTab === 'jobs') {
     tabContent = renderAccountJobsTab(account);
-  } else if (state.activeSalesTab === 'action-items') {
-    tabContent = renderActionItemsTab(account);
   } else {
     tabContent = renderExecutiveBriefingTab(account, lob, signals, matches);
   }
@@ -397,9 +389,6 @@ export function renderCenter(account, lob) {
       <button type="button" class="tab-btn ${state.activeSalesTab === 'jobs' ? 'active' : ''}" data-tab="jobs" title="Recent LinkedIn job postings for this account">
         <i class="bi bi-linkedin"></i> Job Postings <span class="tab-badge">${getAccountJobs(account).length}</span>
       </button>
-      <button type="button" class="tab-btn ${state.activeSalesTab === 'action-items' ? 'active' : ''}" data-tab="action-items" title="Client-specific tasks, completion tracking, and reminders">
-        <i class="bi bi-list-check"></i> Action Items <span class="tab-badge">${openActionItemsCount}</span>
-      </button>
     </div>
 
     <!-- Tab Content Area -->
@@ -417,10 +406,6 @@ dashContent.addEventListener('click', async function (e) {
     renderSelection();
     return;
   }
-
-  // Action Items tab interactions (take/complete/delete/filter/quick-add)
-  const account = state.accounts.find(a => a.id === state.activeAccountId);
-  if (account && await handleActionItemClick(e, account)) return;
 
   // Quick Arsenal Actions
   const icebreakerBtn = e.target.closest('#copyIcebreakerBtn');
@@ -497,15 +482,6 @@ dashContent.addEventListener('click', async function (e) {
     renderNavTree();
     renderSelection();
   }
-});
-
-dashContent.addEventListener('change', async function (e) {
-  const account = state.accounts.find(a => a.id === state.activeAccountId);
-  if (account) await handleActionItemStatusChange(e, account);
-});
-
-dashContent.addEventListener('submit', async function (e) {
-  await handleActionItemFormSubmit(e);
 });
 
 signalModalBody.addEventListener('click', async function (e) {

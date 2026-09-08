@@ -8,6 +8,7 @@
 // supports ?account_key=<key>), so this stays self-contained instead of
 // re-hosting the whole dashboard's render pipeline.
 import { loadRealAccounts } from './real-accounts.js';
+import { getCurrentUser } from '../auth-client.js';
 
 function esc(s) {
   const d = document.createElement('div');
@@ -91,8 +92,23 @@ function render() {
 function markCurrentPage() {
   const here = document.querySelector(`.nav-digest-wrap a[href="${window.location.pathname}"]`);
   if (here) here.classList.add('active');
+}
+
+// The Global Accounts Dashboard is admin-granted, not default access (see
+// main.js's matching redirect for the same rule) — a super_admin sees every
+// account; anyone else needs an explicit grant. Hide the quick-jump link
+// entirely for a user with nothing to see there, rather than sending them
+// to a page that would just bounce them straight back here.
+function updateDashboardLinkAccess() {
   const dashBtn = el('navDigestBtn');
-  if (dashBtn) dashBtn.addEventListener('click', () => { window.location.href = '/'; });
+  if (!dashBtn) return;
+  const user = getCurrentUser();
+  const canAccess = user && (user.role === 'super_admin' || accounts.length > 0);
+  if (!canAccess) {
+    dashBtn.style.display = 'none';
+    return;
+  }
+  dashBtn.addEventListener('click', () => { window.location.href = '/'; });
 }
 
 export async function initAccountsNav() {
@@ -146,4 +162,5 @@ export async function initAccountsNav() {
     console.error(err);
     if (tree) tree.innerHTML = '<div class="nav-empty">Error loading accounts. Ensure the API is running.</div>';
   }
+  updateDashboardLinkAccess();
 }
