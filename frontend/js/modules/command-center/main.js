@@ -1,6 +1,7 @@
 import '../fetch-instrumentation.js';
 import { initThemeToggle } from '../theme.js';
 import { initTopbarAuth } from '../topbar-auth.js';
+import { showToast } from '../toast.js';
 import { ccState } from './state.js';
 import { renderKpiStrip } from './kpi.js';
 import { renderMatrix } from './matrix.js';
@@ -49,8 +50,18 @@ function initRoleTabs() {
   });
 }
 
+function checkDashboardAccessNotice() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('no_dashboard_access') !== '1') return;
+  showToast("You don't have Global Accounts Dashboard access yet — ask a super admin to grant you an account.");
+  params.delete('no_dashboard_access');
+  const rest = params.toString();
+  history.replaceState(null, '', window.location.pathname + (rest ? `?${rest}` : ''));
+}
+
 function init() {
   initThemeToggle();
+  checkDashboardAccessNotice();
   renderSubtitle();
   initRoleTabs();
   initDrawer();

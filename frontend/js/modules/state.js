@@ -68,7 +68,6 @@ export const state = {
   cxoMovementsStore: { total: 0, counts: { all: 0, joined: 0, resigned: 0, retired: 0, promoted: 0 }, movements: [] },
   activeMovementTab: 'all', // 'all' | 'joined' | 'resigned' | 'retired' | 'promoted'
   activeDrawerPersona: null, // persona object for whichever contact drawer is currently open — read by the drawer's Download PDF button
-  actionItemsByAccount: {}, // accountId -> action_items array, fetched on demand when the Action Items tab opens
+  actionItemsByAccount: {}, // accountId -> action_items array, fetched on demand when a contact drawer opens
   myActionItems: null, // null until first fetched; cross-account "My Tasks" list for GET /api/me/action-items
-  activeActionItemStatus: 'open', // 'open' | 'in_progress' | 'done' | 'cancelled' | 'all' — current tab/list filter
 };

@@ -16,7 +16,7 @@ import { initTopbarAuth } from './topbar-auth.js';
 
 initThemeToggle();
 
-async function loadAccounts() {
+async function loadAccounts(user) {
   try {
     // Deep link: /?view=jobs opens the All Job Postings browser directly on load.
     const wantsJobsView = window.location.search === '?view=jobs';
@@ -49,6 +49,16 @@ async function loadAccounts() {
     const data = await acctRes.json();
     state.accounts = data.accounts || [];
 
+    // The Global Accounts Dashboard is admin-granted, not default access —
+    // a super_admin sees every account; anyone else only what's been
+    // explicitly granted to them via UserAccountAccess (auth.py). A regular
+    // user with zero grants has nothing to see here, so send them to the
+    // page that IS open to everyone by default instead of an empty shell.
+    if (user.role !== 'super_admin' && state.accounts.length === 0) {
+      window.location.href = '/command-center?no_dashboard_access=1';
+      return;
+    }
+
     if (movementsRes && movementsRes.ok) {
       state.cxoMovementsStore = await movementsRes.json();
     }
@@ -73,12 +83,13 @@ async function loadAccounts() {
 }
 
 // Account data is access-controlled server-side (see AUTH_JWT_IMPLEMENTATION_PLAN.md).
-// Unauthenticated users are redirected to login. Both super_admin (who see all accounts)
-// and regular users (who see their granted accounts) can use the Global Accounts Dashboard.
+// Unauthenticated users are redirected to login. The Global Accounts Dashboard
+// itself is admin-granted, not default access — see the redirect in
+// loadAccounts() above for users with no granted accounts.
 initTopbarAuth().then((user) => {
   if (!user) {
     window.location.href = `/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`;
     return;
   }
-  loadAccounts();
+  loadAccounts(user);
 });
