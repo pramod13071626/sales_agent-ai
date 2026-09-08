@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sales Command Center | Sales Intelligence</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="css/tokens.css?v=3.0">
+  <link rel="stylesheet" href="css/base.css?v=3.0">
+  <link rel="stylesheet" href="css/shell.css?v=3.0">
+  <link rel="stylesheet" href="css/skeleton.css?v=3.0">
+  <link rel="stylesheet" href="css/command-center.css?v=1.0">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<div class="global-loading-bar" id="globalLoadingBar"></div>
+
+{% include "partials/topbar.html" %}
+
+<div class="cc-shell">
+  <header class="cc-header">
+    <div class="cc-header-left">
+      <div class="cc-breadcrumb"><a href="/"><i class="bi bi-arrow-left"></i> Accounts</a></div>
+      <h1 class="cc-title">Sales Command Center</h1>
+      <p class="cc-subtitle" id="ccSubtitle">Loading…</p>
+    </div>
+    <div class="cc-role-tabs" role="tablist" aria-label="Role scope">
+      <button type="button" class="cc-role-tab active" data-role="ae" role="tab">Account exec</button>
+      <button type="button" class="cc-role-tab" data-role="manager" role="tab">Manager</button>
+      <button type="button" class="cc-role-tab" data-role="exec" role="tab">Executive</button>
+    </div>
+  </header>
+
+  <section class="cc-kpi-strip" id="ccKpiStrip"></section>
+
+  <section class="cc-row cc-row-2col cc-row-matrix-feed">
+    <div class="cc-panel cc-matrix-panel">
+      <div class="cc-panel-head">
+        <h2>Account priority matrix</h2>
+      </div>
+      <div class="cc-matrix-canvas-wrap">
+        <canvas id="ccMatrixCanvas"></canvas>
+      </div>
+    </div>
+
+    <div class="cc-panel cc-feed-panel">
+      <div class="cc-panel-head">
+        <h2>Priority signal feed</h2>
+      </div>
+      <div class="cc-feed-filter-row">
+        <div class="cc-chip-row" id="ccFeedFilters"></div>
+        <div id="ccFeedAccountFilter"></div>
+      </div>
+      <ul class="cc-feed-list" id="ccFeedList"></ul>
+    </div>
+  </section>
+
+  <section class="cc-row cc-row-2col">
+    <div class="cc-panel cc-playbook-panel">
+      <div class="cc-panel-head">
+        <h2>This week's playbook</h2>
+      </div>
+      <ol class="cc-playbook-list" id="ccPlaybookList"></ol>
+    </div>
+
+    <div class="cc-panel cc-timeline-panel">
+      <div class="cc-panel-head">
+        <h2>Exec movements &middot; last 30 days</h2>
+      </div>
+      <ul class="cc-timeline-list" id="ccTimelineList"></ul>
+    </div>
+  </section>
+</div>
+
+<div class="cc-drawer-backdrop" id="ccDrawerBackdrop"></div>
+<aside class="cc-drawer" id="ccDrawer">
+  <div class="cc-drawer-header">
+    <div class="cc-drawer-title" id="ccDrawerTitle">Account</div>
+    <button type="button" class="cc-drawer-close" id="ccDrawerClose" title="Close"><i class="bi bi-x-lg"></i></button>
+  </div>
+  <div class="cc-drawer-body" id="ccDrawerBody"></div>
+</aside>
+
+<div class="toast" id="toast"></div>
+
+{% include "partials/drawer.html" %}
+
+<script type="module" src="js/modules/command-center/main.js?v=1.0"></script>
+</body>
+</html>

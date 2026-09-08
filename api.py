@@ -2944,6 +2944,14 @@ if FASTAPI_AVAILABLE:
             sliding drawer; see frontend/js/modules/profile-page.js."""
             return templates.TemplateResponse(request, "profile.html")
 
+        @app.get("/command-center", response_class=HTMLResponse, include_in_schema=False)
+        async def sales_command_center_page(request: Request):
+            """Action-first rep/manager/exec dashboard — KPI strip, account
+            priority matrix, priority signal feed, playbook and exec
+            movements timeline. Currently runs on mock seed data; see
+            frontend/js/modules/command-center/data.js."""
+            return templates.TemplateResponse(request, "command-center.html")
+
         css_dir = frontend_dir / "css"
         js_dir = frontend_dir / "js"
         pipline_dir = frontend_dir / "pipline"
