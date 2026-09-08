@@ -112,7 +112,12 @@ function renderItemCard(item) {
   `;
 }
 
-function renderList(items, filterStatus) {
+// Exported so the cross-account Task Management page (tasks-page.js) can
+// reuse the exact same card/list/filter markup and CSS instead of
+// duplicating it — both render the same shape of item (_serialize_action_item),
+// just from different endpoints (/api/accounts/{id}/action-items vs
+// /api/me/action-items).
+export function renderList(items, filterStatus) {
   const filtered = filterStatus === 'all' ? items : items.filter(i => i.status === filterStatus);
   if (!filtered.length) {
     return `<div class="empty-block" style="padding:20px 4px;">
@@ -123,7 +128,7 @@ function renderList(items, filterStatus) {
   return `<div class="action-item-list">${filtered.map(renderItemCard).join('')}</div>`;
 }
 
-function renderFilterChips(items, activeStatus) {
+export function renderFilterChips(items, activeStatus) {
   const counts = { all: items.length, pending_review: 0, open: 0, in_progress: 0, done: 0, cancelled: 0 };
   items.forEach(i => { counts[i.status] = (counts[i.status] || 0) + 1; });
   const chip = (value, label) => `

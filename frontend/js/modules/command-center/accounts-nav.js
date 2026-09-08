@@ -1,11 +1,12 @@
-// Left-column account navigator for the Command Center page — reuses the
-// exact partials/nav.html markup (and nav.css) as the Global Accounts
-// Dashboard so it looks and feels identical, but is intentionally NOT wired
-// to nav-tree.js/selection.js: those render account detail inline into
-// #dashContent/#dashPeople, which this page doesn't have. Here, picking an
-// account just deep-links to the Global Accounts Dashboard for that account
-// (index.html's main.js already supports ?account_key=<key>), so this stays
-// self-contained instead of re-hosting the whole dashboard's render pipeline.
+// Left-column account navigator, shared by every non-index.html page that
+// includes partials/nav.html (Command Center, the Tasks page) — reuses the
+// exact same markup/CSS as the Global Accounts Dashboard so it looks and
+// feels identical, but is intentionally NOT wired to nav-tree.js/selection.js:
+// those render account detail inline into #dashContent/#dashPeople, which
+// these pages don't have. Here, picking an account just deep-links to the
+// Global Accounts Dashboard for that account (index.html's main.js already
+// supports ?account_key=<key>), so this stays self-contained instead of
+// re-hosting the whole dashboard's render pipeline.
 import { loadRealAccounts } from './real-accounts.js';
 
 function esc(s) {
@@ -88,8 +89,8 @@ function render() {
 }
 
 function markCurrentPage() {
-  const ccLink = document.querySelector('.nav-digest-wrap a[href="/command-center"]');
-  if (ccLink) ccLink.classList.add('active');
+  const here = document.querySelector(`.nav-digest-wrap a[href="${window.location.pathname}"]`);
+  if (here) here.classList.add('active');
   const dashBtn = el('navDigestBtn');
   if (dashBtn) dashBtn.addEventListener('click', () => { window.location.href = '/'; });
 }
