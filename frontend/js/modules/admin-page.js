@@ -404,8 +404,8 @@ function renderModalShell() {
               <input type="text" class="admin-form-input" id="editUserFullName" name="full_name" placeholder="e.g. Robin Vince">
             </div>
             <div class="admin-form-group">
-              <label class="admin-form-label" for="editUserEmail"><i class="bi bi-envelope"></i> Email Address</label>
-              <input type="email" class="admin-form-input" id="editUserEmail" name="email" required placeholder="user@company.com">
+              <label class="admin-form-label" for="editUserEmail"><i class="bi bi-envelope"></i> Email Address <span style="font-weight:400; font-size:0.7rem; color:var(--text-muted); margin-left:4px;">(Read-only)</span></label>
+              <input type="email" class="admin-form-input" id="editUserEmail" name="email" readonly disabled style="opacity:0.75; cursor:not-allowed; background:var(--input-bg);" placeholder="user@company.com" title="Email address cannot be modified">
             </div>
             <div class="admin-form-row" style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
               <div class="admin-form-group">
@@ -674,7 +674,6 @@ function wireEvents() {
       try {
         const payload = {
           full_name: editForm.full_name.value.trim() || null,
-          email: editForm.email.value.trim().toLowerCase(),
           role: editForm.role.value,
           is_active: editForm.is_active.value === 'true',
         };

@@ -22,10 +22,11 @@ body.auth-page-body {
   align-items: center;
   padding: 72px 88px;
   color: #fff;
+  background-color: #1B2559;
   background:
-    radial-gradient(circle at 12% 15%, rgba(255,255,255,.12) 0%, transparent 38%),
-    radial-gradient(circle at 88% 85%, rgba(255,255,255,.10) 0%, transparent 42%),
-    linear-gradient(135deg, #0044C7 0%, #0061FF 50%, #3B82FF 100%);
+    radial-gradient(circle at 12% 15%, rgba(255,255,255,.08) 0%, transparent 38%),
+    radial-gradient(circle at 88% 85%, rgba(255,255,255,.05) 0%, transparent 42%),
+    linear-gradient(135deg, #11183E 0%, #1B2559 55%, #233170 100%);
 }
 
 /* Faint dot-grid texture so the panel doesn't read as a flat gradient. */
@@ -45,12 +46,12 @@ body.auth-page-body {
   font-size: .95rem; font-weight: 700; color: #fff;
   margin-bottom: 44px;
   padding: 8px 16px 8px 10px;
-  background: rgba(255,255,255,.12);
-  border: 1px solid rgba(255,255,255,.18);
+  background: rgba(255,255,255,.10);
+  border: 1px solid rgba(255,255,255,.16);
   border-radius: 999px;
 }
 .auth-brand i { font-size: 1.05rem; }
-.auth-brand-mobile { display: none; margin-bottom: 28px; color: var(--brand); background: var(--brand-soft); border-color: transparent; }
+.auth-brand-mobile { display: none; margin-bottom: 28px; color: #1B2559; background: rgba(27,37,89,.08); border: 1px solid rgba(27,37,89,.15); }
 
 .auth-left-title {
   font-size: 2.6rem; font-weight: 800; line-height: 1.18;
@@ -69,8 +70,8 @@ body.auth-page-body {
 .auth-highlights li i {
   font-size: 1.1rem; width: 38px; height: 38px; flex-shrink: 0;
   display: grid; place-items: center;
-  background: rgba(255,255,255,.14);
-  border: 1px solid rgba(255,255,255,.16);
+  background: rgba(255,255,255,.10);
+  border: 1px solid rgba(255,255,255,.14);
   border-radius: var(--radius-md);
 }
 
@@ -110,20 +111,20 @@ body.auth-page-body {
   transition: var(--transition);
 }
 .auth-input:focus {
-  outline: none; border-color: var(--brand); background: var(--panel-bg);
-  box-shadow: 0 0 0 4px var(--brand-muted);
+  outline: none; border-color: #1B2559; background: var(--panel-bg);
+  box-shadow: 0 0 0 4px rgba(27, 37, 89, 0.12);
 }
 .auth-input::placeholder { color: var(--text-muted); }
 
 .auth-submit {
   width: 100%; margin-top: 26px; padding: 13px;
   font-size: .9rem; font-weight: 700; font-family: inherit;
-  color: #fff; background: var(--brand); border: none;
+  color: #fff; background: #1B2559; border: none;
   border-radius: var(--radius-sm); cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0,97,255,.28);
+  box-shadow: 0 2px 8px rgba(27, 37, 89, 0.28);
   transition: var(--transition);
 }
-.auth-submit:hover { background: var(--brand-hover); box-shadow: 0 4px 14px rgba(0,97,255,.36); transform: translateY(-1px); }
+.auth-submit:hover { background: #131B42; box-shadow: 0 4px 14px rgba(27, 37, 89, 0.38); transform: translateY(-1px); }
 .auth-submit:active { transform: translateY(0); }
 .auth-submit:disabled { opacity: .6; cursor: not-allowed; box-shadow: none; transform: none; }
 
@@ -132,7 +133,7 @@ body.auth-page-body {
   font-size: .8rem; font-weight: 600; color: var(--text-secondary);
   text-decoration: none;
 }
-.auth-link:hover { color: var(--brand); }
+.auth-link:hover { color: #1B2559; }
 
 /* display:flex must not apply while [hidden] is set — an unconditional
    `display` on the class here would override the browser's `[hidden] {
