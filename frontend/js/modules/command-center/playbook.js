@@ -26,13 +26,18 @@ export function renderPlaybook() {
   if (!list) return;
   list.innerHTML = playbookActions.map(itemHtml).join('');
   list.querySelectorAll('button[data-rank]').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const item = playbookActions.find(p => p.rank === Number(btn.dataset.rank));
       if (!item || item.crmSynced) return;
       const acct = accountById(item.accountId);
-      pushToCrm(acct.name, item.title);
-      item.crmSynced = true;
-      renderPlaybook();
+      btn.disabled = true;
+      const ok = await pushToCrm(acct.name, item.title, { description: item.rationale, priority: item.impact });
+      if (ok) {
+        item.crmSynced = true;
+        renderPlaybook();
+      } else {
+        btn.disabled = false;
+      }
     });
   });
 }

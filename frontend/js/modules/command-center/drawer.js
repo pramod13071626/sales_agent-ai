@@ -1,64 +1,69 @@
-import { accountById, signals, execChanges } from './data.js';
-import { esc, formatMoney, relativeTime } from './utils.js';
+import { esc, formatMoney } from './utils.js';
 import { ccState } from './state.js';
 import { logTouch, createTask } from './actions.js';
+import { loadRecentMovements } from './exec-movements.js';
 
 function el(id) { return document.getElementById(id); }
 
-function bodyHtml(account) {
-  const acctSignals = signals.filter(s => s.accountId === account.id).sort((a, b) => b.score - a.score);
-  const acctExec = execChanges.filter(e => e.company === account.name);
-
-  const signalRows = acctSignals.length
-    ? acctSignals.map(s => `
-      <div class="cc-drawer-signal-row">
-        <span class="cc-drawer-signal-score">${s.score}</span>
-        <div class="cc-drawer-signal-body">
-          <div class="cc-drawer-signal-title">${esc(s.title)}</div>
-          <div class="cc-drawer-signal-meta">${esc(s.domain)} &middot; ${esc(relativeTime(s.detectedAt))}</div>
-        </div>
-      </div>`).join('')
-    : '<div class="cc-drawer-empty">No active signals.</div>';
-
-  const execRows = acctExec.length
-    ? acctExec.map(e => `
-      <div class="cc-drawer-exec-row">
-        <span class="cc-badge ${e.type === 'joined' ? 'cc-badge-joined' : 'cc-badge-neutral'}">${e.type}</span>
-        <span>${esc(e.person)} &middot; ${esc(e.role)}</span>
-      </div>`).join('')
-    : '<div class="cc-drawer-empty">No recent exec movements.</div>';
-
+function metricsHtml(account) {
   return `
     <div class="cc-drawer-metrics">
       <div class="cc-drawer-metric"><div class="cc-drawer-metric-label">Composite score</div><div class="cc-drawer-metric-value">${account.compositeScore}</div></div>
-      <div class="cc-drawer-metric"><div class="cc-drawer-metric-label">Signal strength</div><div class="cc-drawer-metric-value">${account.signalStrength}</div></div>
-      <div class="cc-drawer-metric"><div class="cc-drawer-metric-label">Engagement recency</div><div class="cc-drawer-metric-value">${account.engagementRecency}</div></div>
-      <div class="cc-drawer-metric"><div class="cc-drawer-metric-label">Deal potential</div><div class="cc-drawer-metric-value">${formatMoney(account.dealPotential)}</div></div>
+      <div class="cc-drawer-metric"><div class="cc-drawer-metric-label">Signal strength</div><div class="cc-drawer-metric-value">${Math.round(account.signalStrength)}</div></div>
+      <div class="cc-drawer-metric"><div class="cc-drawer-metric-label">Engagement recency</div><div class="cc-drawer-metric-value">${Math.round(account.engagementRecency)}</div></div>
+      <div class="cc-drawer-metric">
+        <div class="cc-drawer-metric-label">Deal potential${account.dealPotentialEstimated ? ' (est.)' : ''}</div>
+        <div class="cc-drawer-metric-value">${formatMoney(account.dealPotential)}</div>
+      </div>
+    </div>
+    ${account.dealPotentialEstimated ? '<div class="cc-drawer-note">Deal potential is an estimate based on account score and mapped contacts — there\'s no CRM pipeline value on file.</div>' : ''}`;
+}
+
+function execRowsHtml(movements) {
+  if (!movements.length) return '<div class="cc-drawer-empty">No exec movements in the last 30 days.</div>';
+  return movements.map(m => `
+    <div class="cc-drawer-exec-row">
+      <span class="cc-badge ${m.type === 'joined' ? 'cc-badge-joined' : 'cc-badge-neutral'}">${esc(m.type)}</span>
+      <span>${esc(m.person)} &middot; ${esc(m.role)}</span>
+    </div>`).join('');
+}
+
+export async function openDossier(account) {
+  if (!account) return;
+  ccState.drawerAccountId = account.id;
+  el('ccDrawerTitle').textContent = account.ticker ? `${account.name} (${account.ticker})` : account.name;
+  el('ccDrawerBody').innerHTML = metricsHtml(account) + `
+    <div class="cc-drawer-section">
+      <div class="cc-drawer-section-label">Exec movements (30d)</div>
+      <div id="ccDrawerExecMovements"><div class="cc-drawer-empty">Loading…</div></div>
     </div>
     <div class="cc-drawer-section">
-      <div class="cc-drawer-section-label">Signals</div>
-      ${signalRows}
-    </div>
-    <div class="cc-drawer-section">
-      <div class="cc-drawer-section-label">Exec movements</div>
-      ${execRows}
+      <a class="cc-btn cc-btn-ghost" href="/?account_key=${encodeURIComponent(account.key || account.ticker || account.name)}">Open full account view <i class="bi bi-arrow-right"></i></a>
     </div>
     <div class="cc-drawer-footer-actions">
       <button type="button" class="cc-btn cc-btn-ghost" id="ccDrawerLogTouch">Log touch</button>
       <button type="button" class="cc-btn cc-btn-primary" id="ccDrawerCreateTask">Create task</button>
     </div>`;
-}
-
-export function openDossier(accountId) {
-  const account = accountById(accountId);
-  if (!account) return;
-  ccState.drawerAccountId = accountId;
-  el('ccDrawerTitle').textContent = `${account.name} (${account.ticker})`;
-  el('ccDrawerBody').innerHTML = bodyHtml(account);
   el('ccDrawer').classList.add('open');
   el('ccDrawerBackdrop').classList.add('open');
+
   el('ccDrawerLogTouch').addEventListener('click', () => logTouch(account.name));
-  el('ccDrawerCreateTask').addEventListener('click', () => createTask(account.name));
+  el('ccDrawerCreateTask').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    await createTask(account.name, `Follow up with ${account.name}`, { score: account.compositeScore });
+    btn.disabled = false;
+  });
+
+  try {
+    const movements = (await loadRecentMovements()).filter(m => m.accountId === account.id);
+    const target = el('ccDrawerExecMovements');
+    if (target && ccState.drawerAccountId === account.id) target.innerHTML = execRowsHtml(movements);
+  } catch (err) {
+    console.error(err);
+    const target = el('ccDrawerExecMovements');
+    if (target) target.innerHTML = '<div class="cc-drawer-empty">Could not load exec movements.</div>';
+  }
 }
 
 export function closeDossier() {

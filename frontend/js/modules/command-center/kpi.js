@@ -1,12 +1,7 @@
-import { accounts, signals, execChanges, kpiBase, accountById } from './data.js';
-import { esc, formatMoney, signalStatus } from './utils.js';
-
-const AE_ACCOUNT_IDS = new Set(['bny', 'ntrs', 'vgd']);
-
-function scopedAccounts(role) {
-  if (role === 'ae') return accounts.filter(a => AE_ACCOUNT_IDS.has(a.id));
-  return accounts; // manager + exec see the full team/portfolio rollup
-}
+import { kpiBase } from './data.js';
+import { esc, formatMoney } from './utils.js';
+import { loadMatrixAccounts } from './real-accounts.js';
+import { loadRecentMovements } from './exec-movements.js';
 
 function sparklinePath(values, w, h) {
   const max = Math.max(...values), min = Math.min(...values);
@@ -24,37 +19,43 @@ function sparklineSvg(values) {
   </svg>`;
 }
 
-export function computeKpi(role) {
-  const scoped = scopedAccounts(role);
-  const scopedIds = new Set(scoped.map(a => a.id));
-  const scopedSignals = signals.filter(s => scopedIds.has(s.accountId) && signalStatus(s.detectedAt) !== 'stale');
+// Account-level data (composite score, deal potential) and exec-change data
+// are both real (see real-accounts.js / exec-movements.js). Signal velocity
+// and "plays in motion" have no real backing source yet (no scored/dated
+// signal feed or deals table in the DB) and stay on the mock kpiBase numbers
+// — see data.js. Role tabs only relabel these cards; there's no real
+// per-role account-ownership field to slice the account list by, so all
+// three roles currently see the same accounts (whatever's been granted to
+// this user, or everything for a super_admin).
+async function computeKpi() {
+  const [accounts, execChangesAll] = await Promise.all([
+    loadMatrixAccounts(),
+    loadRecentMovements().catch(() => []),
+  ]);
 
-  const topAccount = [...scoped].sort((a, b) => b.compositeScore - a.compositeScore)[0];
+  const topAccount = accounts.length
+    ? [...accounts].sort((a, b) => b.compositeScore - a.compositeScore)[0]
+    : null;
 
-  const aging = execChanges.filter(e => !e.actioned && (Date.now() - e.date.getTime()) / 86400000 >= 5);
-  const joined = execChanges.filter(e => e.type === 'joined').length;
-  const promoted = execChanges.filter(e => e.type === 'promoted').length;
-
-  const coverageGapAccounts = scoped.filter(a => {
-    const acctSignals = signals.filter(s => s.accountId === a.id);
-    return acctSignals.length === 0 || acctSignals.every(s => signalStatus(s.detectedAt) !== 'fresh');
-  });
+  const aging = execChangesAll.filter(e => !e.actioned && (Date.now() - e.date.getTime()) / 86400000 >= 5);
+  const joined = execChangesAll.filter(e => e.type === 'joined').length;
+  const promoted = execChangesAll.filter(e => e.type === 'promoted').length;
+  const other = execChangesAll.length - joined - promoted;
 
   return {
-    scoped,
-    velocity: role === 'ae' ? Math.round(kpiBase.signalVelocity * (scoped.length / accounts.length)) : kpiBase.signalVelocity,
+    accounts,
+    topAccount,
+    velocity: kpiBase.signalVelocity,
     velocityDeltaPct: kpiBase.velocityDeltaPct,
     velocityTrend: kpiBase.velocityTrend,
-    topAccount,
-    execChangesOpen: execChanges.length,
+    execChangesOpen: execChangesAll.length,
     execAging: aging.length,
     execJoined: joined,
     execPromoted: promoted,
+    execOther: other,
     playsInMotion: kpiBase.playsInMotion,
     playsStalled: kpiBase.playsStalled,
     q4CloseEstimate: kpiBase.q4CloseEstimate,
-    coverageGapCount: coverageGapAccounts.length,
-    signalCount: scopedSignals.length,
   };
 }
 
@@ -64,9 +65,9 @@ const ROLE_LABELS = {
   exec: { velocity: 'Portfolio signal velocity this week', plays: 'Portfolio plays in motion' },
 };
 
-export function renderKpiStrip(role) {
-  const k = computeKpi(role);
-  const labels = ROLE_LABELS[role];
+export async function renderKpiStrip(role) {
+  const k = await computeKpi();
+  const labels = ROLE_LABELS[role] || ROLE_LABELS.ae;
   const deltaCls = k.velocityDeltaPct >= 0 ? 'cc-delta-up' : 'cc-delta-down';
 
   const card1 = `
@@ -77,13 +78,17 @@ export function renderKpiStrip(role) {
       <div class="cc-kpi-foot">vs. last week</div>
     </div>`;
 
-  const scorePct = Math.round(k.topAccount.compositeScore);
-  const card2 = `
+  const card2 = k.topAccount ? `
     <div class="cc-kpi-card">
       <div class="cc-kpi-label">Top account composite score</div>
-      <div class="cc-kpi-value">${scorePct}</div>
+      <div class="cc-kpi-value">${k.topAccount.compositeScore}</div>
       <div class="cc-kpi-foot">${esc(k.topAccount.name)}</div>
-      <div class="cc-progress"><div class="cc-progress-fill" style="width:${scorePct}%"></div></div>
+      <div class="cc-progress"><div class="cc-progress-fill" style="width:${k.topAccount.compositeScore}%"></div></div>
+    </div>` : `
+    <div class="cc-kpi-card">
+      <div class="cc-kpi-label">Top account composite score</div>
+      <div class="cc-kpi-value">—</div>
+      <div class="cc-kpi-foot">No accounts assigned yet</div>
     </div>`;
 
   const card3 = `
@@ -92,9 +97,10 @@ export function renderKpiStrip(role) {
       <div class="cc-kpi-value">${k.execChangesOpen}</div>
       <div class="cc-kpi-foot ${k.execAging > 0 ? 'cc-warning-text' : ''}">${k.execAging > 0 ? `${k.execAging} aging 5+ days` : 'all within outreach window'}</div>
       <div class="cc-chip-row">
-        <span class="cc-chip cc-chip-plain">${k.execJoined} joined</span>
-        <span class="cc-chip cc-chip-plain">${k.execPromoted} promoted</span>
-        ${role === 'manager' && k.coverageGapCount > 0 ? `<span class="cc-chip cc-chip-warning">${k.coverageGapCount} coverage gap${k.coverageGapCount === 1 ? '' : 's'}</span>` : ''}
+        ${k.execJoined ? `<span class="cc-chip cc-chip-plain">${k.execJoined} joined</span>` : ''}
+        ${k.execPromoted ? `<span class="cc-chip cc-chip-plain">${k.execPromoted} promoted</span>` : ''}
+        ${k.execOther ? `<span class="cc-chip cc-chip-plain">${k.execOther} other</span>` : ''}
+        ${!k.execChangesOpen ? '<span class="cc-chip cc-chip-plain">none in the last 30 days</span>' : ''}
       </div>
     </div>`;
 

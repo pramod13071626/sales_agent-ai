@@ -8,6 +8,7 @@ import { renderFeed } from './feed.js';
 import { renderPlaybook } from './playbook.js';
 import { renderTimeline } from './timeline.js';
 import { initDrawer } from './drawer.js';
+import { initAccountsNav } from './accounts-nav.js';
 import { kpiBase } from './data.js';
 
 function weekRangeLabel() {
@@ -25,8 +26,12 @@ function renderSubtitle() {
   if (el) el.textContent = `${weekRangeLabel()} · ${kpiBase.playsInMotion} open plays`;
 }
 
+async function renderKpi() {
+  document.getElementById('ccKpiStrip').innerHTML = await renderKpiStrip(ccState.activeRole);
+}
+
 function renderAll() {
-  document.getElementById('ccKpiStrip').innerHTML = renderKpiStrip(ccState.activeRole);
+  renderKpi();
   renderFeed();
   renderPlaybook();
   renderTimeline();
@@ -39,7 +44,7 @@ function initRoleTabs() {
       tabs.forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
       ccState.activeRole = tab.dataset.role;
-      document.getElementById('ccKpiStrip').innerHTML = renderKpiStrip(ccState.activeRole);
+      renderKpi();
     });
   });
 }
@@ -49,6 +54,7 @@ function init() {
   renderSubtitle();
   initRoleTabs();
   initDrawer();
+  initAccountsNav();
   renderAll();
   renderMatrix();
   window.addEventListener('resize', () => {

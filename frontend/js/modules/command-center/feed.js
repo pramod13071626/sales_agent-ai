@@ -83,9 +83,12 @@ export function renderFeed() {
       e.stopPropagation();
       logTouch(acct.name, sig.title);
     });
-    row.querySelector('[data-act="task"]').addEventListener('click', (e) => {
+    row.querySelector('[data-act="task"]').addEventListener('click', async (e) => {
       e.stopPropagation();
-      createTask(acct.name, sig.title);
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      await createTask(acct.name, sig.title, { description: sig.summary, score: sig.score });
+      btn.disabled = false;
     });
   });
 }

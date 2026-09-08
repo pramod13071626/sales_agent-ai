@@ -5,12 +5,11 @@
    is reserved for data (matrix bubbles / score bars) — status colors
    (green/amber/red) are used only for their semantic meaning. */
 
-.cc-shell {
-  max-width: 1600px;
-  margin: 0 auto;
-  padding: 20px 24px 48px;
-  min-width: 1280px;
-}
+/* Content itself sits inside the shared .dash-main (see shell/digest.css)
+   which already supplies the 24px/28px padding + scroll + background —
+   nothing extra needed here beyond a bottom gutter to match the rest of
+   the app's panels. */
+.dash-main { padding-bottom: 32px; }
 
 /* ── Header ──────────────────────────────────────────────────── */
 .cc-header {
@@ -102,6 +101,7 @@
 }
 .cc-panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .cc-panel-head h2 { font-size: .86rem; font-weight: 500; margin: 0; color: var(--text-primary); }
+.cc-panel-note { font-size: .66rem; color: var(--text-muted); }
 
 /* ── Matrix ──────────────────────────────────────────────────── */
 .cc-matrix-canvas-wrap { position: relative; height: 380px; }
@@ -224,11 +224,12 @@
 .cc-drawer-signal-meta { font-size: .7rem; color: var(--text-muted); margin-top: 2px; }
 .cc-drawer-exec-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: .78rem; color: var(--text-secondary); }
 .cc-drawer-empty { font-size: .76rem; color: var(--text-muted); }
+.cc-drawer-note { font-size: .68rem; color: var(--text-muted); line-height: 1.5; margin: -8px 0 16px; }
 .cc-drawer-footer-actions { display: flex; gap: 8px; }
 
 /* ── Responsive: fully usable down to 1280px, matrix stacks above feed below 1024px ── */
 @media (max-width: 1279px) {
-  .cc-shell { min-width: 0; padding: 16px; }
+  .dash-main { padding: 16px; }
   .cc-kpi-strip { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 1023px) {

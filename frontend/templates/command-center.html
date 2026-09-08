@@ -9,6 +9,9 @@
   <link rel="stylesheet" href="css/tokens.css?v=3.0">
   <link rel="stylesheet" href="css/base.css?v=3.0">
   <link rel="stylesheet" href="css/shell.css?v=3.0">
+  <link rel="stylesheet" href="css/nav.css?v=3.0">
+  <link rel="stylesheet" href="css/digest.css?v=3.0">
+  <link rel="stylesheet" href="css/people-drawer.css?v=3.0">
   <link rel="stylesheet" href="css/skeleton.css?v=3.0">
   <link rel="stylesheet" href="css/command-center.css?v=1.0">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
@@ -17,61 +20,70 @@
 
 <div class="global-loading-bar" id="globalLoadingBar"></div>
 
+<div class="dash-shell">
+
 {% include "partials/topbar.html" %}
 
-<div class="cc-shell">
-  <header class="cc-header">
-    <div class="cc-header-left">
-      <div class="cc-breadcrumb"><a href="/"><i class="bi bi-arrow-left"></i> Accounts</a></div>
-      <h1 class="cc-title">Sales Command Center</h1>
-      <p class="cc-subtitle" id="ccSubtitle">Loading…</p>
-    </div>
-    <div class="cc-role-tabs" role="tablist" aria-label="Role scope">
-      <button type="button" class="cc-role-tab active" data-role="ae" role="tab">Account exec</button>
-      <button type="button" class="cc-role-tab" data-role="manager" role="tab">Manager</button>
-      <button type="button" class="cc-role-tab" data-role="exec" role="tab">Executive</button>
-    </div>
-  </header>
+  <div class="dash-body">
 
-  <section class="cc-kpi-strip" id="ccKpiStrip"></section>
+{% include "partials/nav.html" %}
 
-  <section class="cc-row cc-row-2col cc-row-matrix-feed">
-    <div class="cc-panel cc-matrix-panel">
-      <div class="cc-panel-head">
-        <h2>Account priority matrix</h2>
-      </div>
-      <div class="cc-matrix-canvas-wrap">
-        <canvas id="ccMatrixCanvas"></canvas>
-      </div>
-    </div>
+    <main class="dash-main">
+      <header class="cc-header">
+        <div class="cc-header-left">
+          <div class="cc-breadcrumb"><a href="/"><i class="bi bi-arrow-left"></i> Accounts</a></div>
+          <h1 class="cc-title">Sales Command Center</h1>
+          <p class="cc-subtitle" id="ccSubtitle">Loading…</p>
+        </div>
+        <div class="cc-role-tabs" role="tablist" aria-label="Role scope">
+          <button type="button" class="cc-role-tab active" data-role="ae" role="tab">Account exec</button>
+          <button type="button" class="cc-role-tab" data-role="manager" role="tab">Manager</button>
+          <button type="button" class="cc-role-tab" data-role="exec" role="tab">Executive</button>
+        </div>
+      </header>
 
-    <div class="cc-panel cc-feed-panel">
-      <div class="cc-panel-head">
-        <h2>Priority signal feed</h2>
-      </div>
-      <div class="cc-feed-filter-row">
-        <div class="cc-chip-row" id="ccFeedFilters"></div>
-        <div id="ccFeedAccountFilter"></div>
-      </div>
-      <ul class="cc-feed-list" id="ccFeedList"></ul>
-    </div>
-  </section>
+      <section class="cc-kpi-strip" id="ccKpiStrip"></section>
 
-  <section class="cc-row cc-row-2col">
-    <div class="cc-panel cc-playbook-panel">
-      <div class="cc-panel-head">
-        <h2>This week's playbook</h2>
-      </div>
-      <ol class="cc-playbook-list" id="ccPlaybookList"></ol>
-    </div>
+      <section class="cc-row cc-row-2col cc-row-matrix-feed">
+        <div class="cc-panel cc-matrix-panel">
+          <div class="cc-panel-head">
+            <h2>Account priority matrix</h2>
+            <span class="cc-panel-note">Bubble size (deal potential) is estimated — no CRM pipeline value on file</span>
+          </div>
+          <div class="cc-matrix-canvas-wrap">
+            <canvas id="ccMatrixCanvas"></canvas>
+          </div>
+        </div>
 
-    <div class="cc-panel cc-timeline-panel">
-      <div class="cc-panel-head">
-        <h2>Exec movements &middot; last 30 days</h2>
-      </div>
-      <ul class="cc-timeline-list" id="ccTimelineList"></ul>
-    </div>
-  </section>
+        <div class="cc-panel cc-feed-panel">
+          <div class="cc-panel-head">
+            <h2>Priority signal feed</h2>
+          </div>
+          <div class="cc-feed-filter-row">
+            <div class="cc-chip-row" id="ccFeedFilters"></div>
+            <div id="ccFeedAccountFilter"></div>
+          </div>
+          <ul class="cc-feed-list" id="ccFeedList"></ul>
+        </div>
+      </section>
+
+      <section class="cc-row cc-row-2col">
+        <div class="cc-panel cc-playbook-panel">
+          <div class="cc-panel-head">
+            <h2>This week's playbook</h2>
+          </div>
+          <ol class="cc-playbook-list" id="ccPlaybookList"></ol>
+        </div>
+
+        <div class="cc-panel cc-timeline-panel">
+          <div class="cc-panel-head">
+            <h2>Exec movements &middot; last 30 days</h2>
+          </div>
+          <ul class="cc-timeline-list" id="ccTimelineList"></ul>
+        </div>
+      </section>
+    </main>
+  </div>
 </div>
 
 <div class="cc-drawer-backdrop" id="ccDrawerBackdrop"></div>
