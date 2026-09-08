@@ -1,0 +1,25 @@
+/* ── My Tasks page ───────────────────────────────────────────── */
+.tp-header { margin-bottom: 16px; }
+.tp-breadcrumb { margin-bottom: 6px; }
+.tp-breadcrumb a {
+  font-size: .74rem; color: var(--text-muted); text-decoration: none;
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.tp-breadcrumb a:hover { color: var(--brand); }
+.tp-title { font-size: 1.3rem; font-weight: 500; margin: 0 0 2px; color: var(--text-primary); letter-spacing: -.01em; }
+.tp-subtitle { font-size: .8rem; color: var(--text-secondary); margin: 0; font-weight: 400; }
+
+.tp-filter-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 14px;
+}
+.tp-filter-controls { display: flex; gap: 8px; flex-wrap: wrap; }
+.tp-select {
+  font-family: inherit; font-size: .78rem; padding: 6px 10px;
+  border: 1.5px solid var(--border-color); border-radius: var(--radius-sm);
+  background: var(--input-bg); color: var(--text-primary);
+}
+
+@media (max-width: 1023px) {
+  .tp-filter-row { flex-direction: column; align-items: stretch; }
+}

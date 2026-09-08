@@ -2952,6 +2952,15 @@ if FASTAPI_AVAILABLE:
             frontend/js/modules/command-center/data.js."""
             return templates.TemplateResponse(request, "command-center.html")
 
+        @app.get("/tasks", response_class=HTMLResponse, include_in_schema=False)
+        async def tasks_page(request: Request):
+            """Personal, cross-account Task Management page — every action
+            item assigned to the caller (GET /api/me/action-items), with
+            status/priority/account filtering and sorting. See
+            TASK_MANAGEMENT_README.md. A team/manager-wide view is a
+            deliberately deferred v2 (no endpoint for it exists yet)."""
+            return templates.TemplateResponse(request, "tasks.html")
+
         css_dir = frontend_dir / "css"
         js_dir = frontend_dir / "js"
         pipline_dir = frontend_dir / "pipline"
