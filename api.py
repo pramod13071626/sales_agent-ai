@@ -21,6 +21,8 @@ import os
 import re
 import json
 import math
+import subprocess
+import tempfile
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone, timedelta
@@ -2361,6 +2363,19 @@ if FASTAPI_AVAILABLE:
             if not p:
                 raise HTTPException(status_code=404, detail="Persona not found.")
 
+            content_pipeline_dir = Path(__file__).resolve().parent / "apps" / "content_pipeline"
+
+            # apps/content_pipeline has its own top-level module named `db`
+            # (apps/content_pipeline/db.py) — a straight name collision with
+            # this app's own `db` package, already loaded under that same
+            # name in this process's sys.modules. `import db` inside that
+            # app's own code (people_targets.py, digest/pipeline.py) would
+            # silently resolve to THIS app's db package instead of its own
+            # once cached, no matter what sys.path says. Running it as a
+            # separate process — exactly its own CLI entrypoint, exactly as
+            # a human would run it — sidesteps the collision entirely
+            # instead of fighting Python's module cache for it.
+            sys.path.insert(0, str(content_pipeline_dir))
             from apps.content_pipeline.people_targets import ALIASES as PEOPLE_ALIASES
 
             existing = _resolve_persona_digest(session, p)
@@ -2374,14 +2389,59 @@ if FASTAPI_AVAILABLE:
                     f"({', '.join(c for c in candidates if c)}) — add them there before generating a profile.",
                 )
 
-            # profiles_only=True: this is a UI-triggered on-demand generation for
-            # exactly one profile, not a full scheduled digest run — no reason to
-            # also pay for the sales-email rollup call nobody asked for here.
-            from apps.content_pipeline.digest import pipeline as digest_pipeline
-            digest_res = digest_pipeline.run(company_key=target_key, kind="person", cap=25, profiles_only=True)
-            psych = digest_res.get("psychological_profile")
+            # --profiles-only: on-demand generation for exactly the two
+            # profiles, skipping the separate email-rollup LLM call nobody
+            # asked for here. --all-posts: a UI click is a deliberate
+            # "(re)generate now", not a scheduled incremental digest.
+            # --since-days 3650: --all-posts only bypasses the "new since
+            # last run" filter, NOT the recency window underneath it — a
+            # contact whose captured posts are all older than the default
+            # 14 days (e.g. no recent public activity) would otherwise
+            # always fail with "no posts in scope" on a fresh generation.
+            #
+            # Logs to an explicit UTF-8-opened file rather than
+            # capture_output=True/text=True — on this box, letting the
+            # parent auto-decode the captured pipes (locale-dependent, not
+            # UTF-8) silently returned stdout=stderr=None instead of
+            # raising, hiding every real error. This is the same "open the
+            # file as UTF-8 yourself" workaround already needed manually
+            # all session for this app's own Windows-console encoding issue
+            # (main.py's banner prints a Unicode box-drawing character).
+            proc_env = dict(os.environ, PYTHONIOENCODING="utf-8")
+            log_fd, log_path = tempfile.mkstemp(suffix=".log", prefix="profile_gen_")
+            os.close(log_fd)
+            try:
+                with open(log_path, "w", encoding="utf-8") as log_fh:
+                    result = subprocess.run(
+                        [sys.executable, "main.py", "digest", target_key, "--person", "--all-posts", "--profiles-only", "--since-days", "3650"],
+                        cwd=str(content_pipeline_dir), env=proc_env,
+                        stdout=log_fh, stderr=subprocess.STDOUT, timeout=300,
+                    )
+                with open(log_path, "r", encoding="utf-8", errors="replace") as log_fh:
+                    output = log_fh.read()
+            finally:
+                try:
+                    os.remove(log_path)
+                except OSError:
+                    pass
+
+            if result.returncode != 0:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Digest generation failed (exit {result.returncode}): {(output or '(no output)')[-1000:]}",
+                )
+
+            # The subprocess's own db.upsert_digest() call already wrote the
+            # fresh row to Postgres — re-read it here rather than parsing
+            # the subprocess's stdout/local JSON file.
+            session.expire_all()
+            digest_row = _resolve_persona_digest(session, p)
+            psych = (digest_row.digest or {}).get("psychological_profile") if digest_row else None
             if not psych:
-                raise HTTPException(status_code=500, detail="Synthesis did not produce a psychological profile.")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Digest ran but produced no psychological_profile. Output: {output[-1000:]}",
+                )
 
             return {
                 "status": "success",
