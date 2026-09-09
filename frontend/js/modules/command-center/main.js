@@ -87,5 +87,12 @@ initTopbarAuth().then((user) => {
     window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
     return;
   }
+  // Open to everyone by default, but a super_admin can explicitly revoke it
+  // per user (admin page's Account Access modal) — mirrors the Global
+  // Accounts Dashboard's opposite default (admin-granted, not default-open).
+  if (!user.has_command_center_access) {
+    window.location.href = '/?no_command_center_access=1';
+    return;
+  }
   init();
 });

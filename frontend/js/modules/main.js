@@ -13,6 +13,7 @@ import { renderDigest } from './digest.js';
 import { jumpToAccount } from './selection.js';
 import { openAllJobsPage } from './jobs-browser.js';
 import { initTopbarAuth } from './topbar-auth.js';
+import { showToast } from './toast.js';
 
 initThemeToggle();
 
@@ -25,8 +26,13 @@ async function loadAccounts(user) {
     // since the linking app only knows the string key, not this app's
     // numeric account id.
     const deepLinkAccountKey = new URLSearchParams(window.location.search).get('account_key');
+    const wantsCcAccessNotice = new URLSearchParams(window.location.search).get('no_command_center_access') === '1';
     // Any other query string (stale/unsupported) resets to a clean root URL on hard-refresh.
-    if (window.location.search && !wantsJobsView && !deepLinkAccountKey) {
+    if (window.location.search && !wantsJobsView && !deepLinkAccountKey && !wantsCcAccessNotice) {
+      history.replaceState(null, '', window.location.pathname);
+    }
+    if (wantsCcAccessNotice) {
+      showToast("You don't have Sales Command Center access — ask a super admin to grant it.");
       history.replaceState(null, '', window.location.pathname);
     }
 
@@ -90,6 +96,15 @@ initTopbarAuth().then((user) => {
   if (!user) {
     window.location.href = `/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`;
     return;
+  }
+  // Sales Command Center is open by default, but a super_admin can revoke
+  // it per user (admin page's Account Access modal) — hide the nav-tree's
+  // quick-jump link for a user without it, same as the reverse case
+  // (Global Accounts Dashboard link) is hidden on that page for a user
+  // with no granted accounts.
+  if (!user.has_command_center_access) {
+    const ccLink = document.querySelector('.nav-digest-wrap a[href="/command-center"]');
+    if (ccLink) ccLink.style.display = 'none';
   }
   loadAccounts(user);
 });

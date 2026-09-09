@@ -162,11 +162,14 @@ if FASTAPI_AVAILABLE:
         role: Optional[str] = None
         is_active: Optional[bool] = None
         password: Optional[str] = None
+        has_command_center_access: Optional[bool] = None
 
     def _user_public(u: User) -> Dict[str, Any]:
         return {
             "id": u.id, "email": u.email, "full_name": u.full_name,
             "role": u.role, "is_active": u.is_active,
+            # super_admin always has it, same as it always has every account
+            "has_command_center_access": u.role == "super_admin" or bool(u.has_command_center_access),
             "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
             "created_at": u.created_at.isoformat() if u.created_at else None,
         }
@@ -430,6 +433,10 @@ if FASTAPI_AVAILABLE:
                 auth.revoke_all_refresh_tokens_for_user(session, target.id)
                 details["password_changed"] = True
 
+            if body.has_command_center_access is not None and body.has_command_center_access != target.has_command_center_access:
+                details["has_command_center_access"] = {"old": target.has_command_center_access, "new": body.has_command_center_access}
+                target.has_command_center_access = body.has_command_center_access
+
             session.commit()
             if details:
                 auth.log_audit(session, current.id, "user_updated", target_user_id=target.id, details=details)
@@ -471,6 +478,7 @@ if FASTAPI_AVAILABLE:
             return {
                 "user_id": user_id,
                 "role": target.role,
+                "has_command_center_access": target.role == "super_admin" or bool(target.has_command_center_access),
                 "accounts": [
                     {
                         "id": a.id,
