@@ -6,7 +6,6 @@ import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import urlparse
 from apify_client import ApifyClient
 import requests
 from requests.adapters import HTTPAdapter
@@ -160,10 +159,10 @@ class PersonaCoalesceEngine:
                     (src.get("user", {}).get("screen_name") if isinstance(src.get("user"), dict) else None),
                     (src.get("author", {}).get("userName") if isinstance(src.get("author"), dict) else None),
                     (
-                    src.get("contactInfo", {}).get("twitter")
-                    if isinstance(src.get("contactInfo"), dict)
-                    else None
-                ),
+                        src.get("contactInfo", {}).get("twitter")
+                        if isinstance(src.get("contactInfo"), dict)
+                        else None
+                    ),
                 ])
                 for res in (src.get("organic_results") or src.get("results") or []):
                     if isinstance(res, dict):
@@ -182,10 +181,10 @@ class PersonaCoalesceEngine:
                     if match:
                         handle = match.group(1)
                         reserved = [
-                        "home", "search", "share", "intent",
-                        "explore", "hashtag", "i", "privacy", "tos"
-                    ]
-                    if handle.lower() not in reserved:
+                            "home", "search", "share", "intent",
+                            "explore", "hashtag", "i", "privacy", "tos"
+                        ]
+                        if handle.lower() not in reserved:
                             return f"@{handle}"
                 elif cand_str.startswith("@") and len(cand_str) > 1 and len(cand_str) <= 25:
                     clean = re.sub(r"[^A-Za-z0-9_@]", "", cand_str)
@@ -317,16 +316,21 @@ class PersonaCoalesceEngine:
         # Dynamic Tenure Parsing from duration string or direct integer
         current_role_tenure_months = None
         if li.get("current_role_tenure_months"):
-            try: current_role_tenure_months = int(li.get("current_role_tenure_months"))
-            except: pass
+            try:
+                current_role_tenure_months = int(li.get("current_role_tenure_months"))
+            except Exception:
+                pass
         elif employment_history and isinstance(employment_history[0], dict):
             dur_str = str(employment_history[0].get("duration") or "")
             yrs_m = re.search(r"(\d+)\s*(?:yr|year)", dur_str, re.IGNORECASE)
             mos_m = re.search(r"(\d+)\s*(?:mo|month)", dur_str, re.IGNORECASE)
             t_mos = 0
-            if yrs_m: t_mos += int(yrs_m.group(1)) * 12
-            if mos_m: t_mos += int(mos_m.group(1))
-            if t_mos > 0: current_role_tenure_months = t_mos
+            if yrs_m:
+                t_mos += int(yrs_m.group(1)) * 12
+            if mos_m:
+                t_mos += int(mos_m.group(1))
+            if t_mos > 0:
+                current_role_tenure_months = t_mos
 
         is_new_in_role = (
             (current_role_tenure_months <= 12) if current_role_tenure_months is not None else False
@@ -351,8 +355,10 @@ class PersonaCoalesceEngine:
                 d = edu.get("degree") or edu.get("degreeName")
                 f = edu.get("fieldOfStudy") or edu.get("field")
                 s = edu.get("schoolName") or edu.get("school") or edu.get("institution")
-                if d and f: degrees_list.append(f"{d} in {f}")
-                elif d: degrees_list.append(str(d))
+                if d and f:
+                    degrees_list.append(f"{d} in {f}")
+                elif d:
+                    degrees_list.append(str(d))
                 if s and str(s).strip() not in institutions_list:
                     institutions_list.append(str(s).strip())
 

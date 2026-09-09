@@ -92,10 +92,10 @@ class MasterSerializer:
         acct_dir = len(account_hierarchy.get("director_level", []))
         acct_mgr = len(account_hierarchy.get("manager_level", []))
 
-        lob_cs = sum(len(l.get("hierarchy", {}).get("c_suite", [])) for l in serialized_lobs)
-        lob_vp = sum(len(l.get("hierarchy", {}).get("vp_level", [])) for l in serialized_lobs)
-        lob_dir = sum(len(l.get("hierarchy", {}).get("director_level", [])) for l in serialized_lobs)
-        lob_mgr = sum(len(l.get("hierarchy", {}).get("manager_level", [])) for l in serialized_lobs)
+        lob_cs = sum(len(lob_item.get("hierarchy", {}).get("c_suite", [])) for lob_item in serialized_lobs)
+        lob_vp = sum(len(lob_item.get("hierarchy", {}).get("vp_level", [])) for lob_item in serialized_lobs)
+        lob_dir = sum(len(lob_item.get("hierarchy", {}).get("director_level", [])) for lob_item in serialized_lobs)
+        lob_mgr = sum(len(lob_item.get("hierarchy", {}).get("manager_level", [])) for lob_item in serialized_lobs)
 
         c_suite_total = acct_cs + lob_cs
         vp_total = acct_vp + lob_vp
@@ -199,8 +199,8 @@ class MasterSerializer:
             "target_database": "sales_ai",
             "account_required": enriched_doc["account"]["required_account"],
             "lobs_required": [
-                {"lob_name": l["lob_name"], "required_account": l["required_account"]}
-                for l in enriched_doc.get("lobs", [])
+                {"lob_name": lob_item["lob_name"], "required_account": lob_item["required_account"]}
+                for lob_item in enriched_doc.get("lobs", [])
             ],
             "personas_required": [
                 {

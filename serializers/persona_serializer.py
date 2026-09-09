@@ -3,13 +3,9 @@ Persona Serializer — Executive Contact De-obfuscation, Dossier Synthesis & Hie
 100% Dynamic, Zero Hardcoding.
 """
 
-import json
 import re
 import urllib.parse
 from typing import Dict, Any, List, Optional, Tuple
-import requests
-import config
-from .account_serializer import slugify
 from collectors.hierarchy_collector import (
     resolve_contact_via_tinyfish,
     resolve_single_contact_waterfall,
@@ -29,7 +25,7 @@ class PersonaSerializer:
         (e.g. 'Matthew Ri***t' -> 'Matthew R.')."""
         if not name:
             return {"clean_name": "Unknown Contact", "slug_key": "unknown_contact", "is_obfuscated": False}
-        
+
         is_obfuscated = "*" in name
         if is_obfuscated:
             parts = name.split()
@@ -41,7 +37,7 @@ class PersonaSerializer:
                 clean_name = parts[0].replace("*", "")
         else:
             clean_name = re.sub(r"[\*\_\-]+", "", name).strip()
-        
+
         slug_key = re.sub(r"[^a-z0-9]+", "_", clean_name.lower()).strip("_")
         return {
             "clean_name": clean_name,
@@ -128,7 +124,7 @@ class PersonaSerializer:
         name_info = cls.clean_person_name(name)
         clean_name = name_info["clean_name"]
         slug_key = name_info["slug_key"]
-        
+
         display_title = f"{title}, {company_name}" if company_name else title
         display_name = f"{clean_name} ({display_title})".strip()
 
@@ -225,11 +221,11 @@ class PersonaSerializer:
         name = person.get("name") or "Executive"
         title = person.get("title") or person.get("job_title") or "Corporate Leader"
         tier = person.get("tier") or "vp_level"
-        
+
         parts = name.split()
         first_n = parts[0].lower() if parts else "contact"
         last_n = parts[-1].replace(".", "").lower() if len(parts) > 1 else ""
-        
+
         domain = company_domain or "company.com"
         email = (
             person.get("email")
@@ -237,11 +233,11 @@ class PersonaSerializer:
             or (f"{first_n}.{last_n}@{domain}" if last_n else f"{first_n}@{domain}")
         )
         phone = person.get("phone") or person.get("direct_phone") or company_phone or None
-        
+
         seniority = "CXO" if (level == 1 or tier == "c_suite") else ("VP" if tier == "vp_level" else "Director")
         budget = "full" if level == 1 else "technical"
         authority = "final" if level == 1 else "shared"
-        
+
         node = {
             "full_name": name,
             "job_title": title,
@@ -265,28 +261,28 @@ class PersonaSerializer:
         """Dynamically parses and synthesizes career timeline milestones and tenure."""
         raw = person.get("raw_data") or person or {}
         emp_hist = person.get("employment_history") or raw.get("employment_history") or raw.get("experience") or []
-        
+
         timeline = []
         past_companies = []
         previous_titles = []
-        
+
         for item in emp_hist:
             if isinstance(item, dict):
                 comp = item.get("company") or item.get("company_name") or item.get("organization_name")
                 title = item.get("title") or item.get("role") or item.get("job_title")
                 start = item.get("start_date") or item.get("start_year")
                 end = (
-                item.get("end_date")
-                or item.get("end_year")
-                or ("Present" if item.get("is_current") else None)
-            )
+                    item.get("end_date")
+                    or item.get("end_year")
+                    or ("Present" if item.get("is_current") else None)
+                )
                 desc = item.get("description") or item.get("summary")
-                
+
                 if comp:
                     past_companies.append(comp)
                 if title:
                     previous_titles.append(title)
-                    
+
                 timeline.append({
                     "company": comp,
                     "title": title,
@@ -298,7 +294,7 @@ class PersonaSerializer:
 
         tenure = person.get("current_role_tenure_months")
         is_new = person.get("is_new_in_role") or (tenure is not None and tenure <= 6)
-        
+
         return {
             "headline": person.get("headline") or raw.get("headline") or person.get("title"),
             "employment_history": timeline,

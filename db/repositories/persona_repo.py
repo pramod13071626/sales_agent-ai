@@ -83,6 +83,35 @@ class PersonaRepository:
         self.session.flush()
         return count
 
+    def upsert(self, schema: PersonaSchema) -> Persona:
+        """Upsert a single Persona from PersonaSchema."""
+        existing = None
+        if schema.id:
+            existing = self.session.query(Persona).filter_by(id=schema.id).first()
+        if not existing and schema.account_id and schema.key:
+            existing = self.session.query(Persona).filter_by(account_id=schema.account_id, key=schema.key).first()
+
+        persona = existing or Persona(account_id=schema.account_id)
+        if not existing:
+            self.session.add(persona)
+
+        data = schema.model_dump()
+        for field, value in data.items():
+            if field == "id" and value is None:
+                continue
+            if field in ("account", "lob", "account_id", "lob_id"):
+                continue
+            if hasattr(persona, field):
+                setattr(persona, field, value)
+
+        if schema.account_id:
+            persona.account_id = schema.account_id
+        if schema.lob_id:
+            persona.lob_id = schema.lob_id
+
+        self.session.flush()
+        return persona
+
     def get_by_account(self, account_id: int) -> list[Persona]:
         """Get all personas for an account."""
         return self.session.query(Persona).filter_by(account_id=account_id).all()

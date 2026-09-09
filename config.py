@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent

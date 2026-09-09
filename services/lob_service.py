@@ -6,14 +6,14 @@ import time
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 from apify_client import ApifyClient
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import config
-from serializer import slugify
+from serializers.account_serializer import slugify
 
 
 class LobServiceHTTPClient:
@@ -55,7 +55,6 @@ class LobRawDataLakeWriter:
             return None
 
         try:
-            safe_parent = re.sub(r"[^a-z0-9]+", "_", parent_company.lower()).strip("_")
             safe_lob = re.sub(r"[^a-z0-9]+", "_", lob_name.lower()).strip("_")
 
             if run_raw_dir:
@@ -225,7 +224,7 @@ class LobCoalesceEngine:
             raw_techs.extend(ap_li["technologies"])
         if isinstance(meta.get("technologies"), list):
             raw_techs.extend(meta["technologies"])
-        
+
         technologies = []
         seen_tech = set()
         for t in raw_techs:
@@ -246,7 +245,7 @@ class LobCoalesceEngine:
             raw_comps.extend(diff["competitors"])
         if isinstance(meta.get("competitors"), list):
             raw_comps.extend(meta["competitors"])
-        
+
         competitors = []
         seen_comp = set()
         for c in raw_comps:
@@ -745,13 +744,13 @@ class LobService:
                 data = res.json()
                 answer = data.get("answer", "")
                 results = data.get("results", []) or []
-                
+
                 revenue_match = None
                 head_match = None
                 snippets = []
-                
+
                 all_text = (answer or "") + " " + " ".join(r.get("content", "") for r in results)
-                
+
                 rev_patterns = [
                     r"(\$[\d,\.]+\s*(?:billion|million|B|M))",
                     r"(£[\d,\.]+\s*(?:billion|million|B|M))",
@@ -763,12 +762,12 @@ class LobService:
                     if m:
                         revenue_match = m.group(1)
                         break
-                
+
                 head_patterns = [
                     (
-                    r"(?:led by|headed by|CEO|President|Managing Director|Head of [A-Za-z\s]+)"
-                    r"[:,\s]+([A-Z][a-z]+ [A-Z][a-z]+)"
-                ),
+                        r"(?:led by|headed by|CEO|President|Managing Director|Head of [A-Za-z\s]+)"
+                        r"[:,\s]+([A-Z][a-z]+ [A-Z][a-z]+)"
+                    ),
                     r"([A-Z][a-z]+ [A-Z][a-z]+),?\s+(?:CEO|Managing Director|Chief Executive|Head|President)",
                 ]
                 for p in head_patterns:
@@ -776,7 +775,7 @@ class LobService:
                     if m:
                         head_match = m.group(1).strip()
                         break
-                
+
                 for r in results:
                     snippets.append({
                         "title": r.get("title"),
@@ -819,7 +818,7 @@ class LobService:
                         if isinstance(c, dict) and c.get("name")
                     ]
                     nb_emp = entity.get("nbEmployees") or entity.get("nbEmployeesMin")
-                    
+
                     return {
                         "name": entity.get("name"),
                         "description": entity.get("description"),
