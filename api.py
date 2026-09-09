@@ -29,44 +29,79 @@ from datetime import datetime, timezone, timedelta
 PIPELINE_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PIPELINE_ROOT))
 
+from subprocess import run
+
 import config
 from collectors.account_collector import (
-    scrape_account,
     fetch_latest_10k_chunks,
     extract_full_patents,
     fetch_sec_exhibit_21_subsidiaries,
     fetch_gleif_ownership_tree,
     fetch_wikipedia_dbpedia_intel,
     fetch_fec_political_intel,
-    fetch_diffbot_organization_intel
+    fetch_diffbot_organization_intel,
 )
 from collectors.sublob_collector import scrape_sublobs
 from collectors.lob_enricher import enrich_lob_segments
-from collectors.hierarchy_collector import scrape_hierarchy, scrape_lob_hierarchy, build_required_person_data, classify_title
+from collectors.hierarchy_collector import scrape_hierarchy
 from collectors.persona_enricher import build_persona_dossier
 from collectors.validator import DataQualityValidator
 from serializer import MasterSerializer
-from serializers.account_serializer import AccountSerializer, slugify
-from serializers.lob_serializer import LOBSerializer
-from serializers.persona_serializer import PersonaSerializer
+from serializers.account_serializer import slugify
 
+from sqlalchemy import or_
 from sqlalchemy.orm import selectinload
 from db.connection import get_session
-from db.models import Account, Lob, SubLob, Persona, Post, Digest, OpportunitySignal, WeeklyDigestSnapshot, LinkedInJob, CxoMovement, User, AuditLog, ActionItem, ActionItemReminder
+from db.models import (
+    Account,
+    Lob,
+    SubLob,
+    Persona,
+    Post,
+    Digest,
+    OpportunitySignal,
+    WeeklyDigestSnapshot,
+    LinkedInJob,
+    CxoMovement,
+    User,
+    AuditLog,
+    ActionItem,
+    ActionItemReminder,
+)
+
 from db.schemas import AccountSchema, LobSchema, PersonaSchema
-from db.repositories import AccountRepository, LobRepository, PersonaRepository
-from db.importer import import_run_to_db
-from pdf_export import build_persona_profile_pdf
+from db.repositories import (
+    AccountRepository,
+    LobRepository,
+    PersonaRepository,
+)
+from db.repositories.pipeline_run_repository import PipelineRunRepository
+from services.account_service import AccountService
+from services.lob_service import LobService, LobValidator
+from services.persona_service import PersonaService, PersonaValidator
+from pdf_export import build_persona_profile_pdf, build_psychological_profile_pdf
 import auth
 import email_sender
 from main import run_pipeline
 
+import uvicorn
 try:
-    from fastapi import FastAPI, APIRouter, HTTPException, Query, Body, Response, Request, Depends, BackgroundTasks
+    from fastapi import (
+        FastAPI,
+        APIRouter,
+        HTTPException,
+        Query,
+        Body,
+        Response,
+        Request,
+        Depends,
+        BackgroundTasks,
+    )
     from fastapi.responses import FileResponse, HTMLResponse
     from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.staticfiles import StaticFiles
     from fastapi.templating import Jinja2Templates
-    from pydantic import BaseModel, Field
+    from pydantic import BaseModel
     FASTAPI_AVAILABLE = True
 except ImportError:
     FASTAPI_AVAILABLE = False
@@ -75,8 +110,11 @@ except ImportError:
 if FASTAPI_AVAILABLE:
     app = FastAPI(
         title="Sales AI Enterprise Intelligence API",
-        description="Granular REST API for Frontend UI Tabs: Account, LOBs, Sub-LOBs, and Personas (Fetch -> Validate -> Dump)",
-        version="2.2.0"
+        description=(
+            "Granular REST API for Frontend UI Tabs: "
+            "Account, LOBs, Sub-LOBs, and Personas (Fetch -> Validate -> Dump)"
+        ),
+        version="2.2.0",
     )
 
     # allow_origins=["*"] together with allow_credentials=True is rejected by
@@ -254,8 +292,11 @@ if FASTAPI_AVAILABLE:
             session.close()
 
     @app.post("/api/admin/users", tags=["0. Authentication"])
-    def create_user(body: CreateUserRequest, background_tasks: BackgroundTasks,
-                     current: User = Depends(auth.require_role("super_admin"))):
+    def create_user(
+        body: CreateUserRequest,
+        background_tasks: BackgroundTasks,
+        current: User = Depends(auth.require_role("super_admin")),
+    ):
         if body.role not in ("super_admin", "user"):
             raise HTTPException(status_code=400, detail="role must be 'super_admin' or 'user'")
         session = get_session()
@@ -264,13 +305,21 @@ if FASTAPI_AVAILABLE:
             if session.query(User).filter(User.email.ilike(email)).first():
                 raise HTTPException(status_code=409, detail="A user with this email already exists")
             new_user = User(
-                email=email, full_name=body.full_name, role=body.role,
-                hashed_password=auth.hash_password(body.password), created_by_id=current.id,
+                email=email,
+                full_name=body.full_name,
+                role=body.role,
+                hashed_password=auth.hash_password(body.password),
+                created_by_id=current.id,
             )
             session.add(new_user)
             session.commit()
-            auth.log_audit(session, current.id, "user_created", target_user_id=new_user.id,
-                            details={"role": body.role})
+            auth.log_audit(
+                session,
+                current.id,
+                "user_created",
+                target_user_id=new_user.id,
+                details={"role": body.role},
+            )
 
             base_url = os.getenv("APP_BASE_URL", "http://localhost:8000")
             access_note = (
@@ -282,13 +331,17 @@ if FASTAPI_AVAILABLE:
             )
             background_tasks.add_task(
                 email_sender.send_email,
-                new_user.email, "Welcome to Sales Intelligence",
-                f"Hi {new_user.full_name or new_user.email},\n\n"
-                f"An account has been created for you on Sales Intelligence by {current.full_name or current.email}.\n\n"
-                f"Email: {new_user.email}\nRole: {new_user.role}\n\n"
-                f"Access: {access_note}\n\n"
-                f"Sign in here: {base_url}/login\n"
-                "You'll receive a separate email shortly to set your own password.\n",
+                new_user.email,
+                "Welcome to Sales Intelligence",
+                (
+                    f"Hi {new_user.full_name or new_user.email},\n\n"
+                    f"An account has been created for you on Sales Intelligence by "
+                    f"{current.full_name or current.email}.\n\n"
+                    f"Email: {new_user.email}\nRole: {new_user.role}\n\n"
+                    f"Access: {access_note}\n\n"
+                    f"Sign in here: {base_url}/login\n"
+                    "You'll receive a separate email shortly to set your own password.\n"
+                ),
                 html_body=email_sender.render_html(
                     "Welcome to Sales Intelligence",
                     [f"Hi {new_user.full_name or new_user.email},",
@@ -585,6 +638,10 @@ if FASTAPI_AVAILABLE:
     # ══════════════════════════════════════════════════════
     # REQUEST / RESPONSE MODELS
     # ══════════════════════════════════════════════════════
+    class AccountCreateRequest(BaseModel):
+        company_name: str
+        domain: Optional[str] = None
+
     class AccountFetchRequest(BaseModel):
         company_name: str
         target_url: Optional[str] = None
@@ -603,6 +660,9 @@ if FASTAPI_AVAILABLE:
 
     class LobsFetchRequest(BaseModel):
         company_name: str
+        account_id: Optional[int] = None
+        lob_name: Optional[str] = None
+        lob_domain: Optional[str] = None
 
     class LobsDumpRequest(BaseModel):
         account_id: int
@@ -628,6 +688,7 @@ if FASTAPI_AVAILABLE:
           "enrich_ai_dossier": true
         }
         """
+
         key: Optional[str] = None
         display_name: Optional[str] = None
         name: Optional[str] = None
@@ -669,6 +730,7 @@ if FASTAPI_AVAILABLE:
 
     class OpportunitySignalItem(BaseModel):
         """One currently-detected growth-theme or domain-expansion suggestion, as computed client-side."""
+
         signal_key: str
         title: str
         details: Dict[str, Any] = {}
@@ -680,6 +742,7 @@ if FASTAPI_AVAILABLE:
     class WeeklyDigestSyncRequest(BaseModel):
         """The `digest.email` object already produced weekly per-account by the content pipeline
         (see Digest.digest['email']), forwarded here so a snapshot of it gets archived."""
+
         target_key: str
         generated_at: Optional[str] = None
         subject: Optional[str] = None
@@ -711,16 +774,160 @@ if FASTAPI_AVAILABLE:
     # ══════════════════════════════════════════════════════
     account_router = APIRouter(prefix="/api/account", tags=["1. Account Level"])
 
+    @account_router.post("/create")
+    def create_account_stub(req: AccountCreateRequest):
+        """[Tab 1 - Add Account Modal]: Creates or fetches an Account row in PostgreSQL with an official ID."""
+        session = get_session()
+        try:
+            clean_name = req.company_name.strip()
+            slug = slugify(clean_name)
+            clean_dom = (
+                req.domain.replace("https://", "").replace("http://", "").split("/")[0].strip().lower()
+                if req.domain
+                else None
+            )
+
+            # Check if account already exists by key, name, or domain
+            filters = [
+                Account.key == slug,
+                Account.display_name.ilike(clean_name),
+            ]
+            if clean_dom:
+                filters.extend(
+                    [
+                        Account.domain == clean_dom,
+                        Account.primary_domain == clean_dom,
+                    ]
+                )
+
+            existing = session.query(Account).filter(or_(*filters)).first()
+            if existing:
+                return {
+                    "status": "exists",
+                    "account_id": existing.id,
+                    "key": existing.key,
+                    "name": existing.display_name,
+                    "domain": existing.primary_domain or existing.domain,
+                    "message": (
+                        f"Account '{existing.display_name}' already registered "
+                        f"in database (ID: {existing.id})."
+                    ),
+                }
+
+            # Create new minimal account row
+            new_account = Account(
+                key=slug,
+                display_name=clean_name,
+                legal_name=clean_name,
+                domain=clean_dom,
+                primary_domain=clean_dom,
+                website_url=f"https://{clean_dom}" if clean_dom else None,
+            )
+            session.add(new_account)
+            session.commit()
+            session.refresh(new_account)
+
+            return {
+                "status": "created",
+                "account_id": new_account.id,
+                "key": new_account.key,
+                "name": new_account.display_name,
+                "domain": new_account.primary_domain,
+                "message": (
+                    f"Account '{new_account.display_name}' created successfully "
+                    f"in database (ID: {new_account.id})."
+                ),
+            }
+        except Exception as e:
+            session.rollback()
+            raise HTTPException(status_code=500, detail=f"Account creation failed: {str(e)}")
+        finally:
+            session.close()
+
     @account_router.post("/fetch")
     def fetch_account_data(req: AccountFetchRequest):
-        """[Tab 1 - Fetch Button]: Scrapes live firmographics and 15 scraping launchpad URLs."""
+        """[Tab 1 - Fetch Button]: Enterprise 11-source account intelligence collection.
+        Uses AccountService.collect() with: SEC EDGAR, GLEIF, OpenCorporates, FMP, CourtListener,
+        Finnhub, Apify Crunchbase (curious_coder/crunchbase-url-scraper), Apify Glassdoor
+        (memo23/glassdoor-scraper), Diffbot KG, Serper, Wikipedia, FEC — plus standalone
+        connectors: 10-K chunks, USPTO patents, SEC Exhibit 21 subsidiaries, GLEIF ownership tree.
+        """
         try:
-            account_data = scrape_account(req.company_name, req.target_url)
-            return {
-                "status": "staged",
-                "company_name": req.company_name,
-                "account": account_data
+            account_data = AccountService.collect(
+                company_name=req.company_name,
+                domain=req.target_url,
+            )
+
+            # Attach known LOBs and personas already in DB for this account
+            session = get_session()
+            try:
+                existing = (
+                    session.query(Account)
+                    .filter(
+                        or_(
+                            Account.domain == req.target_url,
+                            Account.primary_domain == req.target_url,
+                            Account.display_name.ilike(f"%{req.company_name}%"),
+                        )
+                    )
+                    .first()
+                )
+                if existing:
+                    account_data["known_lobs"] = [
+                        {"id": lob_item.id, "name": lob_item.lob_name, "domain": lob_item.domain}
+                        for lob_item in (existing.lobs or [])
+                    ]
+                    account_data["known_personas"] = [
+                        {"id": p.id, "name": p.full_name, "title": p.title, "tier": p.tier}
+                        for p in (existing.personas or [])
+                    ]
+                    account_data["lobs_count"] = len(account_data["known_lobs"])
+                    account_data["total_contacts_captured"] = len(account_data["known_personas"])
+            except Exception as db_err:
+                print(f"[!] DB lookup for known LOBs/personas notice: {db_err}")
+            finally:
+                session.close()
+
+            # Build the required_account sub-key so AccountSchema.from_enriched_json() finds OSINT URLs
+            required_account = {
+                "key": account_data.get("key"),
+                "display_name": account_data.get("display_name"),
+                "sec_edgar_url": account_data.get("sec_edgar_url"),
+                "sec_filings_rss": account_data.get("sec_filings_rss"),
+                "sec_submissions_url": account_data.get("sec_submissions_url"),
+                "twitter_live_url": account_data.get("twitter_live_url"),
+                "reddit_query": account_data.get("reddit_query"),
+                "reddit_rss_url": account_data.get("reddit_rss_url"),
+                "news_query": account_data.get("news_query"),
+                "rss_url": account_data.get("rss_url"),
+                "google_patents_url": account_data.get("google_patents_url"),
+                "google_trends_url": account_data.get("google_trends_url"),
+                "youtube_search_url": account_data.get("youtube_search_url"),
+                "openalex_institution_url": account_data.get("openalex_institution_url"),
+                "wikidata_entity_url": account_data.get("wikidata_entity_url"),
+                "blog_url": account_data.get("blog_url"),
+                "github_url": account_data.get("github_url"),
+                "glassdoor_url": account_data.get("glassdoor_url"),
+                "youtube_channel_id": account_data.get("youtube_channel_id"),
             }
+
+            wrapped = {
+                **account_data,
+                "required_account": required_account,
+                # Mirror all fields into nested sub-dicts that from_enriched_json() reads
+                "identity": account_data,
+                "firmographics": account_data,
+                "location": account_data,
+                "contact_and_social": account_data,
+                "financials_and_funding": account_data,
+                "market_and_ipo": account_data,
+                "acquisitions_and_suborgs": account_data,
+                "web_traffic_and_growth": account_data,
+                "tech_and_patents": account_data,
+                "key_people": account_data,
+            }
+
+            return {"status": "staged", "company_name": req.company_name, "account": wrapped}
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Account fetch failed: {str(e)}")
 
@@ -733,7 +940,7 @@ if FASTAPI_AVAILABLE:
                 "status": "validated",
                 "score": report["score"],
                 "checks": report["checks"],
-                "warnings": report["warnings"]
+                "warnings": report["warnings"],
             }
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Account validation failed: {str(e)}")
@@ -753,7 +960,7 @@ if FASTAPI_AVAILABLE:
                 "account_id": acct.id,
                 "key": acct.key,
                 "legal_name": acct.legal_name,
-                "message": f"Account '{acct.key}' successfully saved to database."
+                "message": f"Account '{acct.key}' successfully saved to database.",
             }
         except Exception as e:
             session.rollback()
@@ -815,7 +1022,7 @@ if FASTAPI_AVAILABLE:
             "social_platform": p.social_platform,
             "social_profile_url": p.social_profile_url,
             "social_presence_level": p.social_presence_level,
-            "raw_data": p.raw_data
+            "raw_data": p.raw_data,
         }
 
     def _serialize_persona_summary(p: Persona) -> Dict[str, Any]:
@@ -839,65 +1046,67 @@ if FASTAPI_AVAILABLE:
         not the DB's real Persona.lob_id relationship, just how the UI has always
         grouped contacts per division. Shared by the full and summary serializers
         so both agree on the same per-LOB counts/lists."""
-        c_suite_personas = [p for p in personas_list if p.get("tier") == "C-Suite" or p.get("hierarchy_level") in [1, 2]]
+        c_suite_personas = [
+            p for p in personas_list if p.get("tier") == "C-Suite" or p.get("hierarchy_level") in [1, 2]
+        ]
         vp_personas = [p for p in personas_list if p not in c_suite_personas]
         total_lobs = len(raw_lobs) or 1
         assignments = []
-        for idx, l in enumerate(raw_lobs):
+        for idx, lob_item in enumerate(raw_lobs):
             chunk_size = max(1, len(vp_personas) // total_lobs) if vp_personas else 0
             start_i = idx * chunk_size
             end_i = start_i + chunk_size if idx < total_lobs - 1 else len(vp_personas)
-            assignments.append((l, c_suite_personas[:2] + vp_personas[start_i:end_i]))
+            assignments.append((lob_item, c_suite_personas[:2] + vp_personas[start_i:end_i]))
         return assignments
 
-    def _serialize_lob_full(l: Lob, assigned_personas: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _serialize_lob_full(lob_item: Lob, assigned_personas: List[Dict[str, Any]]) -> Dict[str, Any]:
         sub_lobs_formatted = [
-            {"id": s.id, "name": s.name, "desc": f"Specialized unit under {l.lob_name}"}
-            for s in (l.sub_lobs or [])
+            {"id": s.id, "name": s.name, "desc": f"Specialized unit under {lob_item.lob_name}"}
+            for s in (lob_item.sub_lobs or [])
         ]
         return {
-            "id": l.id,
-            "name": l.lob_name,
-            "lob_name": l.lob_name,
-            "domain": l.domain,
-            "website_url": l.website_url,
-            "desc": l.overview,
-            "overview": l.overview,
-            "revenue": l.audited_segment_revenue,
-            "audited_segment_revenue": l.audited_segment_revenue,
-            "head": l.operating_head,
-            "operating_head": l.operating_head,
-            "headcount": l.segment_headcount,
-            "segment_headcount": l.segment_headcount,
-            "lei_code": l.lei_code,
-            "jurisdiction": l.jurisdiction,
-            "technologies": l.technologies or [],
-            "competitors": l.competitors or [],
-            "financial_snippets": l.financial_snippets or [],
-            "patents": l.patents or [],
-            "logo_url": l.logo_url,
-            "google_news_rss_url": l.google_news_rss_url,
-            "reddit_rss_url": l.reddit_rss_url,
-            "google_patents_url": l.google_patents_url,
-            "google_trends_url": l.google_trends_url,
-            "youtube_search_url": l.youtube_search_url,
+            "id": lob_item.id,
+            "name": lob_item.lob_name,
+            "lob_name": lob_item.lob_name,
+            "domain": lob_item.domain,
+            "website_url": lob_item.website_url,
+            "desc": lob_item.overview,
+            "overview": lob_item.overview,
+            "revenue": lob_item.audited_segment_revenue,
+            "audited_segment_revenue": lob_item.audited_segment_revenue,
+            "head": lob_item.operating_head,
+            "operating_head": lob_item.operating_head,
+            "headcount": lob_item.segment_headcount,
+            "segment_headcount": lob_item.segment_headcount,
+            "lei_code": lob_item.lei_code,
+            "jurisdiction": lob_item.jurisdiction,
+            "technologies": lob_item.technologies or [],
+            "competitors": lob_item.competitors or [],
+            "financial_snippets": lob_item.financial_snippets or [],
+            "patents": lob_item.patents or [],
+            "logo_url": lob_item.logo_url,
+            "google_news_rss_url": lob_item.google_news_rss_url,
+            "reddit_rss_url": lob_item.reddit_rss_url,
+            "google_patents_url": lob_item.google_patents_url,
+            "google_trends_url": lob_item.google_trends_url,
+            "youtube_search_url": lob_item.youtube_search_url,
             "subLobs": sub_lobs_formatted,
             "sub_lobs": sub_lobs_formatted,
-            "personas": assigned_personas
+            "personas": assigned_personas,
         }
 
-    def _serialize_lob_summary(l: Lob, assigned_personas_count: int) -> Dict[str, Any]:
+    def _serialize_lob_summary(lob_item: Lob, assigned_personas_count: int) -> Dict[str, Any]:
         # Trimmed: keeps technologies/competitors (read by computeSignals() for
         # EVERY account on every nav-tree/topbar render) and subLobs (nav-tree
         # renders sub-LOB names in the expanded row), drops financial_snippets/
         # patents/deep URLs which are only read once an account is opened.
-        sub_lobs_formatted = [{"id": s.id, "name": s.name} for s in (l.sub_lobs or [])]
+        sub_lobs_formatted = [{"id": s.id, "name": s.name} for s in (lob_item.sub_lobs or [])]
         return {
-            "id": l.id,
-            "name": l.lob_name,
-            "lob_name": l.lob_name,
-            "technologies": l.technologies or [],
-            "competitors": l.competitors or [],
+            "id": lob_item.id,
+            "name": lob_item.lob_name,
+            "lob_name": lob_item.lob_name,
+            "technologies": lob_item.technologies or [],
+            "competitors": lob_item.competitors or [],
             "subLobs": sub_lobs_formatted,
             "sub_lobs": sub_lobs_formatted,
             "personas_count": assigned_personas_count,
@@ -906,7 +1115,10 @@ if FASTAPI_AVAILABLE:
     def _serialize_account_full(acct: Account) -> Dict[str, Any]:
         personas_list = [_serialize_persona_full(p) for p in (acct.personas or [])]
         raw_lobs = acct.lobs or []
-        lobs_list = [_serialize_lob_full(l, assigned) for l, assigned in _distribute_personas_across_lobs(raw_lobs, personas_list)]
+        lobs_list = [
+            _serialize_lob_full(lob_item, assigned)
+            for lob_item, assigned in _distribute_personas_across_lobs(raw_lobs, personas_list)
+        ]
 
         acct_name = acct.legal_name or acct.display_name or acct.key
         acct_loc = acct.headquarters_location or (f"{acct.city}, {acct.country}" if acct.city else None)
@@ -971,7 +1183,6 @@ if FASTAPI_AVAILABLE:
             "multi_source_intelligence": acct.multi_source_intelligence,
             "organisational_hierarchy_tree": acct.organisational_hierarchy_tree,
             "extracted_at": acct.extracted_at.isoformat() if acct.extracted_at else None,
-
             # ── Engagement / opportunity signals (previously captured but never exposed) ──
             "heat_score": acct.heat_score,
             "trend_score_90d": acct.trend_score_90d,
@@ -994,10 +1205,45 @@ if FASTAPI_AVAILABLE:
             "bounce_rate": acct.bounce_rate,
             "visit_duration": acct.visit_duration,
             "page_views_per_visit": acct.page_views_per_visit,
-            "c_suite_count": acct.c_suite_count or len([p for p in personas_list if (p.get("tier") or "").lower() in ["c-suite", "c_suite", "c"] or any(w in (p.get("title") or "").lower() for w in ["chief", "president", "ceo", "chairman", "board"])]),
-            "vp_count": acct.vp_count or len([p for p in personas_list if "vp" in (p.get("tier") or "").lower() or "vice president" in (p.get("title") or "").lower()]),
-            "director_count": acct.director_count or len([p for p in personas_list if "director" in (p.get("tier") or "").lower() or "director" in (p.get("title") or "").lower()]),
-            "manager_count": acct.manager_count or len([p for p in personas_list if "manager" in (p.get("tier") or "").lower() or "manager" in (p.get("title") or "").lower()])
+            "c_suite_count": acct.c_suite_count
+            or len(
+                [
+                    p
+                    for p in personas_list
+                    if (p.get("tier") or "").lower() in ["c-suite", "c_suite", "c"]
+                    or any(
+                        w in (p.get("title") or "").lower()
+                        for w in ["chief", "president", "ceo", "chairman", "board"]
+                    )
+                ]
+            ),
+            "vp_count": acct.vp_count
+            or len(
+                [
+                    p
+                    for p in personas_list
+                    if "vp" in (p.get("tier") or "").lower()
+                    or "vice president" in (p.get("title") or "").lower()
+                ]
+            ),
+            "director_count": acct.director_count
+            or len(
+                [
+                    p
+                    for p in personas_list
+                    if "director" in (p.get("tier") or "").lower()
+                    or "director" in (p.get("title") or "").lower()
+                ]
+            ),
+            "manager_count": acct.manager_count
+            or len(
+                [
+                    p
+                    for p in personas_list
+                    if "manager" in (p.get("tier") or "").lower()
+                    or "manager" in (p.get("title") or "").lower()
+                ]
+            ),
         }
 
     def _serialize_account_summary(acct: Account) -> Dict[str, Any]:
@@ -1011,7 +1257,10 @@ if FASTAPI_AVAILABLE:
         # only needed once a specific account is opened, via _serialize_account_full.
         personas_list = [_serialize_persona_summary(p) for p in (acct.personas or [])]
         raw_lobs = acct.lobs or []
-        lobs_list = [_serialize_lob_summary(l, len(assigned)) for l, assigned in _distribute_personas_across_lobs(raw_lobs, personas_list)]
+        lobs_list = [
+            _serialize_lob_summary(lob_item, len(assigned))
+            for lob_item, assigned in _distribute_personas_across_lobs(raw_lobs, personas_list)
+        ]
 
         acct_name = acct.legal_name or acct.display_name or acct.key
         acct_loc = acct.headquarters_location or (f"{acct.city}, {acct.country}" if acct.city else None)
@@ -1041,7 +1290,6 @@ if FASTAPI_AVAILABLE:
             "personas": personas_list,
             "multi_source_intelligence": acct.multi_source_intelligence,
             "extracted_at": acct.extracted_at.isoformat() if acct.extracted_at else None,
-
             "heat_score": acct.heat_score,
             "trend_score_90d": acct.trend_score_90d,
             "active_tech_count": acct.active_tech_count,
@@ -1061,10 +1309,45 @@ if FASTAPI_AVAILABLE:
             "bounce_rate": acct.bounce_rate,
             "visit_duration": acct.visit_duration,
             "page_views_per_visit": acct.page_views_per_visit,
-            "c_suite_count": acct.c_suite_count or len([p for p in personas_list if (p.get("tier") or "").lower() in ["c-suite", "c_suite", "c"] or any(w in (p.get("title") or "").lower() for w in ["chief", "president", "ceo", "chairman", "board"])]),
-            "vp_count": acct.vp_count or len([p for p in personas_list if "vp" in (p.get("tier") or "").lower() or "vice president" in (p.get("title") or "").lower()]),
-            "director_count": acct.director_count or len([p for p in personas_list if "director" in (p.get("tier") or "").lower() or "director" in (p.get("title") or "").lower()]),
-            "manager_count": acct.manager_count or len([p for p in personas_list if "manager" in (p.get("tier") or "").lower() or "manager" in (p.get("title") or "").lower()])
+            "c_suite_count": acct.c_suite_count
+            or len(
+                [
+                    p
+                    for p in personas_list
+                    if (p.get("tier") or "").lower() in ["c-suite", "c_suite", "c"]
+                    or any(
+                        w in (p.get("title") or "").lower()
+                        for w in ["chief", "president", "ceo", "chairman", "board"]
+                    )
+                ]
+            ),
+            "vp_count": acct.vp_count
+            or len(
+                [
+                    p
+                    for p in personas_list
+                    if "vp" in (p.get("tier") or "").lower()
+                    or "vice president" in (p.get("title") or "").lower()
+                ]
+            ),
+            "director_count": acct.director_count
+            or len(
+                [
+                    p
+                    for p in personas_list
+                    if "director" in (p.get("tier") or "").lower()
+                    or "director" in (p.get("title") or "").lower()
+                ]
+            ),
+            "manager_count": acct.manager_count
+            or len(
+                [
+                    p
+                    for p in personas_list
+                    if "manager" in (p.get("tier") or "").lower()
+                    or "manager" in (p.get("title") or "").lower()
+                ]
+            ),
         }
 
     @account_router.get("")
@@ -1095,6 +1378,7 @@ if FASTAPI_AVAILABLE:
                 query = query.filter(Account.id.in_(accessible_ids)) if accessible_ids else query.filter(False)
             accounts = query.order_by(Account.id.desc()).all()
             return {"accounts": [_serialize_account_summary(acct) for acct in accounts]}
+
         finally:
             session.close()
 
@@ -1109,13 +1393,14 @@ if FASTAPI_AVAILABLE:
         personas — fetched on demand when that account is opened."""
         session = get_session()
         try:
-            acct = (session.query(Account)
-                    .options(
-                        selectinload(Account.personas),
-                        selectinload(Account.lobs).selectinload(Lob.sub_lobs)
-                    )
-                    .filter_by(id=account_id)
-                    .first())
+            acct = (
+                session.query(Account)
+                .options(
+                    selectinload(Account.personas), selectinload(Account.lobs).selectinload(Lob.sub_lobs)
+                )
+                .filter_by(id=account_id)
+                .first()
+            )
             if not acct:
                 raise HTTPException(status_code=404, detail="Account not found.")
             return _serialize_account_full(acct)
@@ -1131,9 +1416,7 @@ if FASTAPI_AVAILABLE:
         """
         try:
             return fetch_latest_10k_chunks(
-                sec_cik=req.sec_cik,
-                chunk_size=req.chunk_size,
-                overlap=req.overlap
+                sec_cik=req.sec_cik, chunk_size=req.chunk_size, overlap=req.overlap
             )
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"10-K Chunking failed: {str(e)}")
@@ -1145,10 +1428,7 @@ if FASTAPI_AVAILABLE:
         Queries USPTO and open patent registries for granted patents and abstracts.
         """
         try:
-            return extract_full_patents(
-                company_name=req.company_name,
-                max_results=req.max_results
-            )
+            return extract_full_patents(company_name=req.company_name, max_results=req.max_results)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Patent extraction failed: {str(e)}")
 
@@ -1217,16 +1497,32 @@ if FASTAPI_AVAILABLE:
 
     @lobs_router.post("/fetch")
     def fetch_lobs_data(req: LobsFetchRequest):
-        """[Tab 2 - Fetch Button]: Discovers sub-organizations and enriches segment revenues."""
+        """[Tab 2 - Fetch Button]: Discovers sub-organizations and enriches
+        segment revenues (single LOB or full company)."""
         try:
-            raw_sublobs = scrape_sublobs(req.company_name)
-            enriched_lobs = enrich_lob_segments(req.company_name, raw_sublobs)
-            return {
-                "status": "staged",
-                "company_name": req.company_name,
-                "total_lobs": len(enriched_lobs),
-                "lobs": enriched_lobs
-            }
+            if req.lob_name:
+                single_lob = LobService.enrich_single_lob(
+                    lob_name=req.lob_name,
+                    parent_company=req.company_name,
+                    account_id=req.account_id,
+                    lob_domain=req.lob_domain,
+                )
+                return {
+                    "status": "staged",
+                    "company_name": req.company_name,
+                    "lob": single_lob,
+                    "lobs": [single_lob],
+                    "total_lobs": 1,
+                }
+            else:
+                raw_sublobs = scrape_sublobs(req.company_name)
+                enriched_lobs = enrich_lob_segments(req.company_name, raw_sublobs)
+                return {
+                    "status": "staged",
+                    "company_name": req.company_name,
+                    "total_lobs": len(enriched_lobs),
+                    "lobs": enriched_lobs,
+                }
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"LOB fetch failed: {str(e)}")
 
@@ -1241,14 +1537,64 @@ if FASTAPI_AVAILABLE:
                 "lobs_count": report["lobs_count"],
                 "total_with_domain": report["total_with_domain"],
                 "details": report["details"],
-                "warnings": report["warnings"]
+                "warnings": report["warnings"],
             }
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"LOB validation failed: {str(e)}")
 
+    @lobs_router.post("/validate-single")
+    def validate_single_lob(lob_data: Dict[str, Any] = Body(...)):
+        """[Tab 2 - Individual Validate Button]: Validates a single LOB entity."""
+        try:
+            audit = LobValidator.validate_lob(lob_data)
+            warnings = []
+            if not lob_data.get("domain") and not lob_data.get("website_url"):
+                warnings.append("Domain/Website URL is missing.")
+            if not lob_data.get("operating_head"):
+                warnings.append("Operating head not identified.")
+            if not lob_data.get("technologies"):
+                warnings.append("Technology stack not detected.")
+            return {
+                "status": "validated",
+                "score": audit.get("score", 85),
+                "grade": audit.get("grade", "B"),
+                "ready_for_db": audit.get("ready_for_db", True),
+                "warnings": warnings,
+                "missing_critical": audit.get("missing_critical", []),
+                "missing_important": audit.get("missing_important", []),
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"LOB validation failed: {str(e)}")
+
+    @lobs_router.post("/dump-single-db")
+    def dump_single_lob_to_db(req: Dict[str, Any] = Body(...)):
+        """[Tab 2 - Individual Dump DB Button]: Commits a single validated LOB into PostgreSQL `lobs` table."""
+        session = get_session()
+        try:
+            account_id = req.get("account_id")
+            lob_data = req.get("lob_data") or req
+            acct = session.query(Account).filter_by(id=account_id).first()
+            if not acct:
+                raise HTTPException(status_code=404, detail=f"Account ID {account_id} not found in DB.")
+
+            lob_repo = LobRepository(session)
+            saved = lob_repo.upsert_single_lob(acct.id, lob_data)
+            session.commit()
+            return {
+                "status": "success",
+                "lob_id": getattr(saved, "id", None),
+                "message": f"LOB '{lob_data.get('name') or lob_data.get('lob_name')}' saved to database.",
+            }
+        except Exception as e:
+            session.rollback()
+            raise HTTPException(status_code=500, detail=f"LOB DB dump failed: {str(e)}")
+        finally:
+            session.close()
+
     @lobs_router.post("/dump-db")
     def dump_lobs_to_db(req: LobsDumpRequest):
-        """[Tab 2 - Dump DB Button]: Commits validated LOBs and Sub-LOBs to PostgreSQL `lobs` & `sub_lobs` tables."""
+        """[Tab 2 - Dump DB Button]: Commits validated LOBs and Sub-LOBs to
+        PostgreSQL `lobs` & `sub_lobs` tables."""
         session = get_session()
         try:
             acct = session.query(Account).filter_by(id=req.account_id).first()
@@ -1263,7 +1609,7 @@ if FASTAPI_AVAILABLE:
                 "account_id": acct.id,
                 "lobs_saved": len(lob_map),
                 "lob_mapping": lob_map,
-                "message": f"Saved {len(lob_map)} LOBs for Account '{acct.key}'."
+                "message": f"Saved {len(lob_map)} LOBs for Account '{acct.key}'.",
             }
         except Exception as e:
             session.rollback()
@@ -1279,21 +1625,21 @@ if FASTAPI_AVAILABLE:
             lobs = session.query(Lob).filter_by(account_id=account_id).all()
             return [
                 {
-                    "id": l.id,
-                    "account_id": l.account_id,
-                    "lob_name": l.lob_name,
-                    "domain": l.domain,
-                    "website_url": l.website_url,
-                    "audited_segment_revenue": l.audited_segment_revenue,
-                    "operating_head": l.operating_head,
-                    "segment_headcount": l.segment_headcount,
-                    "google_news_rss_url": l.google_news_rss_url,
-                    "reddit_rss_url": l.reddit_rss_url,
-                    "google_patents_url": l.google_patents_url,
-                    "youtube_search_url": l.youtube_search_url,
-                    "sub_lobs": [{"id": s.id, "name": s.name} for s in (l.sub_lobs or [])]
+                    "id": lob_item.id,
+                    "account_id": lob_item.account_id,
+                    "lob_name": lob_item.lob_name,
+                    "domain": lob_item.domain,
+                    "website_url": lob_item.website_url,
+                    "audited_segment_revenue": lob_item.audited_segment_revenue,
+                    "operating_head": lob_item.operating_head,
+                    "segment_headcount": lob_item.segment_headcount,
+                    "google_news_rss_url": lob_item.google_news_rss_url,
+                    "reddit_rss_url": lob_item.reddit_rss_url,
+                    "google_patents_url": lob_item.google_patents_url,
+                    "youtube_search_url": lob_item.youtube_search_url,
+                    "sub_lobs": [{"id": s.id, "name": s.name} for s in (lob_item.sub_lobs or [])],
                 }
-                for l in lobs
+                for lob_item in lobs
             ]
         finally:
             session.close()
@@ -1317,7 +1663,8 @@ if FASTAPI_AVAILABLE:
             parsed_title = card.title
             parsed_company = card.company_name
 
-            # Dynamic extraction from display_name if explicit fields are omitted (e.g. "Jane Doe (CEO, Example Co)")
+            # Dynamic extraction from display_name if explicit fields are omitted
+            # (e.g. "Jane Doe (CEO, Example Co)")
             if not parsed_name and raw_display:
                 parsed_name = re.sub(r"\s*\(.*?\)", "", raw_display).strip()
             if not parsed_name and card.key:
@@ -1346,63 +1693,30 @@ if FASTAPI_AVAILABLE:
                 finally:
                     session.close()
 
-            # 2. Build compulsory 18 Scraping URLs Matrix
-            req_data = build_required_person_data(
-                name=parsed_name,
-                title=parsed_title,
+            # 2. Enrich via Enterprise PersonaService (FullEnrich + Exa + Apollo + Serper + SEC + ORCID + OpenAlex)
+            person_entry = PersonaService.enrich_single_persona(
+                full_name=parsed_name,
                 company_name=parsed_company,
+                title=parsed_title,
+                account_id=card.account_id,
                 linkedin_url=card.linkedin_url,
-                twitter_handle=card.twitter_handle,
-                sec_cik=card.sec_cik
             )
 
-            # 3. Synthesize Neural AI Persona Dossier
-            dossier = None
-            verified_linkedin = card.linkedin_url
-            if card.enrich_ai_dossier:
-                dossier = build_persona_dossier(
-                    name=parsed_name,
-                    title=parsed_title,
-                    company_name=parsed_company,
-                    linkedin_url=card.linkedin_url
-                )
-                if dossier.get("level_3_personal_touch", {}).get("social_media", {}).get("profile_url"):
-                    verified_linkedin = dossier["level_3_personal_touch"]["social_media"]["profile_url"]
-                    req_data["linkedin_url"] = verified_linkedin
-
-            tier = classify_title(parsed_title)
-            name_parts = parsed_name.split()
-            first_name = name_parts[0] if name_parts else None
-            last_name = " ".join(name_parts[1:]) if len(name_parts) > 1 else None
-
-            person_entry = {
-                "key": req_data.get("key") or card.key or parsed_name.lower().replace(" ", "_"),
-                "display_name": req_data.get("display_name") or raw_display or f"{parsed_name} ({parsed_title}, {parsed_company})".strip(),
-                "name": parsed_name,
-                "first_name": first_name,
-                "last_name": last_name,
-                "title": parsed_title,
-                "tier": tier,
-                "seniority_raw": tier,
-                "departments": ["Executive"],
-                "linkedin_url": verified_linkedin,
-                "required_person_data": req_data,
-                "persona_dossier": dossier
-            }
-
-            # 4. Auto-save single persona slice into self-healing folder
-            from serializer import slugify
+            # 3. Auto-save single persona slice into raw/enriched run folder
             company_slug = slugify(parsed_company) if parsed_company else "general"
             person_slug = slugify(parsed_name)
             run_dirs = config.get_run_output_dirs(parsed_company or "persona_run")
-            person_file = run_dirs["enriched_personas_company_dir"] / f"{company_slug}_corporate_{person_slug}_enriched.json"
+            person_file = (
+                run_dirs["enriched_personas_company_dir"]
+                / f"{company_slug}_corporate_{person_slug}_enriched.json"
+            )
             MasterSerializer.save_json(person_entry, person_file)
 
             return {
                 "status": "staged",
                 "message": f"Successfully fetched and enriched persona for '{parsed_name}'.",
                 "saved_file": str(person_file),
-                "person": person_entry
+                "person": person_entry,
             }
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Persona fetch failed: {str(e)}")
@@ -1414,37 +1728,30 @@ if FASTAPI_AVAILABLE:
         Validates a single person's contact data, scraping URLs, and AI dossier.
         """
         try:
-            rpd = person_data.get("required_person_data", {}) or {}
-            dossier = person_data.get("persona_dossier") or {}
-
-            url_fields = [
-                "twitter_live_url", "reddit_rss_url", "rss_url",
-                "google_patents_url", "google_scholar_url", "openalex_author_url",
-                "orcid_search_url", "wikidata_person_url", "youtube_interviews_url",
-                "podcast_search_url", "google_trends_url"
-            ]
-            valid_urls = sum(1 for f in url_fields if DataQualityValidator.is_valid_url(rpd.get(f)))
-            has_linkedin = DataQualityValidator.is_valid_url(person_data.get("linkedin_url"))
-            has_dossier = bool(dossier)
-
-            # Score calculation
-            score = round(((valid_urls / len(url_fields)) * 50) + (30 if has_linkedin else 10) + (20 if has_dossier else 0), 1)
+            audit = PersonaValidator.validate_persona(person_data)
 
             warnings = []
-            if not has_linkedin:
+            if not person_data.get("linkedin_url"):
                 warnings.append("LinkedIn URL is missing or unverified.")
-            if not has_dossier:
+            if not person_data.get("email"):
+                warnings.append("Email address not verified.")
+            if not person_data.get("value_proposition"):
                 warnings.append("AI Persona Dossier has not been synthesized.")
 
             return {
                 "status": "validated",
-                "score": score,
-                "person_name": person_data.get("name") or person_data.get("display_name"),
-                "has_verified_linkedin": has_linkedin,
-                "has_ai_dossier": has_dossier,
-                "valid_scraping_urls_count": f"{valid_urls}/{len(url_fields)}",
+                "score": audit.get("score", 90),
+                "grade": audit.get("grade", "A"),
+                "person_name": person_data.get("display_name")
+                or person_data.get("name")
+                or person_data.get("full_name"),
+                "has_verified_linkedin": bool(person_data.get("linkedin_url")),
+                "has_verified_email": bool(person_data.get("email")),
+                "has_ai_dossier": bool(person_data.get("value_proposition")),
                 "warnings": warnings,
-                "ready_for_db": score >= 60.0
+                "missing_critical": audit.get("missing_critical", []),
+                "missing_important": audit.get("missing_important", []),
+                "ready_for_db": audit.get("ready_for_db", True),
             }
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Persona validation failed: {str(e)}")
@@ -1461,7 +1768,7 @@ if FASTAPI_AVAILABLE:
                 raise HTTPException(status_code=404, detail=f"Account ID {req.account_id} not found in DB.")
 
             schema = PersonaSchema.from_enriched_json(req.person_data)
-            
+
             # Check if persona with same key exists for account
             existing = session.query(Persona).filter_by(account_id=acct.id, key=schema.key).first()
             if existing:
@@ -1482,7 +1789,7 @@ if FASTAPI_AVAILABLE:
                 "full_name": persona.full_name,
                 "title": persona.title,
                 "tier": persona.tier,
-                "message": f"Persona '{persona.full_name}' saved to database."
+                "message": f"Persona '{persona.full_name}' saved to database.",
             }
         except Exception as e:
             session.rollback()
@@ -1495,23 +1802,29 @@ if FASTAPI_AVAILABLE:
         """[Tab 4 - Full Org Hierarchy Fetch Button]: Pulls live 4-tier organization hierarchy."""
         try:
             hierarchy = scrape_hierarchy(
-                company_domain=req.company_domain,
-                company_name=req.company_name,
-                sec_cik=req.sec_cik
+                company_domain=req.company_domain, company_name=req.company_name, sec_cik=req.sec_cik
             )
 
             if req.enrich_csuite_dossiers and hierarchy.get("c_suite"):
                 for p in hierarchy["c_suite"][:2]:
                     p["persona_dossier"] = build_persona_dossier(
-                        p.get("name"), p.get("title"), req.company_name or req.company_domain, p.get("linkedin_url")
+                        p.get("name"),
+                        p.get("title"),
+                        req.company_name or req.company_domain,
+                        p.get("linkedin_url"),
                     )
 
-            total = sum(len(hierarchy.get(k, [])) for k in ["c_suite", "vp_level", "director_level", "manager_level"])
+            total = sum(
+                len(hierarchy.get(k, [])) for k in ["c_suite", "vp_level", "director_level", "manager_level"]
+            )
             return {
                 "status": "staged",
                 "total_contacts": total,
-                "tier_counts": {k: len(hierarchy.get(k, [])) for k in ["c_suite", "vp_level", "director_level", "manager_level"]},
-                "hierarchy": hierarchy
+                "tier_counts": {
+                    k: len(hierarchy.get(k, []))
+                    for k in ["c_suite", "vp_level", "director_level", "manager_level"]
+                },
+                "hierarchy": hierarchy,
             }
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Hierarchy fetch failed: {str(e)}")
@@ -1527,7 +1840,7 @@ if FASTAPI_AVAILABLE:
                 "total_contacts": report["total_contacts"],
                 "tier_breakdown": report["tier_breakdown"],
                 "contact_metrics": report["contact_metrics"],
-                "warnings": report["warnings"]
+                "warnings": report["warnings"],
             }
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Personas validation failed: {str(e)}")
@@ -1548,7 +1861,7 @@ if FASTAPI_AVAILABLE:
                 "status": "success",
                 "account_id": acct.id,
                 "total_personas_saved": count,
-                "message": f"Saved {count} personas for Account '{acct.key}'."
+                "message": f"Saved {count} personas for Account '{acct.key}'.",
             }
         except Exception as e:
             session.rollback()
@@ -1610,7 +1923,7 @@ if FASTAPI_AVAILABLE:
                 "company_name": req.company_name,
                 "run_dirs": {k: str(v) for k, v in res["run_dirs"].items()},
                 "validation_score": res["validation_report"]["audit_metadata"]["overall_quality_score"],
-                "ready_for_db_dump": res["validation_report"]["audit_metadata"]["ready_for_db_dump"]
+                "ready_for_db_dump": res["validation_report"]["audit_metadata"]["ready_for_db_dump"],
             }
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Pipeline execution failed: {str(e)}")
@@ -1623,7 +1936,11 @@ if FASTAPI_AVAILABLE:
             raise HTTPException(status_code=404, detail=f"Path not found: {target_path}")
 
         if target_path.is_dir():
-            files = list(target_path.glob("enriched/*_enriched*.json")) or list(target_path.glob("*_enriched*.json")) or list(target_path.rglob("*_enriched*.json"))
+            files = (
+                list(target_path.glob("enriched/*_enriched*.json"))
+                or list(target_path.glob("*_enriched*.json"))
+                or list(target_path.rglob("*_enriched*.json"))
+            )
             if not files:
                 raise HTTPException(status_code=400, detail=f"No enriched JSON in: {target_path}")
             target_path = files[0]
@@ -1640,7 +1957,6 @@ if FASTAPI_AVAILABLE:
         """Lists recent execution runs from PostgreSQL pipeline_runs table."""
         session = get_session()
         try:
-            from db.repositories.pipeline_run_repository import PipelineRunRepository
             repo = PipelineRunRepository(session)
             runs = repo.list_recent_runs(limit=limit)
             return [
@@ -1655,7 +1971,7 @@ if FASTAPI_AVAILABLE:
                     "completed_at": r.completed_at.isoformat() if r.completed_at else None,
                     "duration_seconds": float(r.duration_seconds or 0.0),
                     "total_credits_used": r.total_credits_used,
-                    "entities_extracted": r.entities_extracted
+                    "entities_extracted": r.entities_extracted,
                 }
                 for r in runs
             ]
@@ -1667,7 +1983,6 @@ if FASTAPI_AVAILABLE:
         """Retrieves full execution details, credit breakdown, and logs for a specific run."""
         session = get_session()
         try:
-            from db.repositories.pipeline_run_repository import PipelineRunRepository
             repo = PipelineRunRepository(session)
             r = repo.get_by_run_id(run_id)
             if not r:
@@ -1689,7 +2004,7 @@ if FASTAPI_AVAILABLE:
                 "execution_logs": r.execution_logs,
                 "raw_storage_dir": r.raw_storage_dir,
                 "enriched_storage_dir": r.enriched_storage_dir,
-                "error_message": r.error_message
+                "error_message": r.error_message,
             }
         finally:
             session.close()
@@ -1699,7 +2014,6 @@ if FASTAPI_AVAILABLE:
         """Returns aggregate credit consumption metrics across all vendors."""
         session = get_session()
         try:
-            from db.repositories.pipeline_run_repository import PipelineRunRepository
             repo = PipelineRunRepository(session)
             return repo.get_credits_summary()
         finally:
@@ -1727,38 +2041,41 @@ if FASTAPI_AVAILABLE:
         try:
             lobs = session.query(Lob).filter_by(account_id=account_id).all()
             result = []
-            for l in lobs:
-                sublobs = session.query(SubLob).filter_by(lob_id=l.id).all()
-                result.append({
-                    "id": l.id,
-                    "account_id": l.account_id,
-                    "name": l.lob_name,
-                    "lob_name": l.lob_name,
-                    "key": l.key,
-                    "domain": l.domain,
-                    "website_url": l.website_url,
-                    "desc": l.overview,
-                    "overview": l.overview,
-                    "revenue": l.audited_segment_revenue,
-                    "audited_segment_revenue": l.audited_segment_revenue,
-                    "head": l.operating_head,
-                    "operating_head": l.operating_head,
-                    "headcount": l.segment_headcount,
-                    "segment_headcount": l.segment_headcount,
-                    "lei_code": l.lei_code,
-                    "jurisdiction": l.jurisdiction,
-                    "technologies": l.technologies or [],
-                    "competitors": l.competitors or [],
-                    "financial_snippets": l.financial_snippets or [],
-                    "patents": l.patents or [],
-                    "logo_url": l.logo_url,
-                    "google_news_rss_url": l.google_news_rss_url,
-                    "reddit_rss_url": l.reddit_rss_url,
-                    "google_patents_url": l.google_patents_url,
-                    "google_trends_url": l.google_trends_url,
-                    "youtube_search_url": l.youtube_search_url,
-                    "sub_lobs": [{"id": s.id, "name": s.name} for s in sublobs]
-                })
+            for lob_item in lobs:
+                sublobs = session.query(SubLob).filter_by(lob_id=lob_item.id).all()
+                result.append(
+                    {
+                        "id": lob_item.id,
+                        "account_id": lob_item.account_id,
+                        "name": lob_item.lob_name,
+                        "lob_name": lob_item.lob_name,
+                        "key": lob_item.key,
+                        "domain": lob_item.domain,
+                        "website_url": lob_item.website_url,
+                        "desc": lob_item.overview,
+                        "overview": lob_item.overview,
+                        "revenue": lob_item.audited_segment_revenue,
+                        "audited_segment_revenue": lob_item.audited_segment_revenue,
+                        "head": lob_item.operating_head,
+                        "operating_head": lob_item.operating_head,
+                        "headcount": lob_item.segment_headcount,
+                        "segment_headcount": lob_item.segment_headcount,
+                        "lei_code": lob_item.lei_code,
+                        "jurisdiction": lob_item.jurisdiction,
+                        "technologies": lob_item.technologies or [],
+                        "competitors": lob_item.competitors or [],
+                        "financial_snippets": lob_item.financial_snippets or [],
+                        "patents": lob_item.patents or [],
+                        "logo_url": lob_item.logo_url,
+                        "google_news_rss_url": lob_item.google_news_rss_url,
+                        "reddit_rss_url": lob_item.reddit_rss_url,
+                        "google_patents_url": lob_item.google_patents_url,
+                        "google_trends_url": lob_item.google_trends_url,
+                        "youtube_search_url": lob_item.youtube_search_url,
+                        "sub_lobs": [{"id": s.id, "name": s.name, "metadata": s.metadata_} for s in sublobs],
+                        "subLobs": [{"id": s.id, "name": s.name, "metadata": s.metadata_} for s in sublobs],
+                    }
+                )
             return {"account_id": account_id, "total_lobs": len(result), "lobs": result}
         finally:
             session.close()
@@ -1768,34 +2085,35 @@ if FASTAPI_AVAILABLE:
         """Retrieve details for a single Line of Business by its ID."""
         session = get_session()
         try:
-            l = session.query(Lob).filter_by(id=lob_id).first()
-            if not l:
+            lob_item = session.query(Lob).filter_by(id=lob_id).first()
+            if not lob_item:
                 raise HTTPException(status_code=404, detail="Line of Business not found.")
-            sublobs = session.query(SubLob).filter_by(lob_id=l.id).all()
+            sublobs = session.query(SubLob).filter_by(lob_id=lob_item.id).all()
             return {
-                "id": l.id,
-                "account_id": l.account_id,
-                "name": l.lob_name,
-                "lob_name": l.lob_name,
-                "key": l.key,
-                "domain": l.domain,
-                "website_url": l.website_url,
-                "overview": l.overview,
-                "audited_segment_revenue": l.audited_segment_revenue,
-                "operating_head": l.operating_head,
-                "segment_headcount": l.segment_headcount,
-                "lei_code": l.lei_code,
-                "jurisdiction": l.jurisdiction,
-                "technologies": l.technologies or [],
-                "competitors": l.competitors or [],
-                "financial_snippets": l.financial_snippets or [],
-                "patents": l.patents or [],
-                "google_news_rss_url": l.google_news_rss_url,
-                "reddit_rss_url": l.reddit_rss_url,
-                "google_patents_url": l.google_patents_url,
-                "google_trends_url": l.google_trends_url,
-                "youtube_search_url": l.youtube_search_url,
-                "sub_lobs": [{"id": s.id, "name": s.name} for s in sublobs]
+                "id": lob_item.id,
+                "account_id": lob_item.account_id,
+                "name": lob_item.lob_name,
+                "lob_name": lob_item.lob_name,
+                "key": lob_item.key,
+                "domain": lob_item.domain,
+                "website_url": lob_item.website_url,
+                "overview": lob_item.overview,
+                "audited_segment_revenue": lob_item.audited_segment_revenue,
+                "operating_head": lob_item.operating_head,
+                "segment_headcount": lob_item.segment_headcount,
+                "lei_code": lob_item.lei_code,
+                "jurisdiction": lob_item.jurisdiction,
+                "technologies": lob_item.technologies or [],
+                "competitors": lob_item.competitors or [],
+                "financial_snippets": lob_item.financial_snippets or [],
+                "patents": lob_item.patents or [],
+                "google_news_rss_url": lob_item.google_news_rss_url,
+                "reddit_rss_url": lob_item.reddit_rss_url,
+                "google_patents_url": lob_item.google_patents_url,
+                "google_trends_url": lob_item.google_trends_url,
+                "youtube_search_url": lob_item.youtube_search_url,
+                "sub_lobs": [{"id": s.id, "name": s.name, "metadata": s.metadata_} for s in sublobs],
+                "subLobs": [{"id": s.id, "name": s.name, "metadata": s.metadata_} for s in sublobs],
             }
         finally:
             session.close()
@@ -1808,46 +2126,49 @@ if FASTAPI_AVAILABLE:
             personas = session.query(Persona).filter_by(account_id=account_id).all()
             result = []
             for p in personas:
-                result.append({
-                    "id": p.id,
-                    "account_id": p.account_id,
-                    "lob_id": p.lob_id,
-                    "key": p.key,
-                    "name": p.full_name or p.display_name or "Executive",
-                    "full_name": p.full_name or p.display_name or "Executive",
-                    "first_name": p.first_name,
-                    "last_name": p.last_name,
-                    "title": p.title,
-                    "job_title": p.title,
-                    "tier": p.tier,
-                    "seniority_tier": p.tier,
-                    "seniority_raw": p.seniority_raw,
-                    "email": p.email,
-                    "phone": p.phone,
-                    "city": p.city,
-                    "state": p.state,
-                    "country": p.country,
-                    "decision_authority": p.decision_authority,
-                    "budget_authority": p.budget_authority,
-                    "departments": p.departments or ["Executive"],
-                    "linkedin_url": p.linkedin_url,
-                    "twitter_url": p.twitter_live_url or (f"https://twitter.com/{p.twitter_handle}" if p.twitter_handle else None),
-                    "skills": p.skills or [],
-                    "target_kpis": p.target_kpis or [],
-                    "operational_pain_points": p.operational_pain_points or [],
-                    "key_objections": p.key_objections or [],
-                    "degree": p.degree,
-                    "institution": p.institution,
-                    "prior_company": p.prior_company,
-                    "communication_style": p.communication_style,
-                    "engagement_rate": p.engagement_rate,
-                    "value_proposition": p.value_proposition,
-                    "personalized_icebreaker": p.personalized_icebreaker,
-                    "social_platform": p.social_platform,
-                    "social_profile_url": p.social_profile_url,
-                    "social_presence_level": p.social_presence_level,
-                    "raw_data": p.raw_data
-                })
+                result.append(
+                    {
+                        "id": p.id,
+                        "account_id": p.account_id,
+                        "lob_id": p.lob_id,
+                        "key": p.key,
+                        "name": p.full_name or p.display_name or "Executive",
+                        "full_name": p.full_name or p.display_name or "Executive",
+                        "first_name": p.first_name,
+                        "last_name": p.last_name,
+                        "title": p.title,
+                        "job_title": p.title,
+                        "tier": p.tier,
+                        "seniority_tier": p.tier,
+                        "seniority_raw": p.seniority_raw,
+                        "email": p.email,
+                        "phone": p.phone,
+                        "city": p.city,
+                        "state": p.state,
+                        "country": p.country,
+                        "decision_authority": p.decision_authority,
+                        "budget_authority": p.budget_authority,
+                        "departments": p.departments or ["Executive"],
+                        "linkedin_url": p.linkedin_url,
+                        "twitter_url": p.twitter_live_url
+                        or (f"https://twitter.com/{p.twitter_handle}" if p.twitter_handle else None),
+                        "skills": p.skills or [],
+                        "target_kpis": p.target_kpis or [],
+                        "operational_pain_points": p.operational_pain_points or [],
+                        "key_objections": p.key_objections or [],
+                        "degree": p.degree,
+                        "institution": p.institution,
+                        "prior_company": p.prior_company,
+                        "communication_style": p.communication_style,
+                        "engagement_rate": p.engagement_rate,
+                        "value_proposition": p.value_proposition,
+                        "personalized_icebreaker": p.personalized_icebreaker,
+                        "social_platform": p.social_platform,
+                        "social_profile_url": p.social_profile_url,
+                        "social_presence_level": p.social_presence_level,
+                        "raw_data": p.raw_data,
+                    }
+                )
             return {"account_id": account_id, "total_personas": len(result), "personas": result}
         finally:
             session.close()
@@ -1881,7 +2202,7 @@ if FASTAPI_AVAILABLE:
                 "value_proposition": p.value_proposition,
                 "operational_pain_points": p.operational_pain_points or [],
                 "target_kpis": p.target_kpis or [],
-                "raw_data": p.raw_data
+                "raw_data": p.raw_data,
             }
         finally:
             session.close()
@@ -1901,44 +2222,199 @@ if FASTAPI_AVAILABLE:
             acct = session.query(Account).filter_by(id=p.account_id).first()
             target_key = p.key or slugify(p.full_name or "")
 
-            digest_row = session.query(Digest).filter_by(target_key=target_key).first() if target_key else None
-            posts = (session.query(Post)
-                     .filter_by(target_key=target_key)
-                     .order_by(Post.channel, Post.rank)
-                     .all()) if target_key else []
-            movements = (session.query(CxoMovement)
-                         .filter(CxoMovement.person_name.ilike(f"%{p.full_name}%"))
-                         .order_by(CxoMovement.effective_date.desc().nullslast())
-                         .all()) if p.full_name else []
+            digest_row = (
+                session.query(Digest).filter_by(target_key=target_key).first() if target_key else None
+            )
+            posts = (
+                (session.query(Post).filter_by(target_key=target_key).order_by(Post.channel, Post.rank).all())
+                if target_key
+                else []
+            )
+            movements = (
+                (
+                    session.query(CxoMovement)
+                    .filter(CxoMovement.person_name.ilike(f"%{p.full_name}%"))
+                    .order_by(CxoMovement.effective_date.desc().nullslast())
+                    .all()
+                )
+                if p.full_name
+                else []
+            )
 
             persona_dict = {
-                "name": p.full_name or p.display_name or "Executive", "title": p.title,
-                "email": p.email, "phone": p.phone, "linkedin_url": p.linkedin_url,
-                "city": p.city, "state": p.state, "country": p.country,
-                "decision_authority": p.decision_authority, "budget_authority": p.budget_authority,
-                "seniority_raw": p.seniority_raw, "skills": p.skills or [],
+                "name": p.full_name or p.display_name or "Executive",
+                "title": p.title,
+                "email": p.email,
+                "phone": p.phone,
+                "linkedin_url": p.linkedin_url,
+                "city": p.city,
+                "state": p.state,
+                "country": p.country,
+                "decision_authority": p.decision_authority,
+                "budget_authority": p.budget_authority,
+                "seniority_raw": p.seniority_raw,
+                "skills": p.skills or [],
                 "personalized_icebreaker": p.personalized_icebreaker,
-                "value_proposition": p.value_proposition, "communication_style": p.communication_style,
-                "target_kpis": p.target_kpis or [], "operational_pain_points": p.operational_pain_points or [],
+                "value_proposition": p.value_proposition,
+                "communication_style": p.communication_style,
+                "target_kpis": p.target_kpis or [],
+                "operational_pain_points": p.operational_pain_points or [],
                 "key_objections": p.key_objections or [],
             }
             account_dict = {"name": acct.display_name or acct.legal_name} if acct else None
-            posts_list = [{
-                "channel": post.channel, "published_at": post.published_at,
-                "body": post.body, "post_url": post.post_url,
-            } for post in posts]
-            career_events = [{
-                "event_type": m.event_type, "designation": m.designation,
-                "previous_role": m.previous_role, "effective_date": m.effective_date,
-                "context": m.context,
-            } for m in movements]
+            posts_list = [
+                {
+                    "channel": post.channel,
+                    "published_at": post.published_at,
+                    "body": post.body,
+                    "post_url": post.post_url,
+                }
+                for post in posts
+            ]
+            career_events = [
+                {
+                    "event_type": m.event_type,
+                    "designation": m.designation,
+                    "previous_role": m.previous_role,
+                    "effective_date": m.effective_date,
+                    "context": m.context,
+                }
+                for m in movements
+            ]
 
             pdf_bytes = build_persona_profile_pdf(
-                persona_dict, account_dict,
+                persona_dict,
+                account_dict,
                 digest_row.digest if digest_row else None,
-                posts_list, career_events,
+                posts_list,
+                career_events,
             )
             filename = f"{slugify(persona_dict['name'])}-personality-report.pdf"
+            return Response(
+                content=pdf_bytes,
+                media_type="application/pdf",
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            )
+        finally:
+            session.close()
+
+    def _slugify_dropping_initials(name: str) -> str:
+        """Same idea as frontend/js/modules/utils.js's slugifyDroppingInitials
+        — a person registered in people_targets.py under a short key (e.g.
+        "ranjit_samra") won't match a slug of their full display name if it
+        includes a middle initial ("Ranjit S. Samra" -> "ranjit_s_samra")."""
+        if not name:
+            return ""
+        tokens = [t for t in name.strip().split() if len(re.sub(r"[^a-zA-Z0-9]", "", t)) > 1]
+        return slugify(" ".join(tokens))
+
+    def _resolve_persona_digest(session, p: "Persona"):
+        """Tries p.key, then slugify(full_name), then that slug with middle
+        initials dropped, against real Digest rows — mirrors
+        resolvePersonaTargetKey() on the frontend so the API and UI agree on
+        which digest belongs to this persona. Returns the Digest row or None."""
+        candidates = [p.key, slugify(p.full_name or ""), _slugify_dropping_initials(p.full_name or "")]
+        for c in candidates:
+            if not c:
+                continue
+            row = session.query(Digest).filter_by(target_key=c).first()
+            if row:
+                return row
+        return None
+
+    @app.get("/api/personas/{persona_id}/psychological-profile", tags=["3. Personas & Buying Committee"])
+    def get_persona_psychological_profile(persona_id: int, user: User = Depends(auth.require_persona_account_access)):
+        """Retrieve the compiled Psychological & Leadership Profile for a persona.
+
+        Returns profile=None (not a fabricated placeholder) when nothing has
+        been generated yet — the frontend shows an honest "not generated"
+        state for that rather than plausible-looking canned text, same
+        principle as the Personality Profile endpoint/renderer."""
+        session = get_session()
+        try:
+            p = session.query(Persona).filter_by(id=persona_id).first()
+            if not p:
+                raise HTTPException(status_code=404, detail="Persona not found.")
+            digest_row = _resolve_persona_digest(session, p)
+
+            profile = None
+            if digest_row and digest_row.digest and isinstance(digest_row.digest, dict):
+                profile = digest_row.digest.get("psychological_profile")
+            if not profile and p.raw_data and isinstance(p.raw_data, dict):
+                profile = p.raw_data.get("psychological_profile")
+
+            return {
+                "persona_id": p.id,
+                "persona_name": p.full_name,
+                "title": p.title,
+                "profile": profile,
+            }
+        finally:
+            session.close()
+
+    @app.post("/api/personas/{persona_id}/psychological-profile/generate", tags=["3. Personas & Buying Committee"])
+    def generate_persona_psychological_profile(persona_id: int, user: User = Depends(auth.require_persona_account_access)):
+        """Trigger on-demand live generation of the psychological profile using LLM synthesis."""
+        session = get_session()
+        try:
+            p = session.query(Persona).filter_by(id=persona_id).first()
+            if not p:
+                raise HTTPException(status_code=404, detail="Persona not found.")
+
+            from apps.content_pipeline.people_targets import ALIASES as PEOPLE_ALIASES
+
+            existing = _resolve_persona_digest(session, p)
+            candidates = [existing.target_key] if existing else []
+            candidates += [p.key, slugify(p.full_name or ""), _slugify_dropping_initials(p.full_name or "")]
+            target_key = next((c for c in candidates if c and c in PEOPLE_ALIASES), None)
+            if not target_key:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"'{p.full_name}' isn't registered in people_targets.py under any key this resolves "
+                    f"({', '.join(c for c in candidates if c)}) — add them there before generating a profile.",
+                )
+
+            # profiles_only=True: this is a UI-triggered on-demand generation for
+            # exactly one profile, not a full scheduled digest run — no reason to
+            # also pay for the sales-email rollup call nobody asked for here.
+            from apps.content_pipeline.digest import pipeline as digest_pipeline
+            digest_res = digest_pipeline.run(company_key=target_key, kind="person", cap=25, profiles_only=True)
+            psych = digest_res.get("psychological_profile")
+            if not psych:
+                raise HTTPException(status_code=500, detail="Synthesis did not produce a psychological profile.")
+
+            return {
+                "status": "success",
+                "persona_id": p.id,
+                "profile": psych
+            }
+        finally:
+            session.close()
+
+    @app.get("/api/personas/{persona_id}/psychological-profile.pdf", tags=["3. Personas & Buying Committee"])
+    def download_persona_psychological_profile_pdf(persona_id: int, user: User = Depends(auth.require_persona_account_access)):
+        """Download high-impact executive PDF briefing for the Psychological Profile."""
+        session = get_session()
+        try:
+            p = session.query(Persona).filter_by(id=persona_id).first()
+            if not p:
+                raise HTTPException(status_code=404, detail="Persona not found.")
+            acct = session.query(Account).filter_by(id=p.account_id).first()
+            target_key = p.key or slugify(p.full_name or "")
+            digest_row = session.query(Digest).filter_by(target_key=target_key).first() if target_key else None
+
+            persona_dict = {
+                "full_name": p.full_name, "title": p.title,
+                "account_name": acct.display_name or acct.legal_name if acct else "",
+                "city": p.city, "state": p.state, "country": p.country,
+                "communication_style": p.communication_style
+            }
+
+            pdf_bytes = build_psychological_profile_pdf(
+                persona_dict,
+                digest_row.digest if digest_row else None
+            )
+            filename = f"{slugify(p.full_name or 'executive')}-psychological-profile.pdf"
             return Response(
                 content=pdf_bytes,
                 media_type="application/pdf",
@@ -1970,26 +2446,26 @@ if FASTAPI_AVAILABLE:
                     "last_type": acct.last_funding_type,
                     "last_date": acct.last_funding_date.isoformat() if acct.last_funding_date else None,
                     "num_rounds": acct.num_funding_rounds,
-                    "status": acct.funding_status
+                    "status": acct.funding_status,
                 },
                 "ipo": {
                     "status": acct.ipo_status,
-                    "date": acct.ipo_date.isoformat() if acct.ipo_date else None
+                    "date": acct.ipo_date.isoformat() if acct.ipo_date else None,
                 },
                 "traffic": {
                     "global_rank": acct.global_traffic_rank,
                     "monthly_visits": acct.monthly_visits,
                     "bounce_rate": acct.bounce_rate,
                     "visit_duration": acct.visit_duration,
-                    "page_views_per_visit": acct.page_views_per_visit
+                    "page_views_per_visit": acct.page_views_per_visit,
                 },
                 "leadership_counts": {
                     "c_suite": acct.c_suite_count,
                     "vp": acct.vp_count,
                     "director": acct.director_count,
-                    "manager": acct.manager_count
+                    "manager": acct.manager_count,
                 },
-                "multi_source_intelligence": acct.multi_source_intelligence
+                "multi_source_intelligence": acct.multi_source_intelligence,
             }
         finally:
             session.close()
@@ -2004,7 +2480,7 @@ if FASTAPI_AVAILABLE:
             "status": sig.status,
             "first_seen": sig.first_seen.isoformat() if sig.first_seen else None,
             "last_seen": sig.last_seen.isoformat() if sig.last_seen else None,
-            "is_new": bool(sig.first_seen and (now - sig.first_seen).days < 3)
+            "is_new": bool(sig.first_seen and (now - sig.first_seen).days < 3),
         }
 
     @app.get("/api/accounts/{account_id}/opportunities", tags=["1. Accounts"])
@@ -2014,10 +2490,12 @@ if FASTAPI_AVAILABLE:
         session = get_session()
         try:
             now = datetime.now(timezone.utc)
-            signals = (session.query(OpportunitySignal)
-                       .filter_by(account_id=account_id)
-                       .order_by(OpportunitySignal.first_seen.desc())
-                       .all())
+            signals = (
+                session.query(OpportunitySignal)
+                .filter_by(account_id=account_id)
+                .order_by(OpportunitySignal.first_seen.desc())
+                .all()
+            )
             by_category: Dict[str, List[Dict[str, Any]]] = {"growth_theme": [], "domain_expansion": []}
             for s in signals:
                 by_category.setdefault(s.category, []).append(_serialize_opportunity_signal(s, now))
@@ -2026,18 +2504,24 @@ if FASTAPI_AVAILABLE:
             session.close()
 
     @app.post("/api/accounts/{account_id}/opportunities/sync", tags=["1. Accounts"])
-    def sync_account_opportunity_signals(account_id: int, req: OpportunitySignalSyncRequest, user: User = Depends(auth.require_account_access)):
+    def sync_account_opportunity_signals(
+        account_id: int,
+        req: OpportunitySignalSyncRequest,
+        user: User = Depends(auth.require_account_access),
+    ):
         """Upsert the currently-detected opportunity signals for one category (growth_theme or
         domain_expansion). Signals no longer present in `items` are marked inactive rather than
         deleted, so the account keeps a full history of what has been suggested over time."""
         if req.category not in ("growth_theme", "domain_expansion"):
-            raise HTTPException(status_code=400, detail="category must be 'growth_theme' or 'domain_expansion'.")
+            raise HTTPException(
+                status_code=400, detail="category must be 'growth_theme' or 'domain_expansion'."
+            )
         session = get_session()
         try:
             now = datetime.now(timezone.utc)
-            existing = (session.query(OpportunitySignal)
-                        .filter_by(account_id=account_id, category=req.category)
-                        .all())
+            existing = (
+                session.query(OpportunitySignal).filter_by(account_id=account_id, category=req.category).all()
+            )
             existing_by_key = {s.signal_key: s for s in existing}
             seen_keys = set()
             for item in req.items:
@@ -2050,9 +2534,14 @@ if FASTAPI_AVAILABLE:
                     sig.last_seen = now
                 else:
                     sig = OpportunitySignal(
-                        account_id=account_id, category=req.category, signal_key=item.signal_key,
-                        title=item.title, details=item.details, status="active",
-                        first_seen=now, last_seen=now
+                        account_id=account_id,
+                        category=req.category,
+                        signal_key=item.signal_key,
+                        title=item.title,
+                        details=item.details,
+                        status="active",
+                        first_seen=now,
+                        last_seen=now,
                     )
                     session.add(sig)
                     existing_by_key[item.signal_key] = sig
@@ -2060,14 +2549,16 @@ if FASTAPI_AVAILABLE:
                 if key not in seen_keys and sig.status != "inactive":
                     sig.status = "inactive"
             session.commit()
-            signals = (session.query(OpportunitySignal)
-                       .filter_by(account_id=account_id, category=req.category)
-                       .order_by(OpportunitySignal.first_seen.desc())
-                       .all())
+            signals = (
+                session.query(OpportunitySignal)
+                .filter_by(account_id=account_id, category=req.category)
+                .order_by(OpportunitySignal.first_seen.desc())
+                .all()
+            )
             return {
                 "account_id": account_id,
                 "category": req.category,
-                "signals": [_serialize_opportunity_signal(s, now) for s in signals]
+                "signals": [_serialize_opportunity_signal(s, now) for s in signals],
             }
         except HTTPException:
             raise
@@ -2088,7 +2579,7 @@ if FASTAPI_AVAILABLE:
             "priority": snap.priority,
             "confidence": snap.confidence,
             "data_gaps": snap.data_gaps or [],
-            "do_not_say": snap.do_not_say or []
+            "do_not_say": snap.do_not_say or [],
         }
 
     @app.get("/api/accounts/{account_id}/weekly-updates", tags=["1. Accounts"])
@@ -2096,43 +2587,65 @@ if FASTAPI_AVAILABLE:
         """Retrieve the archived history of weekly sales update emails for an account, newest first."""
         session = get_session()
         try:
-            snapshots = (session.query(WeeklyDigestSnapshot)
-                         .filter_by(account_id=account_id)
-                         .order_by(WeeklyDigestSnapshot.generated_at.desc())
-                         .all())
+            snapshots = (
+                session.query(WeeklyDigestSnapshot)
+                .filter_by(account_id=account_id)
+                .order_by(WeeklyDigestSnapshot.generated_at.desc())
+                .all()
+            )
             return {"account_id": account_id, "updates": [_serialize_weekly_digest(s) for s in snapshots]}
         finally:
             session.close()
 
     @app.post("/api/accounts/{account_id}/weekly-updates/sync", tags=["1. Accounts"])
-    def sync_account_weekly_update(account_id: int, req: WeeklyDigestSyncRequest, user: User = Depends(auth.require_account_access)):
+    def sync_account_weekly_update(
+        account_id: int,
+        req: WeeklyDigestSyncRequest,
+        user: User = Depends(auth.require_account_access),
+    ):
         """Archive the current weekly sales update email as a snapshot, if this generation hasn't
         been captured yet. The live `digests` row is overwritten every pipeline run, so this is what
         preserves past weeks' versions instead of losing them."""
         if not req.generated_at:
-            raise HTTPException(status_code=400, detail="generated_at is required to archive a weekly update snapshot.")
+            raise HTTPException(
+                status_code=400, detail="generated_at is required to archive a weekly update snapshot."
+            )
         try:
             generated_at = datetime.fromisoformat(req.generated_at)
         except ValueError:
-            raise HTTPException(status_code=400, detail=f"generated_at is not a valid ISO datetime: {req.generated_at}")
-        week_of = (generated_at.date() - timedelta(days=generated_at.weekday()))
+            raise HTTPException(
+                status_code=400, detail=f"generated_at is not a valid ISO datetime: {req.generated_at}"
+            )
+        week_of = generated_at.date() - timedelta(days=generated_at.weekday())
         session = get_session()
         try:
-            existing = (session.query(WeeklyDigestSnapshot)
-                        .filter_by(account_id=account_id, generated_at=generated_at)
-                        .first())
+            existing = (
+                session.query(WeeklyDigestSnapshot)
+                .filter_by(account_id=account_id, generated_at=generated_at)
+                .first()
+            )
             if not existing:
-                session.add(WeeklyDigestSnapshot(
-                    account_id=account_id, target_key=req.target_key, week_of=week_of,
-                    generated_at=generated_at, subject=req.subject, body=req.body,
-                    priority=req.priority, confidence=req.confidence,
-                    data_gaps=req.data_gaps, do_not_say=req.do_not_say
-                ))
+                session.add(
+                    WeeklyDigestSnapshot(
+                        account_id=account_id,
+                        target_key=req.target_key,
+                        week_of=week_of,
+                        generated_at=generated_at,
+                        subject=req.subject,
+                        body=req.body,
+                        priority=req.priority,
+                        confidence=req.confidence,
+                        data_gaps=req.data_gaps,
+                        do_not_say=req.do_not_say,
+                    )
+                )
                 session.commit()
-            snapshots = (session.query(WeeklyDigestSnapshot)
-                         .filter_by(account_id=account_id)
-                         .order_by(WeeklyDigestSnapshot.generated_at.desc())
-                         .all())
+            snapshots = (
+                session.query(WeeklyDigestSnapshot)
+                .filter_by(account_id=account_id)
+                .order_by(WeeklyDigestSnapshot.generated_at.desc())
+                .all()
+            )
             return {"account_id": account_id, "updates": [_serialize_weekly_digest(s) for s in snapshots]}
         except HTTPException:
             raise
@@ -2281,7 +2794,11 @@ if FASTAPI_AVAILABLE:
             if body.due_date is not None:
                 item.due_date = _parse_due_date(body.due_date)
             if body.persona_id is not None:
-                persona = session.query(Persona).filter_by(id=body.persona_id, account_id=item.account_id).first()
+                persona = (
+                    session.query(Persona)
+                    .filter_by(id=body.persona_id, account_id=item.account_id)
+                    .first()
+                )
                 if not persona:
                     raise HTTPException(status_code=400, detail="persona_id does not belong to this account")
                 item.persona_id = body.persona_id
@@ -2298,24 +2815,37 @@ if FASTAPI_AVAILABLE:
                 due_line = f" Due {item.due_date.date().isoformat()}." if item.due_date else ""
                 background_tasks.add_task(
                     email_sender.send_email,
-                    item.assigned_to.email, f"Action item assigned to you: {item.title}",
-                    f"Hi {item.assigned_to.full_name or item.assigned_to.email},\n\n"
-                    f"You've been assigned an action item on {item.account.display_name or item.account.legal_name}.\n\n"
-                    f"{item.title}\n{item.description or ''}\n{due_line}\n\n"
-                    f"View it here: {base_url}/?account={item.account_id}\n",
+                    item.assigned_to.email,
+                    f"Action item assigned to you: {item.title}",
+                    (
+                        f"Hi {item.assigned_to.full_name or item.assigned_to.email},\n\n"
+                        f"You've been assigned an action item on "
+                        f"{item.account.display_name or item.account.legal_name}.\n\n"
+                        f"{item.title}\n{item.description or ''}\n{due_line}\n\n"
+                        f"View it here: {base_url}/?account={item.account_id}\n"
+                    ),
                     html_body=email_sender.render_html(
                         "New action item assigned to you",
-                        [f"Hi {item.assigned_to.full_name or item.assigned_to.email},",
-                         f"You've been assigned an action item on {item.account.display_name or item.account.legal_name}:",
-                         item.title] + ([item.description] if item.description else []),
-                        cta_label="View Account", cta_url=f"{base_url}/?account={item.account_id}",
+                        [
+                            f"Hi {item.assigned_to.full_name or item.assigned_to.email},",
+                            f"You've been assigned an action item on "
+                            f"{item.account.display_name or item.account.legal_name}:",
+                            item.title,
+                        ] + ([item.description] if item.description else []),
+                        cta_label="View Account",
+                        cta_url=f"{base_url}/?account={item.account_id}",
                         footnote=due_line.strip() or None,
                     ),
                 )
                 s2 = get_session()
                 try:
-                    s2.add(ActionItemReminder(action_item_id=item.id, reminder_type="assigned",
-                                               sent_to_user_id=item.assigned_to_id))
+                    s2.add(
+                        ActionItemReminder(
+                            action_item_id=item.id,
+                            reminder_type="assigned",
+                            sent_to_user_id=item.assigned_to_id,
+                        )
+                    )
                     s2.commit()
                 except Exception:
                     s2.rollback()
@@ -2483,7 +3013,10 @@ if FASTAPI_AVAILABLE:
                      .filter(ActionItem.assigned_to_id == user.id))
             if user.role != "super_admin":
                 accessible_ids = auth.get_accessible_account_ids(session, user.id)
-                query = query.filter(ActionItem.account_id.in_(accessible_ids)) if accessible_ids else query.filter(False)
+                if accessible_ids:
+                    query = query.filter(ActionItem.account_id.in_(accessible_ids))
+                else:
+                    query = query.filter(False)
             if status:
                 query = query.filter(ActionItem.status == status)
             items = query.order_by(ActionItem.due_date.asc().nullslast(), ActionItem.created_at.desc()).all()
@@ -2511,7 +3044,7 @@ if FASTAPI_AVAILABLE:
                         "llm": d.llm,
                         "posts_considered": d.posts_considered,
                         "generated_at": d.generated_at.isoformat() if d.generated_at else None,
-                        "digest": d.digest
+                        "digest": d.digest,
                     }
             except Exception:
                 digests_by_key = {}
@@ -2519,49 +3052,53 @@ if FASTAPI_AVAILABLE:
             posts_by_key = {}
             try:
                 for p in session.query(Post).order_by(Post.target_key, Post.channel, Post.rank).all():
-                    posts_by_key.setdefault(p.target_key, []).append({
-                        "id": p.id,
-                        "channel": p.channel,
-                        "post_key": p.post_key,
-                        "rank": p.rank,
-                        "post_url": p.post_url,
-                        "body": p.body,
-                        "author": p.author,
-                        "published_at": p.published_at,
-                        "engagement": p.engagement,
-                        "media": p.media,
-                        "new_in_last_run": p.new_in_last_run,
-                        "first_seen": p.first_seen.isoformat() if p.first_seen else None,
-                        "last_seen": p.last_seen.isoformat() if p.last_seen else None
-                    })
+                    posts_by_key.setdefault(p.target_key, []).append(
+                        {
+                            "id": p.id,
+                            "channel": p.channel,
+                            "post_key": p.post_key,
+                            "rank": p.rank,
+                            "post_url": p.post_url,
+                            "body": p.body,
+                            "author": p.author,
+                            "published_at": p.published_at,
+                            "engagement": p.engagement,
+                            "media": p.media,
+                            "new_in_last_run": p.new_in_last_run,
+                            "first_seen": p.first_seen.isoformat() if p.first_seen else None,
+                            "last_seen": p.last_seen.isoformat() if p.last_seen else None,
+                        }
+                    )
             except Exception:
                 posts_by_key = {}
 
             jobs_by_key = {}
             try:
-                jobs_query = (session.query(LinkedInJob)
-                              .order_by(LinkedInJob.target_key,
-                                        LinkedInJob.first_seen.desc().nullslast()))
+                jobs_query = session.query(LinkedInJob).order_by(
+                    LinkedInJob.target_key, LinkedInJob.first_seen.desc().nullslast()
+                )
                 for j in jobs_query.all():
-                    jobs_by_key.setdefault(j.target_key, []).append({
-                        "id": j.id,
-                        "target_key": j.target_key,
-                        "job_key": j.job_key,
-                        "title": j.title,
-                        "company_name": j.company_name,
-                        "location": j.location,
-                        "employment_type": j.employment_type,
-                        "workplace_type": j.workplace_type,
-                        "posted_date": j.posted_date,
-                        "applicants": j.applicants,
-                        "views": j.views,
-                        "salary": j.salary,
-                        "job_url": j.job_url,
-                        "description": j.description,
-                        "new_in_last_run": j.new_in_last_run,
-                        "first_seen": j.first_seen.isoformat() if j.first_seen else None,
-                        "last_seen": j.last_seen.isoformat() if j.last_seen else None
-                    })
+                    jobs_by_key.setdefault(j.target_key, []).append(
+                        {
+                            "id": j.id,
+                            "target_key": j.target_key,
+                            "job_key": j.job_key,
+                            "title": j.title,
+                            "company_name": j.company_name,
+                            "location": j.location,
+                            "employment_type": j.employment_type,
+                            "workplace_type": j.workplace_type,
+                            "posted_date": j.posted_date,
+                            "applicants": j.applicants,
+                            "views": j.views,
+                            "salary": j.salary,
+                            "job_url": j.job_url,
+                            "description": j.description,
+                            "new_in_last_run": j.new_in_last_run,
+                            "first_seen": j.first_seen.isoformat() if j.first_seen else None,
+                            "last_seen": j.last_seen.isoformat() if j.last_seen else None,
+                        }
+                    )
             except Exception:
                 jobs_by_key = {}
 
@@ -2573,10 +3110,25 @@ if FASTAPI_AVAILABLE:
     # LINKEDIN JOB POSTINGS — bulk cross-account endpoint
     # ══════════════════════════════════════════════════════
     JOB_CATEGORY_RULES = [
-        ("Engineering & Technology", r"software|engineer|developer|architect|devops|\bsre\b|platform|infrastructure|\bcloud\b|\bit\b|technology|full[- ]stack|backend|front[- ]end"),
-        ("Data & AI", r"data scientist|data engineer|machine learning|\bai\b|analytics|data governance|data platform|business intelligence|\bml\b"),
+        (
+            "Engineering & Technology",
+            (
+                r"software|engineer|developer|architect|devops|\bsre\b|platform|"
+                r"infrastructure|\bcloud\b|\bit\b|technology|full[- ]stack|backend|front[- ]end"
+            ),
+        ),
+        (
+            "Data & AI",
+            (
+                r"data scientist|data engineer|machine learning|\bai\b|analytics|"
+                r"data governance|data platform|business intelligence|\bml\b"
+            ),
+        ),
         ("Finance & Accounting", r"finance|accounting|audit|controller|treasury|financial reporting|\btax\b"),
-        ("Sales & Business Development", r"\bsales\b|business development|account executive|relationship manager|client coverage"),
+        (
+            "Sales & Business Development",
+            r"\bsales\b|business development|account executive|relationship manager|client coverage",
+        ),
         ("Marketing & Communications", r"marketing|communications|\bbrand\b|content\b|social media"),
         ("Product Management", r"product manager|product owner|product lead"),
         ("Human Resources", r"human resources|\bhr\b|talent acquisition|\brecruit|people operations"),
@@ -2597,9 +3149,12 @@ if FASTAPI_AVAILABLE:
     def _build_target_key_to_account_map(session) -> Dict[str, Account]:
         mapping: Dict[str, Account] = {}
         for a in session.query(Account).all():
-            for candidate in (a.key, (a.stock_symbol or "").lower() or None,
-                              slugify(a.display_name) if a.display_name else None,
-                              slugify(a.legal_name) if a.legal_name else None):
+            for candidate in (
+                a.key,
+                (a.stock_symbol or "").lower() or None,
+                slugify(a.display_name) if a.display_name else None,
+                slugify(a.legal_name) if a.legal_name else None,
+            ):
                 if candidate:
                     mapping[candidate] = a
         return mapping
@@ -2625,7 +3180,7 @@ if FASTAPI_AVAILABLE:
             "last_seen": j.last_seen.isoformat() if j.last_seen else None,
             "category": job_category,
             "account_id": acct.id if acct else None,
-            "account_name": (acct.legal_name or acct.display_name) if acct else j.company_name
+            "account_name": (acct.legal_name or acct.display_name) if acct else j.company_name,
         }
 
     @app.get("/api/linkedin-jobs", tags=["5. LinkedIn Jobs"])
@@ -2652,8 +3207,7 @@ if FASTAPI_AVAILABLE:
             q_norm = (q or "").strip().lower()
 
             key_to_account = _build_target_key_to_account_map(session)
-            jobs_query = (session.query(LinkedInJob)
-                          .order_by(LinkedInJob.first_seen.desc().nullslast()))
+            jobs_query = session.query(LinkedInJob).order_by(LinkedInJob.first_seen.desc().nullslast())
 
             employment_types_set, workplace_types_set = set(), set()
             # Matches every account/search/employment/workplace filter but NOT category,
@@ -2699,7 +3253,7 @@ if FASTAPI_AVAILABLE:
             total_pages = max(1, math.ceil(total / page_size))
             page = min(page, total_pages)
             start = (page - 1) * page_size
-            page_results = results[start:start + page_size]
+            page_results = results[start : start + page_size]
 
             all_categories = [label for label, _ in JOB_CATEGORY_RULES] + ["Other"]
             return {
@@ -2757,7 +3311,7 @@ if FASTAPI_AVAILABLE:
             "last_seen": m.last_seen.isoformat() if m.last_seen else None,
             "new_in_last_run": m.new_in_last_run,
             "account_id": acct.id if acct else None,
-            "account_name": (acct.legal_name or acct.display_name) if acct else m.company_name
+            "account_name": (acct.legal_name or acct.display_name) if acct else m.company_name,
         }
 
     @app.get("/api/cxo-movements", tags=["6. CXO Movements"])
@@ -2766,7 +3320,7 @@ if FASTAPI_AVAILABLE:
         target_key: Optional[str] = None,
         event_type: Optional[str] = None,
         q: Optional[str] = None,
-        limit: int = 100
+        limit: int = 100,
     ):
         """Retrieve executive transitions (joined, resigned, retired, promoted) across accounts."""
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
@@ -2782,12 +3336,12 @@ if FASTAPI_AVAILABLE:
             if q and q.strip():
                 term = f"%{q.strip()}%"
                 query = query.filter(
-                    (CxoMovement.person_name.ilike(term)) |
-                    (CxoMovement.company_name.ilike(term)) |
-                    (CxoMovement.designation.ilike(term)) |
-                    (CxoMovement.context.ilike(term)) |
-                    (CxoMovement.previous_role.ilike(term)) |
-                    (CxoMovement.new_company.ilike(term))
+                    (CxoMovement.person_name.ilike(term))
+                    | (CxoMovement.company_name.ilike(term))
+                    | (CxoMovement.designation.ilike(term))
+                    | (CxoMovement.context.ilike(term))
+                    | (CxoMovement.previous_role.ilike(term))
+                    | (CxoMovement.new_company.ilike(term))
                 )
 
             all_records = query.order_by(CxoMovement.first_seen.desc().nullslast()).limit(limit).all()
@@ -2802,11 +3356,7 @@ if FASTAPI_AVAILABLE:
                 acct = target_map.get(r.target_key)
                 serialized.append(_serialize_cxo_movement(r, acct))
 
-            return {
-                "total": len(serialized),
-                "counts": counts,
-                "movements": serialized
-            }
+            return {"total": len(serialized), "counts": counts, "movements": serialized}
         finally:
             session.close()
 
@@ -2818,17 +3368,24 @@ if FASTAPI_AVAILABLE:
             acct = session.query(Account).filter_by(id=account_id).first()
             if not acct:
                 raise HTTPException(status_code=404, detail="Account not found.")
-            keys = [acct.key, (acct.stock_symbol or "").lower(), slugify(acct.display_name), slugify(acct.legal_name)]
+            keys = [
+                acct.key,
+                (acct.stock_symbol or "").lower(),
+                slugify(acct.display_name),
+                slugify(acct.legal_name),
+            ]
             keys = [k for k in keys if k]
-            movements = (session.query(CxoMovement)
-                         .filter(CxoMovement.target_key.in_(keys))
-                         .order_by(CxoMovement.first_seen.desc().nullslast())
-                         .all())
+            movements = (
+                session.query(CxoMovement)
+                .filter(CxoMovement.target_key.in_(keys))
+                .order_by(CxoMovement.first_seen.desc().nullslast())
+                .all()
+            )
             return {
                 "account_id": account_id,
                 "account_name": acct.legal_name or acct.display_name,
                 "total": len(movements),
-                "movements": [_serialize_cxo_movement(m, acct) for m in movements]
+                "movements": [_serialize_cxo_movement(m, acct) for m in movements],
             }
         finally:
             session.close()
@@ -2851,8 +3408,13 @@ if FASTAPI_AVAILABLE:
             # Social Media Activity / Personality Profile sections always
             # found nothing, no matter how much persona-level data existed.
             persona_keys = [p.key or slugify(p.full_name) for p in (acct.personas or [])]
-            keys = [acct.key, (acct.stock_symbol or "").lower(), slugify(acct.display_name),
-                    slugify(acct.legal_name), *persona_keys]
+            keys = [
+                acct.key,
+                (acct.stock_symbol or "").lower(),
+                slugify(acct.display_name),
+                slugify(acct.legal_name),
+                *persona_keys,
+            ]
             keys = [k for k in keys if k]
 
             digests_by_key = {}
@@ -2865,61 +3427,68 @@ if FASTAPI_AVAILABLE:
                         "llm": d.llm,
                         "posts_considered": d.posts_considered,
                         "generated_at": d.generated_at.isoformat() if d.generated_at else None,
-                        "digest": d.digest
+                        "digest": d.digest,
                     }
             except Exception:
                 digests_by_key = {}
 
             posts_by_key = {}
             try:
-                posts_query = (session.query(Post)
-                               .filter(Post.target_key.in_(keys))
-                               .order_by(Post.target_key, Post.channel, Post.rank))
+                posts_query = (
+                    session.query(Post)
+                    .filter(Post.target_key.in_(keys))
+                    .order_by(Post.target_key, Post.channel, Post.rank)
+                )
                 for p in posts_query.all():
-                    posts_by_key.setdefault(p.target_key, []).append({
-                        "id": p.id,
-                        "channel": p.channel,
-                        "post_key": p.post_key,
-                        "rank": p.rank,
-                        "post_url": p.post_url,
-                        "body": p.body,
-                        "author": p.author,
-                        "published_at": p.published_at,
-                        "engagement": p.engagement,
-                        "media": p.media,
-                        "new_in_last_run": p.new_in_last_run,
-                        "first_seen": p.first_seen.isoformat() if p.first_seen else None,
-                        "last_seen": p.last_seen.isoformat() if p.last_seen else None
-                    })
+                    posts_by_key.setdefault(p.target_key, []).append(
+                        {
+                            "id": p.id,
+                            "channel": p.channel,
+                            "post_key": p.post_key,
+                            "rank": p.rank,
+                            "post_url": p.post_url,
+                            "body": p.body,
+                            "author": p.author,
+                            "published_at": p.published_at,
+                            "engagement": p.engagement,
+                            "media": p.media,
+                            "new_in_last_run": p.new_in_last_run,
+                            "first_seen": p.first_seen.isoformat() if p.first_seen else None,
+                            "last_seen": p.last_seen.isoformat() if p.last_seen else None,
+                        }
+                    )
             except Exception:
                 posts_by_key = {}
 
             jobs_by_key = {}
             try:
-                jobs_query = (session.query(LinkedInJob)
-                              .filter(LinkedInJob.target_key.in_(keys))
-                              .order_by(LinkedInJob.target_key,
-                                        LinkedInJob.first_seen.desc().nullslast()))
+                jobs_query = (
+                    session.query(LinkedInJob)
+                    .filter(LinkedInJob.target_key.in_(keys))
+                    .order_by(LinkedInJob.target_key, LinkedInJob.first_seen.desc().nullslast())
+                )
                 for j in jobs_query.all():
-                    jobs_by_key.setdefault(j.target_key, []).append({
-                        "id": j.id,
-                        "target_key": j.target_key,
-                        "job_key": j.job_key,
-                        "title": j.title,
-                        "company_name": j.company_name,
-                        "location": j.location,
-                        "employment_type": j.employment_type,
-                        "workplace_type": j.workplace_type,
-                        "posted_date": j.posted_date,
-                        "applicants": j.applicants,
-                        "views": j.views,
-                        "salary": j.salary,
-                        "job_url": j.job_url,
-                        "description": j.description,
-                        "new_in_last_run": j.new_in_last_run,
-                        "first_seen": j.first_seen.isoformat() if j.first_seen else None,
-                        "last_seen": j.last_seen.isoformat() if j.last_seen else None
-                    })
+                    jobs_by_key.setdefault(j.target_key, []).append(
+                        {
+                            "id": j.id,
+                            "target_key": j.target_key,
+                            "job_key": j.job_key,
+                            "title": j.title,
+                            "company_name": j.company_name,
+                            "location": j.location,
+                            "employment_type": j.employment_type,
+                            "workplace_type": j.workplace_type,
+                            "posted_date": j.posted_date,
+                            "applicants": j.applicants,
+                            "views": j.views,
+                            "salary": j.salary,
+                            "job_url": j.job_url,
+                            "description": j.description,
+                            "new_in_last_run": j.new_in_last_run,
+                            "first_seen": j.first_seen.isoformat() if j.first_seen else None,
+                            "last_seen": j.last_seen.isoformat() if j.last_seen else None,
+                        }
+                    )
             except Exception:
                 jobs_by_key = {}
 
@@ -2935,16 +3504,13 @@ if FASTAPI_AVAILABLE:
         if not sql_path.exists():
             # Regenerate if missing
             try:
-                from subprocess import run
                 run([sys.executable, str(PIPELINE_ROOT / "export_db.py")], check=True)
             except Exception:
                 pass
         if not sql_path.exists():
             raise HTTPException(status_code=404, detail="Database export file not found.")
         return FileResponse(
-            path=str(sql_path),
-            filename="sales_ai_database_export.sql",
-            media_type="application/sql"
+            path=str(sql_path), filename="sales_ai_database_export.sql", media_type="application/sql"
         )
 
     @app.get("/api/database/download/json", tags=["7. Database Operations"])
@@ -2954,11 +3520,8 @@ if FASTAPI_AVAILABLE:
         if not json_path.exists():
             raise HTTPException(status_code=404, detail="Database JSON export file not found.")
         return FileResponse(
-            path=str(json_path),
-            filename="sales_ai_database_export.json",
-            media_type="application/json"
+            path=str(json_path), filename="sales_ai_database_export.json", media_type="application/json"
         )
-
 
     # ══════════════════════════════════════════════════════
     # FRONTEND UI: Jinja2-templated shell + static assets
@@ -2971,7 +3534,6 @@ if FASTAPI_AVAILABLE:
     # needed templating, so we mount those under their own sub-paths instead
     # of the old single mount at "/" (which would now collide with the
     # explicit "/" route below).
-    from fastapi.staticfiles import StaticFiles
     frontend_dir = Path(__file__).resolve().parent / "frontend"
     if frontend_dir.exists():
         templates = Jinja2Templates(directory=str(frontend_dir / "templates"))
@@ -3034,7 +3596,6 @@ if FASTAPI_AVAILABLE:
 
 if __name__ == "__main__":
     if FASTAPI_AVAILABLE:
-        import uvicorn
         print("=" * 70)
         print("[*] Starting Sales AI Granular REST API Server on http://0.0.0.0:8000")
         print("[*] Interactive Swagger API Documentation: http://localhost:8000/docs")

@@ -44,10 +44,47 @@ export async function triggerPersonaPdfDownload(persona) {
   }
 }
 
+export async function triggerPsychologicalPdfDownload(persona) {
+  if (!persona || persona.id == null) {
+    showToast('Cannot generate PDF — this contact has no id.');
+    return;
+  }
+  showToast('Generating Psychological Report PDF…');
+  try {
+    const res = await fetch(`/api/personas/${persona.id}/psychological-profile.pdf`);
+    if (res.status === 401) {
+      showToast('Your session expired — please sign in again.');
+      window.location.href = `/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+      return;
+    }
+    if (res.status === 403) {
+      showToast("You don't have access to this account's PDF.");
+      return;
+    }
+    if (!res.ok) throw new Error(`Server returned ${res.status}`);
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${slugify(persona.name || 'contact')}-psychological-profile.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error('Psychological PDF download failed', err);
+    showToast('Could not generate the Psychological PDF — see console for details.');
+  }
+}
+
 // Convenience for pages (full-profile.js) that render the button into a
 // container they control directly, rather than through contact-drawer.js's
 // own delegated click listener.
 export function wireProfilePdfDownload(container, persona) {
   const btn = container.querySelector('#drawerDownloadPdfBtn');
   if (btn) btn.addEventListener('click', () => triggerPersonaPdfDownload(persona));
+
+  const psychBtn = container.querySelector('#downloadPsychologicalPdfBtn');
+  if (psychBtn) psychBtn.addEventListener('click', () => triggerPsychologicalPdfDownload(persona));
 }

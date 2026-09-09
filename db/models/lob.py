@@ -32,6 +32,7 @@ class Lob(Base):
     wikipedia_url = Column(Text)
     patents = Column(JSONB)
     raw_data = Column(JSONB)
+    osint_feed_manifest = Column(JSONB)
 
     # ── LOB Scraping URLs ──
     google_news_rss_url = Column(Text)

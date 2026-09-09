@@ -44,9 +44,14 @@ class LobRepository:
             lob = Lob(account_id=account.id)
             data = schema.model_dump()
             for field, value in data.items():
+                if field == "id" and value is None:
+                    continue
+                if field in ("sub_lobs", "personas", "account", "account_id"):
+                    continue
                 if hasattr(lob, field):
                     setattr(lob, field, value)
 
+            lob.account_id = account.id
             self.session.add(lob)
             self.session.flush()
             lob_map[lob.lob_name] = lob.id
@@ -63,6 +68,48 @@ class LobRepository:
 
         self.session.flush()
         return lob_map
+
+    def upsert_single_lob(self, account_id: int, lob_data: dict) -> Lob:
+        """Upsert a single LOB entity and its sub-lobs."""
+        name = lob_data.get("lob_name") or lob_data.get("name")
+        key = lob_data.get("key") or (name.lower().replace(" ", "_") if name else "unknown_lob")
+
+        existing = self.session.query(Lob).filter_by(account_id=account_id, lob_name=name).first()
+        if not existing and key:
+            existing = self.session.query(Lob).filter_by(account_id=account_id, key=key).first()
+
+        lob = existing or Lob(account_id=account_id)
+        if not existing:
+            self.session.add(lob)
+
+        schema = LobSchema.from_enriched_json(lob_data)
+        data = schema.model_dump()
+        for field, value in data.items():
+            if field == "id" and value is None:
+                continue
+            if field in ("sub_lobs", "personas", "account", "account_id"):
+                continue
+            if hasattr(lob, field):
+                setattr(lob, field, value)
+
+        lob.account_id = account_id
+        self.session.flush()
+
+        # Sub-LOBs
+        for sub in (lob_data.get("sub_lobs") or []):
+            sub_name = sub.get("name") if isinstance(sub, dict) else str(sub)
+            sub_exists = self.session.query(SubLob).filter_by(lob_id=lob.id, name=sub_name).first()
+            if not sub_exists:
+                sub_schema = SubLobSchema.from_raw(sub if isinstance(sub, dict) else {"name": sub_name})
+                sub_lob = SubLob(
+                    lob_id=lob.id,
+                    name=sub_schema.name,
+                    metadata_=sub_schema.metadata_
+                )
+                self.session.add(sub_lob)
+
+        self.session.flush()
+        return lob
 
     def get_by_account(self, account_id: int) -> list[Lob]:
         """Get all LOBs for an account."""

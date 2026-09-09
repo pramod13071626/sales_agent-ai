@@ -9,7 +9,8 @@ import {
   renderPostCard,
   renderPersonaContentSummary,
   renderPlaceholderProfile,
-  renderPersonalityProfile
+  renderPersonalityProfile,
+  renderFullPsychologicalProfile
 } from './profile-render.js';
 import { renderPersonaActionItems, ensureAccountActionItems, handleActionItemClick } from './action-items.js';
 
@@ -119,9 +120,9 @@ export function renderContactDrawer(p) {
     </div>
 
     <div id="drawer-sec-profiles">
-      <div class="drawer-section drawer-section-muted">
+      <div class="drawer-section" id="drawer-sec-psychological">
         <div class="drawer-section-title"><i class="bi bi-activity"></i> Executive Psychological Profile</div>
-        ${renderPlaceholderProfile('Not available — no data source for psychological profiling is connected.')}
+        ${renderFullPsychologicalProfile(targetKey ? state.contentStore.digests[targetKey] : null, p)}
       </div>
 
       <div class="drawer-section" id="drawer-sec-personality">

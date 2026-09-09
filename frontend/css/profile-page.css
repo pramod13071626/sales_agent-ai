@@ -771,3 +771,142 @@ body.profile-page-body {
   opacity: .4;
   cursor: not-allowed;
 }
+
+/* ── Psychological Profile Styling ───────────────────────────── */
+.psych-archetype-hero {
+  background: linear-gradient(135deg, rgba(27, 37, 89, 0.05) 0%, rgba(0, 97, 255, 0.08) 100%);
+  border: 1px solid rgba(0, 97, 255, 0.2);
+  border-radius: var(--radius-md);
+  padding: 20px 22px;
+  position: relative;
+  overflow: hidden;
+}
+.psych-hero-kicker {
+  font-size: .72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--brand);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.psych-hero-title {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+  letter-spacing: -.01em;
+}
+.psych-hero-summary {
+  font-size: .88rem;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  margin: 0 0 10px;
+}
+.psych-hero-advice {
+  font-size: .82rem;
+  line-height: 1.5;
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.6);
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+}
+[data-theme="dark"] .psych-hero-advice {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.psych-card {
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-md);
+  padding: 16px 18px;
+  box-shadow: var(--shadow);
+}
+.psych-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  gap: 10px;
+}
+.psych-card-title {
+  font-size: .92rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.psych-card-title i {
+  color: var(--brand);
+}
+.psych-card-body {
+  font-size: .86rem;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  margin: 0 0 8px;
+}
+.psych-sub-block {
+  font-size: .82rem;
+  line-height: 1.5;
+  color: var(--text-primary);
+  background: var(--input-bg);
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  margin-top: 8px;
+}
+
+/* Big Five Meters */
+.b5-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.b5-trait-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.b5-trait-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.b5-trait-name {
+  font-size: .82rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.b5-trait-score {
+  font-size: .86rem;
+  font-weight: 800;
+  color: var(--brand);
+}
+.b5-meter-track {
+  width: 100%;
+  height: 7px;
+  background: var(--input-bg);
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+}
+.b5-meter-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #0061FF 0%, #00BA88 100%);
+  border-radius: 999px;
+  transition: width .4s cubic-bezier(.4, 0, .2, 1);
+}
+.b5-trait-desc {
+  font-size: .76rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+@media (max-width: 900px) {
+  .psych-dual-grid {
+    grid-template-columns: 1fr !important;
+  }
+}

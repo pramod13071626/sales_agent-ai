@@ -8,6 +8,7 @@ Saves exact raw API responses into output/raw/apify/.
 
 import json
 import re
+import html
 import urllib.parse
 from urllib.parse import urlparse
 import requests
@@ -15,6 +16,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List
 from apify_client import ApifyClient
 import config
+
 
 def extract_domain(url: Optional[str]) -> Optional[str]:
     if not url:
@@ -30,10 +32,12 @@ def extract_domain(url: Optional[str]) -> Optional[str]:
     except Exception:
         return url
 
+
 def clean_phone(phone_str: Optional[str]) -> Optional[str]:
     if not phone_str:
         return None
     return re.sub(r"[^0-9+x]", "", str(phone_str))
+
 
 def slugify(name: str) -> str:
     s = name.lower().strip()
@@ -42,6 +46,7 @@ def slugify(name: str) -> str:
     s = s.replace("&", "and").strip()
     s = re.sub(r"[^a-z0-9]+", "-", s).strip("-")
     return s
+
 
 def extract_twitter_handle(twitter_url: Optional[str]) -> Optional[str]:
     if not twitter_url:
@@ -54,6 +59,7 @@ def extract_twitter_handle(twitter_url: Optional[str]) -> Optional[str]:
             return f"@{handle}"
     return None
 
+
 def parse_stock_exchange(stock_sym: Optional[str]) -> tuple[Optional[str], Optional[str]]:
     """Extracts clean exchange and ticker dynamically for ANY global exchange (NYSE, NASDAQ, LSE, TSX, etc.)."""
     if not stock_sym:
@@ -64,43 +70,50 @@ def parse_stock_exchange(stock_sym: Optional[str]) -> tuple[Optional[str], Optio
         return parts[0].strip(), parts[1].strip()
     return None, s
 
-def fetch_sec_edgar_info(ticker: Optional[str], company_name: Optional[str] = None) -> Dict[str, Any]:
+
+def fetch_sec_edgar_info(
+    ticker: Optional[str], company_name: Optional[str] = None
+) -> Dict[str, Any]:
     """Fetches official SEC CIK and registration info from SEC EDGAR API (100% Free, No Key Required)."""
     if not ticker and not company_name:
         return {}
-    
+
     headers = {"User-Agent": "SalesAIAgentResearch admin@salesai.com"}
     ticker_clean = ticker.upper().strip() if ticker else None
     name_clean = company_name.lower().strip() if company_name else None
 
     try:
-        res = requests.get("https://www.sec.gov/files/company_tickers.json", headers=headers, timeout=10)
+        res = requests.get(
+            "https://www.sec.gov/files/company_tickers.json", headers=headers, timeout=10
+        )
         if res.status_code == 200:
             data = res.json()
             for entry in data.values():
                 entry_ticker = str(entry.get("ticker", "")).upper().strip()
                 entry_title = str(entry.get("title", "")).lower()
-                
+
                 match = False
                 if ticker_clean and entry_ticker == ticker_clean:
                     match = True
                 elif name_clean and (name_clean in entry_title or entry_title in name_clean):
                     match = True
-                
+
                 if match:
                     cik_num = entry.get("cik_str")
                     padded_cik = str(cik_num).zfill(10) if cik_num else None
                     return {
                         "sec_cik": padded_cik,
                         "sec_name": entry.get("title"),
-                        "ticker": entry_ticker
+                        "ticker": entry_ticker,
                     }
     except Exception as e:
         print(f"[!] SEC EDGAR lookup warning: {e}")
     return {}
 
+
 def unwrap(val: Any) -> Any:
-    """Recursively unwraps dict artifacts like {'value': '...'} or {'identifier': '...'} into clean scalar primitives."""
+    """Recursively unwraps dict artifacts like {'value': '...'}
+    into clean scalar primitives."""
     if val is None:
         return None
     if isinstance(val, (int, float, bool)):
@@ -119,6 +132,7 @@ def unwrap(val: Any) -> Any:
         return {k: unwrap(v) for k, v in val.items()}
     return val
 
+
 def save_raw_apify_response(company_name: str, tag: str, data: Any, out_dir: Optional[Path] = None):
     safe_name = company_name.lower().replace(" ", "_").replace(".", "").replace(",", "")
     target_dir = out_dir if out_dir else (config.OUTPUT_DIR / "raw" / "apify")
@@ -127,6 +141,7 @@ def save_raw_apify_response(company_name: str, tag: str, data: Any, out_dir: Opt
     with open(out_file, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
     print(f"[+] [RawStorage] Exact Apify raw response saved to: {out_file}")
+
 
 def save_raw_sec_response(company_name: str, data: Any, out_dir: Optional[Path] = None):
     safe_name = company_name.lower().replace(" ", "_").replace(".", "").replace(",", "")
@@ -137,7 +152,10 @@ def save_raw_sec_response(company_name: str, data: Any, out_dir: Optional[Path] 
         json.dump(data, f, indent=2, ensure_ascii=False)
     print(f"[+] [RawStorage] Exact SEC EDGAR raw response saved to: {out_file}")
 
-def extract_account_firmographics(raw_org: Dict[str, Any], company_name: str, website_url: Optional[str] = None) -> Dict[str, Any]:
+
+def extract_account_firmographics(
+    raw_org: Dict[str, Any], company_name: str, website_url: Optional[str] = None
+) -> Dict[str, Any]:
     overview = raw_org.get("overview_fields_extended", {})
     about = raw_org.get("about_short_description", {})
     props = raw_org.get("properties", {})
@@ -148,7 +166,6 @@ def extract_account_firmographics(raw_org: Dict[str, Any], company_name: str, we
     ipo_summary = raw_org.get("ipo_summary", {})
     growth = raw_org.get("growth_and_heat", {})
     semrush = raw_org.get("semrush_summary", {})
-    builtwith = raw_org.get("builtwith_summary", {})
     ipqwery = raw_org.get("ipqwery_summary", {})
     apptopia = raw_org.get("apptopia_summary", {})
     sub_org_summary = raw_org.get("sub_organizations_summary", {})
@@ -156,16 +173,20 @@ def extract_account_firmographics(raw_org: Dict[str, Any], company_name: str, we
 
     legal_name = unwrap(overview.get("legal_name")) or unwrap(props.get("title")) or company_name
     primary_domain = extract_domain(unwrap(raw_org.get("website_url")) or website_url)
-    
-    raw_permalink = unwrap(props.get("identifier", {}).get("permalink")) or unwrap(raw_org.get("semrush_summary", {}).get("identifier", {}).get("permalink")) or slugify(company_name)
+
+    raw_permalink = (
+        unwrap(props.get("identifier", {}).get("permalink"))
+        or unwrap(raw_org.get("semrush_summary", {}).get("identifier", {}).get("permalink"))
+        or slugify(company_name)
+    )
     crunchbase_org_url = f"https://www.crunchbase.com/organization/{raw_permalink}"
 
     phone = unwrap(contacts.get("phone"))
     sanitized_phone = clean_phone(phone)
-    
+
     twitter_url = unwrap(socials.get("twitter"))
     twitter_handle = extract_twitter_handle(twitter_url)
-    
+
     founded_on = unwrap(overview.get("founded_on"))
     founded_year = None
     if founded_on:
@@ -214,7 +235,9 @@ def extract_account_firmographics(raw_org: Dict[str, Any], company_name: str, we
                 founders.append(unwrapped_f)
 
     # Dynamic Location Extraction
-    raw_locs = raw_org.get("company_about_fields2", {}).get("location_identifiers", []) or overview.get("location_identifiers", [])
+    raw_locs = raw_org.get("company_about_fields2", {}).get(
+        "location_identifiers", []
+    ) or overview.get("location_identifiers", [])
     city = None
     state = None
     country = None
@@ -233,7 +256,9 @@ def extract_account_firmographics(raw_org: Dict[str, Any], company_name: str, we
     hq_location = ", ".join(hq_parts) if hq_parts else None
 
     # Dynamic global exchange and ticker extraction
-    stock_sym = unwrap(fin_highlights.get("listed_stock_symbol")) or unwrap(ipo_fields.get("stock_symbol"))
+    stock_sym = unwrap(fin_highlights.get("listed_stock_symbol")) or unwrap(
+        ipo_fields.get("stock_symbol")
+    )
     exchange, clean_stock_ticker = parse_stock_exchange(stock_sym)
 
     # Fetch SEC EDGAR info
@@ -261,7 +286,11 @@ def extract_account_firmographics(raw_org: Dict[str, Any], company_name: str, we
         except Exception:
             pass
 
-    web_url = unwrap(raw_org.get("website_url")) or website_url or (f"https://{primary_domain}" if primary_domain else None)
+    web_url = (
+        unwrap(raw_org.get("website_url"))
+        or website_url
+        or (f"https://{primary_domain}" if primary_domain else None)
+    )
 
     # Clean query URLs with quote_plus
     encoded_company_name = urllib.parse.quote_plus(f'"{company_name}"')
@@ -269,16 +298,28 @@ def extract_account_firmographics(raw_org: Dict[str, Any], company_name: str, we
     trends_company = urllib.parse.quote_plus(company_name)
 
     sec_edgar_url = f"https://www.sec.gov/edgar/browse/?CIK={sec_cik}" if sec_cik else None
-    sec_filings_rss = f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={sec_cik}&output=atom" if sec_cik else None
+    sec_filings_rss = (
+        f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={sec_cik}&output=atom"
+        if sec_cik
+        else None
+    )
     sec_submissions_url = f"https://data.sec.gov/submissions/CIK{sec_cik}.json" if sec_cik else None
     twitter_live_url = f"https://x.com/search?q={encoded_company_name}&f=live"
     reddit_rss_url = f"https://www.reddit.com/search.rss?q={encoded_company_name}&sort=new"
-    google_news_rss_url = f"https://news.google.com/rss/search?q={encoded_company_name}&hl=en-US&gl=US&ceid=US:en"
+    google_news_rss_url = (
+        f"https://news.google.com/rss/search?q={encoded_company_name}&hl=en-US&gl=US&ceid=US:en"
+    )
     google_patents_url = f"https://patents.google.com/?assignee={encoded_patents_assignee}&sort=new"
     google_trends_url = f"https://trends.google.com/trends/explore?q={trends_company}"
-    youtube_search_url = f"https://www.youtube.com/results?search_query={urllib.parse.quote_plus(f'{company_name} official keynote')}"
-    openalex_institution_url = f"https://api.openalex.org/institutions?search={encoded_company_name}"
-    wikidata_entity_url = f"https://www.wikidata.org/w/api.php?action=wbsearchentities&search={encoded_company_name}&language=en&format=json"
+    enc_yt = urllib.parse.quote_plus(f"{company_name} official keynote")
+    youtube_search_url = f"https://www.youtube.com/results?search_query={enc_yt}"
+    openalex_institution_url = (
+        f"https://api.openalex.org/institutions?search={encoded_company_name}"
+    )
+    wikidata_entity_url = (
+        "https://www.wikidata.org/w/api.php?action=wbsearchentities"
+        f"&search={encoded_company_name}&language=en&format=json"
+    )
 
     tracking_profile = {
         "key": slugify(company_name),
@@ -301,7 +342,7 @@ def extract_account_firmographics(raw_org: Dict[str, Any], company_name: str, we
         "openalex_institution_url": openalex_institution_url,
         "wikidata_entity_url": wikidata_entity_url,
         "blog_url": f"{web_url.rstrip('/')}/newsroom" if web_url else None,
-        "youtube_channel_id": None
+        "youtube_channel_id": None,
     }
 
     return {
@@ -318,7 +359,8 @@ def extract_account_firmographics(raw_org: Dict[str, Any], company_name: str, we
         "founded_date": str(founded_on) if founded_on else None,
         "founded_year": founded_year,
         "employee_count_range": unwrap(overview.get("num_employees_enum")) or "10,001+",
-        "short_description": unwrap(props.get("short_description")) or unwrap(about.get("description")),
+        "short_description": unwrap(props.get("short_description"))
+        or unwrap(about.get("description")),
         "full_description": unwrap(about.get("description")),
         "industries": industries,
         "industry_groups": industry_groups,
@@ -354,14 +396,20 @@ def extract_account_firmographics(raw_org: Dict[str, Any], company_name: str, we
         "ipo_date": unwrap(ipo_summary.get("went_public_on")),
         "num_suborganizations": unwrap(sub_org_summary.get("num_sub_organizations", 0)),
         "num_acquisitions": unwrap(acq_summary.get("num_acquisitions")),
-        "global_traffic_rank": unwrap(raw_org.get("semrush_summary", {}).get("semrush_global_rank")),
-        "monthly_visits": unwrap(raw_org.get("semrush_summary", {}).get("semrush_visits_latest_month")),
+        "global_traffic_rank": unwrap(
+            raw_org.get("semrush_summary", {}).get("semrush_global_rank")
+        ),
+        "monthly_visits": unwrap(
+            raw_org.get("semrush_summary", {}).get("semrush_visits_latest_month")
+        ),
         "bounce_rate": unwrap(semrush.get("semrush_bounce_rate")),
         "visit_duration": unwrap(semrush.get("semrush_visit_duration")),
         "page_views_per_visit": unwrap(semrush.get("semrush_visit_pageviews")),
         "heat_score": unwrap(growth.get("heat_score")),
         "trend_score_90d": unwrap(growth.get("trend_score_90d", 0)),
-        "active_tech_count": unwrap(raw_org.get("builtwith_summary", {}).get("builtwith_num_technologies_used")),
+        "active_tech_count": unwrap(
+            raw_org.get("builtwith_summary", {}).get("builtwith_num_technologies_used")
+        ),
         "it_spend": unwrap(raw_org.get("technology_highlights", {}).get("builtwith_it_spend")),
         "patents_granted": unwrap(ipqwery.get("ipqwery_num_patent_granted")),
         "trademarks_registered": unwrap(ipqwery.get("ipqwery_num_trademark_registered")),
@@ -369,19 +417,106 @@ def extract_account_firmographics(raw_org: Dict[str, Any], company_name: str, we
         "total_downloads": unwrap(apptopia.get("apptopia_total_downloads")),
         "founders": founders,
         "num_founders": len(founders),
-        "num_contacts": unwrap(raw_org.get("contacts", {}).get("num_contacts", 0))
+        "num_contacts": unwrap(raw_org.get("contacts", {}).get("num_contacts", 0)),
     }
+
+
+def discover_crunchbase_url(
+    company_name: str,
+    website_url: Optional[str] = None,
+    raw_serper_dir: Optional[Path] = None,
+) -> str:
+    """Discovers the verified Crunchbase organization URL dynamically via Google Serper."""
+    slug = slugify(company_name)
+    default_url = f"https://www.crunchbase.com/organization/{slug}"
+    if not config.SERPER_API_KEY:
+        return default_url
+
+    try:
+        headers = {"X-API-KEY": config.SERPER_API_KEY, "Content-Type": "application/json"}
+        q = f'site:crunchbase.com/organization "{company_name}"'
+        res = requests.post(
+            "https://google.serper.dev/search",
+            json={"q": q, "num": 3},
+            headers=headers,
+            timeout=8,
+        )
+        if res.ok:
+            data = res.json()
+            if raw_serper_dir:
+                try:
+                    raw_serper_dir.mkdir(parents=True, exist_ok=True)
+                    out_f = raw_serper_dir / f"{slug}_crunchbase_discovery_serper_raw.json"
+                    with open(out_f, "w", encoding="utf-8") as f:
+                        json.dump(data, f, indent=2, ensure_ascii=False)
+                except Exception:
+                    pass
+            for item in data.get("organic", []):
+                link = item.get("link", "")
+                if "crunchbase.com/organization/" in link:
+                    clean_url = link.split("?")[0].rstrip("/")
+                    return clean_url
+    except Exception as e:
+        print(f"[!] [AccountCollector] Serper Crunchbase discovery notice: {e}")
+
+    return default_url
+
+
+def discover_linkedin_company_url(
+    company_name: str,
+    website_url: Optional[str] = None,
+    raw_serper_dir: Optional[Path] = None,
+) -> str:
+    """Discovers the verified LinkedIn company profile URL dynamically via Google Serper."""
+    slug = slugify(company_name)
+    default_url = f"https://www.linkedin.com/company/{slug}"
+    if not config.SERPER_API_KEY:
+        return default_url
+
+    try:
+        headers = {"X-API-KEY": config.SERPER_API_KEY, "Content-Type": "application/json"}
+        q = f'site:linkedin.com/company "{company_name}"'
+        res = requests.post(
+            "https://google.serper.dev/search",
+            json={"q": q, "num": 3},
+            headers=headers,
+            timeout=8,
+        )
+        if res.ok:
+            data = res.json()
+            if raw_serper_dir:
+                try:
+                    raw_serper_dir.mkdir(parents=True, exist_ok=True)
+                    out_f = raw_serper_dir / f"{slug}_linkedin_discovery_serper_raw.json"
+                    with open(out_f, "w", encoding="utf-8") as f:
+                        json.dump(data, f, indent=2, ensure_ascii=False)
+                except Exception:
+                    pass
+            for item in data.get("organic", []):
+                link = item.get("link", "")
+                if "linkedin.com/company/" in link:
+                    clean_url = link.split("?")[0].rstrip("/")
+                    return clean_url
+    except Exception as e:
+        print(f"[!] [AccountCollector] Serper LinkedIn discovery notice: {e}")
+
+    return default_url
+
 
 def scrape_account(
     company_name: str,
     website_url: Optional[str] = None,
     raw_apify_dir: Optional[Path] = None,
-    raw_sec_dir: Optional[Path] = None
+    raw_sec_dir: Optional[Path] = None,
+    raw_serper_dir: Optional[Path] = None,
 ) -> Dict[str, Any]:
-    print(f"[*] [AccountCollector] Live Scraping for '{company_name}' (website: {website_url or 'N/A'})...")
-    
-    slug = slugify(company_name)
-    crunchbase_target_url = f"https://www.crunchbase.com/organization/{slug}"
+    print(
+        f"[*] [AccountCollector] Live Scraping for '{company_name}' (website: {website_url or 'N/A'})..."
+    )
+
+    crunchbase_target_url = discover_crunchbase_url(
+        company_name, website_url, raw_serper_dir=raw_serper_dir
+    )
 
     if not config.APIFY_TOKEN:
         print("[!] Warning: APIFY_TOKEN is not set in .env. Falling back to default baseline.")
@@ -389,34 +524,78 @@ def scrape_account(
 
     client = ApifyClient(config.APIFY_TOKEN)
     actor_id = "pratikdani/crunchbase-companies-scraper"
-    run_input = {
-        "url": crunchbase_target_url
-    }
+    run_input = {"url": crunchbase_target_url}
 
     try:
         print(f"[*] Calling Apify Crunchbase Scraper for URL: {crunchbase_target_url}...")
         run = client.actor(actor_id).call(run_input=run_input)
-        dataset_id = run.get("defaultDatasetId") if isinstance(run, dict) else (getattr(run, "default_dataset_id", None) or run["defaultDatasetId"])
+        dataset_id = (
+            run.get("defaultDatasetId")
+            if isinstance(run, dict)
+            else (getattr(run, "default_dataset_id", None) or run["defaultDatasetId"])
+        )
         dataset_items = client.dataset(dataset_id).list_items().items
         print(f"[+] Apify returned {len(dataset_items)} items from Crunchbase.")
 
         if dataset_items and not dataset_items[0].get("error"):
-            save_raw_apify_response(company_name, "account_crunchbase", dataset_items, out_dir=raw_apify_dir)
+            save_raw_apify_response(
+                company_name, "account_crunchbase", dataset_items, out_dir=raw_apify_dir
+            )
             raw_org = dataset_items[0]
-            return extract_account_firmographics(raw_org, company_name, website_url)
-        else:
-            print("[!] Crunchbase profile not found or empty. Calling Apify LinkedIn Company Scraper...")
-            # Fallback to Apify LinkedIn Company Details Scraper
-            li_actor_id = "harvestapi/linkedin-company"
-            li_input = {
-                "companies": [f"https://www.linkedin.com/company/{slug}", company_name]
-            }
+            firmographics = extract_account_firmographics(raw_org, company_name, website_url)
+
+            # Also invoke Apify LinkedIn Company Scraper for dual enrichment
             try:
-                li_run = client.actor(li_actor_id).call(run_input=li_input)
-                li_ds_id = li_run.get("defaultDatasetId") if isinstance(li_run, dict) else (getattr(li_run, "default_dataset_id", None) or li_run["defaultDatasetId"])
+                li_actor_id = "harvestapi/linkedin-company"
+                li_target_url = discover_linkedin_company_url(
+                    company_name, website_url, raw_serper_dir=raw_serper_dir
+                )
+                print(f"[*] Calling Apify LinkedIn Company Scraper for URL: {li_target_url}...")
+                li_run = client.actor(li_actor_id).call(run_input={"companies": [li_target_url]})
+                li_ds_id = (
+                    li_run.get("defaultDatasetId")
+                    if isinstance(li_run, dict)
+                    else (getattr(li_run, "default_dataset_id", None) or li_run["defaultDatasetId"])
+                )
                 li_items = client.dataset(li_ds_id).list_items().items
                 if li_items and not li_items[0].get("error"):
-                    save_raw_apify_response(company_name, "account_linkedin", li_items, out_dir=raw_apify_dir)
+                    save_raw_apify_response(
+                        company_name, "account_linkedin", li_items, out_dir=raw_apify_dir
+                    )
+                    li_org = li_items[0]
+                    if li_org.get("linkedinUrl"):
+                        firmographics["linkedin_url"] = li_org.get("linkedinUrl")
+                    if li_org.get("employeeCountRange") and not firmographics.get(
+                        "employee_count_range"
+                    ):
+                        firmographics["employee_count_range"] = li_org.get("employeeCountRange")
+                    print(
+                        "[+] [AccountCollector] Successfully augmented with LinkedIn Company data."
+                    )
+            except Exception as li_err:
+                print(f"[!] Apify LinkedIn company collector notice: {li_err}")
+
+            return firmographics
+        else:
+            print(
+                "[!] Crunchbase profile not found or empty. Calling Apify LinkedIn Company Scraper..."
+            )
+            # Fallback to Apify LinkedIn Company Details Scraper
+            li_actor_id = "harvestapi/linkedin-company"
+            li_target_url = discover_linkedin_company_url(company_name, website_url)
+            li_input = {"companies": [li_target_url]}
+            try:
+                li_run = client.actor(li_actor_id).call(run_input=li_input)
+                li_ds_id = (
+                    li_run.get("defaultDatasetId")
+                    if isinstance(li_run, dict)
+                    else (getattr(li_run, "default_dataset_id", None) or li_run["defaultDatasetId"])
+                )
+                li_items = client.dataset(li_ds_id).list_items().items
+                if li_items and not li_items[0].get("error"):
+                    save_raw_apify_response(
+                        company_name, "account_linkedin", li_items, out_dir=raw_apify_dir
+                    )
                     li_org = li_items[0]
                     # Map LinkedIn company fields to standard schema
                     mapped_org = {
@@ -424,31 +603,55 @@ def scrape_account(
                             "legal_name": li_org.get("name") or company_name,
                             "operating_status": "active",
                             "founded_on": str(li_org.get("foundedYear") or ""),
-                            "num_employees_enum": li_org.get("companySize") or li_org.get("employeeCountRange"),
-                            "categories": li_org.get("industries", []) or ([li_org.get("industry")] if li_org.get("industry") else []),
-                            "location_identifiers": [{"location_type": "city", "value": li_org.get("headquarters", {}).get("city") if isinstance(li_org.get("headquarters"), dict) else li_org.get("headquarters")}]
+                            "num_employees_enum": li_org.get("companySize")
+                            or li_org.get("employeeCountRange"),
+                            "categories": li_org.get("industries", [])
+                            or ([li_org.get("industry")] if li_org.get("industry") else []),
+                            "location_identifiers": [
+                                {
+                                    "location_type": "city",
+                                    "value": (
+                                        li_org.get("headquarters", {}).get("city")
+                                        if isinstance(li_org.get("headquarters"), dict)
+                                        else li_org.get("headquarters")
+                                    ),
+                                }
+                            ],
                         },
                         "about_short_description": {
                             "description": li_org.get("description") or li_org.get("tagline")
                         },
                         "properties": {
                             "title": li_org.get("name") or company_name,
-                            "short_description": li_org.get("tagline") or li_org.get("description")
+                            "short_description": li_org.get("tagline") or li_org.get("description"),
                         },
                         "social_fields": {
-                            "linkedin": li_org.get("linkedinUrl") or f"https://www.linkedin.com/company/{slug}",
-                            "twitter": li_org.get("twitterUrl")
+                            "linkedin": (
+                                li_org.get("linkedinUrl")
+                                or li_org.get("url")
+                                or (
+                                    "https://www.linkedin.com/company/"
+                                    f"{re.sub(r'[^a-zA-Z0-9-]+', '', company_name.lower())}"
+                                )
+                            ),
+                            "twitter": li_org.get("twitterUrl"),
                         },
-                        "website_url": li_org.get("websiteUrl") or website_url
+                        "website_url": li_org.get("websiteUrl") or website_url,
                     }
-                    print(f"[+] [AccountCollector] Successfully extracted LinkedIn company firmographics via Apify.")
+                    print(
+                        "[+] [AccountCollector] Successfully extracted LinkedIn company firmographics via Apify."
+                    )
                     return extract_account_firmographics(mapped_org, company_name, website_url)
             except Exception as li_err:
                 print(f"[!] Apify LinkedIn scraper notice: {li_err}")
 
             if dataset_items:
-                save_raw_apify_response(company_name, "account_crunchbase", dataset_items, out_dir=raw_apify_dir)
-            print("[*] Continuing with multi-source auto-healing (Diffbot + SEC EDGAR + GLEIF + Wikipedia)...")
+                save_raw_apify_response(
+                    company_name, "account_crunchbase", dataset_items, out_dir=raw_apify_dir
+                )
+            print(
+                "[*] Continuing with multi-source auto-healing (Diffbot + SEC EDGAR + GLEIF + Wikipedia)..."
+            )
             return extract_account_firmographics({}, company_name, website_url)
     except Exception as e:
         print(f"[!] Apify live scraping error: {e}")
@@ -462,13 +665,13 @@ def scrape_account(
 SEC_HEADERS = {
     "User-Agent": "EnterpriseSalesAI contact@salesai-intel.internal",
     "Accept-Encoding": "gzip, deflate",
-    "Host": "data.sec.gov"
+    "Host": "data.sec.gov",
 }
 
 SEC_ARCHIVE_HEADERS = {
     "User-Agent": "EnterpriseSalesAI contact@salesai-intel.internal",
     "Accept-Encoding": "gzip, deflate",
-    "Host": "www.sec.gov"
+    "Host": "www.sec.gov",
 }
 
 
@@ -478,7 +681,12 @@ def clean_html_text(html_content: str) -> str:
         return ""
     text = re.sub(r"<(script|style).*?>.*?</\1>", "", html_content, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r"<[^>]+>", " ", text)
-    text = text.replace("&nbsp;", " ").replace("&#160;", " ").replace("&amp;", "&").replace("&quot;", '"')
+    text = (
+        text.replace("&nbsp;", " ")
+        .replace("&#160;", " ")
+        .replace("&amp;", "&")
+        .replace("&quot;", '"')
+    )
     text = re.sub(r"\r\n|\r|\n", "\n", text)
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
@@ -491,12 +699,12 @@ def chunk_filing_text(
     filing_type: str,
     period_end_date: str,
     chunk_size: int = 1500,
-    overlap: int = 200
+    overlap: int = 200,
 ) -> List[Dict[str, Any]]:
     """Chunks text into sliding character windows with section provenance metadata."""
     if not text:
         return []
-    
+
     chunks = []
     start = 0
     chunk_idx = 0
@@ -515,15 +723,18 @@ def chunk_filing_text(
         chunk_snippet = text[start:end].strip()
         if chunk_snippet:
             chunk_idx += 1
-            chunks.append({
-                "chunk_id": f"{section_name.lower().replace(' ', '_').replace('-', '_')}_chunk_{chunk_idx:03d}",
-                "section": section_name,
-                "filing_type": filing_type,
-                "period_end_date": period_end_date,
-                "character_count": len(chunk_snippet),
-                "approx_token_count": len(chunk_snippet) // 4,
-                "text": chunk_snippet
-            })
+            sec_slug = section_name.lower().replace(" ", "_").replace("-", "_")
+            chunks.append(
+                {
+                    "chunk_id": f"{sec_slug}_chunk_{chunk_idx}",
+                    "section": section_name,
+                    "filing_type": filing_type,
+                    "period_end_date": period_end_date,
+                    "character_count": len(chunk_snippet),
+                    "approx_token_count": len(chunk_snippet) // 4,
+                    "text": chunk_snippet,
+                }
+            )
 
         start = end - overlap if end < text_len else text_len
 
@@ -531,10 +742,7 @@ def chunk_filing_text(
 
 
 def fetch_latest_10k_chunks(
-    sec_cik: str,
-    raw_sec_dir: Optional[Path] = None,
-    chunk_size: int = 1500,
-    overlap: int = 200
+    sec_cik: str, raw_sec_dir: Optional[Path] = None, chunk_size: int = 1500, overlap: int = 200
 ) -> Dict[str, Any]:
     """
     100% Dynamic 10-K Extractor & Chunker.
@@ -558,7 +766,9 @@ def fetch_latest_10k_chunks(
         data = res.json()
         if raw_sec_dir:
             raw_sec_dir.mkdir(parents=True, exist_ok=True)
-            with open(raw_sec_dir / f"sec_submissions_cik_{clean_cik}_raw.json", "w", encoding="utf-8") as f:
+            with open(
+                raw_sec_dir / f"sec_submissions_cik_{clean_cik}_raw.json", "w", encoding="utf-8"
+            ) as f:
                 json.dump(data, f, indent=2)
 
         recent = data.get("filings", {}).get("recent", {})
@@ -574,7 +784,7 @@ def fetch_latest_10k_chunks(
             if form == "10-K":
                 target_idx = i
                 break
-        
+
         if target_idx is None:
             for i, form in enumerate(forms):
                 if form == "10-Q":
@@ -583,7 +793,10 @@ def fetch_latest_10k_chunks(
                     break
 
         if target_idx is None:
-            return {"status": "empty", "message": "No 10-K or 10-Q filings found in recent submissions."}
+            return {
+                "status": "empty",
+                "message": "No 10-K or 10-Q filings found in recent submissions.",
+            }
 
         accession = accessions[target_idx]
         accession_nodash = accession.replace("-", "")
@@ -596,33 +809,227 @@ def fetch_latest_10k_chunks(
 
         doc_res = requests.get(doc_url, headers=SEC_ARCHIVE_HEADERS, timeout=25)
         if doc_res.status_code != 200:
-            return {"status": "error", "message": f"Failed to download filing document: {doc_res.status_code}"}
+            return {
+                "status": "error",
+                "message": f"Failed to download filing document: {doc_res.status_code}",
+            }
 
         raw_html = doc_res.text
         if raw_sec_dir:
-            with open(raw_sec_dir / f"sec_{target_form.lower()}_{accession_nodash}_raw.html", "w", encoding="utf-8") as f:
+            with open(
+                raw_sec_dir / f"sec_{target_form.lower()}_{accession_nodash}_raw.html",
+                "w",
+                encoding="utf-8",
+            ) as f:
                 f.write(raw_html)
 
         plain_text = clean_html_text(raw_html)
 
         sections_extracted = {}
 
-        # Item 1: Business Overview
-        item1_match = re.search(r"(?:Item\s+1\.\s+Business|ITEM\s+1\.\s+BUSINESS)(.*?)(?:Item\s+1A\.|ITEM\s+1A\.|Item\s+2\.|ITEM\s+2\.)", plain_text, re.DOTALL | re.IGNORECASE)
-        if item1_match:
-            sections_extracted["Item 1 - Business"] = item1_match.group(1).strip()
+        def extract_longest_section(patterns: List[str], min_len: int = 100) -> Optional[str]:
+            longest = ""
+            for pat in patterns:
+                for match in re.finditer(pat, plain_text, re.DOTALL | re.IGNORECASE):
+                    content = match.group(1).strip()
+                    if len(content) > len(longest):
+                        longest = content
+            return longest if len(longest) >= min_len else None
+
+        # Item 1: Business Overview (match longest body section, not TOC)
+        item1_text = extract_longest_section([
+            r"(?:Item\s+1\.\s+Business|ITEM\s+1\.\s+BUSINESS)(.*?)(?:Item\s+1A\.|ITEM\s+1A\.|Item\s+2\.|ITEM\s+2\.)",
+            r"(?:Item\s+1\s*[-–]\s*Business|ITEM\s+1\s*[-–]\s*BUSINESS)(.*?)(?:Item\s+1A|ITEM\s+1A|Item\s+2|ITEM\s+2)",
+        ])
+        if item1_text:
+            sections_extracted["Item 1 - Business"] = item1_text
         else:
             sections_extracted["Overview"] = plain_text[:8000].strip()
 
         # Item 1A: Risk Factors
-        item1a_match = re.search(r"(?:Item\s+1A\.\s+Risk\s+Factors|ITEM\s+1A\.\s+RISK\s+FACTORS)(.*?)(?:Item\s+1B\.|ITEM\s+1B\.|Item\s+2\.|ITEM\s+2\.)", plain_text, re.DOTALL | re.IGNORECASE)
-        if item1a_match:
-            sections_extracted["Item 1A - Risk Factors"] = item1a_match.group(1).strip()
+        item1a_text = extract_longest_section([
+            (
+                r"(?:Item\s+1A\.\s+Risk\s+Factors|ITEM\s+1A\.\s+RISK\s+FACTORS)"
+                r"(.*?)(?:Item\s+1B\.|ITEM\s+1B\.|Item\s+2\.|ITEM\s+2\.)"
+            ),
+            r"(?:Item\s+1A\s*[-–]\s*Risk\s+Factors)(.*?)(?:Item\s+1B|Item\s+2)",
+        ])
+        # If Item 1A incorporates by reference or is brief, search for MD&A / main Risk Factors
+        if not item1a_text or len(item1a_text) < 500:
+            mda_risk_text = extract_longest_section([
+                (
+                    r"(?:Risk\s+Factors|MD&A\s+[–\-]\s+Risk\s+Factors)"
+                    r"(.*?)(?:Item\s+1B|Item\s+2|Item\s+7A|Item\s+8|\bGlossary\b)"
+                ),
+            ])
+            if mda_risk_text and len(mda_risk_text) > (len(item1a_text) if item1a_text else 0):
+                item1a_text = mda_risk_text
+
+        if item1a_text:
+            sections_extracted["Item 1A - Risk Factors"] = item1a_text
 
         # Item 7: Management's Discussion & Analysis (MD&A)
-        item7_match = re.search(r"(?:Item\s+7\.\s+Management['’]s\s+Discussion|ITEM\s+7\.\s+MANAGEMENT['’]S\s+DISCUSSION)(.*?)(?:Item\s+7A\.|ITEM\s+7A\.|Item\s+8\.|ITEM\s+8\.)", plain_text, re.DOTALL | re.IGNORECASE)
-        if item7_match:
-            sections_extracted["Item 7 - MD&A"] = item7_match.group(1).strip()
+        item7_text = extract_longest_section([
+            (
+                r"(?:Item\s+7\.\s+Management['’]s\s+Discussion|ITEM\s+7\.\s+MANAGEMENT['’]S\s+DISCUSSION)"
+                r"(.*?)(?:Item\s+7A\.|ITEM\s+7A\.|Item\s+8\.|ITEM\s+8\.)"
+            ),
+            r"(?:Item\s+7\s*[-–]\s*Management['’]s\s+Discussion)(.*?)(?:Item\s+7A|Item\s+8)",
+        ])
+        if item7_text:
+            sections_extracted["Item 7 - MD&A"] = item7_text
+
+        # Item 10: Directors, Executive Officers & Corporate Governance
+        item10_text = extract_longest_section([
+            (
+                r"(?:Item\s+10\.\s+Directors,\s+Executive\s+Officers|"
+                r"ITEM\s+10\.\s+DIRECTORS,\s+EXECUTIVE\s+OFFICERS|"
+                r"INFORMATION\s+ABOUT\s+OUR\s+EXECUTIVE\s+OFFICERS)"
+                r"(.*?)(?:Item\s+11\.|ITEM\s+11\.|Item\s+12\.|ITEM\s+12\.|Part\s+IV|SIGNATURES)"
+            ),
+            (
+                r"(?:Executive\s+Officers\s+of\s+the\s+Registrant|Executive\s+Officers)"
+                r"(.*?)(?:Item\s+1A|Item\s+2|Item\s+11|Item\s+12|Part\s+II)"
+            ),
+        ])
+        if item10_text:
+            sections_extracted["Item 10 - Executive Officers"] = item10_text
+
+        # ── Structured Extraction: Executive Officers & Risk Disclosures ──
+        structured_execs = []
+        exec_source_text = sections_extracted.get("Item 10 - Executive Officers") or plain_text
+        if exec_source_text:
+            seen_officer_names = set()
+
+            # Pattern A: Table-style "Rajashree Datta 48 Ms. Datta has served as..."
+            table_pat = (
+                r"(?:^|\.\s+|\n)([A-Z][a-zA-Z\.\s]{2,30})\s+(\d{2})\s+"
+                r"((?:(?:Mr\.|Ms\.|Dr\.)?\s*.*?(?:has served as|served as|serves as|is)\s+)?([^\.\n]{5,150}))"
+            )
+            for tm in re.finditer(table_pat, exec_source_text):
+                raw_name = tm.group(1).strip()
+                clean_name = re.sub(r"^(?:[A-Za-z0-9,\s]+(?:\.|\band\b|\bfrom\b)\s+)+", "", raw_name).strip()
+                if not clean_name:
+                    clean_name = raw_name
+                age_val = tm.group(2)
+                bio_snippet = tm.group(3).strip()
+
+                if (
+                    len(clean_name.split()) >= 2
+                    and len(clean_name) > 4
+                    and clean_name.lower() not in seen_officer_names
+                    and not any(
+                        w in clean_name.lower()
+                        for w in [
+                            "the company", "directors", "officers", "board", "committee",
+                            "table of", "name age", "item", "part", "section", "risk officer",
+                            "financial statement"
+                        ]
+                    )
+                ):
+                    seen_officer_names.add(clean_name.lower())
+                    # Extract clean title from bio snippet if available
+                    title_match = re.search(
+                        r"(?:serves\s+as|served\s+as|is\s+(?:the\s+)?)([^\.,\n]{5,80})"
+                        r"(?:since|\bfrom\b|\band\b|\.|\,|$)",
+                        bio_snippet,
+                        re.IGNORECASE
+                    )
+                    parsed_title = title_match.group(1).strip() if title_match else bio_snippet[:70]
+                    structured_execs.append(
+                        {
+                            "name": clean_name,
+                            "title": parsed_title,
+                            "age": int(age_val) if age_val else None,
+                            "bio_summary": bio_snippet[:200],
+                            "source": "SEC Form 10-K Item 10 / Executive Officers Disclosure",
+                        }
+                    )
+
+            # Pattern B: Inline comma format "Robin Vince, age 53, President and Chief Executive Officer"
+            inline_pat = (
+                r"([A-Z][a-zA-Z\.\s]{2,35})\s*[,|\(]\s*(?:age\s*)?(\d{2})?\s*[,|\)]\s*"
+                r"(?:is|has\s+served\s+as|serves\s+as)?\s*([^\.\n]{5,120})\."
+            )
+            for om in re.finditer(inline_pat, exec_source_text):
+                o_name = om.group(1).strip()
+                o_age = om.group(2)
+                o_title = om.group(3).strip()
+                o_name_clean = re.sub(r"\s+", " ", o_name).strip()
+
+                if (
+                    len(o_name_clean.split()) >= 2
+                    and len(o_name_clean) > 4
+                    and o_name_clean.lower() not in seen_officer_names
+                    and not any(
+                        w in o_name_clean.lower()
+                        for w in [
+                            "the company", "directors", "officers", "executive", "board",
+                            "committee", "table of", "item", "part", "section", "financial",
+                            "statement", "name age"
+                        ]
+                    )
+                ):
+                    seen_officer_names.add(o_name_clean.lower())
+                    structured_execs.append(
+                        {
+                            "name": o_name_clean,
+                            "title": o_title,
+                            "age": int(o_age) if o_age else None,
+                            "bio_summary": f"{o_name_clean} serves as {o_title}.",
+                            "source": "SEC Form 10-K Item 10 / Executive Officers Disclosure",
+                        }
+                    )
+
+        # Structured Item 1A Risk Factors into categorized items
+        structured_risks = []
+        raw_risk_text = sections_extracted.get("Item 1A - Risk Factors", "")
+        if raw_risk_text:
+            risk_paragraphs = [
+                rp.strip()
+                for rp in re.split(r"(?:&#8226;|\n\s*•|\n\s*-\s*|\n\s*\n)", raw_risk_text)
+                if len(rp.strip()) > 60
+            ]
+            for rp in risk_paragraphs[:30]:
+                rt_match = re.match(r"^([^\.\n]{15,140}\.?)", rp)
+                r_title = rt_match.group(1).strip() if rt_match else rp[:100] + "..."
+
+                rp_lower = rp.lower()
+                cyber_keys = [
+                    "cyber", "technology", "information security", "data breach", "cloud",
+                    "ai", "artificial intelligence", "system failure", "ransomware", "outage", "disruption"
+                ]
+                reg_keys = [
+                    "regulation", "regulatory", "capital", "compliance", "sec", "fdic",
+                    "federal reserve", "basel", "legal", "sanctions", "litigation", "law"
+                ]
+                market_keys = [
+                    "credit", "liquidity", "market", "interest rate", "inflation",
+                    "volatility", "counterparty", "trading", "asset quality", "currency"
+                ]
+                strat_keys = [
+                    "geopolitical", "war", "climate", "esg", "reputation",
+                    "talent", "retention", "competition", "merger", "operational", "processing"
+                ]
+                if any(k in rp_lower for k in cyber_keys):
+                    category = "Cyber & Technology Risk"
+                elif any(k in rp_lower for k in reg_keys):
+                    category = "Regulatory & Compliance Risk"
+                elif any(k in rp_lower for k in market_keys):
+                    category = "Market & Financial Risk"
+                elif any(k in rp_lower for k in strat_keys):
+                    category = "Strategic & Operational Risk"
+                else:
+                    category = "General Enterprise Risk"
+
+                structured_risks.append(
+                    {
+                        "risk_title": r_title,
+                        "risk_category": category,
+                        "summary": rp[:300] + ("..." if len(rp) > 300 else ""),
+                        "full_text": rp,
+                    }
+                )
 
         all_chunks = []
         for sec_name, sec_text in sections_extracted.items():
@@ -632,7 +1039,7 @@ def fetch_latest_10k_chunks(
                 filing_type=target_form,
                 period_end_date=report_date or filing_date or "",
                 chunk_size=chunk_size,
-                overlap=overlap
+                overlap=overlap,
             )
             all_chunks.extend(sec_chunks)
 
@@ -646,7 +1053,11 @@ def fetch_latest_10k_chunks(
             "primary_document_url": doc_url,
             "total_chunks": len(all_chunks),
             "sections_found": list(sections_extracted.keys()),
-            "chunks": all_chunks
+            "structured_executive_officers": structured_execs,
+            "structured_risk_disclosures": structured_risks,
+            "total_officers_extracted": len(structured_execs),
+            "total_risks_extracted": len(structured_risks),
+            "chunks": all_chunks,
         }
 
     except Exception as e:
@@ -658,10 +1069,9 @@ def fetch_latest_10k_chunks(
 # 2. FULL PATENT TEXT EXTRACTOR (USPTO / OPEN KNOWLEDGE)
 # ═════════════════════════════════════════════════════════════════════
 
+
 def extract_full_patents(
-    company_name: str,
-    raw_dir: Optional[Path] = None,
-    max_results: int = 10
+    company_name: str, raw_dir: Optional[Path] = None, max_results: int = 10
 ) -> Dict[str, Any]:
     """
     100% Dynamic Patent Text Extractor.
@@ -675,7 +1085,10 @@ def extract_full_patents(
     encoded_name = urllib.parse.quote_plus(company_name)
 
     # 1. Query USPTO Open PatentsView API
-    patentsview_url = f'https://api.patentsview.org/patents/query?q={{"_contains":{{"assignee_organization":"{company_name}"}}}}&f=["patent_number","patent_title","patent_abstract","patent_date","app_date"]&o={{"size":{max_results}}}'
+    patentsview_url = (
+        f'https://api.patentsview.org/patents/query?q={{"_contains":{{"assignee_organization":"{company_name}"}}}}'
+        f'&f=["patent_number","patent_title","patent_date","patent_abstract"]&o={{"size":{max_results}}}'
+    )
 
     parsed_patents = []
     try:
@@ -684,39 +1097,80 @@ def extract_full_patents(
             data = res.json()
             if raw_dir:
                 raw_dir.mkdir(parents=True, exist_ok=True)
-                with open(raw_dir / f"{slugify(company_name)}_patentsview_raw.json", "w", encoding="utf-8") as f:
+                with open(
+                    raw_dir / f"{slugify(company_name)}_patentsview_raw.json", "w", encoding="utf-8"
+                ) as f:
                     json.dump(data, f, indent=2)
 
             for p in data.get("patents", []):
-                parsed_patents.append({
-                    "patent_number": p.get("patent_number"),
-                    "title": p.get("patent_title"),
-                    "abstract": p.get("patent_abstract"),
-                    "grant_date": p.get("patent_date"),
-                    "filing_date": p.get("app_date"),
-                    "assignee": company_name,
-                    "google_patent_url": f"https://patents.google.com/patent/US{p.get('patent_number')}/en" if p.get("patent_number") else None
-                })
+                parsed_patents.append(
+                    {
+                        "patent_number": p.get("patent_number"),
+                        "title": p.get("patent_title"),
+                        "abstract": p.get("patent_abstract"),
+                        "grant_date": p.get("patent_date"),
+                        "filing_date": p.get("app_date"),
+                        "assignee": company_name,
+                        "google_patent_url": (
+                            f"https://patents.google.com/patent/US{p.get('patent_number')}/en"
+                            if p.get("patent_number")
+                            else None
+                        ),
+                    }
+                )
     except Exception as e:
         print(f"[!] [PatentExtractor] PatentsView API notice: {e}")
 
-    # Fallback / Enrich via Google Patents query endpoint metadata
+    # Fallback / Enrich via Serper Google Patents API
+    if not parsed_patents and config.SERPER_API_KEY:
+        try:
+            s_headers = {"X-API-KEY": config.SERPER_API_KEY, "Content-Type": "application/json"}
+            s_res = requests.post(
+                "https://google.serper.dev/patents",
+                headers=s_headers,
+                json={"q": f"{company_name} assignee", "num": max_results},
+                timeout=10,
+            )
+            if s_res.ok:
+                s_data = s_res.json()
+                for item in s_data.get("organic", []):
+                    parsed_patents.append(
+                        {
+                            "patent_number": item.get("patentId") or item.get("snippet", "").split(" ")[0],
+                            "title": item.get("title"),
+                            "abstract": item.get("snippet"),
+                            "grant_date": item.get("publicationDate") or item.get("date"),
+                            "filing_date": item.get("filingDate"),
+                            "assignee": item.get("assignee") or company_name,
+                            "google_patent_url": (
+                                item.get("link") or f"https://patents.google.com/?assignee={encoded_name}"
+                            ),
+                        }
+                    )
+        except Exception as serper_err:
+            print(f"[!] [PatentExtractor] Serper Patents fallback notice: {serper_err}")
+
     if not parsed_patents:
-        parsed_patents.append({
-            "patent_number": None,
-            "title": f"Patent Portfolio for {company_name}",
-            "abstract": f"Official intellectual property and granted technology patents assigned to {company_name}.",
-            "grant_date": None,
-            "filing_date": None,
-            "assignee": company_name,
-            "google_patent_url": f"https://patents.google.com/?assignee={urllib.parse.quote_plus(company_name)}&sort=new"
-        })
+        parsed_patents.append(
+            {
+                "patent_number": None,
+                "title": f"Patent Portfolio for {company_name}",
+                "abstract": (
+                    f"Official intellectual property and granted technology patents assigned to {company_name}."
+                ),
+                "grant_date": None,
+                "assignee": company_name,
+                "google_patent_url": (
+                    f"https://patents.google.com/?assignee={urllib.parse.quote_plus(company_name)}&sort=new"
+                ),
+            }
+        )
 
     return {
         "status": "success",
         "company_name": company_name,
         "total_patents_found": len(parsed_patents),
-        "patents": parsed_patents
+        "patents": parsed_patents,
     }
 
 
@@ -724,9 +1178,9 @@ def extract_full_patents(
 # 3. SEC EDGAR EXHIBIT 21 (SUBSIDIARIES OF REGISTRANT) PARSER
 # ═════════════════════════════════════════════════════════════════════
 
+
 def fetch_sec_exhibit_21_subsidiaries(
-    sec_cik: str,
-    raw_sec_dir: Optional[Path] = None
+    sec_cik: str, raw_sec_dir: Optional[Path] = None
 ) -> Dict[str, Any]:
     """
     100% Dynamic SEC EDGAR Exhibit 21 (EX-21) Subsidiaries Extractor.
@@ -766,17 +1220,29 @@ def fetch_sec_exhibit_21_subsidiaries(
         accession_nodash = accession.replace("-", "")
         filing_date = filing_dates[target_idx] if target_idx < len(filing_dates) else None
 
-        index_url = f"https://www.sec.gov/Archives/edgar/data/{cik_numeric}/{accession_nodash}/{accession}-index.htm"
+        index_url = (
+            f"https://www.sec.gov/Archives/edgar/data/{cik_numeric}/{accession_nodash}/"
+            f"{accession}-index.htm"
+        )
         index_res = requests.get(index_url, headers=SEC_ARCHIVE_HEADERS, timeout=15)
 
         ex21_doc_name = None
         if index_res.status_code == 200:
-            matches = re.findall(r'<a href="([^"]*(?:ex-?21|exhibit-?21|ex21)[^"]*)">', index_res.text, re.IGNORECASE)
+            matches = re.findall(
+                r'<a href="([^"]*(?:ex-?21|exhibit-?21|ex21)[^"]*)">', index_res.text, re.IGNORECASE
+            )
             if matches:
                 ex21_doc_name = matches[0].split("/")[-1]
 
         if not ex21_doc_name:
-            candidates = ["ex21.htm", "ex-21.htm", "ex21-1.htm", "ex21_1.htm", "exhibit21.htm", "ex-211.htm"]
+            candidates = [
+                "ex21.htm",
+                "ex-21.htm",
+                "ex21-1.htm",
+                "ex21_1.htm",
+                "exhibit21.htm",
+                "ex-211.htm",
+            ]
             for cand in candidates:
                 cand_url = f"https://www.sec.gov/Archives/edgar/data/{cik_numeric}/{accession_nodash}/{cand}"
                 try:
@@ -792,7 +1258,7 @@ def fetch_sec_exhibit_21_subsidiaries(
                 "status": "not_found",
                 "message": f"Exhibit 21 document not linked in latest 10-K index (Accession: {accession}).",
                 "accession_number": accession,
-                "filing_date": filing_date
+                "filing_date": filing_date,
             }
 
         ex21_url = f"https://www.sec.gov/Archives/edgar/data/{cik_numeric}/{accession_nodash}/{ex21_doc_name}"
@@ -800,43 +1266,111 @@ def fetch_sec_exhibit_21_subsidiaries(
 
         ex21_res = requests.get(ex21_url, headers=SEC_ARCHIVE_HEADERS, timeout=20)
         if ex21_res.status_code != 200:
-            return {"status": "error", "message": f"Failed to download Exhibit 21 document: {ex21_res.status_code}"}
+            return {
+                "status": "error",
+                "message": f"Failed to download Exhibit 21 document: {ex21_res.status_code}",
+            }
 
         raw_content = ex21_res.text
         if raw_sec_dir:
             raw_sec_dir.mkdir(parents=True, exist_ok=True)
-            with open(raw_sec_dir / f"sec_exhibit_21_{accession_nodash}_raw.html", "w", encoding="utf-8") as f:
+            with open(
+                raw_sec_dir / f"sec_exhibit_21_{accession_nodash}_raw.html", "w", encoding="utf-8"
+            ) as f:
                 f.write(raw_content)
 
         subsidiaries = []
-        rows = re.findall(r'<tr.*?>(.*?)</tr>', raw_content, re.DOTALL | re.IGNORECASE)
+        rows = re.findall(r"<tr.*?>(.*?)</tr>", raw_content, re.DOTALL | re.IGNORECASE)
         for row in rows:
-            cols = re.findall(r'<td.*?>(.*?)</td>', row, re.DOTALL | re.IGNORECASE)
+            cols = re.findall(r"<td.*?>(.*?)</td>", row, re.DOTALL | re.IGNORECASE)
             if len(cols) >= 2:
                 col1 = clean_html_text(cols[0])
                 col2 = clean_html_text(cols[1])
                 if col1 and col2 and len(col1) > 2 and len(col2) > 1:
                     col1_lower = col1.lower()
-                    if not any(h in col1_lower for h in ["name", "subsidiary", "entity", "item", "exhibit", "ex-21", ".htm", ".pdf", "form10-k"]):
-                        subsidiaries.append({
-                            "legal_name": col1,
-                            "jurisdiction": col2,
-                            "source": "SEC Form 10-K Exhibit 21"
-                        })
+                    if not any(
+                        h in col1_lower
+                        for h in [
+                            "name",
+                            "subsidiary",
+                            "entity",
+                            "item",
+                            "exhibit",
+                            "ex-21",
+                            ".htm",
+                            ".pdf",
+                            "form10-k",
+                        ]
+                    ):
+                        subsidiaries.append(
+                            {
+                                "legal_name": col1,
+                                "jurisdiction": col2,
+                                "source": "SEC Form 10-K Exhibit 21",
+                            }
+                        )
 
         if not subsidiaries:
-            lines = clean_html_text(raw_content).split("\n")
-            for line in lines:
-                line = line.strip()
-                line_lower = line.lower()
-                if len(line) > 5 and not any(w in line_lower for w in ["exhibit 21", "subsidiaries of", "table of contents", "ex-21", ".htm", ".pdf", "form10-k"]):
-                    subsidiaries.append({
-                        "legal_name": line,
-                        "jurisdiction": None,
-                        "source": "SEC Form 10-K Exhibit 21"
-                    })
+            unescaped = html.unescape(raw_content)
+            bullets = re.split(r"&#8226;|&bull;|•|\u2022|\x95", unescaped)
+            if len(bullets) > 1:
+                for b in bullets[1:]:
+                    clean_b = re.sub(r"<.*?>", " ", b).strip()
+                    clean_b = re.sub(r"\s+", " ", clean_b)
+                    parts = re.split(
+                        r"[\u2013\u2014–—\-]\s*(?:State of\s+)?"
+                        r"(?:Incorporation|Organization)[\s:]*|"
+                        r"Incorporation[\s:]*|State of Organization[\s:]*",
+                        clean_b,
+                        flags=re.IGNORECASE,
+                    )
+                    if len(parts) >= 2:
+                        s_name = parts[0].strip()
+                        s_jur = parts[1].strip()
+                        if s_name and len(s_name) > 2:
+                            subsidiaries.append(
+                                {
+                                    "legal_name": s_name,
+                                    "jurisdiction": s_jur,
+                                    "source": "SEC Form 10-K Exhibit 21",
+                                }
+                            )
+                    elif clean_b and len(clean_b) > 4:
+                        subsidiaries.append(
+                            {
+                                "legal_name": clean_b,
+                                "jurisdiction": "US",
+                                "source": "SEC Form 10-K Exhibit 21",
+                            }
+                        )
+            else:
+                lines = clean_html_text(raw_content).split("\n")
+                for line in lines:
+                    line = line.strip()
+                    line_lower = line.lower()
+                    if len(line) > 5 and not any(
+                        w in line_lower
+                        for w in [
+                            "exhibit 21",
+                            "subsidiaries of",
+                            "table of contents",
+                            "ex-21",
+                            ".htm",
+                            ".pdf",
+                            "form10-k",
+                        ]
+                    ):
+                        subsidiaries.append(
+                            {
+                                "legal_name": line,
+                                "jurisdiction": None,
+                                "source": "SEC Form 10-K Exhibit 21",
+                            }
+                        )
 
-        print(f"[+] [SEC Exhibit 21] Successfully extracted {len(subsidiaries)} official legal subsidiaries.")
+        print(
+            f"[+] [SEC Exhibit 21] Successfully extracted {len(subsidiaries)} official legal subsidiaries."
+        )
         return {
             "status": "success",
             "sec_cik": clean_cik,
@@ -844,7 +1378,7 @@ def fetch_sec_exhibit_21_subsidiaries(
             "filing_date": filing_date,
             "exhibit_url": ex21_url,
             "total_subsidiaries_found": len(subsidiaries),
-            "subsidiaries": subsidiaries
+            "subsidiaries": subsidiaries,
         }
 
     except Exception as e:
@@ -856,29 +1390,61 @@ def fetch_sec_exhibit_21_subsidiaries(
 # 4. GLEIF (GLOBAL LEGAL ENTITY IDENTIFIER) OWNERSHIP GRAPH RESOLVER
 # ═════════════════════════════════════════════════════════════════════
 
+
+def is_commercial_operating_lob(name: str) -> bool:
+    """
+    Determines if a legal entity name represents an active commercial operating business unit / LOB
+    versus a passive special purpose vehicle (SPV), nominee, or financing shell.
+    """
+    if not name:
+        return False
+    name_lower = name.lower()
+
+    # Passive shell / vehicle patterns
+    passive_keywords = [
+        "nominee", "funding llc", "special purpose", "spv", "conduit",
+        "securitisation", "securitization", "issuer", "financing",
+        "shelf", "escrow", "repack", "pass-through", "statutory trust",
+        "capital trust", "liquidity llc", "subordinated notes"
+    ]
+    if any(pk in name_lower for pk in passive_keywords):
+        return False
+
+    # Active commercial operating LOB patterns
+    commercial_keywords = [
+        "wealth management", "asset management", "investment management",
+        "securities", "bank", "trust company", "capital markets",
+        "advisors", "advisory", "services", "technology", "clearing",
+        "custody", "brokerage", "asset servicing", "investor solutions",
+        "global markets", "fund management", "holdings", "partners",
+        "international", "direct", "digital", "solutions", "corporation",
+        "insurance", "consulting", "logistics", "software"
+    ]
+    return any(ck in name_lower for ck in commercial_keywords)
+
+
 def fetch_gleif_ownership_tree(
-    company_name: str,
-    raw_dir: Optional[Path] = None,
-    max_children: int = 15
+    company_name: str, raw_dir: Optional[Path] = None, max_children: int = 50
 ) -> Dict[str, Any]:
     """
     100% Dynamic GLEIF (G20-mandated LEI Database) Resolver.
     Queries the official open GLEIF API (https://api.gleif.org) for:
-    - Master 20-character LEI Code
-    - Legal Entity Name & Registered Global Address
+    - Master 20-character LEI Code & Legal Form
+    - Registration Authority Entity ID & Managing LOU
+    - Legal Entity Name & Registered Global Address & Jurisdiction
     - Direct Parent Entity & Ultimate Controlling Parent
-    - Child Legal Subsidiaries (Ownership Graph)
+    - Child Legal Subsidiaries (Ownership Graph) with Commercial LOB Classification
     """
     if not company_name:
         return {"status": "error", "message": "No company name provided."}
 
     print(f"[*] [GLEIF Resolver] Querying global LEI records for '{company_name}'...")
-    encoded_name = urllib.parse.quote_plus(company_name)
-    gleif_search_url = f"https://api.gleif.org/api/v1/lei-records?filter[entity.legalName]={encoded_name}&page[size]=5"
+    enc_name = urllib.parse.quote_plus(company_name)
+    gleif_search_url = f"https://api.gleif.org/api/v1/lei-records?filter[entity.legalName]={enc_name}&page[size]=1"
 
     headers = {
         "Accept": "application/vnd.api+json",
-        "User-Agent": "EnterpriseSalesAI contact@salesai-intel.internal"
+        "User-Agent": "EnterpriseSalesAI contact@salesai-intel.internal",
     }
 
     try:
@@ -889,7 +1455,9 @@ def fetch_gleif_ownership_tree(
         data = res.json()
         if raw_dir:
             raw_dir.mkdir(parents=True, exist_ok=True)
-            with open(raw_dir / f"{slugify(company_name)}_gleif_records_raw.json", "w", encoding="utf-8") as f:
+            with open(
+                raw_dir / f"{slugify(company_name)}_gleif_records_raw.json", "w", encoding="utf-8"
+            ) as f:
                 json.dump(data, f, indent=2)
 
         items = data.get("data", [])
@@ -908,55 +1476,128 @@ def fetch_gleif_ownership_tree(
         jurisdiction = entity_attr.get("jurisdiction")
         category = entity_attr.get("category")
 
-        direct_parent_link = primary_record.get("relationships", {}).get("direct-parent", {}).get("links", {}).get("related")
-        ultimate_parent_link = primary_record.get("relationships", {}).get("ultimate-parent", {}).get("links", {}).get("related")
+        # Legal Form and Registration Authority Details
+        legal_form_data = entity_attr.get("legalForm", {})
+        legal_form_id = legal_form_data.get("id")
+        legal_form_name = legal_form_data.get("name") or legal_form_data.get("otherLegalForm")
+        reg_auth_id = (
+            reg_attr.get("registrationAuthorityEntityId")
+            or reg_attr.get("registrationAuthority", {}).get("registrationAuthorityId")
+        )
+        managing_lou = reg_attr.get("managingLou")
+        registration_date = reg_attr.get("initialRegistrationDate")
+        country = legal_address.get("country")
+
+        direct_parent_link = (
+            primary_record.get("relationships", {})
+            .get("direct-parent", {})
+            .get("links", {})
+            .get("related")
+        )
+        ultimate_parent_link = (
+            primary_record.get("relationships", {})
+            .get("ultimate-parent", {})
+            .get("links", {})
+            .get("related")
+        )
 
         # ── Fetch Direct Child Subsidiaries if Available ──
         child_subsidiaries = []
+        structured_child_lobs = []
         if lei:
-            children_url = f"https://api.gleif.org/api/v1/lei-records/{lei}/direct-children?page[size]={max_children}"
+            children_url = (
+                f"https://api.gleif.org/api/v1/lei-records/{lei}/direct-children?page[size]={max_children}"
+            )
             try:
                 c_res = requests.get(children_url, headers=headers, timeout=15)
                 if c_res.status_code == 200:
                     c_data = c_res.json()
                     for c_item in c_data.get("data", []):
-                        c_attr = c_item.get("attributes", {}).get("entity", {})
-                        child_subsidiaries.append({
-                            "lei": c_item.get("attributes", {}).get("lei"),
-                            "legal_name": c_attr.get("legalName", {}).get("name"),
-                            "jurisdiction": c_attr.get("jurisdiction"),
-                            "country": c_attr.get("legalAddress", {}).get("country"),
-                            "status": c_attr.get("status"),
-                            "relationship_type": "Direct Child Entity (GLEIF Level 2)"
-                        })
+                        c_entity = c_item.get("attributes", {}).get("entity", {})
+                        c_reg = c_item.get("attributes", {}).get("registration", {})
+                        c_legal_name = c_entity.get("legalName", {}).get("name")
+                        c_lei = c_item.get("attributes", {}).get("lei") or c_item.get("id")
+                        c_jurisdiction = c_entity.get("jurisdiction")
+                        c_country = c_entity.get("legalAddress", {}).get("country")
+                        c_status = c_entity.get("status")
+                        c_legal_form_dict = c_entity.get("legalForm", {})
+                        c_legal_form = (
+                            c_legal_form_dict.get("name")
+                            or c_legal_form_dict.get("otherLegalForm")
+                            or c_legal_form_dict.get("id")
+                        )
+                        c_reg_auth = (
+                            c_reg.get("registrationAuthorityEntityId")
+                            or c_reg.get("registrationAuthority", {}).get("registrationAuthorityId")
+                        )
+                        is_comm = is_commercial_operating_lob(c_legal_name or "")
+
+                        child_obj = {
+                            "lei": c_lei,
+                            "legal_name": c_legal_name,
+                            "legal_form": c_legal_form,
+                            "registration_authority_id": c_reg_auth,
+                            "jurisdiction": c_jurisdiction,
+                            "country": c_country,
+                            "status": c_status,
+                            "is_commercial_lob": is_comm,
+                            "relationship_type": "Direct Child Entity (GLEIF Level 2)",
+                        }
+                        child_subsidiaries.append(child_obj)
+
+                        if is_comm and c_legal_name:
+                            structured_child_lobs.append({
+                                "lob_name": c_legal_name,
+                                "lei": c_lei,
+                                "legal_form": c_legal_form,
+                                "jurisdiction": c_jurisdiction,
+                                "country": c_country,
+                                "classification": "Commercial Operating Subsidiary / Division",
+                                "source": "GLEIF Global LEI Registry",
+                            })
             except Exception as e:
                 print(f"[!] [GLEIF Resolver] Notice fetching child entities: {e}")
 
-        print(f"[+] [GLEIF Resolver] Matched LEI '{lei}' with {len(child_subsidiaries)} registered global child entities.")
+        commercial_count = sum(1 for c in child_subsidiaries if c.get("is_commercial_lob"))
+        passive_count = len(child_subsidiaries) - commercial_count
+
+        print(
+            f"[+] [GLEIF Resolver] Matched LEI '{lei}' with {len(child_subsidiaries)} registered child entities "
+            f"({commercial_count} commercial LOBs, {passive_count} passive entities)."
+        )
 
         return {
             "status": "success",
             "lei": lei,
             "legal_name": legal_name,
+            "legal_form_id": legal_form_id,
+            "legal_form_name": legal_form_name,
+            "registration_authority_id": reg_auth_id,
+            "managing_lou": managing_lou,
+            "registration_date": registration_date,
             "entity_status": entity_status,
             "jurisdiction": jurisdiction,
+            "country": country,
             "category": category,
             "legal_address": {
                 "address_lines": legal_address.get("addressLines", []),
                 "city": legal_address.get("city"),
                 "region": legal_address.get("region"),
                 "country": legal_address.get("country"),
-                "postal_code": legal_address.get("postalCode")
+                "postal_code": legal_address.get("postalCode"),
             },
             "headquarters_address": {
                 "address_lines": headquarters_address.get("addressLines", []),
                 "city": headquarters_address.get("city"),
-                "country": headquarters_address.get("country")
+                "country": headquarters_address.get("country"),
             },
             "direct_parent_relationship_url": direct_parent_link,
             "ultimate_parent_relationship_url": ultimate_parent_link,
             "total_child_entities_found": len(child_subsidiaries),
-            "child_entities": child_subsidiaries
+            "commercial_operating_lobs_count": commercial_count,
+            "passive_entity_count": passive_count,
+            "structured_child_lobs": structured_child_lobs,
+            "child_entities": child_subsidiaries,
         }
 
     except Exception as e:
@@ -968,9 +1609,9 @@ def fetch_gleif_ownership_tree(
 # 5. WIKIPEDIA & DBPEDIA STRUCTURED ONTOLOGY COLLECTOR (FREE OPEN API)
 # ═════════════════════════════════════════════════════════════════════
 
+
 def fetch_wikipedia_dbpedia_intel(
-    company_name: str,
-    raw_dir: Optional[Path] = None
+    company_name: str, raw_dir: Optional[Path] = None
 ) -> Dict[str, Any]:
     """
     100% Dynamic Wikipedia REST & DBpedia Knowledge Graph Extractor.
@@ -983,9 +1624,7 @@ def fetch_wikipedia_dbpedia_intel(
     wiki_slug = urllib.parse.quote(company_name.replace(" ", "_").replace(",", ""))
     wiki_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{wiki_slug}"
 
-    headers = {
-        "User-Agent": "EnterpriseSalesAI/1.0 (contact@salesai-intel.internal)"
-    }
+    headers = {"User-Agent": "EnterpriseSalesAI/1.0 (contact@salesai-intel.internal)"}
 
     result = {
         "status": "success",
@@ -995,7 +1634,7 @@ def fetch_wikipedia_dbpedia_intel(
         "extract": None,
         "thumbnail_url": None,
         "page_id": None,
-        "dbpedia_resource_url": f"https://dbpedia.org/resource/{wiki_slug}"
+        "dbpedia_resource_url": f"https://dbpedia.org/resource/{wiki_slug}",
     }
 
     try:
@@ -1004,7 +1643,9 @@ def fetch_wikipedia_dbpedia_intel(
             data = res.json()
             if raw_dir:
                 raw_dir.mkdir(parents=True, exist_ok=True)
-                with open(raw_dir / f"{slugify(company_name)}_wikipedia_raw.json", "w", encoding="utf-8") as f:
+                with open(
+                    raw_dir / f"{slugify(company_name)}_wikipedia_raw.json", "w", encoding="utf-8"
+                ) as f:
                     json.dump(data, f, indent=2)
 
             result["wikipedia_url"] = data.get("content_urls", {}).get("desktop", {}).get("page")
@@ -1014,7 +1655,10 @@ def fetch_wikipedia_dbpedia_intel(
             result["page_id"] = data.get("pageid")
         else:
             # Fallback to search query API
-            search_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={urllib.parse.quote(company_name)}&format=json"
+            enc_wiki = urllib.parse.quote_plus(company_name)
+            search_url = (
+                f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={enc_wiki}&format=json"
+            )
             s_res = requests.get(search_url, headers=headers, timeout=10)
             if s_res.status_code == 200:
                 s_data = s_res.json()
@@ -1022,10 +1666,16 @@ def fetch_wikipedia_dbpedia_intel(
                 if search_results:
                     top_title = search_results[0].get("title", "")
                     top_slug = urllib.parse.quote(top_title.replace(" ", "_"))
-                    top_summary_res = requests.get(f"https://en.wikipedia.org/api/rest_v1/page/summary/{top_slug}", headers=headers, timeout=10)
+                    top_summary_res = requests.get(
+                        f"https://en.wikipedia.org/api/rest_v1/page/summary/{top_slug}",
+                        headers=headers,
+                        timeout=10,
+                    )
                     if top_summary_res.status_code == 200:
                         top_data = top_summary_res.json()
-                        result["wikipedia_url"] = top_data.get("content_urls", {}).get("desktop", {}).get("page")
+                        result["wikipedia_url"] = (
+                            top_data.get("content_urls", {}).get("desktop", {}).get("page")
+                        )
                         result["description"] = top_data.get("description")
                         result["extract"] = top_data.get("extract")
                         result["thumbnail_url"] = top_data.get("thumbnail", {}).get("source")
@@ -1040,10 +1690,9 @@ def fetch_wikipedia_dbpedia_intel(
 # 6. FEDERAL ELECTION COMMISSION (FEC) CAMPAIGN & PAC GIVING API
 # ═════════════════════════════════════════════════════════════════════
 
+
 def fetch_fec_political_intel(
-    entity_name: str,
-    raw_dir: Optional[Path] = None,
-    max_records: int = 10
+    entity_name: str, raw_dir: Optional[Path] = None, max_records: int = 10
 ) -> Dict[str, Any]:
     """
     100% Dynamic FEC (Federal Election Commission) Political & Regulatory Intelligence Extractor.
@@ -1054,8 +1703,11 @@ def fetch_fec_political_intel(
 
     api_key = config.DATA_GOV_API_KEY or "DEMO_KEY"
     print(f"[*] [FEC Intel] Querying political giving & committee filings for '{entity_name}'...")
-    encoded_name = urllib.parse.quote_plus(entity_name)
-    fec_url = f"https://api.open.fec.gov/v1/schedules/schedule_a/?api_key={api_key}&contributor_employer={encoded_name}&sort=-contribution_receipt_date&per_page={max_records}"
+    enc_fec = urllib.parse.quote_plus(entity_name)
+    fec_url = (
+        f"https://api.open.fec.gov/v1/schedules/schedule_a/?api_key={api_key}"
+        f"&contributor_employer={enc_fec}&per_page=10"
+    )
 
     contributions = []
     try:
@@ -1064,19 +1716,29 @@ def fetch_fec_political_intel(
             data = res.json()
             if raw_dir:
                 raw_dir.mkdir(parents=True, exist_ok=True)
-                with open(raw_dir / f"{slugify(entity_name)}_fec_schedule_a_raw.json", "w", encoding="utf-8") as f:
+                with open(
+                    raw_dir / f"{slugify(entity_name)}_fec_schedule_a_raw.json",
+                    "w",
+                    encoding="utf-8",
+                ) as f:
                     json.dump(data, f, indent=2)
 
             for c in data.get("results", []):
-                contributions.append({
-                    "contributor_name": c.get("contributor_name"),
-                    "contributor_occupation": c.get("contributor_occupation"),
-                    "contributor_employer": c.get("contributor_employer"),
-                    "recipient_committee": c.get("committee", {}).get("name") if isinstance(c.get("committee"), dict) else c.get("committee_name"),
-                    "amount": c.get("contribution_receipt_amount"),
-                    "date": c.get("contribution_receipt_date"),
-                    "memo": c.get("memo_text")
-                })
+                contributions.append(
+                    {
+                        "contributor_name": c.get("contributor_name"),
+                        "contributor_occupation": c.get("contributor_occupation"),
+                        "contributor_employer": c.get("contributor_employer"),
+                        "recipient_committee": (
+                            c.get("committee", {}).get("name")
+                            if isinstance(c.get("committee"), dict)
+                            else c.get("committee_name")
+                        ),
+                        "amount": c.get("contribution_receipt_amount"),
+                        "date": c.get("contribution_receipt_date"),
+                        "memo": c.get("memo_text"),
+                    }
+                )
     except Exception as e:
         print(f"[!] [FEC Intel] Notice: {e}")
 
@@ -1084,7 +1746,7 @@ def fetch_fec_political_intel(
         "status": "success",
         "entity_name": entity_name,
         "total_contributions_found": len(contributions),
-        "recent_contributions": contributions
+        "recent_contributions": contributions,
     }
 
 
@@ -1092,10 +1754,9 @@ def fetch_fec_political_intel(
 # 7. DIFFBOT KNOWLEDGE GRAPH (DKG) ORGANIZATION ENHANCER
 # ═════════════════════════════════════════════════════════════════════
 
+
 def fetch_diffbot_organization_intel(
-    company_name: str,
-    website_url: Optional[str] = None,
-    raw_dir: Optional[Path] = None
+    company_name: str, website_url: Optional[str] = None, raw_dir: Optional[Path] = None
 ) -> Dict[str, Any]:
     """
     100% Dynamic Diffbot Knowledge Graph (DKG) Organization Enhancer.
@@ -1110,11 +1771,8 @@ def fetch_diffbot_organization_intel(
         return {"status": "skipped", "message": "DIFFBOT_TOKEN is not set in .env."}
 
     print(f"[*] [Diffbot DKG] Enhancing intelligence for '{company_name or website_url}'...")
-    
-    params = {
-        "token": token,
-        "type": "Organization"
-    }
+
+    params = {"token": token, "type": "Organization"}
     if website_url:
         params["url"] = website_url
     if company_name:
@@ -1130,20 +1788,33 @@ def fetch_diffbot_organization_intel(
         data = res.json()
         if raw_dir:
             raw_dir.mkdir(parents=True, exist_ok=True)
-            with open(raw_dir / f"{slugify(company_name or 'org')}_diffbot_dkg_raw.json", "w", encoding="utf-8") as f:
+            with open(
+                raw_dir / f"{slugify(company_name or 'org')}_diffbot_dkg_raw.json",
+                "w",
+                encoding="utf-8",
+            ) as f:
                 json.dump(data, f, indent=2)
 
         items = data.get("data", [])
         if not items:
-            return {"status": "empty", "message": f"No Diffbot DKG record found for '{company_name}'."}
+            return {
+                "status": "empty",
+                "message": f"No Diffbot DKG record found for '{company_name}'.",
+            }
 
         entity = items[0].get("entity", {})
 
         # Extract structured arrays
-        technologies = [t.get("name") for t in entity.get("technologies", []) if isinstance(t, dict)]
+        technologies = [
+            t.get("name") for t in entity.get("technologies", []) if isinstance(t, dict)
+        ]
         competitors = [c.get("name") for c in entity.get("competitors", []) if isinstance(c, dict)]
-        subsidiaries = [s.get("name") for s in entity.get("subsidiaries", []) if isinstance(s, dict)]
-        board_members = [b.get("name") for b in entity.get("boardMembers", []) if isinstance(b, dict)]
+        subsidiaries = [
+            s.get("name") for s in entity.get("subsidiaries", []) if isinstance(s, dict)
+        ]
+        board_members = [
+            b.get("name") for b in entity.get("boardMembers", []) if isinstance(b, dict)
+        ]
         founders = [f.get("name") for f in entity.get("founders", []) if isinstance(f, dict)]
 
         return {
@@ -1155,15 +1826,23 @@ def fetch_diffbot_organization_intel(
             "homepage_url": entity.get("homepageUri"),
             "diffbot_id": entity.get("id"),
             "employees_count": entity.get("nbEmployees"),
-            "yearly_revenue": entity.get("yearlyRevenue", {}).get("value") if isinstance(entity.get("yearlyRevenue"), dict) else entity.get("yearlyRevenue"),
+            "yearly_revenue": (
+                entity.get("yearlyRevenue", {}).get("value")
+                if isinstance(entity.get("yearlyRevenue"), dict)
+                else entity.get("yearlyRevenue")
+            ),
             "stock_symbol": entity.get("stockSymbol"),
-            "parent_organization": entity.get("parentOrganization", {}).get("name") if isinstance(entity.get("parentOrganization"), dict) else None,
+            "parent_organization": (
+                entity.get("parentOrganization", {}).get("name")
+                if isinstance(entity.get("parentOrganization"), dict)
+                else None
+            ),
             "technologies": technologies,
             "competitors": competitors,
             "subsidiaries": subsidiaries,
             "board_members": board_members,
             "founders": founders,
-            "diffbot_confidence": items[0].get("score")
+            "diffbot_confidence": items[0].get("score"),
         }
 
     except Exception as e:

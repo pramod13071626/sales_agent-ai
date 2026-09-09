@@ -29,11 +29,29 @@ export function resolveTargetKey(candidates) {
 }
 
 export function resolveAccountTargetKey(account) {
-  return resolveTargetKey([account.key, (account.ticker || '').toLowerCase(), slugify(account.name), slugify(account.legal_name)]);
+  return resolveTargetKey([
+    account.key,
+    (account.ticker || '').toLowerCase(),
+    slugify(account.name),
+    slugify(account.legal_name)
+  ]);
+}
+
+// Drops single-letter tokens (middle initials like "S.") before slugifying —
+// the content pipeline's own people_targets.py registers "Ranjit S. Samra"
+// under the key "ranjit_samra" (initial omitted), so plain slugify() alone
+// ("ranjit_s_samra") never matches and his real, already-scraped posts
+// silently render as "no recent posts" despite existing in Postgres.
+function slugifyDroppingInitials(name) {
+  return (name || '')
+    .trim()
+    .split(/\s+/)
+    .filter(w => w.replace(/[^a-zA-Z0-9]/g, '').length > 1)
+    .join(' ');
 }
 
 export function resolvePersonaTargetKey(p) {
-  return resolveTargetKey([p.key, slugify(p.name)]);
+  return resolveTargetKey([p.key, slugify(p.name), slugify(slugifyDroppingInitials(p.name))]);
 }
 
 export function findPersonaLob(account, persona) {
@@ -51,7 +69,10 @@ export function tierLabel(p) {
 
 export function getPersonasFor(account, lob) {
   if (lob) return lob.personas || [];
-  return dedupePersonas((account.lobs || []).flatMap(l => l.personas || []));
+  const list = account.personas && account.personas.length
+    ? account.personas
+    : (account.lobs || []).flatMap(l => l.personas || []);
+  return dedupePersonas(list);
 }
 
 export function getTechFor(account, lob) {
