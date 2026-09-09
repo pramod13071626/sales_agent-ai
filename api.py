@@ -2222,10 +2222,13 @@ if FASTAPI_AVAILABLE:
             if not p:
                 raise HTTPException(status_code=404, detail="Persona not found.")
             acct = session.query(Account).filter_by(id=p.account_id).first()
-            target_key = p.key or slugify(p.full_name or "")
-
-            digest_row = (
-                session.query(Digest).filter_by(target_key=target_key).first() if target_key else None
+            digest_row = _resolve_persona_digest(session, p)
+            # If a digest exists, its target_key is the confirmed-correct one;
+            # otherwise fall back to the same candidate list for the posts
+            # lookup (captured posts can exist before any digest has run).
+            target_key = digest_row.target_key if digest_row else next(
+                (c for c in [p.key, slugify(p.full_name or ""), _slugify_dropping_initials(p.full_name or "")] if c),
+                None,
             )
             posts = (
                 (session.query(Post).filter_by(target_key=target_key).order_by(Post.channel, Post.rank).all())
@@ -2460,8 +2463,7 @@ if FASTAPI_AVAILABLE:
             if not p:
                 raise HTTPException(status_code=404, detail="Persona not found.")
             acct = session.query(Account).filter_by(id=p.account_id).first()
-            target_key = p.key or slugify(p.full_name or "")
-            digest_row = session.query(Digest).filter_by(target_key=target_key).first() if target_key else None
+            digest_row = _resolve_persona_digest(session, p)
 
             persona_dict = {
                 "full_name": p.full_name, "title": p.title,
