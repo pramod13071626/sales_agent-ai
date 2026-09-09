@@ -533,13 +533,22 @@ def has_digest(target_key: str) -> bool:
         conn.close()
 
 
-def get_person_bio(person_key: str):
+def get_person_bio(person_key: str, full_name_hint: str = None):
     """Biographical context for the Personality Profile feature — read-only,
     from the `personas`/`cxo_movements` tables that belong to the sibling
     sales_ai app's schema (see MERGE_PLAN.md), not this app's own tables.
     Both apps share the same Postgres database, so this is a plain cross-app
     read, not a new integration; returns None if either table is absent
     (e.g. a fresh/local-only database that only ever ran this app).
+
+    full_name_hint: this app's own people_targets.py key ("ranjit_samra")
+    and the sales_ai app's persona.key (e.g.
+    "ranjit-s-samra-the-bank-of-new-york-mellon-corporation") are generated
+    independently and routinely don't match at all — every field below
+    silently returned nothing for such a person, not just some of them.
+    When the exact key lookup below finds nothing, fall back to matching
+    by full_name instead (pass the person's display_name minus any
+    trailing "(Title, Company)" annotation — see pipeline.py's call site).
     """
     conn = _connect()
     if conn is None:
@@ -560,6 +569,22 @@ def get_person_bio(person_key: str):
                 (person_key,),
             )
             rows = cur.fetchall()
+            if not rows and full_name_hint:
+                core_name = full_name_hint.split(" (")[0].strip()
+                cur.execute(
+                    """
+                    SELECT title, degree, institution, prior_company,
+                           communication_style, city, state, country, key
+                    FROM personas
+                    WHERE full_name ILIKE %s
+                    ORDER BY (degree IS NULL), (communication_style IS NULL)
+                    """,
+                    (core_name,),
+                )
+                name_rows = cur.fetchall()
+                if name_rows:
+                    person_key = name_rows[0][8]  # use the real key for every query below
+                    rows = [r[:8] for r in name_rows]
             if not rows:
                 return None
 
@@ -611,12 +636,105 @@ def get_person_bio(person_key: str):
                 if prior_company and prior_company.lower() != "tier-1 global financial institution":
                     education += f"; prior role at {prior_company}"
 
+            # The rich fields below (raw_data's LinkedIn scrape, structured
+            # employment/education history, career metadata) exist in this
+            # same table but were never being read here — the Personality/
+            # Psychological Profile prompts were only ever grounded on the
+            # thin slice above (title/degree/institution/location), even
+            # though decades of career history, education, volunteering,
+            # and peer recommendations were sitting right next to it.
+            cur.execute(
+                """
+                SELECT raw_data, employment_history, education_history,
+                       previous_titles, past_companies, career_trajectory_score, headline
+                FROM personas
+                WHERE key = %s
+                ORDER BY (raw_data IS NULL), (employment_history IS NULL)
+                """,
+                (person_key,),
+            )
+            rich_rows = cur.fetchall()
+
+            def first_non_null_rich(idx):
+                for row in rich_rows:
+                    if row[idx]:
+                        return row[idx]
+                return None
+
+            raw_data = first_non_null_rich(0) or {}
+            employment_history = first_non_null_rich(1) or []
+            education_history = first_non_null_rich(2) or []
+            previous_titles = first_non_null_rich(3) or []
+            past_companies = first_non_null_rich(4) or []
+            career_trajectory_score = first_non_null_rich(5)
+            headline = first_non_null_rich(6)
+
+            linkedin = raw_data.get("apify_linkedin") if isinstance(raw_data, dict) else None
+            linkedin = linkedin or {}
+
+            def _truncate(text, limit):
+                if not text or len(text) <= limit:
+                    return text
+                return text[:limit].rsplit(" ", 1)[0] + "…"
+
+            def _date_range(entry):
+                start = (entry.get("startDate") or {}).get("text") or ""
+                end = (entry.get("endDate") or {}).get("text") or "Present"
+                return f"{start}–{end}" if start else end
+
+            about = _truncate(linkedin.get("about"), 1200)
+
+            employment_lines = []
+            for e in (employment_history or [])[:14]:
+                position, company = e.get("position"), e.get("companyName")
+                if position or company:
+                    employment_lines.append(f"{position or 'Role'} at {company or 'Unknown'} ({_date_range(e)})")
+
+            education_lines = []
+            for e in (education_history or []):
+                parts = [p for p in (e.get("degree"), e.get("fieldOfStudy")) if p]
+                line = " in ".join(parts)
+                if e.get("schoolName"):
+                    line = f"{line}, {e['schoolName']}" if line else e["schoolName"]
+                period = e.get("period") or _date_range(e)
+                if line:
+                    education_lines.append(f"{line} ({period})" if period else line)
+
+            volunteering_lines = []
+            for v in (linkedin.get("volunteering") or []):
+                org, role = v.get("organizationName"), v.get("role")
+                label = f"{role} at {org}" if role and org else (org or role)
+                desc = _truncate(v.get("description"), 220)
+                bits = [b for b in (label, _date_range(v), desc) if b]
+                if bits:
+                    volunteering_lines.append(" — ".join(bits))
+
+            recommendation_lines = []
+            for r in (linkedin.get("receivedRecommendations") or [])[:3]:
+                desc = _truncate(r.get("description"), 300)
+                if desc:
+                    recommendation_lines.append(f"{r.get('givenBy') or 'A colleague'}: \"{desc}\"")
+
             return {
                 "title": title,
                 "location": location or None,
                 "education": education,
                 "communication_style": communication_style,
                 "career": career,
+                "headline": headline,
+                "about": about,
+                "employment_history": employment_lines,
+                "education_history": education_lines,
+                "volunteering": volunteering_lines,
+                "recommendations": recommendation_lines,
+                "previous_titles": list(previous_titles) if previous_titles else [],
+                "past_companies": list(past_companies) if past_companies else [],
+                "career_trajectory_score": career_trajectory_score,
+                # The key that actually matched (identical to person_key
+                # unless the full_name_hint fallback above kicked in) — see
+                # get_person_psychological_context, which needs this same
+                # resolved key for its own separate query.
+                "resolved_key": person_key,
             }
     except Exception as e:
         print(f"⚠️  [DB] Could not read person bio for '{person_key}' ({e})")
@@ -625,11 +743,16 @@ def get_person_bio(person_key: str):
         conn.close()
 
 
-def get_person_psychological_context(person_key: str) -> Dict[str, Any]:
+def get_person_psychological_context(person_key: str, full_name_hint: str = None) -> Dict[str, Any]:
     """Rich context query for the Psychological Profile — pulls full persona
     traits, KPIs, objections, career milestones, and account firmographics.
     """
-    bio = get_person_bio(person_key) or {}
+    bio = get_person_bio(person_key, full_name_hint=full_name_hint) or {}
+    # get_person_bio may have resolved a different key via the full_name_hint
+    # fallback (content_pipeline's registered key often doesn't match the
+    # main app's personas.key) — reuse that same row here instead of
+    # re-querying with the original, possibly-wrong key.
+    resolved_key = bio.get("resolved_key", person_key)
     conn = _connect()
     if conn is None:
         return bio
@@ -645,7 +768,7 @@ def get_person_psychological_context(person_key: str) -> Dict[str, Any]:
                 WHERE p.key = %s
                 LIMIT 1
                 """,
-                (person_key,),
+                (resolved_key,),
             )
             row = cur.fetchone()
             if row:
