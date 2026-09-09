@@ -15,6 +15,7 @@ from .prompts import (
     PERSON_EMAIL_SYSTEM,
     PERSONALITY_PROFILE_SYSTEM,
     PERSON_ACTION_SUGGESTIONS_SYSTEM,
+    PSYCHOLOGICAL_PROFILE_SYSTEM,
 )
 
 
@@ -265,5 +266,21 @@ def build_action_item_suggestions(
     prompt = _format_bio_and_channels(subject, bio, channels)
     result = client.complete_json(PERSON_ACTION_SUGGESTIONS_SYSTEM, prompt)
     return result.get("suggestions") or []
+
+
+def build_psychological_profile(
+    client: LLMClient,
+    subject: str,
+    bio: Dict[str, Any],
+    channels: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Second-stage deep synthesis — In-depth Executive Psychological &
+    Leadership Profile (Archetype, Cognitive Style, Leadership & Scale, Big Five
+    1.0-10.0 Trait Modeling, Core Values & Philanthropy, Blind Spots, and Playbook).
+    See PSYCHOLOGICAL_PROFILE_SYSTEM in prompts.py.
+    """
+    prompt = _format_bio_and_channels(subject, bio, channels)
+    return client.complete_json(PSYCHOLOGICAL_PROFILE_SYSTEM, prompt)
+
 
 

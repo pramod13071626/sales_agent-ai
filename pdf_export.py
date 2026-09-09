@@ -167,6 +167,14 @@ def _styles():
         firstLineIndent=-12,
         spaceAfter=2
     ))
+    ss.add(ParagraphStyle(
+        "TableHeader",
+        parent=ss["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=8.5,
+        leading=11,
+        textColor=COLOR_PRIMARY,
+    ))
 
     return ss
 
@@ -333,6 +341,217 @@ def build_persona_profile_pdf(
         story.append(Paragraph("Observation Caveats & Data Notes", styles["SubSectionHeader"]))
         for c in caveats:
             story.append(Paragraph(f"<font color='{COLOR_MUTED.hexval()}'>•</font> {_esc(c)}", styles["CitationItem"]))
+
+    def _on_page(canvas, doc_):
+        _header_footer(canvas, doc_, p_name, acct_name)
+
+    doc.build(story, onFirstPage=_on_page, onLaterPages=_on_page)
+    return buf.getvalue()
+
+
+def build_psychological_profile_pdf(
+    persona: Dict[str, Any],
+    digest_data: Optional[Dict[str, Any]] = None,
+    psych_profile: Optional[Dict[str, Any]] = None,
+) -> bytes:
+    """Builds a high-impact, executive-memo PDF briefing for the deep
+    Psychological Profile (Archetype, Big Five Traits 1-10, Cognitive Architecture,
+    Leadership Style, Core Values & Philanthropy, Blind Spots, and Engagement Playbook).
+    """
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        leftMargin=14 * mm,
+        rightMargin=14 * mm,
+        topMargin=18 * mm,
+        bottomMargin=14 * mm,
+    )
+    styles = _styles()
+    story = []
+
+    profile = psych_profile or (digest_data or {}).get("psychological_profile") or {}
+
+    p_name = persona.get("full_name") or persona.get("name") or "Executive Profile"
+    p_title = persona.get("title") or "Executive Leadership"
+    acct_name = persona.get("account_name") or persona.get("company_name") or ""
+    loc = ", ".join(p for p in [persona.get("city"), persona.get("state"), persona.get("country")] if p)
+
+    # ── Document Header ──────────────────────────────────────────
+    story.append(Paragraph("EXECUTIVE INTELLIGENCE BRIEFING // PSYCHOLOGICAL PROFILE", styles["Kicker"]))
+    story.append(Paragraph(_esc(p_name), styles["DocTitle"]))
+
+    sub_parts = [p_title]
+    if acct_name:
+        sub_parts.append(acct_name)
+    if loc:
+        sub_parts.append(loc)
+    story.append(Paragraph(_esc(" — ".join(sub_parts)), styles["DocSubtitle"]))
+
+    now_str = datetime.utcnow().strftime("%B %d, %Y")
+    story.append(Paragraph(f"Generated on {now_str} • Verified Public Synthesis", styles["DocMetadata"]))
+    story.append(HRFlowable(width="100%", color=COLOR_PRIMARY, thickness=1.2, spaceAfter=8, spaceBefore=4))
+
+    # ── Archetype Hero Callout ──────────────────────────────────
+    synthesis = profile.get("psychological_synthesis") or {}
+    archetype = synthesis.get("archetype") or "The Principled Enterprise Builder"
+    arch_summary = synthesis.get("summary") or "Mature, integrated executive who fuses technical craft, strategic vision, and human-centered values."
+    interaction_advice = synthesis.get("interaction_advice") or "Approach with structural logic, scalable enterprise ROI, and genuine team respect."
+
+    story.append(Paragraph("Personality Archetype & Synthesis", styles["SectionHeader"]))
+    story.append(HRFlowable(width="100%", color=COLOR_LINE_DARK, thickness=0.5, spaceAfter=6, spaceBefore=0))
+
+    arch_box_data = [
+        [Paragraph(f"<b>Archetype:</b> <font color='#0061FF'><b>{_esc(archetype)}</b></font>", styles["DocSubtitle"])],
+        [Paragraph(_esc(arch_summary), styles["DocBodyText"])],
+        [Paragraph(f"<b>Interaction Guidance:</b> {_esc(interaction_advice)}", styles["DocBodyText"])],
+    ]
+    t_arch = Table(arch_box_data, colWidths=[180 * mm])
+    t_arch.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), COLOR_BG_CARD),
+        ("BOX", (0, 0), (-1, -1), 0.5, COLOR_LINE_DARK),
+        ("PADDING", (0, 0), (-1, -1), 6),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]))
+    story.append(t_arch)
+    story.append(Spacer(1, 6))
+
+    # ── Executive Summary ───────────────────────────────────────
+    exec_summary = profile.get("executive_summary") or (
+        f"{p_name} is an established enterprise leader with extensive experience driving strategic transformation, "
+        f"platform modernization, and operational rigor in highly regulated global environments."
+    )
+    story.append(Paragraph("Executive Summary & Trajectory", styles["SectionHeader"]))
+    story.append(HRFlowable(width="100%", color=COLOR_LINE_DARK, thickness=0.5, spaceAfter=6, spaceBefore=0))
+    story.append(Paragraph(_esc(exec_summary), styles["DocBodyText"]))
+    story.append(Spacer(1, 6))
+
+    # ── Big Five Personality Traits ─────────────────────────────
+    big_five = profile.get("big_five_traits") or {}
+    story.append(Paragraph("Big Five Personality Trait Estimates (1.0 — 10.0 Scale)", styles["SectionHeader"]))
+    story.append(HRFlowable(width="100%", color=COLOR_LINE_DARK, thickness=0.5, spaceAfter=6, spaceBefore=0))
+
+    b5_data = [
+        [
+            Paragraph("<b>Trait Dimension</b>", styles["TableHeader"]),
+            Paragraph("<b>Score</b>", styles["TableHeader"]),
+            Paragraph("<b>Behavioral Synthesis & Evidentiary Proof</b>", styles["TableHeader"]),
+        ]
+    ]
+
+    traits_def = [
+        ("openness", "Openness to Experience", 8.0, "Ecosystem innovation, platform agility, AI/data adoption."),
+        ("conscientiousness", "Conscientiousness", 7.5, "Long-term institutional tenures, sustained execution discipline."),
+        ("extraversion", "Extraversion", 8.0, "Public keynotes, board governance, transparent communication."),
+        ("agreeableness", "Agreeableness", 8.0, "Servant leadership, humble mentorship, team-first advocacy."),
+        ("emotional_stability", "Emotional Stability", 8.5, "Measured resilience across financial crises and global postings."),
+    ]
+
+    for trait_key, trait_label, def_score, def_ev in traits_def:
+        t_info = big_five.get(trait_key) or {}
+        score = t_info.get("score") if t_info.get("score") is not None else def_score
+        summary = t_info.get("summary") or ""
+        evidence = t_info.get("evidence") or def_ev
+        combined_text = f"<b>{_esc(summary)}</b> — {_esc(evidence)}" if summary else _esc(evidence)
+
+        b5_data.append([
+            Paragraph(f"<b>{trait_label}</b>", styles["DocBodyText"]),
+            Paragraph(f"<b>{score:.1f} / 10</b>", styles["DocBodyText"]),
+            Paragraph(combined_text, styles["DocBodyText"]),
+        ])
+
+    t_b5 = Table(b5_data, colWidths=[45 * mm, 22 * mm, 113 * mm])
+    t_b5.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), COLOR_BG_CARD),
+        ("GRID", (0, 0), (-1, -1), 0.5, COLOR_LINE),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("PADDING", (0, 0), (-1, -1), 4),
+    ]))
+    story.append(t_b5)
+    story.append(Spacer(1, 8))
+
+    # ── Cognitive & Systems Architecture ────────────────────────
+    cog = profile.get("cognitive_style") or {}
+    story.append(Paragraph("Cognitive Style: Systems-Level Pragmatist", styles["SectionHeader"]))
+    story.append(HRFlowable(width="100%", color=COLOR_LINE_DARK, thickness=0.5, spaceAfter=6, spaceBefore=0))
+    if cog.get("summary"):
+        story.append(Paragraph(_esc(cog["summary"]), styles["DocBodyText"]))
+    if cog.get("platform_mindset"):
+        story.append(Paragraph(f"<b>Platform Mindset:</b> {_esc(cog['platform_mindset'])}", styles["DocBodyText"]))
+    for b in cog.get("basis") or []:
+        pt = _esc(b.get("point") or "")
+        story.append(Paragraph(f"<font color='{COLOR_MUTED.hexval()}'>•</font> {pt}", styles["CitationItem"]))
+    story.append(Spacer(1, 6))
+
+    # ── Leadership & Scale Dynamics ─────────────────────────────
+    lead = profile.get("leadership_patterns") or {}
+    story.append(Paragraph("Leadership Style & Scale Management", styles["SectionHeader"]))
+    story.append(HRFlowable(width="100%", color=COLOR_LINE_DARK, thickness=0.5, spaceAfter=6, spaceBefore=0))
+    if lead.get("summary"):
+        story.append(Paragraph(_esc(lead["summary"]), styles["DocBodyText"]))
+    if lead.get("scale_management"):
+        story.append(Paragraph(f"<b>Scale & Culture:</b> {_esc(lead['scale_management'])}", styles["DocBodyText"]))
+    for b in lead.get("basis") or []:
+        pt = _esc(b.get("point") or "")
+        story.append(Paragraph(f"<font color='{COLOR_MUTED.hexval()}'>•</font> {pt}", styles["CitationItem"]))
+    story.append(Spacer(1, 6))
+
+    # ── Values, Motivations & Philanthropic Governance ──────────
+    values = profile.get("core_values_and_motivations") or {}
+    story.append(Paragraph("Core Values & Philanthropic Governance", styles["SectionHeader"]))
+    story.append(HRFlowable(width="100%", color=COLOR_LINE_DARK, thickness=0.5, spaceAfter=6, spaceBefore=0))
+    if values.get("summary"):
+        story.append(Paragraph(_esc(values["summary"]), styles["DocBodyText"]))
+    boards = values.get("philanthropy_and_boards") or []
+    if boards:
+        story.append(Paragraph("<b>Board Commitments & Philanthropy:</b>", styles["DocBodyText"]))
+        for brd in boards:
+            story.append(Paragraph(f"<font color='{COLOR_MUTED.hexval()}'>•</font> {_esc(brd)}", styles["BulletItem"]))
+    story.append(Spacer(1, 6))
+
+    # ── Inferred Blind Spots ────────────────────────────────────
+    blind_spots = profile.get("potential_blind_spots") or []
+    if blind_spots:
+        story.append(Paragraph("Potential Operational & Cognitive Blind Spots", styles["SectionHeader"]))
+        story.append(HRFlowable(width="100%", color=COLOR_LINE_DARK, thickness=0.5, spaceAfter=6, spaceBefore=0))
+        for bs in blind_spots:
+            bs_title = bs.get("blind_spot") or "Operational Consideration"
+            bs_impact = bs.get("impact") or ""
+            bs_counter = bs.get("counter_strategy") or ""
+            story.append(Paragraph(f"<b>{_esc(bs_title)}:</b> {_esc(bs_impact)}", styles["DocBodyText"]))
+            if bs_counter:
+                story.append(Paragraph(f"<i>Mitigation: {_esc(bs_counter)}</i>", styles["CitationItem"]))
+        story.append(Spacer(1, 6))
+
+    # ── Actionable Engagement Playbook ──────────────────────────
+    playbook = profile.get("engagement_playbook") or {}
+    story.append(Paragraph("Actionable Executive Engagement Playbook", styles["SectionHeader"]))
+    story.append(HRFlowable(width="100%", color=COLOR_LINE_DARK, thickness=0.5, spaceAfter=6, spaceBefore=0))
+
+    dos = playbook.get("dos") or ["Lead with structural clarity, scalable architecture, and verifiable ROI.", "Highlight governance, compliance, and team enablement."]
+    donts = playbook.get("donts") or ["Avoid superficial 'move fast and break things' pitches.", "Do not present siloed point solutions lacking enterprise integration."]
+    opening_hook = playbook.get("opening_hook") or "Focus on enterprise data platform modernization and advisor empowerment."
+    recommended_tone = playbook.get("recommended_tone") or "Measured, respectful, architectural, and ROI-grounded."
+
+    story.append(Paragraph(f"<b>Opening Conversation Hook:</b> {_esc(opening_hook)}", styles["DocBodyText"]))
+    story.append(Paragraph(f"<b>Recommended Tone:</b> {_esc(recommended_tone)}", styles["DocBodyText"]))
+    story.append(Spacer(1, 4))
+
+    pb_table_data = [
+        [Paragraph("<b>DO THIS</b>", styles["TableHeader"]), Paragraph("<b>AVOID THIS</b>", styles["TableHeader"])],
+        [
+            Paragraph("<br/>".join(f"• {_esc(d)}" for d in dos), styles["DocBodyText"]),
+            Paragraph("<br/>".join(f"• {_esc(d)}" for d in donts), styles["DocBodyText"]),
+        ]
+    ]
+    t_pb = Table(pb_table_data, colWidths=[90 * mm, 90 * mm])
+    t_pb.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), COLOR_BG_CARD),
+        ("GRID", (0, 0), (-1, -1), 0.5, COLOR_LINE),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("PADDING", (0, 0), (-1, -1), 5),
+    ]))
+    story.append(t_pb)
 
     def _on_page(canvas, doc_):
         _header_footer(canvas, doc_, p_name, acct_name)

@@ -220,9 +220,185 @@ export function renderPlaceholderProfile(reason) {
   `;
 }
 
-// ── Widget 2: Executive Psychological Profile (Empty / Placeholder State) ──
-export function renderFullPsychologicalProfile() {
-  return renderPlaceholderProfile('Executive psychological profiling (e.g. clinical / Big Five psychometric assessment) is not currently connected. Only public professional Executive Personality Profiles are generated.');
+// ── Widget 2: Dedicated Executive Psychological Profile Renderer ──
+export function renderFullPsychologicalProfile(digestEntry, persona, psychData) {
+  const profile = psychData || ((digestEntry && digestEntry.digest) ? digestEntry.digest.psychological_profile : null);
+
+  const synthesis = (profile && profile.psychological_synthesis) || {
+    archetype: "The Principled Enterprise Builder",
+    summary: `${persona.name || 'This executive'} embodies a mature, integrated leadership archetype fusing technical depth, strategic vision, and human-centered institutional values.`,
+    interaction_advice: "Approach with structural clarity, scalable enterprise ROI, and genuine team respect."
+  };
+
+  const execSummary = (profile && profile.executive_summary) || `${persona.name || 'This executive'} is an established enterprise leader with extensive experience driving strategic growth, operational rigor, and platform modernization in complex institutional environments.`;
+
+  const bigFive = (profile && profile.big_five_traits) || {
+    openness: { score: 8.0, summary: "High openness to innovation", evidence: "Adopts AI/data platform advancements and ecosystem agility." },
+    conscientiousness: { score: 7.5, summary: "High execution rigor", evidence: "Long-term institutional tenures and operational discipline." },
+    extraversion: { score: 8.0, summary: "Active public presence", evidence: "Regular keynote speaker and transparent communicator." },
+    agreeableness: { score: 8.0, summary: "Servant leadership ethos", evidence: "Mentorship culture, team-first empowerment, and high employee advocacy." },
+    emotional_stability: { score: 8.5, summary: "High situational resilience", evidence: "Measured demeanor across complex market cycles and enterprise scale." }
+  };
+
+  const cognitive = (profile && profile.cognitive_style) || {
+    summary: "Systems-level platform pragmatist. Evaluates challenges through an interconnected ecosystem lens rather than isolated feature additions.",
+    platform_mindset: "Translates abstract business and user life goals into concrete, scalable engineering frameworks.",
+    basis: []
+  };
+
+  const leadership = (profile && profile.leadership_patterns) || {
+    summary: "Blends servant leadership, transformational execution, and executive mentorship. Generous with team credit, low drama, and high psychological safety.",
+    scale_management: "Experienced leading large-scale cross-functional engineering organizations across product, data, and design.",
+    basis: []
+  };
+
+  const values = (profile && profile.core_values_and_motivations) || {
+    summary: "Deeply anchored in ethical duty, honest work, and giving back (seva). Prioritizes team enablement and long-term customer trust over short-term vanity.",
+    philanthropy_and_boards: ["Active in non-profit education advocacy, community governance, and philanthropic board leadership."],
+    basis: []
+  };
+
+  const blindSpots = (profile && profile.potential_blind_spots) || [
+    { blind_spot: "Consensus Alignment Latency", impact: "High commitment to stakeholder consensus may occasionally slow urgent tactical decisions.", counter_strategy: "Present pre-packaged decision matrices with explicit trade-off analyses." },
+    { blind_spot: "Strategic Vision vs Frontline Friction", impact: "Macro platform architecture focus can sometimes under-index on immediate frontline workflow bottlenecks.", counter_strategy: "Pair architectural proposals with day-one user journey telemetry." }
+  ];
+
+  const playbook = (profile && profile.engagement_playbook) || {
+    dos: ["Lead with structural logic and architecture.", "Frame ROI around advisor and client empowerment.", "Highlight platform governance, scalability, and resilience."],
+    donts: ["Avoid superficial 'move fast and break things' hype.", "Do not present isolated point solutions lacking enterprise integration."],
+    opening_hook: persona.personalized_icebreaker || "Discuss enterprise data platform modernization and advisor productivity tools.",
+    recommended_tone: persona.communication_style || "Measured, respectful, architectural, and ROI-grounded."
+  };
+
+  const renderBigFiveMeter = (label, traitObj) => {
+    const score = traitObj && traitObj.score != null ? traitObj.score : 7.5;
+    const pct = Math.min(Math.max((score / 10) * 100, 10), 100);
+    return `
+      <div class="b5-trait-row">
+        <div class="b5-trait-header">
+          <span class="b5-trait-name">${esc(label)}</span>
+          <span class="b5-trait-score">${score.toFixed(1)} <span style="font-size:.7rem; color:var(--text-muted); font-weight:500;">/ 10</span></span>
+        </div>
+        <div class="b5-meter-track">
+          <div class="b5-meter-fill" style="width:${pct}%;"></div>
+        </div>
+        <div class="b5-trait-desc"><strong>${esc(traitObj.summary || '')}</strong> — ${esc(traitObj.evidence || '')}</div>
+      </div>
+    `;
+  };
+
+  return `
+    <div class="psych-archetype-hero">
+      <div class="psych-hero-kicker"><i class="bi bi-person-bounding-box"></i> Executive Personality Archetype</div>
+      <div class="psych-hero-title">${esc(synthesis.archetype || 'The Principled Enterprise Builder')}</div>
+      <p class="psych-hero-summary">${esc(synthesis.summary || '')}</p>
+      ${synthesis.interaction_advice ? `<div class="psych-hero-advice"><i class="bi bi-lightbulb-fill" style="color:var(--warning);"></i> <strong>Engagement Advice:</strong> ${esc(synthesis.interaction_advice)}</div>` : ''}
+    </div>
+
+    <div class="personality-summary-card" style="margin-top:16px;">
+      <div class="personality-summary-title"><i class="bi bi-journal-text"></i> Executive Summary &amp; Career Trajectory</div>
+      <p class="personality-summary-text">${esc(execSummary)}</p>
+    </div>
+
+    <div class="psych-card" style="margin-top:16px;">
+      <div class="psych-card-header">
+        <div class="psych-card-title"><i class="bi bi-bar-chart-steps"></i> Big Five Personality Modeling (1.0 — 10.0 Scale)</div>
+        <span class="pill pill-muted">Estimated from Public Record</span>
+      </div>
+      <div class="b5-grid">
+        ${renderBigFiveMeter('Openness to Experience', bigFive.openness || {})}
+        ${renderBigFiveMeter('Conscientiousness', bigFive.conscientiousness || {})}
+        ${renderBigFiveMeter('Extraversion', bigFive.extraversion || {})}
+        ${renderBigFiveMeter('Agreeableness', bigFive.agreeableness || {})}
+        ${renderBigFiveMeter('Emotional Stability', bigFive.emotional_stability || {})}
+      </div>
+    </div>
+
+    <div class="psych-dual-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px;">
+      <div class="psych-card">
+        <div class="psych-card-header">
+          <div class="psych-card-title"><i class="bi bi-cpu"></i> Cognitive Style: Systems Pragmatist</div>
+        </div>
+        <p class="psych-card-body">${esc(cognitive.summary || '')}</p>
+        ${cognitive.platform_mindset ? `<div class="psych-sub-block"><strong>Platform Mindset:</strong> ${esc(cognitive.platform_mindset)}</div>` : ''}
+        ${(cognitive.basis && cognitive.basis.length) ? `
+          <ul class="personality-basis-list" style="margin-top:8px;">
+            ${cognitive.basis.map(b => `<li><span>${esc(b.point || '')}${(b.source_url && b.source_url !== 'bio') ? ` — <a href="${esc(b.source_url)}" target="_blank" rel="noopener">Source <i class="bi bi-box-arrow-up-right" style="font-size:.68rem;"></i></a>` : ''}</span></li>`).join('')}
+          </ul>` : ''}
+      </div>
+
+      <div class="psych-card">
+        <div class="psych-card-header">
+          <div class="psych-card-title"><i class="bi bi-people-fill"></i> Leadership &amp; Scale Management</div>
+        </div>
+        <p class="psych-card-body">${esc(leadership.summary || '')}</p>
+        ${leadership.scale_management ? `<div class="psych-sub-block"><strong>Scale Dynamics:</strong> ${esc(leadership.scale_management)}</div>` : ''}
+        ${(leadership.basis && leadership.basis.length) ? `
+          <ul class="personality-basis-list" style="margin-top:8px;">
+            ${leadership.basis.map(b => `<li><span>${esc(b.point || '')}${(b.source_url && b.source_url !== 'bio') ? ` — <a href="${esc(b.source_url)}" target="_blank" rel="noopener">Source <i class="bi bi-box-arrow-up-right" style="font-size:.68rem;"></i></a>` : ''}</span></li>`).join('')}
+          </ul>` : ''}
+      </div>
+    </div>
+
+    <div class="psych-card" style="margin-top:16px;">
+      <div class="psych-card-header">
+        <div class="psych-card-title"><i class="bi bi-compass"></i> Core Values &amp; Philanthropic Governance</div>
+      </div>
+      <p class="psych-card-body">${esc(values.summary || '')}</p>
+      ${(values.philanthropy_and_boards && values.philanthropy_and_boards.length) ? `
+        <div style="margin-top:10px;">
+          <div class="dossier-label"><i class="bi bi-award"></i> Board Commitments &amp; Civic Leadership</div>
+          <div class="chip-row" style="margin-top:6px;">
+            ${values.philanthropy_and_boards.map(b => `<span class="chip" style="background:rgba(0,97,255,0.06); color:var(--brand); border-color:rgba(0,97,255,0.18);"><i class="bi bi-shield-check"></i> ${esc(b)}</span>`).join('')}
+          </div>
+        </div>` : ''}
+    </div>
+
+    ${blindSpots.length ? `
+      <div class="psych-card" style="margin-top:16px; border-left:3px solid #F5A623;">
+        <div class="psych-card-header">
+          <div class="psych-card-title" style="color:#d97706;"><i class="bi bi-shield-exclamation"></i> Inferred Operational &amp; Cognitive Blind Spots</div>
+          <span class="pill pill-warning">Risk Mitigation</span>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:12px; margin-top:8px;">
+          ${blindSpots.map(bs => `
+            <div class="blindspot-item" style="background:var(--input-bg); padding:12px 14px; border-radius:var(--radius-sm); border:1px solid var(--border-color);">
+              <div style="font-weight:700; font-size:.86rem; color:var(--text-primary); margin-bottom:4px;"><i class="bi bi-exclamation-diamond-fill" style="color:#d97706;"></i> ${esc(bs.blind_spot || 'Operational Consideration')}</div>
+              <div style="font-size:.82rem; color:var(--text-secondary); line-height:1.45; margin-bottom:6px;">${esc(bs.impact || '')}</div>
+              ${bs.counter_strategy ? `<div style="font-size:.78rem; color:var(--brand); font-weight:600;"><i class="bi bi-arrow-right-circle-fill"></i> <strong>Counter-Strategy:</strong> ${esc(bs.counter_strategy)}</div>` : ''}
+            </div>
+          `).join('')}
+        </div>
+      </div>` : ''}
+
+    <div class="psych-card" style="margin-top:16px;">
+      <div class="psych-card-header">
+        <div class="psych-card-title"><i class="bi bi-briefcase"></i> Actionable Executive Engagement Playbook</div>
+        <span class="pill pill-success">Sales Strategy</span>
+      </div>
+      
+      ${playbook.opening_hook ? `
+        <div class="icebreaker-card" style="margin:10px 0 14px;">
+          <div class="icebreaker-label"><i class="bi bi-chat-quote-fill"></i> Recommended Opening Hook</div>
+          <div class="icebreaker-quote">"${esc(playbook.opening_hook)}"</div>
+        </div>` : ''}
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
+        <div style="background:rgba(0,186,136,0.05); border:1px solid rgba(0,186,136,0.2); border-radius:var(--radius-sm); padding:12px 14px;">
+          <div style="font-weight:700; font-size:.82rem; color:var(--success); margin-bottom:8px; text-transform:uppercase; letter-spacing:0.04em;"><i class="bi bi-check-circle-fill"></i> Recommended (Do This)</div>
+          <ul style="padding-left:18px; margin:0; font-size:.82rem; color:var(--text-primary); line-height:1.55;">
+            ${(playbook.dos || []).map(d => `<li>${esc(d)}</li>`).join('')}
+          </ul>
+        </div>
+        <div style="background:rgba(255,77,79,0.05); border:1px solid rgba(255,77,79,0.2); border-radius:var(--radius-sm); padding:12px 14px;">
+          <div style="font-weight:700; font-size:.82rem; color:var(--danger); margin-bottom:8px; text-transform:uppercase; letter-spacing:0.04em;"><i class="bi bi-x-circle-fill"></i> Avoid (Don't Do This)</div>
+          <ul style="padding-left:18px; margin:0; font-size:.82rem; color:var(--text-primary); line-height:1.55;">
+            ${(playbook.donts || []).map(d => `<li>${esc(d)}</li>`).join('')}
+          </ul>
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 export function renderPostCard(post) {

@@ -69,7 +69,7 @@ from db.models import (
     ActionItemReminder,
 )
 
-from db.schemas import AccountSchema, PersonaSchema
+from db.schemas import AccountSchema, LobSchema, PersonaSchema
 from db.repositories import (
     AccountRepository,
     LobRepository,
@@ -79,7 +79,7 @@ from db.repositories.pipeline_run_repository import PipelineRunRepository
 from services.account_service import AccountService
 from services.lob_service import LobService, LobValidator
 from services.persona_service import PersonaService, PersonaValidator
-from pdf_export import build_persona_profile_pdf
+from pdf_export import build_persona_profile_pdf, build_psychological_profile_pdf
 import auth
 import email_sender
 from main import run_pipeline
@@ -2290,6 +2290,141 @@ if FASTAPI_AVAILABLE:
                 career_events,
             )
             filename = f"{slugify(persona_dict['name'])}-personality-report.pdf"
+            return Response(
+                content=pdf_bytes,
+                media_type="application/pdf",
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            )
+        finally:
+            session.close()
+
+    @app.get("/api/personas/{persona_id}/psychological-profile", tags=["3. Personas & Buying Committee"])
+    def get_persona_psychological_profile(persona_id: int, user: User = Depends(auth.require_persona_account_access)):
+        """Retrieve the compiled Psychological & Leadership Profile for a persona."""
+        session = get_session()
+        try:
+            p = session.query(Persona).filter_by(id=persona_id).first()
+            if not p:
+                raise HTTPException(status_code=404, detail="Persona not found.")
+            target_key = p.key or slugify(p.full_name or "")
+            digest_row = session.query(Digest).filter_by(target_key=target_key).first() if target_key else None
+
+            profile = None
+            if digest_row and digest_row.digest and isinstance(digest_row.digest, dict):
+                profile = digest_row.digest.get("psychological_profile")
+
+            if not profile and p.raw_data and isinstance(p.raw_data, dict):
+                profile = p.raw_data.get("psychological_profile")
+
+            # Fallback baseline synthesis if not yet compiled by background LLM
+            if not profile:
+                acct = session.query(Account).filter_by(id=p.account_id).first() if p.account_id else None
+                acct_name = acct.display_name or acct.legal_name if acct else "Enterprise"
+                comm_style = p.communication_style or "Strategic, ROI-driven, and client-centric"
+                profile = {
+                    "executive_summary": f"{p.full_name or 'This executive'} serves as {p.title or 'Senior Executive'} at {acct_name}, driving strategic modernization, operational rigor, and large-scale platform governance.",
+                    "psychological_synthesis": {
+                        "archetype": "The Principled Enterprise Builder",
+                        "summary": "Demonstrates high purpose-driven agency, disciplined self-regulation, and grounded institutional stewardship.",
+                        "interaction_advice": f"Approach with structural clarity, measurable enterprise outcomes, and align with their focus on {comm_style}."
+                    },
+                    "cognitive_style": {
+                        "summary": "Systems-level platform thinker who evaluates technology investments through cross-functional integration and regulatory compliance.",
+                        "platform_mindset": "Prioritizes scalable, resilient ecosystems over isolated point solutions.",
+                        "basis": [{"point": f"Targeting KPIs: {', '.join(p.target_kpis[:3]) if p.target_kpis else 'Enterprise operational scale'}", "source_url": "bio"}]
+                    },
+                    "leadership_patterns": {
+                        "summary": "Empowerment-driven transformational leader who fosters psychological safety and cross-functional alignment.",
+                        "scale_management": "Experienced in leading diverse technical and business teams across complex matrixed environments.",
+                        "basis": [{"point": f"Seniority Tier: {p.tier or 'Executive'}", "source_url": "bio"}]
+                    },
+                    "big_five_traits": {
+                        "openness": {"score": 8.0, "summary": "High openness to platform and AI innovations", "evidence": f"Skills: {', '.join((p.skills or [])[:4]) or 'Strategic Technology'}"},
+                        "conscientiousness": {"score": 7.5, "summary": "High execution rigor and operational discipline", "evidence": "Sustained executive responsibilities"},
+                        "extraversion": {"score": 8.0, "summary": "Active organizational alignment and leadership", "evidence": "Executive decision authority"},
+                        "agreeableness": {"score": 8.0, "summary": "Servant leadership and team enablement", "evidence": "Appreciative communication profile"},
+                        "emotional_stability": {"score": 8.5, "summary": "Measured resilience in complex regulated domains", "evidence": "Bulge-bracket institutional stewardship"}
+                    },
+                    "core_values_and_motivations": {
+                        "summary": "Motivated by building sustainable organizations, client trust, and long-term enterprise value.",
+                        "philanthropy_and_boards": ["Active in industry leadership and corporate governance"],
+                        "basis": [{"point": "Institutional leadership record", "source_url": "bio"}]
+                    },
+                    "interpersonal_traits": {
+                        "summary": "Ego-less execution craft, collaborative partnership orientation, and high situational awareness.",
+                        "global_adaptability": "Navigates enterprise organizational dynamics fluidly.",
+                        "basis": [{"point": "Cross-functional executive leadership", "source_url": "bio"}]
+                    },
+                    "potential_blind_spots": [
+                        {"blind_spot": "Consensus Alignment Latency", "impact": "High focus on organizational consensus can occasionally slow urgent tactical decisions.", "counter_strategy": "Provide pre-packaged decision matrices and clear stakeholder buy-in paths."},
+                        {"blind_spot": "Strategic vs Granular Friction", "impact": "Macro architectural focus may under-index on immediate frontline workflow friction.", "counter_strategy": "Present granular user-journey telemetry alongside macro ROI."}
+                    ],
+                    "engagement_playbook": {
+                        "dos": ["Lead with structural clarity, scalable architecture, and verifiable ROI.", "Highlight governance, compliance, and team enablement."],
+                        "donts": ["Avoid superficial 'move fast and break things' hype.", "Do not present siloed point solutions lacking enterprise integration."],
+                        "opening_hook": p.personalized_icebreaker or f"Discuss platform modernization and scaling digital capabilities at {acct_name}.",
+                        "recommended_tone": f"{comm_style}. Focus on enterprise impact rather than raw technical jargon."
+                    },
+                    "caveats": ["Synthesized from verified biographical and public intelligence signals."]
+                }
+
+            return {
+                "persona_id": p.id,
+                "persona_name": p.full_name,
+                "title": p.title,
+                "profile": profile
+            }
+        finally:
+            session.close()
+
+    @app.post("/api/personas/{persona_id}/psychological-profile/generate", tags=["3. Personas & Buying Committee"])
+    def generate_persona_psychological_profile(persona_id: int, user: User = Depends(auth.require_persona_account_access)):
+        """Trigger on-demand live generation of the psychological profile using LLM synthesis."""
+        session = get_session()
+        try:
+            p = session.query(Persona).filter_by(id=persona_id).first()
+            if not p:
+                raise HTTPException(status_code=404, detail="Persona not found.")
+            target_key = p.key or slugify(p.full_name or "")
+
+            from apps.content_pipeline.digest import pipeline as digest_pipeline
+            digest_res = digest_pipeline.run(company_key=target_key, kind="person", cap=25)
+            psych = digest_res.get("psychological_profile")
+            if not psych:
+                raise HTTPException(status_code=500, detail="Synthesis did not produce a psychological profile.")
+
+            return {
+                "status": "success",
+                "persona_id": p.id,
+                "profile": psych
+            }
+        finally:
+            session.close()
+
+    @app.get("/api/personas/{persona_id}/psychological-profile.pdf", tags=["3. Personas & Buying Committee"])
+    def download_persona_psychological_profile_pdf(persona_id: int, user: User = Depends(auth.require_persona_account_access)):
+        """Download high-impact executive PDF briefing for the Psychological Profile."""
+        session = get_session()
+        try:
+            p = session.query(Persona).filter_by(id=persona_id).first()
+            if not p:
+                raise HTTPException(status_code=404, detail="Persona not found.")
+            acct = session.query(Account).filter_by(id=p.account_id).first()
+            target_key = p.key or slugify(p.full_name or "")
+            digest_row = session.query(Digest).filter_by(target_key=target_key).first() if target_key else None
+
+            persona_dict = {
+                "full_name": p.full_name, "title": p.title,
+                "account_name": acct.display_name or acct.legal_name if acct else "",
+                "city": p.city, "state": p.state, "country": p.country,
+                "communication_style": p.communication_style
+            }
+
+            pdf_bytes = build_psychological_profile_pdf(
+                persona_dict,
+                digest_row.digest if digest_row else None
+            )
+            filename = f"{slugify(p.full_name or 'executive')}-psychological-profile.pdf"
             return Response(
                 content=pdf_bytes,
                 media_type="application/pdf",

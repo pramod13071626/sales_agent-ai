@@ -17,6 +17,7 @@ from .selection import (
     build_action_item_suggestions,
     build_email,
     build_personality_profile,
+    build_psychological_profile,
     select_posts,
     summarize_channel,
 )
@@ -167,6 +168,25 @@ def run(
                     "caveats": [f"Personality profile synthesis error: {e}"],
                 }
 
+        psychological_profile = None
+        psych_context = db.get_person_psychological_context(key) or bio
+        psych_sig = cache.content_signature({"bio": psych_context, "channels": channels, "kind": "psychological"})
+        cached_psych = cache.get(key, "__psychological_profile__", psych_sig) if use_cache else None
+        if cached_psych is not None:
+            print("   psychological profile unchanged since last digest, reusing cached synthesis")
+            psychological_profile = cached_psych
+        else:
+            try:
+                print("   psychological profile synthesising…")
+                psychological_profile = build_psychological_profile(
+                    email_client, target["display_name"], psych_context, channels
+                )
+                if use_cache:
+                    cache.put(key, "__psychological_profile__", psych_sig, psychological_profile)
+            except LLMError as e:
+                print(f"   psychological profile ❌ {e}")
+                psychological_profile = None
+
         if suggest_actions:
             # Same cache-signature pattern as personality_profile above —
             # this is a second flagship-model call, so it must not re-run
@@ -215,6 +235,8 @@ def run(
     }
     if personality_profile is not None:
         digest["personality_profile"] = personality_profile
+    if is_person and psychological_profile is not None:
+        digest["psychological_profile"] = psychological_profile
 
     os.makedirs(out_dir, exist_ok=True)
     json_path = os.path.join(out_dir, f"{key}_digest.json")

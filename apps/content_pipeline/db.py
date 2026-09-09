@@ -625,6 +625,51 @@ def get_person_bio(person_key: str):
         conn.close()
 
 
+def get_person_psychological_context(person_key: str) -> Dict[str, Any]:
+    """Rich context query for the Psychological Profile — pulls full persona
+    traits, KPIs, objections, career milestones, and account firmographics.
+    """
+    bio = get_person_bio(person_key) or {}
+    conn = _connect()
+    if conn is None:
+        return bio
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT p.tier, p.skills, p.target_kpis, p.operational_pain_points,
+                       p.key_objections, p.value_proposition, p.personalized_icebreaker,
+                       a.name, a.sector, a.employees
+                FROM personas p
+                LEFT JOIN accounts a ON p.account_id = a.id
+                WHERE p.key = %s
+                LIMIT 1
+                """,
+                (person_key,),
+            )
+            row = cur.fetchone()
+            if row:
+                tier, skills, kpis, pains, objections, val_prop, icebreaker, acc_name, acc_sector, acc_emp = row
+                if tier:
+                    bio["tier"] = tier
+                if skills:
+                    bio["skills"] = skills
+                if kpis:
+                    bio["target_kpis"] = kpis
+                if pains:
+                    bio["operational_pain_points"] = pains
+                if objections:
+                    bio["key_objections"] = objections
+                if acc_name:
+                    bio["account_context"] = f"{acc_name} ({acc_sector or 'Enterprise'}, ~{acc_emp or 'N/A'} employees)"
+        return bio
+    except Exception as e:
+        print(f"⚠️  [DB] Could not read psychological context for '{person_key}' ({e})")
+        return bio
+    finally:
+        conn.close()
+
+
 def get_person_identity(person_key: str):
     """Returns (persona_id, account_id) for a person, or (None, None) if not
     found. Separate from get_person_bio() so that function's existing return
