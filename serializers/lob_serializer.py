@@ -179,6 +179,47 @@ class LOBSerializer:
         # Required Account Scraping URLs
         req_acc = cls.build_required_lob_account(name, domain=domain, sec_cik=sec_cik)
 
+        # Entity type classification
+        rel_type = raw_lob.get("relationship_type")
+        if not rel_type or rel_type in ["Sub-Organization / Division", "Subsidiary"]:
+            nominee_indicators = [
+                "nominee", "fund", "trust", "spv", "holding",
+                "investments limited", "capital partners", "lp", "gilt"
+            ]
+            if any(ind in name.lower() for ind in nominee_indicators):
+                rel_type = "Holding / Nominee / SPV Entity"
+            else:
+                rel_type = "Operating Division"
+
+        manifest = {
+            "key": req_acc.get("key"),
+            "display_name": name,
+            "entity_type": "lob",
+            "parent_account": parent_name or "Parent Account",
+            "relationship_type": rel_type,
+            "feeds": {
+                "website_url": website_url,
+                "twitter_live_url": req_acc.get("twitter_live_url"),
+                "reddit_query": req_acc.get("reddit_query"),
+                "reddit_rss_url": req_acc.get("reddit_rss_url"),
+                "news_query": req_acc.get("news_query"),
+                "rss_url": req_acc.get("rss_url"),
+                "google_patents_url": req_acc.get("google_patents_url"),
+                "google_trends_url": req_acc.get("google_trends_url"),
+                "youtube_search_url": req_acc.get("youtube_search_url"),
+                "wikidata_entity_url": (
+                    f"https://www.wikidata.org/w/api.php?action=wbsearchentities"
+                    f"&search={urllib.parse.quote_plus(name)}&language=en&format=json"
+                ),
+                "openalex_institution_url": (
+                    f"https://api.openalex.org/institutions?search={urllib.parse.quote_plus(name)}"
+                ),
+                "linkedin_search_url": req_acc.get("linkedin_url"),
+                "wikipedia_url": raw_lob.get("wikipedia_url"),
+                "crunchbase_url": raw_lob.get("crunchbase_url"),
+            }
+        }
+
         return {
             "key": req_acc.get("key"),
             "lob_name": name,
@@ -195,6 +236,7 @@ class LOBSerializer:
             "wikipedia_url": raw_lob.get("wikipedia_url"),
             "financial_snippets": cleaned_snippets if cleaned_snippets else [overview],
             "required_account": req_acc,
+            "osint_feed_manifest": manifest,
             "google_news_rss_url": req_acc.get("rss_url"),
             "reddit_rss_url": req_acc.get("reddit_rss_url"),
             "google_patents_url": req_acc.get("google_patents_url"),
@@ -203,7 +245,7 @@ class LOBSerializer:
             "domain": domain,
             "website_url": website_url,
             "crunchbase_url": raw_lob.get("crunchbase_url"),
-            "relationship_type": raw_lob.get("relationship_type", "Sub-Organization / Division"),
+            "relationship_type": rel_type,
             "sub_lobs": sub_lobs or raw_lob.get("sub_lobs") or [],
             "hierarchy": final_hierarchy,
         }

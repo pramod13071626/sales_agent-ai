@@ -124,6 +124,7 @@ class AccountSchema(BaseModel):
     multi_source_intelligence: Optional[dict] = None
     organisational_hierarchy_tree: Optional[dict] = None
     raw_data: Optional[dict] = None
+    osint_feed_manifest: Optional[dict] = None
 
     model_config = {"from_attributes": True}
 
@@ -164,7 +165,8 @@ class AccountSchema(BaseModel):
             acct.get("contact_and_social", {}) if isinstance(acct.get("contact_and_social"), dict) else {},
             acct.get("financials_and_funding", {}) if isinstance(acct.get("financials_and_funding"), dict) else {},
             acct.get("market_and_ipo", {}) if isinstance(acct.get("market_and_ipo"), dict) else {},
-            acct.get("acquisitions_and_suborgs", {}) if isinstance(acct.get("acquisitions_and_suborgs"), dict) else {},
+            acct.get("acquisitions_and_suborgs", {})
+            if isinstance(acct.get("acquisitions_and_suborgs"), dict) else {},
             acct.get("web_traffic_and_growth", {}) if isinstance(acct.get("web_traffic_and_growth"), dict) else {},
             acct.get("tech_and_patents", {}) if isinstance(acct.get("tech_and_patents"), dict) else {},
             acct.get("key_people", {}) if isinstance(acct.get("key_people"), dict) else {},
@@ -193,9 +195,12 @@ class AccountSchema(BaseModel):
                 return [x for x in val if x]
             return []
 
+        resolved_key = _v("key", "name") or "unknown"
+        resolved_display = _v("display_name", "legal_name", "name") or resolved_key
+
         return cls(
-            key=_v("key", "name") or "unknown",
-            display_name=_v("display_name", "legal_name", "name"),
+            key=resolved_key,
+            display_name=resolved_display,
             legal_name=_v("legal_name", "name"),
             domain=_v("domain", "primary_domain"),
             primary_domain=_v("primary_domain", "domain"),
@@ -287,4 +292,32 @@ class AccountSchema(BaseModel):
             multi_source_intelligence=_v("multi_source_intelligence"),
             organisational_hierarchy_tree=_v("organisational_hierarchy_tree"),
             raw_data=doc,
+            osint_feed_manifest=_v("osint_feed_manifest") or {
+                "key": resolved_key,
+                "display_name": resolved_display or resolved_key,
+                "entity_type": "account",
+                "generated_at": datetime.now().isoformat(),
+                "feeds": {
+                    "website_url": _v("website_url"),
+                    "twitter_handle": _v("twitter_handle"),
+                    "twitter_live_url": _v("twitter_live_url"),
+                    "reddit_query": _v("reddit_query"),
+                    "reddit_rss_url": _v("reddit_rss_url"),
+                    "news_query": _v("news_query"),
+                    "rss_url": _v("rss_url"),
+                    "google_patents_url": _v("google_patents_url"),
+                    "google_trends_url": _v("google_trends_url"),
+                    "youtube_search_url": _v("youtube_search_url"),
+                    "openalex_institution_url": _v("openalex_institution_url"),
+                    "wikidata_entity_url": _v("wikidata_entity_url"),
+                    "linkedin_url": _v("linkedin_url"),
+                    "github_url": _v("github_url"),
+                    "glassdoor_url": _v("glassdoor_url"),
+                    "blog_url": _v("blog_url"),
+                    "sec_edgar_url": _v("sec_edgar_url"),
+                    "sec_filings_rss": _v("sec_filings_rss"),
+                    "sec_submissions_url": _v("sec_submissions_url"),
+                    "youtube_channel_id": _v("youtube_channel_id"),
+                }
+            },
         )

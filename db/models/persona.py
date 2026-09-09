@@ -38,6 +38,7 @@ class Persona(Base):
     decision_authority = Column(String(100))
     budget_authority = Column(String(100))
     raw_data = Column(JSONB)
+    osint_feed_manifest = Column(JSONB)
 
     # ── Person Scraping URLs ──
     twitter_handle = Column(String(100))

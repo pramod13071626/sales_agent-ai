@@ -71,7 +71,10 @@ class AccountInputResolver:
         cleaned = str(name).strip()
         cleaned = re.sub(r"\s*\([^)]*\)", "", cleaned)
         # Strip corporate suffixes (including & Co., & Company, etc.)
-        pattern = r"(?i)\s*(?:&|and)?\s*\b(inc\.?|incorporated|llc|l\.l\.c\.?|corp\.?|corporation|co\.?|company|ltd\.?|limited|l\.p\.?|lp|plc|n\.a\.?|sa|ag|gmbh|nv|bv)\b.*$"
+        pattern = (
+            r"(?i)\s*(?:&|and)?\s*\b(inc\.?|incorporated|llc|l\.l\.c\.?|corp\.?|"
+            r"corporation|co\.?|company|ltd\.?|limited|l\.p\.?|lp|plc|n\.a\.?|sa|ag|gmbh|nv|bv)\b.*$"
+        )
         cleaned = re.sub(pattern, "", cleaned).strip()
         # Strip trailing punctuation or dangling ampersands
         cleaned = re.sub(r"[,.\-_\s&]+$", "", cleaned).strip()
@@ -247,10 +250,102 @@ class AccountCoalesceEngine:
         if isinstance(val, (int, float)):
             return float(val)
         try:
-            cleaned = re.sub(r"[^0-9.-]", "", str(val))
-            return float(cleaned) if cleaned else None
+            s = str(val).strip().lower()
+            multiplier = 1.0
+            if s.endswith("b") or "billion" in s:
+                multiplier = 1e9
+            elif s.endswith("m") or "million" in s:
+                multiplier = 1e6
+            elif s.endswith("k") or "thousand" in s:
+                multiplier = 1e3
+            cleaned = re.sub(r"[^0-9.-]", "", s)
+            if cleaned:
+                return float(cleaned) * multiplier
+            return None
         except Exception:
             return None
+
+    @staticmethod
+    def clean_phone(val: Any) -> Optional[str]:
+        if not val:
+            return None
+        s = str(val).strip()
+        # Generic international/domestic phone sanitization
+        digits = re.sub(r"[^\d+]", "", s)
+        return digits if len(re.sub(r"\D", "", digits)) >= 7 else None
+
+    @classmethod
+    def _extract_nested_location(cls, sources: List[Dict[str, Any]], field_keys: List[str]) -> Optional[str]:
+        """Generic dynamic resolver across top-level and nested location/address dictionaries."""
+        for src in sources:
+            if not isinstance(src, dict):
+                continue
+            # Direct top-level check
+            for k in field_keys:
+                val = cls.clean_text(src.get(k))
+                if val:
+                    return val
+            # Nested in location/address dicts or arrays
+            for sub_key in ["location", "address", "addresses", "hq_address", "headquarters", "primary_address"]:
+                sub = src.get(sub_key)
+                if isinstance(sub, dict):
+                    for k in field_keys:
+                        val = cls.clean_text(sub.get(k))
+                        if val:
+                            return val
+                elif isinstance(sub, list) and sub:
+                    for item in sub:
+                        if isinstance(item, dict):
+                            for k in field_keys:
+                                val = cls.clean_text(item.get(k))
+                                if val:
+                                    return val
+        return None
+
+    @classmethod
+    def _extract_nested_metric(cls, sources: List[Dict[str, Any]], field_keys: List[str]) -> Optional[float]:
+        """Generic dynamic resolver across top-level and nested rating/culture structures."""
+        for src in sources:
+            if not isinstance(src, dict):
+                continue
+            for k in field_keys:
+                val = src.get(k)
+                if val is not None:
+                    num = cls.clean_number(val)
+                    if num is not None:
+                        return num
+            for sub_key in ["rating", "ratings", "reviews", "score", "overview", "culture"]:
+                sub = src.get(sub_key)
+                if isinstance(sub, dict):
+                    for k in field_keys:
+                        val = sub.get(k)
+                        if val is not None:
+                            num = cls.clean_number(val)
+                            if num is not None:
+                                return num
+        return None
+
+    @classmethod
+    def _extract_technologies(cls, sources: List[Dict[str, Any]]) -> List[str]:
+        """Generic dynamic technology list resolver supporting strings and structured objects."""
+        techs = []
+        seen = set()
+        for src in sources:
+            if not isinstance(src, dict):
+                continue
+            for k in ["technologies", "tech_stack", "technologies_used"]:
+                raw_list = src.get(k)
+                if isinstance(raw_list, list):
+                    for item in raw_list:
+                        name = None
+                        if isinstance(item, str) and item.strip():
+                            name = item.strip()
+                        elif isinstance(item, dict):
+                            name = cls.clean_text(item.get("name") or item.get("title") or item.get("slug"))
+                        if name and name.lower() not in seen:
+                            seen.add(name.lower())
+                            techs.append(name)
+        return techs
 
     @classmethod
     def coalesce(
@@ -352,18 +447,14 @@ class AccountCoalesceEngine:
         )
         ipo_status = cls.clean_text(cb.get("ipo_status") or ("Public" if sec_cik else "Private"))
 
-        # 3. Location & Contact
-        hq_city = cls.clean_text(
-            cb.get("city") or diff.get("city") or opencorp.get("city") or sec.get("city")
+        # 3. Location & Contact (Dynamic unnesting across all sources)
+        all_location_sources = [cb, diff, opencorp, sec, gleif]
+        hq_city = cls._extract_nested_location(all_location_sources, ["city", "municipality", "town"])
+        hq_state = cls._extract_nested_location(
+            all_location_sources, ["state", "region", "province", "administrative_area"]
         )
-        hq_state = cls.clean_text(
-            cb.get("state") or diff.get("state") or opencorp.get("state") or sec.get("state")
-        )
-        hq_country = cls.clean_text(
-            cb.get("country")
-            or diff.get("country")
-            or gleif.get("country")
-            or opencorp.get("jurisdiction")
+        hq_country = cls._extract_nested_location(
+            all_location_sources, ["country", "country_name", "jurisdiction"]
         )
         hq_location = ", ".join(filter(None, [hq_city, hq_state, hq_country])) or None
         phone_number = cls.clean_text(diff.get("phone") or cb.get("phone") or opencorp.get("phone"))
@@ -404,6 +495,7 @@ class AccountCoalesceEngine:
         )
 
         # 6. Digital Footprint & Tech Stack
+        all_techs = cls._extract_technologies([diff, cb, serp])
         global_traffic_rank = cls.clean_number(
             serp.get("global_traffic_rank") or cb.get("rank") or diff.get("traffic_rank")
         )
@@ -412,8 +504,7 @@ class AccountCoalesceEngine:
         visit_duration = cls.clean_text(serp.get("visit_duration"))
         page_views_per_visit = cls.clean_number(serp.get("page_views_per_visit"))
         active_tech_count = cls.clean_number(
-            diff.get("active_tech_count")
-            or (len(diff.get("technologies", [])) if diff.get("technologies") else None)
+            diff.get("active_tech_count") or (len(all_techs) if all_techs else None)
         )
         it_spend = cls.clean_text(diff.get("it_spend") or cb.get("it_spend"))
         patents_granted = cls.clean_number(
@@ -435,9 +526,13 @@ class AccountCoalesceEngine:
             wiki.get("wikidata_url") or f"https://www.wikidata.org/w/index.php?search={enc_name}"
         )
 
-        # 8. Glassdoor Culture & Sentiment
-        culture_score = cls.clean_number(gd.get("overall_rating"))
-        ceo_approval_rate = cls.clean_number(gd.get("ceo_approval_pct"))
+        # 8. Glassdoor Culture & Sentiment (Dynamic deep search)
+        culture_score = cls._extract_nested_metric(
+            [gd, cb], ["overall_rating", "overallRating", "rating", "score", "culture_rating"]
+        )
+        ceo_approval_rate = cls._extract_nested_metric(
+            [gd, cb], ["ceo_approval_pct", "ceoApproval", "ceo_approval", "ceoApprovalRate", "ceo_rating"]
+        )
 
         # 9. Master Raw Data JSONB (Extensible Data Lake Bucket)
         raw_payload = {
@@ -454,6 +549,59 @@ class AccountCoalesceEngine:
             "serper": serp,
             "wikipedia": wiki,
             "openfec": fec,
+        }
+
+        # Private company algorithmic revenue fallback model
+        if not revenue:
+            emp_range = cb.get("employee_count_range") or diff.get("employee_count_range")
+            if emp_range:
+                emp_str = str(emp_range).lower()
+                if "10001+" in emp_str or "10,001+" in emp_str or "10000+" in emp_str:
+                    revenue = "$1B+"
+                elif "5001" in emp_str or "5,001" in emp_str:
+                    revenue = "$500M - $1B"
+                elif "1001" in emp_str or "1,001" in emp_str:
+                    revenue = "$100M - $500M"
+                elif "501" in emp_str:
+                    revenue = "$50M - $100M"
+                elif "251" in emp_str:
+                    revenue = "$25M - $50M"
+                elif "51" in emp_str:
+                    revenue = "$10M - $25M"
+                elif "11" in emp_str:
+                    revenue = "$1M - $10M"
+                elif "1" in emp_str:
+                    revenue = "< $1M"
+
+        # OSINT feed manifest dictionary
+        feed_manifest = {
+            "key": slug_key,
+            "display_name": display_name or company_name,
+            "entity_type": "account",
+            "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "feeds": {
+                "website_url": website_url,
+                "twitter_handle": twitter_handle,
+                "twitter_live_url": cls.clean_text(
+                    f"https://x.com/{twitter_handle.lstrip('@')}" if twitter_handle else twitter_url
+                ),
+                "reddit_query": reddit_query,
+                "reddit_rss_url": reddit_rss_url,
+                "news_query": news_query,
+                "rss_url": rss_url,
+                "google_patents_url": google_patents_url,
+                "google_trends_url": google_trends_url,
+                "youtube_search_url": youtube_search_url,
+                "openalex_institution_url": openalex_institution_url,
+                "wikidata_entity_url": wikidata_entity_url,
+                "linkedin_url": linkedin_url,
+                "github_url": github_url,
+                "glassdoor_url": glassdoor_url,
+                "blog_url": cls.clean_text(diff.get("blog_url")),
+                "sec_edgar_url": sec_edgar_url,
+                "sec_filings_rss": sec_filings_rss,
+                "sec_submissions_url": sec_submissions_url,
+            }
         }
 
         return {
@@ -480,11 +628,12 @@ class AccountCoalesceEngine:
             "city": hq_city,
             "state": hq_state,
             "country": hq_country,
-            "postal_code": cls.clean_text(diff.get("postal_code") or sec.get("postal_code")),
+            "postal_code": cls.clean_text(cb.get("postal_code") or sec.get("zip")),
             "phone_number": phone_number,
-            "sanitized_phone": re.sub(r"[^0-9+]", "", phone_number) if phone_number else None,
+            "sanitized_phone": cls.clean_phone(phone_number),
             "contact_email": contact_email,
             "revenue": revenue,
+            "estimated_revenue_range": revenue,
             "total_funding_amount_usd": total_funding,
             "total_funding_currency": "USD" if total_funding else None,
             "last_funding_type": last_funding_type,
@@ -533,6 +682,7 @@ class AccountCoalesceEngine:
             "culture_score": culture_score,
             "ceo_approval_rate": ceo_approval_rate,
             "raw_data": raw_payload,
+            "osint_feed_manifest": feed_manifest,
         }
 
 
@@ -607,7 +757,8 @@ class AccountService:
 
         print(
             f"[*] [AccountService] Starting Level 1 Ingestion for '{effective_name}'"
-            f" (Clean: '{clean_name}', Domain: {effective_domain or 'Auto'}, Ticker: {effective_ticker or 'N/A'}, CIK: {effective_cik or 'N/A'})..."
+            f" (Clean: '{clean_name}', Domain: {effective_domain or 'Auto'}, "
+            f"Ticker: {effective_ticker or 'N/A'}, CIK: {effective_cik or 'N/A'})..."
         )
 
         telemetry: Dict[str, Any] = {
@@ -644,7 +795,9 @@ class AccountService:
         sec_data = (
             mock_connectors.get("sec")
             if mock_connectors
-            else _timed_fetch("sec_edgar", lambda: cls._fetch_sec_edgar(effective_name, effective_ticker, effective_cik))
+            else _timed_fetch(
+                "sec_edgar", lambda: cls._fetch_sec_edgar(effective_name, effective_ticker, effective_cik)
+            )
         )
         RawDataLakeWriter.save_raw(sec_data, "sec_edgar", effective_name, run_raw_dir)
 
@@ -693,7 +846,9 @@ class AccountService:
         cb_data = (
             mock_connectors.get("apify_crunchbase")
             if mock_connectors
-            else _timed_fetch("apify_crunchbase", lambda: cls._fetch_apify_crunchbase(effective_name, effective_domain))
+            else _timed_fetch(
+                "apify_crunchbase", lambda: cls._fetch_apify_crunchbase(effective_name, effective_domain)
+            )
         )
         RawDataLakeWriter.save_raw(cb_data, "apify_crunchbase", effective_name, run_raw_dir)
 
@@ -752,12 +907,6 @@ class AccountService:
         # 3. Deep Intelligence Connectors (SEC 10-K, Patents, Exhibit 21, GLEIF Ownership Tree)
         # These are called AFTER coalescing so sec_cik is already resolved
         try:
-            from collectors.account_collector import (
-                fetch_latest_10k_chunks,
-                extract_full_patents,
-                fetch_sec_exhibit_21_subsidiaries,
-                fetch_gleif_ownership_tree,
-            )
 
             sec_cik_val = account_dossier.get("sec_cik")
 
@@ -786,7 +935,10 @@ class AccountService:
                 try:
                     ex21_data = fetch_sec_exhibit_21_subsidiaries(sec_cik_val)
                     RawDataLakeWriter.save_raw(ex21_data, "sec_exhibit21", company_name, run_raw_dir)
-                    print(f"[+] [AccountService] Exhibit 21: {ex21_data.get('total_subsidiaries_found', 0)} subsidiaries found")
+                    print(
+                    f"[+] [AccountService] Exhibit 21: "
+                    f"{ex21_data.get('total_subsidiaries_found', 0)} subsidiaries found"
+                )
                 except Exception as e:
                     print(f"[!] [AccountService] Exhibit 21 notice: {e}")
 
@@ -795,7 +947,10 @@ class AccountService:
             try:
                 gleif_tree_data = fetch_gleif_ownership_tree(company_name, max_children=25)
                 RawDataLakeWriter.save_raw(gleif_tree_data, "gleif_tree", company_name, run_raw_dir)
-                print(f"[+] [AccountService] GLEIF tree: {gleif_tree_data.get('total_child_entities_found', 0)} child entities found")
+                print(
+                    f"[+] [AccountService] GLEIF tree: "
+                    f"{gleif_tree_data.get('total_child_entities_found', 0)} child entities found"
+                )
             except Exception as e:
                 print(f"[!] [AccountService] GLEIF tree notice: {e}")
 
@@ -906,7 +1061,9 @@ class AccountService:
                     sec_result["postal_code"] = addr.get("zipCode")
                     sec_result["street"] = addr.get("street1")
                     sec_result["sec_name"] = sub_data.get("name")
-                    sec_result["former_names"] = [f.get("name") for f in sub_data.get("formerNames", []) if f.get("name")]
+                    sec_result["former_names"] = [
+                        f.get("name") for f in sub_data.get("formerNames", []) if f.get("name")
+                    ]
                     sec_result["_raw_submission"] = sub_data
 
         except Exception as e:
@@ -1032,7 +1189,6 @@ class AccountService:
         if not config.APIFY_TOKEN:
             return {}
         try:
-            from apify_client import ApifyClient
 
             client = ApifyClient(config.APIFY_TOKEN)
             run = client.actor("curious_coder/crunchbase-url-scraper").call(
@@ -1050,7 +1206,6 @@ class AccountService:
         if not config.APIFY_TOKEN:
             return {}
         try:
-            from apify_client import ApifyClient
 
             client = ApifyClient(config.APIFY_TOKEN)
             run = client.actor("memo23/glassdoor-scraper").call(
@@ -1079,21 +1234,47 @@ class AccountService:
                 if data:
                     entity = data[0].get("entity", {})
                     loc = entity.get("location", {})
-                    social = {p.get("type"): p.get("url") for p in entity.get("socialProfiles", []) if isinstance(p, dict)}
+                    social = {
+                        p.get("type"): p.get("url")
+                        for p in entity.get("socialProfiles", [])
+                        if isinstance(p, dict)
+                    }
                     return {
                         "name": entity.get("name"),
                         "domain": entity.get("homepageUri"),
                         "description": entity.get("description"),
                         "phone": entity.get("phone"),
                         "street": loc.get("street"),
-                        "city": loc.get("city", {}).get("name") if isinstance(loc.get("city"), dict) else loc.get("city"),
-                        "state": loc.get("region", {}).get("name") if isinstance(loc.get("region"), dict) else loc.get("region"),
-                        "country": loc.get("country", {}).get("name") if isinstance(loc.get("country"), dict) else loc.get("country"),
+                        "city": (
+                            loc.get("city", {}).get("name")
+                            if isinstance(loc.get("city"), dict)
+                            else loc.get("city")
+                        ),
+                        "state": (
+                            loc.get("region", {}).get("name")
+                            if isinstance(loc.get("region"), dict)
+                            else loc.get("region")
+                        ),
+                        "country": (
+                            loc.get("country", {}).get("name")
+                            if isinstance(loc.get("country"), dict)
+                            else loc.get("country")
+                        ),
                         "postal_code": loc.get("postalCode"),
                         "nb_employees": entity.get("nbEmployees"),
-                        "employee_count_range": f"{entity.get('nbEmployeesMin', '')}-{entity.get('nbEmployeesMax', '')}" if entity.get('nbEmployeesMin') else str(entity.get('nbEmployees', '')),
-                        "revenue": entity.get("yearlyRevenues", [{}])[0].get("revenue") if entity.get("yearlyRevenues") else None,
-                        "technologies": [t.get("name") for t in entity.get("technologies", []) if isinstance(t, dict)],
+                        "employee_count_range": (
+                            f"{entity.get('nbEmployeesMin', '')}-{entity.get('nbEmployeesMax', '')}"
+                            if entity.get('nbEmployeesMin')
+                            else str(entity.get('nbEmployees', ''))
+                        ),
+                        "revenue": (
+                            entity.get("yearlyRevenues", [{}])[0].get("revenue")
+                            if entity.get("yearlyRevenues")
+                            else None
+                        ),
+                        "technologies": [
+                            t.get("name") for t in entity.get("technologies", []) if isinstance(t, dict)
+                        ],
                         "patents_count": len(entity.get("patents", [])),
                         "linkedin_url": social.get("linkedin") or entity.get("linkedinUri"),
                         "twitter_url": social.get("twitter") or entity.get("twitterUri"),

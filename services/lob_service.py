@@ -1,17 +1,19 @@
+import datetime
+import json
 import os
 import re
-import json
 import time
 import urllib.parse
-from urllib.parse import urlparse
-from pathlib import Path
-from typing import Dict, Any, Optional, List, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlparse
+from apify_client import ApifyClient
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-
 import config
+from serializer import slugify
 
 
 class LobServiceHTTPClient:
@@ -213,7 +215,7 @@ class LobCoalesceEngine:
             or meta.get("headcount")
         )
 
-        # 6. Technology Stack (Diffbot KG + Wappalyzer + Apify)
+        # 6. Technology Stack (Diffbot KG + Wappalyzer + Apify - Dynamic String & Dict extraction)
         raw_techs = []
         if isinstance(diff.get("technologies"), list):
             raw_techs.extend(diff["technologies"])
@@ -227,11 +229,16 @@ class LobCoalesceEngine:
         technologies = []
         seen_tech = set()
         for t in raw_techs:
-            if t and isinstance(t, str) and t.strip() and t.strip().lower() not in seen_tech:
-                seen_tech.add(t.strip().lower())
-                technologies.append(t.strip())
+            t_name = None
+            if isinstance(t, str) and t.strip():
+                t_name = t.strip()
+            elif isinstance(t, dict):
+                t_name = cls.clean_text(t.get("name") or t.get("slug") or t.get("title"))
+            if t_name and t_name.lower() not in seen_tech:
+                seen_tech.add(t_name.lower())
+                technologies.append(t_name)
 
-        # 7. Competitive Landscape (Tavily AI + Diffbot KG)
+        # 7. Competitive Landscape (Tavily AI + Diffbot KG - Dynamic String & Dict extraction)
         raw_comps = []
         if isinstance(tav.get("competitors"), list):
             raw_comps.extend(tav["competitors"])
@@ -243,9 +250,14 @@ class LobCoalesceEngine:
         competitors = []
         seen_comp = set()
         for c in raw_comps:
-            if c and isinstance(c, str) and c.strip() and c.strip().lower() not in seen_comp:
-                seen_comp.add(c.strip().lower())
-                competitors.append(c.strip())
+            c_name = None
+            if isinstance(c, str) and c.strip():
+                c_name = c.strip()
+            elif isinstance(c, dict):
+                c_name = cls.clean_text(c.get("name") or c.get("company") or c.get("title"))
+            if c_name and c_name.lower() not in seen_comp:
+                seen_comp.add(c_name.lower())
+                competitors.append(c_name)
 
         # 8. Financial Snippets
         fin_snips = tav.get("financial_snippets") or []
@@ -261,8 +273,12 @@ class LobCoalesceEngine:
             "tavily_intel": tav.get("answer"),
         }
 
-        # 9. Patents Portfolio JSONB Array
-        patents_list = pats if pats else []
+        # 9. Patents Portfolio JSONB Array (Dynamic normalizer)
+        patents_list = []
+        if isinstance(pats, list):
+            patents_list = pats
+        elif isinstance(pats, dict) and pats:
+            patents_list = pats.get("patents") or [pats]
 
         # 10. Child Sub-LOBs Normalization
         raw_subs = sub_lobs_data if sub_lobs_data is not None else meta.get("sub_lobs", [])
@@ -303,6 +319,24 @@ class LobCoalesceEngine:
         google_trends_url = f"https://trends.google.com/trends/explore?q={enc_lob}"
         youtube_search_url = f"https://www.youtube.com/results?search_query={enc_lob}+overview"
 
+        osint_feed_manifest = {
+            "key": slug_key,
+            "display_name": clean_name,
+            "entity_type": "line_of_business",
+            "parent_company": parent_company,
+            "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "feeds": {
+                "google_news_rss_url": google_news_rss_url,
+                "reddit_rss_url": reddit_rss_url,
+                "google_patents_url": google_patents_url,
+                "google_trends_url": google_trends_url,
+                "youtube_search_url": youtube_search_url,
+                "website_url": website_url,
+                "crunchbase_url": crunchbase_url,
+                "wikipedia_url": wikipedia_url,
+            }
+        }
+
         # 12. Master Raw Data Lake Bucket
         raw_payload = {
             "sec_exhibit_21": sec,
@@ -318,7 +352,10 @@ class LobCoalesceEngine:
             "sub_lobs_raw": raw_subs,
         }
 
-        final_overview = overview_text or f"{clean_name} is a key operational business unit and commercial line of business under {parent_company}."
+        final_overview = overview_text or (
+            f"{clean_name} is a key operational business unit "
+            f"and commercial line of business under {parent_company}."
+        )
 
         return {
             "key": slug_key,
@@ -351,6 +388,7 @@ class LobCoalesceEngine:
             "google_patents_url": google_patents_url,
             "google_trends_url": google_trends_url,
             "youtube_search_url": youtube_search_url,
+            "osint_feed_manifest": osint_feed_manifest,
             "raw_data": raw_payload,
         }
 
@@ -616,7 +654,11 @@ class LobService:
     @staticmethod
     def _fetch_uk_companies_house(subsidiary_name: str) -> Dict[str, Any]:
         """UK Companies House API for UK/European registered entities (100% Free)."""
-        api_key = os.getenv("UK_COMPANIES_HOUSE_KEY") or getattr(config, "COMPANIES_HOUSE_API_KEY", "") or getattr(config, "UK_COMPANIES_HOUSE_API_KEY", "")
+        api_key = (
+            os.getenv("UK_COMPANIES_HOUSE_KEY")
+            or getattr(config, "COMPANIES_HOUSE_API_KEY", "")
+            or getattr(config, "UK_COMPANIES_HOUSE_API_KEY", "")
+        )
         session = LobServiceHTTPClient.get_session()
         try:
             base_url = "https://api.company-information.service.gov.uk/search/companies"
@@ -690,7 +732,10 @@ class LobService:
             url = "https://api.tavily.com/search"
             payload = {
                 "api_key": api_key,
-                "query": f'"{lob_name}" "{parent_company}" revenue operating head competitors executive leadership financial',
+                "query": (
+                    f'"{lob_name}" "{parent_company}" revenue operating head '
+                    f'competitors executive leadership financial'
+                ),
                 "search_depth": "advanced",
                 "max_results": 5,
                 "include_answer": True,
@@ -720,7 +765,10 @@ class LobService:
                         break
                 
                 head_patterns = [
-                    r"(?:led by|headed by|CEO|President|Managing Director|Head of [A-Za-z\s]+)[:,\s]+([A-Z][a-z]+ [A-Z][a-z]+)",
+                    (
+                    r"(?:led by|headed by|CEO|President|Managing Director|Head of [A-Za-z\s]+)"
+                    r"[:,\s]+([A-Z][a-z]+ [A-Z][a-z]+)"
+                ),
                     r"([A-Z][a-z]+ [A-Z][a-z]+),?\s+(?:CEO|Managing Director|Chief Executive|Head|President)",
                 ]
                 for p in head_patterns:
@@ -762,8 +810,14 @@ class LobService:
                 data = res.json().get("data", [])
                 if data:
                     entity = data[0].get("entity", {})
-                    techs = [t.get("name") for t in entity.get("technologies", []) if isinstance(t, dict) and t.get("name")]
-                    comps = [c.get("name") for c in entity.get("competitors", []) if isinstance(c, dict) and c.get("name")]
+                    techs = [
+                        t.get("name") for t in entity.get("technologies", [])
+                        if isinstance(t, dict) and t.get("name")
+                    ]
+                    comps = [
+                        c.get("name") for c in entity.get("competitors", [])
+                        if isinstance(c, dict) and c.get("name")
+                    ]
                     nb_emp = entity.get("nbEmployees") or entity.get("nbEmployeesMin")
                     
                     return {
@@ -788,8 +842,6 @@ class LobService:
         if not config.APIFY_TOKEN:
             return {}
         try:
-            from apify_client import ApifyClient
-            from serializer import slugify
 
             client = ApifyClient(config.APIFY_TOKEN)
             slug = slugify(subsidiary_name)

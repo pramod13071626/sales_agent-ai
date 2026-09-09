@@ -65,7 +65,7 @@ def get_run_output_dirs(company_name: str, run_dt: datetime = None):
                 │   ├── exa/
                 │   └── tavily/
     """
-    dt = run_dt or datetime.now(timezone.utc)
+    dt = run_dt or datetime.now()
     date_str = dt.strftime("%Y-%m-%d")
     time_str = dt.strftime("%H%M%S")
     timestamp_str = f"{date_str.replace('-', '')}_{time_str}"

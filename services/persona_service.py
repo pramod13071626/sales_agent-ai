@@ -1,17 +1,21 @@
+import json
 import os
 import re
-import json
 import time
 import urllib.parse
-from urllib.parse import urlparse
-from pathlib import Path
-from typing import Dict, Any, Optional, List, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlparse
+from apify_client import ApifyClient
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-
 import config
+from collectors.hierarchy_collector import (
+    run_monid_endpoint,
+    query_tinyfish_search_via_monid,
+)
 
 
 class PersonaServiceHTTPClient:
@@ -135,6 +139,66 @@ class PersonaCoalesceEngine:
         return 4
 
     @classmethod
+    def _extract_twitter_handle(cls, sources: List[Any]) -> Optional[str]:
+        """
+        Dynamically extracts and sanitizes an authentic Twitter/X handle from any source
+        (Apify Twitter, LinkedIn contact info, Apollo, Serper, Exa, metadata).
+        """
+        for src in sources:
+            if not src:
+                continue
+            candidates = []
+            if isinstance(src, dict):
+                candidates.extend([
+                    src.get("twitter_handle"),
+                    src.get("handle"),
+                    src.get("screen_name"),
+                    src.get("userName"),
+                    src.get("username"),
+                    src.get("twitter_url"),
+                    src.get("twitter"),
+                    (src.get("user", {}).get("screen_name") if isinstance(src.get("user"), dict) else None),
+                    (src.get("author", {}).get("userName") if isinstance(src.get("author"), dict) else None),
+                    (
+                    src.get("contactInfo", {}).get("twitter")
+                    if isinstance(src.get("contactInfo"), dict)
+                    else None
+                ),
+                ])
+                for res in (src.get("organic_results") or src.get("results") or []):
+                    if isinstance(res, dict):
+                        link = res.get("link") or res.get("url")
+                        if link and ("twitter.com/" in link or "x.com/" in link):
+                            candidates.append(link)
+            elif isinstance(src, str):
+                candidates.append(src)
+
+            for cand in candidates:
+                if not cand or not isinstance(cand, str):
+                    continue
+                cand_str = cand.strip()
+                if "twitter.com/" in cand_str or "x.com/" in cand_str:
+                    match = re.search(r"(?:twitter\.com|x\.com)/([A-Za-z0-9_]{1,25})", cand_str)
+                    if match:
+                        handle = match.group(1)
+                        reserved = [
+                        "home", "search", "share", "intent",
+                        "explore", "hashtag", "i", "privacy", "tos"
+                    ]
+                    if handle.lower() not in reserved:
+                            return f"@{handle}"
+                elif cand_str.startswith("@") and len(cand_str) > 1 and len(cand_str) <= 25:
+                    clean = re.sub(r"[^A-Za-z0-9_@]", "", cand_str)
+                    if clean:
+                        return clean if clean.startswith("@") else f"@{clean}"
+                elif (
+                    re.match(r"^[A-Za-z0-9_]{1,25}$", cand_str)
+                    and cand_str.lower() not in ["none", "null", "n/a", "undefined"]
+                ):
+                    return f"@{cand_str}"
+        return None
+
+    @classmethod
     def coalesce_persona(
         cls,
         full_name: str,
@@ -211,46 +275,98 @@ class PersonaCoalesceEngine:
         personal_email = cls.clean_text(fe.get("personal_email") or ap.get("personal_email"))
         direct_mobile_phone = cls.clean_text(fe.get("mobile_phone") or ap.get("mobile_phone"))
 
-        # 4. Location
-        city = cls.clean_text(li.get("city") or ap.get("city") or meta.get("city"))
-        state = cls.clean_text(li.get("state") or ap.get("state") or meta.get("state"))
-        country = cls.clean_text(li.get("country") or ap.get("country") or meta.get("country"))
-
-        # 5. Career & Employment Timeline
-        employment_history = li.get("experience") or ap.get("employment_history") or []
-
-        past_companies = (
-            [
-                e.get("company")
-                for e in employment_history[1:]
-                if isinstance(e, dict) and e.get("company")
-            ]
-            if len(employment_history) > 1
-            else []
+        # 4. Dynamic Location Resolution (handles nested Apify parsed dicts, Apollo, or top-level)
+        loc_obj = li.get("location") if isinstance(li.get("location"), dict) else {}
+        parsed_loc = loc_obj.get("parsed") if isinstance(loc_obj.get("parsed"), dict) else {}
+        city = cls.clean_text(
+            li.get("city")
+            or parsed_loc.get("city")
+            or ap.get("city")
+            or meta.get("city")
         )
-        previous_titles = (
-            [e.get("title") for e in employment_history[1:] if isinstance(e, dict) and e.get("title")]
-            if len(employment_history) > 1
-            else []
+        state = cls.clean_text(
+            li.get("state")
+            or parsed_loc.get("state")
+            or ap.get("state")
+            or meta.get("state")
         )
+        country = cls.clean_text(
+            li.get("country")
+            or parsed_loc.get("country")
+            or parsed_loc.get("countryFull")
+            or ap.get("country")
+            or meta.get("country")
+        )
+
+        # 5. Dynamic Career & Employment Timeline (handles companyName, company, position, title)
+        employment_history = li.get("experience") or li.get("experiences") or ap.get("employment_history") or []
+
+        past_companies = []
+        previous_titles = []
+        for e in (employment_history[1:] if len(employment_history) > 1 else []):
+            if isinstance(e, dict):
+                comp = e.get("companyName") or e.get("company") or e.get("company_name")
+                pos = e.get("position") or e.get("title") or e.get("role")
+                if comp and str(comp).strip() not in past_companies:
+                    past_companies.append(str(comp).strip())
+                if pos and str(pos).strip() not in previous_titles:
+                    previous_titles.append(str(pos).strip())
+
         prior_company = past_companies[0] if past_companies else None
-        current_role_tenure_months = (
-            int(li.get("current_role_tenure_months")) if li.get("current_role_tenure_months") else None
-        )
+
+        # Dynamic Tenure Parsing from duration string or direct integer
+        current_role_tenure_months = None
+        if li.get("current_role_tenure_months"):
+            try: current_role_tenure_months = int(li.get("current_role_tenure_months"))
+            except: pass
+        elif employment_history and isinstance(employment_history[0], dict):
+            dur_str = str(employment_history[0].get("duration") or "")
+            yrs_m = re.search(r"(\d+)\s*(?:yr|year)", dur_str, re.IGNORECASE)
+            mos_m = re.search(r"(\d+)\s*(?:mo|month)", dur_str, re.IGNORECASE)
+            t_mos = 0
+            if yrs_m: t_mos += int(yrs_m.group(1)) * 12
+            if mos_m: t_mos += int(mos_m.group(1))
+            if t_mos > 0: current_role_tenure_months = t_mos
+
         is_new_in_role = (
             (current_role_tenure_months <= 12) if current_role_tenure_months is not None else False
         )
-        career_trajectory_score = int(li.get("trajectory_score")) if li.get("trajectory_score") else None
-
-        # 6. Academic Background (OpenAlex + LinkedIn + ORCID)
-        degree = cls.clean_text(alex.get("degree") or li.get("degree") or meta.get("degree"))
-        institution = cls.clean_text(
-            alex.get("institution") or li.get("institution") or meta.get("institution")
+        career_trajectory_score = (
+            float(li.get("trajectory_score")) if li.get("trajectory_score")
+            else (90.0 + min(len(past_companies) * 2.0, 9.0) if past_companies else None)
         )
+
+        # 6. Dynamic Academic Background (handles education arrays with degree, schoolName, fieldOfStudy)
         education_history = (
             li.get("education")
+            or li.get("educations")
             or alex.get("education")
-            or ([{"institution": institution, "degree": degree}] if (institution and degree) else [])
+            or ap.get("education_history")
+            or []
+        )
+        degrees_list = []
+        institutions_list = []
+        for edu in education_history:
+            if isinstance(edu, dict):
+                d = edu.get("degree") or edu.get("degreeName")
+                f = edu.get("fieldOfStudy") or edu.get("field")
+                s = edu.get("schoolName") or edu.get("school") or edu.get("institution")
+                if d and f: degrees_list.append(f"{d} in {f}")
+                elif d: degrees_list.append(str(d))
+                if s and str(s).strip() not in institutions_list:
+                    institutions_list.append(str(s).strip())
+
+        degree = cls.clean_text(
+            alex.get("degree")
+            or (" | ".join(degrees_list) if degrees_list else None)
+            or li.get("degree")
+            or meta.get("degree")
+        )
+        institution = cls.clean_text(
+            alex.get("institution")
+            or (" | ".join(institutions_list) if institutions_list else None)
+            or li.get("institution")
+            or meta.get("institution")
         )
 
         # 7. AI Sales Dossier Synthesis
@@ -282,7 +398,7 @@ class PersonaCoalesceEngine:
             or ap.get("linkedin_url")
             or serp.get("linkedin_url")
         )
-        twitter_handle = cls.clean_text(tw.get("handle") or ap.get("twitter_handle"))
+        twitter_handle = cls._extract_twitter_handle([tw, ap, li, serp, meta])
         twitter_live_url = (
             f"https://x.com/{twitter_handle.lstrip('@')}"
             if twitter_handle
@@ -308,8 +424,31 @@ class PersonaCoalesceEngine:
         youtube_interviews_url = f"https://www.youtube.com/results?search_query={enc_name}+interview"
         podcast_search_url = f"https://www.listennotes.com/search/?q={enc_name}"
         google_trends_url = f"https://trends.google.com/trends/explore?q={enc_person_only}"
+        rss_url = f"https://news.google.com/rss/search?q={enc_name}&hl=en-US&gl=US&ceid=US:en"
 
-        # 11. Master Raw Data Lake Bucket
+        # 11. Complete OSINT Feed Manifest (Dynamic aggregation)
+        osint_feed_manifest = {
+            "key": slug_key,
+            "entity_type": "persona",
+            "display_name": f"{display_name} ({clean_title}, {company_name})",
+            "feeds": {
+                "rss_url": rss_url,
+                "twitter_live_url": twitter_live_url,
+                "reddit_rss_url": reddit_rss_url,
+                "sec_insider_trades_url": sec_insider_trades_url,
+                "google_patents_url": google_patents_url,
+                "google_scholar_url": google_scholar_url,
+                "openalex_author_url": openalex_author_url,
+                "orcid_search_url": orcid_search_url,
+                "wikidata_person_url": wikidata_person_url,
+                "youtube_interviews_url": youtube_interviews_url,
+                "podcast_search_url": podcast_search_url,
+                "google_trends_url": google_trends_url,
+            },
+            "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        }
+
+        # 12. Master Raw Data Lake Bucket
         raw_payload = {
             "fullenrich": fe,
             "apify_linkedin": li,
@@ -392,8 +531,9 @@ class PersonaCoalesceEngine:
             "twitter_handle": twitter_handle,
             "reddit_query": f'"{display_name}"',
             "news_query": f'"{display_name}" {company_name}',
-            "rss_url": f"https://news.google.com/rss/search?q={enc_name}&hl=en-US&gl=US&ceid=US:en",
+            "rss_url": rss_url,
             "patents_query": f'"{display_name}"',
+            "osint_feed_manifest": osint_feed_manifest,
             "raw_data": raw_payload,
         }
 
@@ -657,7 +797,6 @@ class PersonaService:
         if not config.APIFY_TOKEN:
             return {}
         try:
-            from apify_client import ApifyClient
 
             client = ApifyClient(config.APIFY_TOKEN)
             profile_url = (
@@ -684,7 +823,6 @@ class PersonaService:
         if not config.APIFY_TOKEN:
             return {}
         try:
-            from apify_client import ApifyClient
 
             client = ApifyClient(config.APIFY_TOKEN)
             run = client.actor("apidojo/twitter-scraper-lite").call(
@@ -757,7 +895,9 @@ class PersonaService:
         return {}
 
     @staticmethod
-    def _fetch_sec_insider_trades(full_name: str, company_name: str, sec_cik: Optional[str] = None) -> Dict[str, Any]:
+    def _fetch_sec_insider_trades(
+        full_name: str, company_name: str, sec_cik: Optional[str] = None
+    ) -> Dict[str, Any]:
         """SEC EDGAR Officer/Director Form 4 Insider Trading Search."""
         base_sec = "https://www.sec.gov/edgar/searchedgar/companysearch"
         sec_url = f"{base_sec}?companyName={urllib.parse.quote_plus(full_name)}"
@@ -802,7 +942,6 @@ class PersonaService:
         if not config.MONID_API_KEY:
             return {}
         try:
-            from collectors.hierarchy_collector import run_monid_endpoint
             payload = {
                 "q_person_name": full_name,
                 "per_page": 2,
@@ -850,7 +989,10 @@ class PersonaService:
         if not config.SERPER_API_KEY and not config.MONID_API_KEY:
             return {}
         session = PersonaServiceHTTPClient.get_session()
-        headers = {"X-API-KEY": config.SERPER_API_KEY, "Content-Type": "application/json"} if config.SERPER_API_KEY else {}
+        headers = (
+            {"X-API-KEY": config.SERPER_API_KEY, "Content-Type": "application/json"}
+            if config.SERPER_API_KEY else {}
+        )
 
         queries = [
             f'"{full_name}" "{company_name}"',
@@ -879,11 +1021,15 @@ class PersonaService:
         # Monid TinyFish fallback ($0/call)
         if config.MONID_API_KEY:
             try:
-                from collectors.hierarchy_collector import query_tinyfish_search_via_monid
-                tf = query_tinyfish_search_via_monid(f"{full_name} {company_name} biography executive", max_results=3)
+                tf = query_tinyfish_search_via_monid(
+                    f"{full_name} {company_name} biography executive", max_results=3
+                )
                 if tf and tf.get("snippets"):
                     return {
-                        "organic_results": [{"title": f"{full_name} Overview", "snippet": s} for s in tf["snippets"]],
+                        "organic_results": [
+                            {"title": f"{full_name} Overview", "snippet": s}
+                            for s in tf["snippets"]
+                        ],
                         "source": "tinyfish",
                     }
             except Exception as e:

@@ -29,7 +29,12 @@ export function resolveTargetKey(candidates) {
 }
 
 export function resolveAccountTargetKey(account) {
-  return resolveTargetKey([account.key, (account.ticker || '').toLowerCase(), slugify(account.name), slugify(account.legal_name)]);
+  return resolveTargetKey([
+    account.key,
+    (account.ticker || '').toLowerCase(),
+    slugify(account.name),
+    slugify(account.legal_name)
+  ]);
 }
 
 export function resolvePersonaTargetKey(p) {
@@ -51,7 +56,10 @@ export function tierLabel(p) {
 
 export function getPersonasFor(account, lob) {
   if (lob) return lob.personas || [];
-  return dedupePersonas((account.lobs || []).flatMap(l => l.personas || []));
+  const list = account.personas && account.personas.length
+    ? account.personas
+    : (account.lobs || []).flatMap(l => l.personas || []);
+  return dedupePersonas(list);
 }
 
 export function getTechFor(account, lob) {
