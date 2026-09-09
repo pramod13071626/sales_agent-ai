@@ -21,6 +21,8 @@ import os
 import re
 import json
 import math
+import subprocess
+import tempfile
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone, timedelta
@@ -160,11 +162,14 @@ if FASTAPI_AVAILABLE:
         role: Optional[str] = None
         is_active: Optional[bool] = None
         password: Optional[str] = None
+        has_command_center_access: Optional[bool] = None
 
     def _user_public(u: User) -> Dict[str, Any]:
         return {
             "id": u.id, "email": u.email, "full_name": u.full_name,
             "role": u.role, "is_active": u.is_active,
+            # super_admin always has it, same as it always has every account
+            "has_command_center_access": u.role == "super_admin" or bool(u.has_command_center_access),
             "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
             "created_at": u.created_at.isoformat() if u.created_at else None,
         }
@@ -428,6 +433,10 @@ if FASTAPI_AVAILABLE:
                 auth.revoke_all_refresh_tokens_for_user(session, target.id)
                 details["password_changed"] = True
 
+            if body.has_command_center_access is not None and body.has_command_center_access != target.has_command_center_access:
+                details["has_command_center_access"] = {"old": target.has_command_center_access, "new": body.has_command_center_access}
+                target.has_command_center_access = body.has_command_center_access
+
             session.commit()
             if details:
                 auth.log_audit(session, current.id, "user_updated", target_user_id=target.id, details=details)
@@ -469,6 +478,7 @@ if FASTAPI_AVAILABLE:
             return {
                 "user_id": user_id,
                 "role": target.role,
+                "has_command_center_access": target.role == "super_admin" or bool(target.has_command_center_access),
                 "accounts": [
                     {
                         "id": a.id,
@@ -2220,10 +2230,13 @@ if FASTAPI_AVAILABLE:
             if not p:
                 raise HTTPException(status_code=404, detail="Persona not found.")
             acct = session.query(Account).filter_by(id=p.account_id).first()
-            target_key = p.key or slugify(p.full_name or "")
-
-            digest_row = (
-                session.query(Digest).filter_by(target_key=target_key).first() if target_key else None
+            digest_row = _resolve_persona_digest(session, p)
+            # If a digest exists, its target_key is the confirmed-correct one;
+            # otherwise fall back to the same candidate list for the posts
+            # lookup (captured posts can exist before any digest has run).
+            target_key = digest_row.target_key if digest_row else next(
+                (c for c in [p.key, slugify(p.full_name or ""), _slugify_dropping_initials(p.full_name or "")] if c),
+                None,
             )
             posts = (
                 (session.query(Post).filter_by(target_key=target_key).order_by(Post.channel, Post.rank).all())
@@ -2361,6 +2374,19 @@ if FASTAPI_AVAILABLE:
             if not p:
                 raise HTTPException(status_code=404, detail="Persona not found.")
 
+            content_pipeline_dir = Path(__file__).resolve().parent / "apps" / "content_pipeline"
+
+            # apps/content_pipeline has its own top-level module named `db`
+            # (apps/content_pipeline/db.py) — a straight name collision with
+            # this app's own `db` package, already loaded under that same
+            # name in this process's sys.modules. `import db` inside that
+            # app's own code (people_targets.py, digest/pipeline.py) would
+            # silently resolve to THIS app's db package instead of its own
+            # once cached, no matter what sys.path says. Running it as a
+            # separate process — exactly its own CLI entrypoint, exactly as
+            # a human would run it — sidesteps the collision entirely
+            # instead of fighting Python's module cache for it.
+            sys.path.insert(0, str(content_pipeline_dir))
             from apps.content_pipeline.people_targets import ALIASES as PEOPLE_ALIASES
 
             existing = _resolve_persona_digest(session, p)
@@ -2374,14 +2400,59 @@ if FASTAPI_AVAILABLE:
                     f"({', '.join(c for c in candidates if c)}) — add them there before generating a profile.",
                 )
 
-            # profiles_only=True: this is a UI-triggered on-demand generation for
-            # exactly one profile, not a full scheduled digest run — no reason to
-            # also pay for the sales-email rollup call nobody asked for here.
-            from apps.content_pipeline.digest import pipeline as digest_pipeline
-            digest_res = digest_pipeline.run(company_key=target_key, kind="person", cap=25, profiles_only=True)
-            psych = digest_res.get("psychological_profile")
+            # --profiles-only: on-demand generation for exactly the two
+            # profiles, skipping the separate email-rollup LLM call nobody
+            # asked for here. --all-posts: a UI click is a deliberate
+            # "(re)generate now", not a scheduled incremental digest.
+            # --since-days 3650: --all-posts only bypasses the "new since
+            # last run" filter, NOT the recency window underneath it — a
+            # contact whose captured posts are all older than the default
+            # 14 days (e.g. no recent public activity) would otherwise
+            # always fail with "no posts in scope" on a fresh generation.
+            #
+            # Logs to an explicit UTF-8-opened file rather than
+            # capture_output=True/text=True — on this box, letting the
+            # parent auto-decode the captured pipes (locale-dependent, not
+            # UTF-8) silently returned stdout=stderr=None instead of
+            # raising, hiding every real error. This is the same "open the
+            # file as UTF-8 yourself" workaround already needed manually
+            # all session for this app's own Windows-console encoding issue
+            # (main.py's banner prints a Unicode box-drawing character).
+            proc_env = dict(os.environ, PYTHONIOENCODING="utf-8")
+            log_fd, log_path = tempfile.mkstemp(suffix=".log", prefix="profile_gen_")
+            os.close(log_fd)
+            try:
+                with open(log_path, "w", encoding="utf-8") as log_fh:
+                    result = subprocess.run(
+                        [sys.executable, "main.py", "digest", target_key, "--person", "--all-posts", "--profiles-only", "--since-days", "3650"],
+                        cwd=str(content_pipeline_dir), env=proc_env,
+                        stdout=log_fh, stderr=subprocess.STDOUT, timeout=300,
+                    )
+                with open(log_path, "r", encoding="utf-8", errors="replace") as log_fh:
+                    output = log_fh.read()
+            finally:
+                try:
+                    os.remove(log_path)
+                except OSError:
+                    pass
+
+            if result.returncode != 0:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Digest generation failed (exit {result.returncode}): {(output or '(no output)')[-1000:]}",
+                )
+
+            # The subprocess's own db.upsert_digest() call already wrote the
+            # fresh row to Postgres — re-read it here rather than parsing
+            # the subprocess's stdout/local JSON file.
+            session.expire_all()
+            digest_row = _resolve_persona_digest(session, p)
+            psych = (digest_row.digest or {}).get("psychological_profile") if digest_row else None
             if not psych:
-                raise HTTPException(status_code=500, detail="Synthesis did not produce a psychological profile.")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Digest ran but produced no psychological_profile. Output: {output[-1000:]}",
+                )
 
             return {
                 "status": "success",
@@ -2400,8 +2471,7 @@ if FASTAPI_AVAILABLE:
             if not p:
                 raise HTTPException(status_code=404, detail="Persona not found.")
             acct = session.query(Account).filter_by(id=p.account_id).first()
-            target_key = p.key or slugify(p.full_name or "")
-            digest_row = session.query(Digest).filter_by(target_key=target_key).first() if target_key else None
+            digest_row = _resolve_persona_digest(session, p)
 
             persona_dict = {
                 "full_name": p.full_name, "title": p.title,
@@ -3407,7 +3477,18 @@ if FASTAPI_AVAILABLE:
             # — without including those here, the contact drawer's Recent
             # Social Media Activity / Personality Profile sections always
             # found nothing, no matter how much persona-level data existed.
-            persona_keys = [p.key or slugify(p.full_name) for p in (acct.personas or [])]
+            # Three candidates per persona (mirrors _resolve_persona_digest
+            # above and resolvePersonaTargetKey on the frontend): a name with
+            # a middle initial like "Ranjit S. Samra" slugifies to
+            # "ranjit_s_samra", but people_targets.py registers them under
+            # "ranjit_samra" (initial omitted) — without the third candidate
+            # this endpoint silently omits that persona's digest/posts from
+            # its response entirely, no matter how the frontend resolves keys.
+            persona_keys = []
+            for p in (acct.personas or []):
+                persona_keys.append(p.key)
+                persona_keys.append(slugify(p.full_name or ""))
+                persona_keys.append(_slugify_dropping_initials(p.full_name or ""))
             keys = [
                 acct.key,
                 (acct.stock_symbol or "").lower(),

@@ -40,7 +40,9 @@ def ensure_schema_compatibility():
             "ALTER TABLE lobs ADD COLUMN IF NOT EXISTS financial_snippets JSONB;",
             "ALTER TABLE lobs ADD COLUMN IF NOT EXISTS wikipedia_url TEXT;",
             "ALTER TABLE lobs ADD COLUMN IF NOT EXISTS patents JSONB;",
-            "ALTER TABLE lobs ADD COLUMN IF NOT EXISTS raw_data JSONB;"
+            "ALTER TABLE lobs ADD COLUMN IF NOT EXISTS raw_data JSONB;",
+            # 4. Per-user Sales Command Center access toggle
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS has_command_center_access BOOLEAN NOT NULL DEFAULT TRUE;",
         ]
         for stmt in alter_statements:
             try:

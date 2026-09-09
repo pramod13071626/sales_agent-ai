@@ -61,7 +61,6 @@ export function renderDrawerPinned(p) {
       <a class="drawer-action ${p.phone ? '' : 'disabled'}" ${p.phone ? `href="tel:${esc(p.phone)}"` : ''}><i class="bi bi-telephone"></i> Call</a>
       <a class="drawer-action ${p.linkedin_url ? '' : 'disabled'}" ${p.linkedin_url ? `href="${esc(p.linkedin_url)}" target="_blank"` : ''}><i class="bi bi-linkedin"></i> LinkedIn</a>
       <button type="button" class="drawer-action ${p.id == null ? 'disabled' : ''}" id="drawerViewProfileBtn"><i class="bi bi-arrow-up-right-square"></i> View Profile</button>
-      <button type="button" class="drawer-action" id="drawerDownloadPdfBtn"><i class="bi bi-file-earmark-pdf"></i> Download PDF</button>
     </div>
 
     <div class="drawer-jumpnav">

@@ -381,6 +381,10 @@ function renderModalShell() {
           <div class="admin-modal-title" id="accessModalTitle">Manage Account Access</div>
           <button type="button" class="admin-modal-close" id="accessModalClose"><i class="bi bi-x-lg"></i></button>
         </div>
+        <div id="accessModalCommandCenter"></div>
+        <div class="admin-access-section-label" id="accessModalDashboardLabel" style="display:none;">
+          <i class="bi bi-diagram-3"></i> Global Accounts Dashboard — per-account access
+        </div>
         <div class="admin-modal-toolbar" id="accessModalToolbar">
           <input type="text" class="admin-modal-search" id="accessModalSearch" placeholder="Filter company accounts...">
         </div>
@@ -840,13 +844,53 @@ function closeAccessModal() {
   document.getElementById('accessModalBackdrop').classList.remove('open');
 }
 
+function renderCommandCenterToggle(userId, hasAccess, disabled) {
+  const wrap = document.getElementById('accessModalCommandCenter');
+  wrap.innerHTML = `
+    <div class="admin-access-section-label">
+      <i class="bi bi-graph-up-arrow"></i> Sales Command Center
+    </div>
+    <div class="admin-access-row">
+      <label class="admin-access-toggle">
+        <input type="checkbox" id="accessModalCcToggle" ${hasAccess ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
+        <span>Action-first rep &amp; manager dashboard</span>
+      </label>
+      <span style="font-size:0.7rem; color:var(--text-muted);">
+        ${disabled ? 'Always on for Super Admin' : (hasAccess ? '<i class="bi bi-check-circle-fill" style="color:var(--success);"></i> Granted' : 'Restricted')}
+      </span>
+    </div>
+  `;
+  if (disabled) return;
+  document.getElementById('accessModalCcToggle').addEventListener('change', async (e) => {
+    const cb = e.target;
+    cb.disabled = true;
+    try {
+      const res = await fetch(`/api/admin/users/${userId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ has_command_center_access: cb.checked }),
+      });
+      if (!res.ok) throw new Error('Request failed');
+      showToast(`Sales Command Center access ${cb.checked ? 'granted' : 'revoked'}`);
+      renderCommandCenterToggle(userId, cb.checked, false);
+    } catch (err) {
+      alert('Failed to update Sales Command Center access');
+      cb.checked = !cb.checked;
+      cb.disabled = false;
+    }
+  });
+}
+
 async function openAccessModal(userId, email) {
   const backdrop = document.getElementById('accessModalBackdrop');
   const body = document.getElementById('accessModalBody');
   const searchInput = document.getElementById('accessModalSearch');
   const toolbar = document.getElementById('accessModalToolbar');
+  const dashboardLabel = document.getElementById('accessModalDashboardLabel');
 
   document.getElementById('accessModalTitle').textContent = `Account Access — ${email}`;
+  document.getElementById('accessModalCommandCenter').innerHTML = '';
+  dashboardLabel.style.display = 'none';
   body.innerHTML = '<div class="admin-page-loading" style="margin:20px auto;"><div class="spinner-sm"></div> Loading accounts…</div>';
   backdrop.classList.add('open');
 
@@ -855,6 +899,7 @@ async function openAccessModal(userId, email) {
     const data = await res.json();
     if (data.role === 'super_admin') {
       toolbar.style.display = 'none';
+      renderCommandCenterToggle(userId, true, true);
       body.innerHTML = `
         <div style="padding:24px; text-align:center; color:var(--text-secondary);">
           <i class="bi bi-shield-lock" style="font-size:2rem; color:var(--brand); display:block; margin-bottom:12px;"></i>
@@ -867,6 +912,8 @@ async function openAccessModal(userId, email) {
       return;
     }
 
+    renderCommandCenterToggle(userId, !!data.has_command_center_access, false);
+    dashboardLabel.style.display = 'flex';
     toolbar.style.display = 'flex';
     searchInput.value = '';
 

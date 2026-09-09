@@ -1153,6 +1153,22 @@ body.admin-page-body {
   cursor: pointer;
 }
 
+.admin-access-section-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 18px 4px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+#accessModalCommandCenter .admin-access-row {
+  padding: 6px 18px 12px;
+  border-bottom: 1px solid var(--panel-border);
+}
+
 /* ── Responsive Breakpoints ──────────────────────────────────── */
 @media (max-width: 1024px) {
   .admin-kpi-grid {

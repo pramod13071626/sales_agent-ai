@@ -165,7 +165,12 @@ def run(
 
     personality_profile = None
     if is_person:
-        bio = db.get_person_bio(key) or {}
+        # people_targets.py's registered key and the main app's personas.key
+        # are generated independently and often don't match (especially for
+        # names with middle initials) — full_name_hint lets get_person_bio
+        # fall back to an ILIKE-on-full_name lookup so bio data isn't
+        # silently dropped for those people.
+        bio = db.get_person_bio(key, full_name_hint=target.get("display_name")) or {}
         # Unlike the per-channel calls above, this step has no natural
         # "new_in_last_run" filter of its own — without caching it re-spent
         # a full LLM call on every single digest run even when every channel
@@ -192,7 +197,7 @@ def run(
                 }
 
         psychological_profile = None
-        psych_context = db.get_person_psychological_context(key) or bio
+        psych_context = db.get_person_psychological_context(key, full_name_hint=target.get("display_name")) or bio
         psych_sig = cache.content_signature({"bio": psych_context, "channels": channels, "kind": "psychological"})
         cached_psych = cache.get(key, "__psychological_profile__", psych_sig) if use_cache else None
         if cached_psych is not None:

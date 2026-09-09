@@ -265,13 +265,15 @@ export function renderFullPsychologicalProfile(digestEntry, persona, psychData) 
         <div class="b5-grid">${bigFiveMeters}</div>
       </div>` : ''}
 
-    <div class="psych-dual-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px;">
+    <div class="psych-dual-grid" style="margin-top:16px;">
       ${renderProfileSubsection('Cognitive Style', 'bi-cpu', profile.cognitive_style)}
       ${renderProfileSubsection('Leadership & Scale Management', 'bi-people-fill', profile.leadership_patterns)}
     </div>
 
-    ${renderProfileSubsection('Core Values & Motivations', 'bi-compass', profile.core_values_and_motivations)}
-    ${renderProfileSubsection('Interpersonal Traits', 'bi-person-heart', profile.interpersonal_traits)}
+    <div style="display:flex; flex-direction:column; gap:12px; margin-top:12px;">
+      ${renderProfileSubsection('Core Values & Motivations', 'bi-compass', profile.core_values_and_motivations)}
+      ${renderProfileSubsection('Interpersonal Traits', 'bi-person-heart', profile.interpersonal_traits)}
+    </div>
 
     ${blindSpots.length ? `
       <div class="psych-card" style="margin-top:16px; border-left:3px solid #F5A623;">
@@ -298,7 +300,7 @@ export function renderFullPsychologicalProfile(digestEntry, persona, psychData) 
           </div>` : ''}
         ${playbook.recommended_tone ? `<div class="psych-sub-block" style="margin-bottom:10px;"><strong>Recommended tone:</strong> ${esc(playbook.recommended_tone)}</div>` : ''}
 
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
+        <div class="playbook-dos-donts-grid">
           ${(playbook.dos || []).length ? `
             <div style="background:rgba(0,186,136,0.05); border:1px solid rgba(0,186,136,0.2); border-radius:var(--radius-sm); padding:12px 14px;">
               <div style="font-weight:700; font-size:.82rem; color:var(--success); margin-bottom:8px; text-transform:uppercase; letter-spacing:0.04em;"><i class="bi bi-check-circle-fill"></i> Recommended (Do This)</div>
@@ -448,15 +450,19 @@ export function renderPersonalityProfile(digestEntry) {
       <i class="bi bi-info-circle"></i> AI-synthesized from public posts, filings, and career history — hedged and cited.
     </div>
     ${profile.executive_summary ? `
-      <div class="dossier-block">
-        <div class="dossier-label"><i class="bi bi-person-badge"></i> Executive Summary</div>
-        <div class="dossier-text">${esc(profile.executive_summary)}</div>
+      <div class="personality-summary-card" style="margin-bottom:12px;">
+        <div class="personality-summary-title"><i class="bi bi-person-badge"></i> Executive Summary</div>
+        <p class="personality-summary-text">${esc(profile.executive_summary)}</p>
       </div>` : ''}
-    ${sub ? `<div class="dossier-label" style="margin-top:6px;"><i class="bi bi-diagram-3"></i> Executive Profile</div>${sub}` : ''}
+    ${sub ? `<div class="personality-sections-list">${sub}</div>` : ''}
     ${(profile.caveats && profile.caveats.length) ? `
-      <div class="dossier-block">
-        <div class="dossier-label"><i class="bi bi-exclamation-triangle"></i> Caveats</div>
-        <ul class="profile-basis-list">${profile.caveats.map(c => `<li>${esc(c)}</li>`).join('')}</ul>
+      <div class="personality-section-card" style="border-left: 3px solid var(--warning); margin-top:12px;">
+        <div class="personality-sec-header">
+          <div class="personality-sec-title" style="color:#c07a00;"><i class="bi bi-exclamation-triangle"></i> Observation Caveats</div>
+        </div>
+        <ul class="personality-basis-list">
+          ${profile.caveats.map(c => `<li><span>${esc(c)}</span></li>`).join('')}
+        </ul>
       </div>` : ''}
   `;
 }
