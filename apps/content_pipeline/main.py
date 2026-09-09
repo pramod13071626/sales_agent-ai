@@ -125,6 +125,7 @@ def cmd_digest(args) -> int:
                 out_dir=args.out_dir,
                 store_path_override=_store_path(args, company),
                 kind=kind,
+                suggest_actions=getattr(args, "suggest_actions", False),
             )
         except (FileNotFoundError, RuntimeError, LLMError) as e:
             print(f"❌  {target['display_name']}: {e}")
@@ -768,6 +769,13 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--since-days", type=int, default=14, help="recency window")
         p.add_argument("--max-posts", type=int, default=25, help="posts per channel")
         p.add_argument("--out-dir", default=DIGEST_DIR, help="digest output directory")
+        p.add_argument(
+            "--suggest-actions",
+            action="store_true",
+            help="person digests only: also LLM-suggest action items (written as "
+                 "status=pending_review for a human to approve/reject) — see "
+                 "ACTION_ITEMS_LLM_SUGGESTIONS_PLAN.md",
+        )
 
     p_scrape = sub.add_parser("scrape", help="scrape accounts into their stores")
     add_selection(p_scrape)

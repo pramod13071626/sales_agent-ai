@@ -81,6 +81,15 @@
   color: #fff;
   border-color: rgba(255,255,255,.3);
 }
+.topbar-link-btn {
+  background: none; font-family: inherit; cursor: pointer;
+}
+
+.topbar-auth-widget { display: flex; align-items: center; gap: 8px; }
+.topbar-auth-user {
+  font-size: .78rem; font-weight: 600; color: rgba(255,255,255,.8);
+  display: flex; align-items: center; gap: 6px;
+}
 
 .topbar-theme-btn {
   width: 34px; height: 34px;

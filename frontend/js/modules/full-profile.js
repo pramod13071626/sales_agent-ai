@@ -1,98 +1,132 @@
-// Full-page contact profile — the "View Profile" destination opened from the
-// contact drawer (contact-drawer.js). Unlike the drawer (a narrow sliding
-// sidebar, capped at 6 posts to fit), this page has the full viewport to
-// work with: every section is its own widget/panel, and Recent Social Media
-// Activity shows every captured post, not a preview slice.
+// Full-page executive contact profile — modern modular Bento-Grid dashboard
 import { state } from './state.js';
 import { esc, initials, resolvePersonaTargetKey } from './utils.js';
 import {
   hasDossier,
-  renderDossier,
-  renderPersonaContentSummary,
-  renderAllPostsByChannel,
-  renderPersonalityProfile
+  renderDossierTabs,
+  renderFullPersonalityProfile,
+  renderFullPsychologicalProfile,
+  renderTabbedSignalsWidget
 } from './profile-render.js';
 
-function renderHero(p) {
-  const tag = p.tier || p.decision_authority || (p.departments && p.departments[0]) || null;
+function renderHeroCard(p) {
+  const isCSuite = (p.tier === 'c_suite') || (p.hierarchy_level === 1);
   const dossierReady = hasDossier(p);
+  const location = [p.city, p.state, p.country].filter(Boolean).join(', ');
+
   return `
-    <div class="panel profile-hero">
-      <div class="drawer-contact-header">
-        <div class="drawer-avatar profile-avatar-lg">${esc(initials(p.name))}</div>
-        <div>
-          <div class="drawer-contact-name" style="font-size:1.3rem;">${esc(p.name || 'Unnamed')} ${dossierReady ? '<i class="bi bi-stars" title="AI call-prep dossier available"></i>' : ''}</div>
-          <div class="drawer-contact-title">${esc(p.title || 'Title unknown')}</div>
-          ${tag ? `<div class="contact-tags" style="margin-top:6px;"><span class="tag">${esc(tag)}</span></div>` : ''}
+    <div class="profile-hero-card">
+      <div class="profile-hero-identity">
+        <div class="profile-avatar-xl">${esc(initials(p.name))}</div>
+        <div class="profile-hero-info">
+          <div class="profile-hero-name">
+            ${esc(p.name || 'Executive Contact')}
+            ${dossierReady ? '<i class="bi bi-stars" title="AI call-prep dossier available"></i>' : ''}
+          </div>
+          <div class="profile-hero-title">${esc(p.title || 'Executive Title')}</div>
+          ${p.company_name ? `<div class="profile-hero-company"><i class="bi bi-building"></i> ${esc(p.company_name)}</div>` : ''}
+          <div class="profile-hero-meta-chips">
+            ${isCSuite ? '<span class="meta-badge badge-csuite"><i class="bi bi-award"></i> C-Suite</span>' : ''}
+            ${p.decision_authority ? `<span class="meta-badge badge-authority"><i class="bi bi-check2-circle"></i> ${esc(p.decision_authority)} Authority</span>` : ''}
+            ${p.budget_authority ? `<span class="meta-badge"><i class="bi bi-wallet2"></i> ${esc(p.budget_authority)} Budget</span>` : ''}
+            ${location ? `<span class="meta-badge"><i class="bi bi-geo-alt"></i> ${esc(location)}</span>` : ''}
+          </div>
         </div>
       </div>
-      <div class="drawer-actions">
-        <a class="drawer-action ${p.email ? '' : 'disabled'}" ${p.email ? `href="mailto:${esc(p.email)}"` : ''}><i class="bi bi-envelope"></i> Email</a>
-        <a class="drawer-action ${p.phone ? '' : 'disabled'}" ${p.phone ? `href="tel:${esc(p.phone)}"` : ''}><i class="bi bi-telephone"></i> Call</a>
-        <a class="drawer-action ${p.linkedin_url ? '' : 'disabled'}" ${p.linkedin_url ? `href="${esc(p.linkedin_url)}" target="_blank"` : ''}><i class="bi bi-linkedin"></i> LinkedIn</a>
-        <button type="button" class="drawer-action" id="drawerDownloadPdfBtn"><i class="bi bi-file-earmark-pdf"></i> Download PDF</button>
+      <div class="profile-hero-actions">
+        <a class="profile-action-btn ${p.email ? '' : 'disabled'}" ${p.email ? `href="mailto:${esc(p.email)}"` : ''}><i class="bi bi-envelope"></i> Email</a>
+        <a class="profile-action-btn ${p.phone ? '' : 'disabled'}" ${p.phone ? `href="tel:${esc(p.phone)}"` : ''}><i class="bi bi-telephone"></i> Call</a>
+        <a class="profile-action-btn ${p.linkedin_url ? '' : 'disabled'}" ${p.linkedin_url ? `href="${esc(p.linkedin_url)}" target="_blank" rel="noopener"` : ''}><i class="bi bi-linkedin"></i> LinkedIn</a>
       </div>
     </div>
   `;
 }
 
-function renderContactInfoWidget(p) {
-  const meta = [
-    p.decision_authority ? `Decision authority: ${p.decision_authority}` : '',
-    p.budget_authority ? `Budget authority: ${p.budget_authority}` : '',
-    p.seniority_raw ? `Seniority: ${p.seniority_raw}` : '',
-    [p.city, p.state, p.country].filter(Boolean).join(', ')
-  ].filter(Boolean);
+// Widget: Sales Call-Prep & Battlecards
+function renderCallPrepWidget(persona) {
+  return `
+    <div class="profile-widget">
+      <div class="profile-widget-header">
+        <div class="profile-widget-title"><i class="bi bi-chat-left-text"></i> Sales Call-Prep &amp; Battlecards</div>
+        <span class="profile-widget-tag">Active Mandates</span>
+      </div>
+      ${renderDossierTabs(persona)}
+    </div>
+  `;
+}
+
+// Widget: Professional Background & Competencies
+function renderBackgroundWidget(persona) {
+  const background = [
+    persona.prior_company ? `Previously at ${persona.prior_company}` : '',
+    (persona.degree || persona.institution) ? `${persona.degree || 'Degree'}${persona.institution ? ', ' + persona.institution : ''}` : ''
+  ].filter(Boolean).join(' • ');
 
   return `
-    <div class="panel">
-      <div class="panel-title"><span><i class="bi bi-person-vcard"></i> Contact Info</span></div>
-      ${meta.length ? meta.map(m => `<div class="stat-row"><span class="stat-label">${esc(m)}</span></div>`).join('')
-        : `<div class="empty-block" style="padding:6px 0;"><div class="empty-block-text">No additional contact metadata captured yet.</div></div>`}
-      ${(p.skills && p.skills.length) ? `
-        <div class="panel-title" style="margin-top:14px;"><span><i class="bi bi-lightning-charge"></i> Skills &amp; Focus Areas</span></div>
-        <div class="chip-row">${p.skills.map(s => `<span class="chip">${esc(s)}</span>`).join('')}</div>
+    <div class="profile-widget">
+      <div class="profile-widget-header">
+        <div class="profile-widget-title"><i class="bi bi-briefcase"></i> Professional Background &amp; Competencies</div>
+        <span class="profile-widget-tag">Profile Data</span>
+      </div>
+
+      ${background ? `
+        <div class="dossier-block">
+          <div class="dossier-label"><i class="bi bi-mortarboard"></i> Academic &amp; Prior Corporate Career</div>
+          <div class="dossier-text">${esc(background)}</div>
+        </div>
+      ` : ''}
+
+      ${(persona.skills && persona.skills.length) ? `
+        <div class="dossier-block">
+          <div class="dossier-label"><i class="bi bi-lightning-charge"></i> Core Competencies &amp; Focus Areas</div>
+          <div class="chip-row">${persona.skills.map(s => `<span class="chip">${esc(s)}</span>`).join('')}</div>
+        </div>
+      ` : ''}
+
+      ${(!background && !(persona.skills && persona.skills.length)) ? `
+        <div class="empty-block" style="padding:20px 4px; text-align:center;">
+          <div class="empty-block-text">No additional academic background or skills tags recorded yet.</div>
+        </div>
       ` : ''}
     </div>
   `;
 }
 
-function renderDossierWidget(p) {
+// Widget: Executive Personality Profile
+function renderPersonalityProfileWidget(digestEntry, persona) {
   return `
-    <div class="panel">
-      <div class="panel-title"><span><i class="bi bi-stars"></i> AI Call-Prep Dossier</span></div>
-      ${renderDossier(p)}
-    </div>
-  `;
-}
-
-function renderPersonalityWidget(digestEntry) {
-  return `
-    <div class="panel">
-      <div class="panel-title"><span><i class="bi bi-person-lines-fill"></i> Personality Profile</span></div>
-      ${renderPersonalityProfile(digestEntry)}
-    </div>
-  `;
-}
-
-function renderSocialWidget(digestEntry, posts) {
-  const summary = renderPersonaContentSummary(digestEntry, posts);
-  const allPosts = renderAllPostsByChannel(posts);
-  return `
-    <div class="panel">
-      <div class="panel-title">
-        <span><i class="bi bi-broadcast"></i> Recent Social Media Activity</span>
-        <span class="context-badge live">${posts.length} post${posts.length !== 1 ? 's' : ''} captured</span>
+    <div class="profile-widget">
+      <div class="profile-widget-header">
+        <div class="profile-widget-title"><i class="bi bi-person-lines-fill"></i> Executive Personality Profile</div>
+        <button type="button" class="profile-action-btn btn-primary" id="drawerDownloadPdfBtn" style="padding: 5px 12px; font-size: .8rem; font-weight: 600;"><i class="bi bi-file-earmark-pdf"></i> Download Personality Report</button>
       </div>
-      ${summary || ''}
-      ${posts.length ? `
-        <div class="panel-title" style="margin-top:16px;"><span><i class="bi bi-collection"></i> All Captured Posts</span></div>
-        ${allPosts}
-      ` : `
-        <div class="empty-block" style="padding:16px 4px;">
-          <div class="empty-block-icon"><i class="bi bi-inbox"></i></div>
-          <div class="empty-block-text">No recent posts available. Pulling real post content needs a social-listening integration — nothing here is invented.</div>
-        </div>`}
+      ${renderFullPersonalityProfile(digestEntry, persona)}
+    </div>
+  `;
+}
+
+// Widget: Executive Psychological Profile (Placeholder / Not Connected)
+function renderPsychologicalProfileWidget() {
+  return `
+    <div class="profile-widget">
+      <div class="profile-widget-header">
+        <div class="profile-widget-title"><i class="bi bi-activity"></i> Executive Psychological Profile</div>
+        <button type="button" class="profile-action-btn btn-primary disabled" style="padding: 5px 12px; font-size: .8rem; font-weight: 600;" title="Psychological profile is not currently connected"><i class="bi bi-file-earmark-pdf"></i> Download Psychological Report</button>
+      </div>
+      ${renderFullPsychologicalProfile()}
+    </div>
+  `;
+}
+
+// Widget: Multi-Channel Signals & Public Activity
+function renderSignalsWidget(digestEntry, posts) {
+  return `
+    <div class="profile-widget">
+      <div class="profile-widget-header">
+        <div class="profile-widget-title"><i class="bi bi-broadcast-pin"></i> Captured Public Signals &amp; Activity</div>
+        <span class="profile-widget-tag">${posts.length} Captured Signal${posts.length !== 1 ? 's' : ''}</span>
+      </div>
+      ${renderTabbedSignalsWidget(digestEntry, posts)}
     </div>
   `;
 }
@@ -103,12 +137,21 @@ export function renderFullProfile(p) {
   const digestEntry = targetKey ? state.contentStore.digests[targetKey] : null;
 
   return `
-    ${renderHero(p)}
-    <div class="profile-widget-grid">
-      ${renderContactInfoWidget(p)}
-      ${renderDossierWidget(p)}
+    ${renderHeroCard(p)}
+
+    <!-- Parallel Pair 1: Call-Prep & Battlecards || Background & Competencies -->
+    <div class="profile-bento-grid">
+      ${renderCallPrepWidget(p)}
+      ${renderBackgroundWidget(p)}
     </div>
-    ${renderPersonalityWidget(digestEntry)}
-    ${renderSocialWidget(digestEntry, posts)}
+
+    <!-- Parallel Pair 2: Executive Personality Profile || Psychological Profile -->
+    <div class="profile-bento-grid">
+      ${renderPersonalityProfileWidget(digestEntry, p)}
+      ${renderPsychologicalProfileWidget()}
+    </div>
+
+    <!-- Multi-Channel Signals & Public Activity Feed -->
+    ${renderSignalsWidget(digestEntry, posts)}
   `;
 }

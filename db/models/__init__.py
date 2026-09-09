@@ -15,9 +15,32 @@ from db.models.opportunity_signal import OpportunitySignal
 from db.models.weekly_digest import WeeklyDigestSnapshot
 from db.models.linkedin_job import LinkedInJob
 from db.models.cxo_movement import CxoMovement
+from db.models.user import User
+from db.models.refresh_token import RefreshToken
+from db.models.password_reset_token import PasswordResetToken
+from db.models.audit_log import AuditLog
+from db.models.user_account_access import UserAccountAccess
+from db.models.action_item import ActionItem
+from db.models.action_item_reminder import ActionItemReminder
 
 __all__ = [
-    "Base", "Account", "Lob", "SubLob", "Persona", "PipelineRun",
-    "Post", "Digest", "OpportunitySignal", "WeeklyDigestSnapshot",
-    "LinkedInJob", "CxoMovement",
+    "Base",
+    "Account",
+    "Lob",
+    "SubLob",
+    "Persona",
+    "PipelineRun",
+    "Post",
+    "Digest",
+    "OpportunitySignal",
+    "WeeklyDigestSnapshot",
+    "LinkedInJob",
+    "CxoMovement",
+    "User",
+    "RefreshToken",
+    "PasswordResetToken",
+    "AuditLog",
+    "UserAccountAccess",
+    "ActionItem",
+    "ActionItemReminder",
 ]

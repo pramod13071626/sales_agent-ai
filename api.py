@@ -17,6 +17,7 @@ Workflow for each level:
 """
 
 import sys
+import os
 import re
 import json
 import math
@@ -67,7 +68,12 @@ from db.models import (
     WeeklyDigestSnapshot,
     LinkedInJob,
     CxoMovement,
+    User,
+    AuditLog,
+    ActionItem,
+    ActionItemReminder,
 )
+
 from db.schemas import AccountSchema, LobSchema, PersonaSchema
 from db.repositories import (
     AccountRepository,
@@ -76,25 +82,32 @@ from db.repositories import (
 )
 from db.importer import import_run_to_db
 from pdf_export import build_persona_profile_pdf
+import auth
+import email_sender
 from main import run_pipeline
 
 import uvicorn
-from fastapi import (
-    APIRouter,
-    Body,
-    FastAPI,
-    HTTPException,
-    Query,
-    Request,
-    Response,
-)
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel, Field
+try:
+    from fastapi import (
+        FastAPI,
+        APIRouter,
+        HTTPException,
+        Query,
+        Body,
+        Response,
+        Request,
+        Depends,
+        BackgroundTasks,
+    )
+    from fastapi.responses import FileResponse, HTMLResponse
+    from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.staticfiles import StaticFiles
+    from fastapi.templating import Jinja2Templates
+    from pydantic import BaseModel, Field
+    FASTAPI_AVAILABLE = True
+except ImportError:
+    FASTAPI_AVAILABLE = False
 
-FASTAPI_AVAILABLE = True
 
 
 if FASTAPI_AVAILABLE:
@@ -107,13 +120,508 @@ if FASTAPI_AVAILABLE:
         version="2.2.0",
     )
 
+    # allow_origins=["*"] together with allow_credentials=True is rejected by
+    # browsers once real credentialed requests (the refresh-token cookie) are
+    # in play — see AUTH_JWT_IMPLEMENTATION_PLAN.md §0. A concrete origin
+    # list is required for auth to work at all.
+    _cors_origins = [o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
+    # Browsers only send Secure cookies over HTTPS — false for plain-http
+    # local dev (localhost included, to work reliably with curl/tools too),
+    # true once this is actually deployed behind HTTPS.
+    _COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").strip().lower() == "true"
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=_cors_origins or ["http://localhost:8000"],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # ══════════════════════════════════════════════════════
+    # AUTHENTICATION (see AUTH_JWT_IMPLEMENTATION_PLAN.md)
+    # ══════════════════════════════════════════════════════
+    class LoginRequest(BaseModel):
+        email: str
+        password: str
+
+    class ForgotPasswordRequest(BaseModel):
+        email: str
+
+    class ResetPasswordRequest(BaseModel):
+        token: str
+        new_password: str
+
+    class CreateUserRequest(BaseModel):
+        email: str
+        full_name: Optional[str] = None
+        password: str
+        role: str = "user"
+
+    class UpdateUserRequest(BaseModel):
+        full_name: Optional[str] = None
+        email: Optional[str] = None
+        role: Optional[str] = None
+        is_active: Optional[bool] = None
+        password: Optional[str] = None
+
+    def _user_public(u: User) -> Dict[str, Any]:
+        return {
+            "id": u.id, "email": u.email, "full_name": u.full_name,
+            "role": u.role, "is_active": u.is_active,
+            "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
+            "created_at": u.created_at.isoformat() if u.created_at else None,
+        }
+
+    @app.post("/api/auth/login", tags=["0. Authentication"])
+    def login(body: LoginRequest, request: Request, response: Response):
+        session = get_session()
+        try:
+            email = body.email.strip().lower()
+            user = session.query(User).filter(User.email.ilike(email)).first()
+            # Same generic error whether the email doesn't exist or the
+            # password is wrong — never reveal which one it was.
+            invalid = HTTPException(status_code=401, detail="Invalid email or password")
+            if not user or not user.is_active:
+                raise invalid
+            if auth.is_locked_out(user):
+                raise HTTPException(status_code=423, detail="Account temporarily locked due to repeated failed logins")
+            if not auth.verify_password(body.password, user.hashed_password):
+                auth.register_failed_login(session, user)
+                raise invalid
+
+            auth.register_successful_login(session, user)
+            access_token = auth.create_access_token(user)
+            refresh_token = auth.issue_refresh_token(session, user, request)
+            auth.log_audit(session, user.id, "login")
+
+            response.set_cookie(
+                "refresh_token", refresh_token, httponly=True, secure=_COOKIE_SECURE, samesite="lax",
+                max_age=auth.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600, path="/api/auth",
+            )
+            return {"access_token": access_token, "token_type": "bearer", "user": _user_public(user)}
+        finally:
+            session.close()
+
+    @app.post("/api/auth/refresh", tags=["0. Authentication"])
+    def refresh_access_token(request: Request, response: Response):
+        raw_refresh = request.cookies.get("refresh_token")
+        if not raw_refresh:
+            raise HTTPException(status_code=401, detail="No refresh token")
+        session = get_session()
+        try:
+            new_raw, user = auth.verify_and_rotate_refresh_token(session, raw_refresh, request)
+            access_token = auth.create_access_token(user)
+            response.set_cookie(
+                "refresh_token", new_raw, httponly=True, secure=_COOKIE_SECURE, samesite="lax",
+                max_age=auth.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600, path="/api/auth",
+            )
+            return {"access_token": access_token, "token_type": "bearer", "user": _user_public(user)}
+        finally:
+            session.close()
+
+    @app.post("/api/auth/logout", tags=["0. Authentication"])
+    def logout(request: Request, response: Response):
+        raw_refresh = request.cookies.get("refresh_token")
+        if raw_refresh:
+            session = get_session()
+            try:
+                auth.revoke_refresh_token(session, raw_refresh)
+            finally:
+                session.close()
+        response.delete_cookie("refresh_token", path="/api/auth")
+        return {"ok": True}
+
+    @app.get("/api/auth/me", tags=["0. Authentication"])
+    def get_me(user: User = Depends(auth.get_current_user)):
+        return _user_public(user)
+
+    @app.post("/api/auth/forgot-password", tags=["0. Authentication"])
+    def forgot_password(body: ForgotPasswordRequest, background_tasks: BackgroundTasks):
+        """Always returns the same generic response whether or not the
+        email exists — prevents account enumeration via this endpoint."""
+        session = get_session()
+        try:
+            user = session.query(User).filter(User.email.ilike(body.email.strip().lower())).first()
+            if user and user.is_active:
+                reset_token = auth.issue_password_reset_token(session, user)
+                auth.log_audit(session, None, "password_reset_requested", target_user_id=user.id)
+                reset_link = f"{os.getenv('APP_BASE_URL', 'http://localhost:8000')}/reset-password?token={reset_token}"
+                # Sent after the response goes out, not before — a live SMTP
+                # round-trip (real-world: a few seconds against Office365)
+                # must never be what the caller's HTTP request is waiting on.
+                background_tasks.add_task(
+                    email_sender.send_email,
+                    user.email, "Reset your Sales Intelligence password",
+                    f"Hi {user.full_name or user.email},\n\n"
+                    "A password reset was requested for your account. If this wasn't you, "
+                    "you can safely ignore this email.\n\n"
+                    f"Reset your password here (expires in {auth.RESET_TOKEN_EXPIRE_MINUTES} minutes):\n{reset_link}\n",
+                    html_body=email_sender.render_html(
+                        "Reset your password",
+                        [f"Hi {user.full_name or user.email},",
+                         "A password reset was requested for your account. If this wasn't you, "
+                         "you can safely ignore this email — your password will stay unchanged."],
+                        cta_label="Reset Password", cta_url=reset_link,
+                        footnote=f"This link expires in {auth.RESET_TOKEN_EXPIRE_MINUTES} minutes.",
+                    ),
+                )
+            return {"message": "If that email exists, a reset link has been sent."}
+        finally:
+            session.close()
+
+    @app.post("/api/auth/reset-password", tags=["0. Authentication"])
+    def reset_password(body: ResetPasswordRequest):
+        session = get_session()
+        try:
+            user = auth.consume_password_reset_token(session, body.token)
+            user.hashed_password = auth.hash_password(body.new_password)
+            session.commit()
+            # A password reset should end every existing session, including
+            # one an attacker may already hold.
+            auth.revoke_all_refresh_tokens_for_user(session, user.id)
+            auth.log_audit(session, user.id, "password_reset_completed", target_user_id=user.id)
+            return {"message": "Password updated. Please log in again."}
+        finally:
+            session.close()
+
+    # ── Super Admin: user management ─────────────────────────────
+    @app.get("/api/admin/users", tags=["0. Authentication"])
+    def list_users(current: User = Depends(auth.require_role("super_admin"))):
+        session = get_session()
+        try:
+            users = session.query(User).order_by(User.created_at.desc()).all()
+            return {"users": [_user_public(u) for u in users]}
+        finally:
+            session.close()
+
+    @app.post("/api/admin/users", tags=["0. Authentication"])
+    def create_user(body: CreateUserRequest, background_tasks: BackgroundTasks,
+                     current: User = Depends(auth.require_role("super_admin"))):
+        if body.role not in ("super_admin", "user"):
+            raise HTTPException(status_code=400, detail="role must be 'super_admin' or 'user'")
+        session = get_session()
+        try:
+            email = body.email.strip().lower()
+            if session.query(User).filter(User.email.ilike(email)).first():
+                raise HTTPException(status_code=409, detail="A user with this email already exists")
+            new_user = User(
+                email=email, full_name=body.full_name, role=body.role,
+                hashed_password=auth.hash_password(body.password), created_by_id=current.id,
+            )
+            session.add(new_user)
+            session.commit()
+            auth.log_audit(session, current.id, "user_created", target_user_id=new_user.id,
+                            details={"role": body.role})
+
+            base_url = os.getenv("APP_BASE_URL", "http://localhost:8000")
+            access_note = (
+                "As a super_admin, you have access to every account by default."
+                if new_user.role == "super_admin" else
+                "No accounts have been assigned to you yet — a super admin will "
+                "grant access to specific accounts shortly; ask them if you need "
+                "one urgently."
+            )
+            background_tasks.add_task(
+                email_sender.send_email,
+                new_user.email, "Welcome to Sales Intelligence",
+                f"Hi {new_user.full_name or new_user.email},\n\n"
+                f"An account has been created for you on Sales Intelligence by {current.full_name or current.email}.\n\n"
+                f"Email: {new_user.email}\nRole: {new_user.role}\n\n"
+                f"Access: {access_note}\n\n"
+                f"Sign in here: {base_url}/login\n"
+                "You'll receive a separate email shortly to set your own password.\n",
+                html_body=email_sender.render_html(
+                    "Welcome to Sales Intelligence",
+                    [f"Hi {new_user.full_name or new_user.email},",
+                     f"An account has been created for you by {current.full_name or current.email}.",
+                     f"Email: {new_user.email}  •  Role: {new_user.role}",
+                     access_note],
+                    cta_label="Sign In", cta_url=f"{base_url}/login",
+                    footnote="You'll receive a separate email shortly to set your own password.",
+                ),
+            )
+
+            # An admin-set temp password is a worse first-run experience
+            # than the user picking their own — and never having to see the
+            # temp password anywhere (audit log, admin's clipboard) is a
+            # small but real security win.
+            reset_token = auth.issue_password_reset_token(session, new_user)
+            reset_link = f"{base_url}/reset-password?token={reset_token}"
+            background_tasks.add_task(
+                email_sender.send_email,
+                new_user.email, "Set your Sales Intelligence password",
+                f"Hi {new_user.full_name or new_user.email},\n\n"
+                "Set your password to finish setting up your account "
+                f"(expires in {auth.RESET_TOKEN_EXPIRE_MINUTES} minutes):\n{reset_link}\n",
+                html_body=email_sender.render_html(
+                    "Set your password",
+                    [f"Hi {new_user.full_name or new_user.email},",
+                     "One last step to finish setting up your account — choose your own password."],
+                    cta_label="Set Password", cta_url=reset_link,
+                    footnote=f"This link expires in {auth.RESET_TOKEN_EXPIRE_MINUTES} minutes.",
+                ),
+            )
+            return _user_public(new_user)
+        finally:
+            session.close()
+
+    @app.patch("/api/admin/users/{user_id}", tags=["0. Authentication"])
+    def update_user(
+        user_id: int, body: UpdateUserRequest, current: User = Depends(auth.require_role("super_admin"))
+    ):
+        session = get_session()
+        try:
+            target = session.query(User).filter_by(id=user_id).first()
+            if not target:
+                raise HTTPException(status_code=404, detail="User not found")
+            if target.id == current.id and body.is_active is False:
+                raise HTTPException(status_code=400, detail="You cannot deactivate your own account")
+
+            details = {}
+            if body.full_name is not None:
+                stripped_name = body.full_name.strip() if body.full_name else None
+                if stripped_name != target.full_name:
+                    details["full_name"] = {"old": target.full_name, "new": stripped_name}
+                    target.full_name = stripped_name
+
+            if body.email is not None:
+                new_email = body.email.strip().lower()
+                if not new_email:
+                    raise HTTPException(status_code=400, detail="Email cannot be empty")
+                if new_email != target.email:
+                    existing = session.query(User).filter(User.email == new_email, User.id != target.id).first()
+                    if existing:
+                        raise HTTPException(status_code=400, detail="A user with this email address already exists")
+                    details["email"] = {"old": target.email, "new": new_email}
+                    target.email = new_email
+
+            if body.role is not None and body.role != target.role:
+                if body.role not in ("super_admin", "user"):
+                    raise HTTPException(status_code=400, detail="role must be 'super_admin' or 'user'")
+                if target.id == current.id and body.role != "super_admin":
+                    raise HTTPException(status_code=400, detail="You cannot demote your own account from super_admin")
+                details["role"] = {"old": target.role, "new": body.role}
+                target.role = body.role
+
+            if body.is_active is not None and body.is_active != target.is_active:
+                details["is_active"] = {"old": target.is_active, "new": body.is_active}
+                target.is_active = body.is_active
+                if not body.is_active:
+                    auth.revoke_all_refresh_tokens_for_user(session, target.id)
+
+            if body.password:
+                if len(body.password) < 6:
+                    raise HTTPException(status_code=400, detail="Password must be at least 6 characters long")
+                target.password_hash = auth.hash_password(body.password)
+                auth.revoke_all_refresh_tokens_for_user(session, target.id)
+                details["password_changed"] = True
+
+            session.commit()
+            if details:
+                auth.log_audit(session, current.id, "user_updated", target_user_id=target.id, details=details)
+            return _user_public(target)
+        finally:
+            session.close()
+
+    @app.delete("/api/admin/users/{user_id}", tags=["0. Authentication"])
+    def delete_user(user_id: int, current: User = Depends(auth.require_role("super_admin"))):
+        if user_id == current.id:
+            raise HTTPException(status_code=400, detail="You cannot delete your own account")
+        session = get_session()
+        try:
+            target = session.query(User).filter_by(id=user_id).first()
+            if not target:
+                raise HTTPException(status_code=404, detail="User not found")
+            email = target.email
+            # Logged before the delete since AuditLog.target_user_id turns
+            # NULL once the row is gone (ondelete="SET NULL") — the action
+            # should still say who it was after the fact.
+            auth.log_audit(session, current.id, "user_deleted", target_user_id=None, details={"email": email})
+            session.delete(target)
+            session.commit()
+            return {"ok": True}
+        finally:
+            session.close()
+
+    @app.get("/api/admin/users/{user_id}/accounts", tags=["0. Authentication"])
+    def list_user_account_access(user_id: int, current: User = Depends(auth.require_role("super_admin"))):
+        """Every account, flagged with whether this user currently has
+        access — the full picker list, not just their current grants."""
+        session = get_session()
+        try:
+            target = session.query(User).filter_by(id=user_id).first()
+            if not target:
+                raise HTTPException(status_code=404, detail="User not found")
+            granted_ids = set(auth.get_accessible_account_ids(session, user_id))
+            accounts = session.query(Account).order_by(Account.display_name).all()
+            return {
+                "user_id": user_id,
+                "role": target.role,
+                "accounts": [
+                    {
+                        "id": a.id,
+                        "name": a.display_name or a.legal_name or a.key,
+                        "granted": a.id in granted_ids,
+                    }
+                    for a in accounts
+                ],
+            }
+        finally:
+            session.close()
+
+    @app.post("/api/admin/users/{user_id}/accounts/{account_id}", tags=["0. Authentication"])
+    def grant_user_account_access(
+        user_id: int, account_id: int, current: User = Depends(auth.require_role("super_admin"))
+    ):
+        session = get_session()
+        try:
+            target = session.query(User).filter_by(id=user_id).first()
+            if not target:
+                raise HTTPException(status_code=404, detail="User not found")
+            account = session.query(Account).filter_by(id=account_id).first()
+            if not account:
+                raise HTTPException(status_code=404, detail="Account not found")
+            created = auth.grant_account_access(session, user_id, account_id, current.id)
+            if created:
+                auth.log_audit(
+                    session, current.id, "account_access_granted", target_user_id=user_id,
+                    details={"account_id": account_id, "account_name": account.display_name}
+                )
+            return {"ok": True}
+        finally:
+            session.close()
+
+    @app.delete("/api/admin/users/{user_id}/accounts/{account_id}", tags=["0. Authentication"])
+    def revoke_user_account_access(
+        user_id: int, account_id: int, current: User = Depends(auth.require_role("super_admin"))
+    ):
+        session = get_session()
+        try:
+            removed = auth.revoke_account_access(session, user_id, account_id)
+            if removed:
+                auth.log_audit(
+                    session, current.id, "account_access_revoked", target_user_id=user_id,
+                    details={"account_id": account_id}
+                )
+            return {"ok": True}
+        finally:
+            session.close()
+
+    @app.get("/api/admin/stats", tags=["0. Authentication"])
+    def admin_dashboard_stats(current: User = Depends(auth.require_role("super_admin"))):
+        """Usage summary for the admin dashboard: headline counts, most
+        recently active users, and the latest audit trail entries."""
+        session = get_session()
+        try:
+            total_users = session.query(User).count()
+            active_users = session.query(User).filter_by(is_active=True).count()
+            super_admin_count = session.query(User).filter_by(role="super_admin").count()
+            total_accounts = session.query(Account).count()
+            open_action_items = session.query(ActionItem).filter(
+                ActionItem.status.in_(("open", "in_progress"))
+            ).count()
+            overdue_action_items = session.query(ActionItem).filter(
+                ActionItem.status.in_(("open", "in_progress")),
+                ActionItem.due_date.isnot(None),
+                ActionItem.due_date < datetime.now(timezone.utc),
+            ).count()
+
+            recent_logins = (
+                session.query(User)
+                .filter(User.last_login_at.isnot(None))
+                .order_by(User.last_login_at.desc())
+                .limit(10)
+                .all()
+            )
+            recent_audit = (
+                session.query(AuditLog)
+                .order_by(AuditLog.created_at.desc())
+                .limit(20)
+                .all()
+            )
+            user_ids_in_audit = (
+                {e.actor_user_id for e in recent_audit if e.actor_user_id}
+                | {e.target_user_id for e in recent_audit if e.target_user_id}
+            )
+            names_by_id = {
+                u.id: (u.full_name or u.email)
+                for u in session.query(User).filter(User.id.in_(user_ids_in_audit)).all()
+            } if user_ids_in_audit else {}
+
+            return {
+                "total_users": total_users,
+                "active_users": active_users,
+                "inactive_users": total_users - active_users,
+                "super_admin_count": super_admin_count,
+                "total_accounts": total_accounts,
+                "open_action_items": open_action_items,
+                "overdue_action_items": overdue_action_items,
+                "recent_logins": [
+                    {
+                        "id": u.id, "email": u.email, "full_name": u.full_name,
+                        "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None
+                    }
+                    for u in recent_logins
+                ],
+                "recent_audit": [
+                    {
+                        "action": e.action,
+                        "actor": names_by_id.get(e.actor_user_id, "system"),
+                        "target": names_by_id.get(e.target_user_id) if e.target_user_id else None,
+                        "details": e.details,
+                        "created_at": e.created_at.isoformat() if e.created_at else None,
+                    }
+                    for e in recent_audit
+                ],
+            }
+        finally:
+            session.close()
+
+    @app.get("/api/admin/audit-logs", tags=["0. Authentication"])
+    def list_admin_audit_logs(
+        limit: int = Query(5, ge=1, le=100),
+        offset: int = Query(0, ge=0),
+        current: User = Depends(auth.require_role("super_admin"))
+    ):
+        """Paginated audit trail endpoint so large audit histories load efficiently in small chunks."""
+        session = get_session()
+        try:
+            total_count = session.query(AuditLog).count()
+            logs = (
+                session.query(AuditLog)
+                .order_by(AuditLog.created_at.desc())
+                .offset(offset)
+                .limit(limit)
+                .all()
+            )
+            user_ids = (
+                {e.actor_user_id for e in logs if e.actor_user_id}
+                | {e.target_user_id for e in logs if e.target_user_id}
+            )
+            names_by_id = {
+                u.id: (u.full_name or u.email)
+                for u in session.query(User).filter(User.id.in_(user_ids)).all()
+            } if user_ids else {}
+
+            return {
+                "total": total_count,
+                "limit": limit,
+                "offset": offset,
+                "has_more": (offset + len(logs)) < total_count,
+                "audit_logs": [
+                    {
+                        "id": e.id,
+                        "action": e.action,
+                        "actor": names_by_id.get(e.actor_user_id, "system"),
+                        "target": names_by_id.get(e.target_user_id) if e.target_user_id else None,
+                        "details": e.details,
+                        "created_at": e.created_at.isoformat() if e.created_at else None,
+                    }
+                    for e in logs
+                ]
+            }
+        finally:
+            session.close()
 
     # ══════════════════════════════════════════════════════
     # REQUEST / RESPONSE MODELS
@@ -231,6 +739,23 @@ if FASTAPI_AVAILABLE:
         confidence: Optional[str] = None
         data_gaps: List[str] = []
         do_not_say: List[str] = []
+
+    class ActionItemCreateRequest(BaseModel):
+        title: str
+        description: Optional[str] = None
+        persona_id: Optional[int] = None
+        priority: str = "medium"  # high | medium | low
+        due_date: Optional[str] = None  # ISO 8601
+        assigned_to_id: Optional[int] = None
+
+    class ActionItemUpdateRequest(BaseModel):
+        title: Optional[str] = None
+        description: Optional[str] = None
+        persona_id: Optional[int] = None
+        status: Optional[str] = None  # open | in_progress | done | cancelled
+        priority: Optional[str] = None
+        due_date: Optional[str] = None
+        assigned_to_id: Optional[int] = None
 
     # ══════════════════════════════════════════════════════
     # TAB 1: ACCOUNT LEVEL ENDPOINTS
@@ -813,7 +1338,7 @@ if FASTAPI_AVAILABLE:
         }
 
     @account_router.get("")
-    def list_all_accounts_with_hierarchy(response: Response):
+    def list_all_accounts_with_hierarchy(response: Response, user: User = Depends(auth.get_current_user)):
         """
         [Page Initialization (loadData())]:
         Queries PostgreSQL (accounts, lobs, sub_lobs, personas) and returns a
@@ -821,297 +1346,36 @@ if FASTAPI_AVAILABLE:
         and topbar ticker's cross-account rollups. Full per-account detail
         (persona dossiers, LOB financials/patents, org chart) is fetched
         on-demand via GET /api/accounts/{account_id} once that account is opened.
+
+        A super_admin sees every account; anyone else sees only accounts a
+        super_admin has explicitly granted them (see user_account_access) —
+        a user with zero grants sees an empty list, not an error.
         """
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
         session = get_session()
         try:
-            accounts = session.query(Account).order_by(Account.id.desc()).all()
-            result = []
-            for acct in accounts:
-                # 1. Format Personas
-                def format_persona_dict(p):
-                    return {
-                        "id": p.id,
-                        "key": p.key,
-                        "name": p.full_name,
-                        "full_name": p.full_name,
-                        "first_name": p.first_name,
-                        "last_name": p.last_name,
-                        "title": p.title,
-                        "tier": p.tier,
-                        "seniority_raw": p.seniority_raw,
-                        "departments": p.departments or ["Executive"],
-                        "email": p.email,
-                        "email_status": p.email_status,
-                        "phone": p.phone,
-                        "linkedin_url": p.linkedin_url,
-                        "city": p.city,
-                        "state": p.state,
-                        "country": p.country,
-                        "hierarchy_level": p.hierarchy_level,
-                        "decision_authority": p.decision_authority,
-                        "budget_authority": p.budget_authority,
-                        "twitter_handle": p.twitter_handle,
-                        "twitter_live_url": p.twitter_live_url,
-                        "reddit_query": p.reddit_query,
-                        "reddit_rss_url": p.reddit_rss_url,
-                        "sec_cik": p.sec_cik,
-                        "sec_insider_trades_url": p.sec_insider_trades_url,
-                        "news_query": p.news_query,
-                        "rss_url": p.rss_url,
-                        "patents_query": p.patents_query,
-                        "google_patents_url": p.google_patents_url,
-                        "google_scholar_url": p.google_scholar_url,
-                        "openalex_author_url": p.openalex_author_url,
-                        "orcid_search_url": p.orcid_search_url,
-                        "wikidata_person_url": p.wikidata_person_url,
-                        "youtube_interviews_url": p.youtube_interviews_url,
-                        "podcast_search_url": p.podcast_search_url,
-                        "google_trends_url": p.google_trends_url,
-                        "youtube_channel_id": p.youtube_channel_id,
-                        "skills": p.skills or [],
-                        "target_kpis": p.target_kpis or [],
-                        "operational_pain_points": p.operational_pain_points or [],
-                        "key_objections": p.key_objections or [],
-                        "degree": p.degree,
-                        "institution": p.institution,
-                        "prior_company": p.prior_company,
-                        "headline": p.headline or p.title,
-                        "employment_history": p.employment_history or [],
-                        "past_companies": p.past_companies or ([p.prior_company] if p.prior_company else []),
-                        "previous_titles": p.previous_titles or [],
-                        "current_role_tenure_months": p.current_role_tenure_months,
-                        "is_new_in_role": p.is_new_in_role or False,
-                        "career_trajectory_score": p.career_trajectory_score,
-                        "education_history": p.education_history or [],
-                        "personal_email": p.personal_email,
-                        "direct_mobile_phone": p.direct_mobile_phone,
-                        "communication_style": p.communication_style,
-                        "engagement_rate": p.engagement_rate,
-                        "value_proposition": p.value_proposition,
-                        "personalized_icebreaker": p.personalized_icebreaker,
-                        "social_platform": p.social_platform,
-                        "social_profile_url": p.social_profile_url,
-                        "social_presence_level": p.social_presence_level,
-                        "lob_id": p.lob_id,
-                        "raw_data": p.raw_data,
-                    }
+            query = session.query(Account).options(
+                selectinload(Account.personas),
+                selectinload(Account.lobs).selectinload(Lob.sub_lobs)
+            )
+            if user.role != "super_admin":
+                accessible_ids = auth.get_accessible_account_ids(session, user.id)
+                query = query.filter(Account.id.in_(accessible_ids)) if accessible_ids else query.filter(False)
+            accounts = query.order_by(Account.id.desc()).all()
+            return {"accounts": [_serialize_account_summary(acct) for acct in accounts]}
 
-                personas_list = []
-                for p in acct.personas or []:
-                    personas_list.append(format_persona_dict(p))
-
-                # 2. Format LOBs with assigned Personas per division
-                lobs_list = []
-
-                priority_names = [
-                    "Robin Vince",
-                    "Joseph Echevarria",
-                    "Dermot McDonogh",
-                    "Cathinka Wahlstrom",
-                    "Hani Kablawi",
-                ]
-                top5_enriched = []
-                for pn in priority_names:
-                    match = next(
-                        (p for p in personas_list if pn.lower() in (p.get("name") or "").lower()), None
-                    )
-                    if match and match not in top5_enriched:
-                        top5_enriched.append(match)
-
-                c_suite_personas = [
-                    p
-                    for p in personas_list
-                    if p.get("tier") in ["c_suite", "C-Suite"] or p.get("hierarchy_level") in [1, 2]
-                ]
-                c_suite_personas = top5_enriched + [p for p in c_suite_personas if p not in top5_enriched]
-
-                vp_personas = [p for p in personas_list if p not in c_suite_personas]
-                if not vp_personas:
-                    vp_personas = personas_list
-
-                raw_lobs = acct.lobs or []
-                total_lobs = len(raw_lobs) or 1
-
-                for idx, l in enumerate(raw_lobs):
-                    # Check if this LOB has authentic personas directly mapped via lob_id
-                    lob_direct_personas = [p for p in (l.personas or [])]
-                    if lob_direct_personas:
-                        lob_assigned_personas = [format_persona_dict(p) for p in lob_direct_personas]
-                    elif idx == 0 and len(top5_enriched) >= 5:
-                        lob_assigned_personas = top5_enriched[:5]
-                    else:
-                        exec_lead = (
-                            [c_suite_personas[idx % len(c_suite_personas)]] if c_suite_personas else []
-                        )
-                        start_i = (idx * 4) % len(vp_personas)
-                        if start_i + 4 <= len(vp_personas):
-                            assigned_vps = vp_personas[start_i : start_i + 4]
-                        else:
-                            assigned_vps = (
-                                vp_personas[start_i:] + vp_personas[: 4 - (len(vp_personas) - start_i)]
-                            )
-                        lob_assigned_personas = exec_lead + assigned_vps
-
-                    sub_lobs_formatted = [
-                        {"id": s.id, "name": s.name, "desc": f"Specialized unit under {l.lob_name}"}
-                        for s in (l.sub_lobs or [])
-                    ]
-
-                    lobs_list.append(
-                        {
-                            "id": l.id,
-                            "account_id": l.account_id,
-                            "key": l.key,
-                            "name": l.lob_name,
-                            "lob_name": l.lob_name,
-                            "domain": l.domain,
-                            "website_url": l.website_url,
-                            "crunchbase_url": l.crunchbase_url,
-                            "relationship_type": l.relationship_type,
-                            "desc": l.overview,
-                            "overview": l.overview,
-                            "revenue": l.audited_segment_revenue,
-                            "audited_segment_revenue": l.audited_segment_revenue,
-                            "head": l.operating_head,
-                            "operating_head": l.operating_head,
-                            "headcount": l.segment_headcount,
-                            "segment_headcount": l.segment_headcount,
-                            "lei_code": l.lei_code,
-                            "jurisdiction": l.jurisdiction,
-                            "technologies": l.technologies or [],
-                            "competitors": l.competitors or [],
-                            "financial_snippets": l.financial_snippets or [],
-                            "wikipedia_url": l.wikipedia_url,
-                            "patents": l.patents or [],
-                            "raw_data": l.raw_data or {},
-                            "logo_url": l.logo_url,
-                            "google_news_rss_url": l.google_news_rss_url,
-                            "reddit_rss_url": l.reddit_rss_url,
-                            "google_patents_url": l.google_patents_url,
-                            "google_trends_url": l.google_trends_url,
-                            "youtube_search_url": l.youtube_search_url,
-                            "subLobs": sub_lobs_formatted,
-                            "sub_lobs": sub_lobs_formatted,
-                            "personas": lob_assigned_personas,
-                        }
-                    )
-
-                acct_name = acct.legal_name or acct.display_name or acct.key
-                acct_loc = acct.headquarters_location or (
-                    f"{acct.city}, {acct.country}" if acct.city else None
-                )
-                acct_desc = acct.short_description or acct.full_description
-
-                result.append(
-                    {
-                        "id": acct.id,
-                        "key": acct.key,
-                        "name": acct_name,
-                        "display_name": acct.display_name or acct_name,
-                        "legal_name": acct.legal_name or acct_name,
-                        "ticker": acct.stock_symbol,
-                        "stock_symbol": acct.stock_symbol,
-                        "revenue": acct.estimated_revenue_range
-                        or (
-                            f"${acct.total_funding_amount_usd / 1e9:.1f}B (Funding)"
-                            if acct.total_funding_amount_usd
-                            else "$17.5B"
-                        ),
-                        "location": acct_loc,
-                        "desc": acct_desc,
-                        "domain": acct.domain,
-                        "primary_domain": acct.primary_domain or acct.domain,
-                        "website_url": acct.website_url,
-                        "crunchbase_url": acct.crunchbase_url,
-                        "operating_status": acct.operating_status,
-                        "company_type": acct.company_type,
-                        "founded_year": acct.founded_year,
-                        "employee_count_range": acct.employee_count_range,
-                        "short_description": acct_desc,
-                        "full_description": acct.full_description or acct_desc,
-                        "headquarters_location": acct_loc,
-                        "city": acct.city,
-                        "state": acct.state,
-                        "country": acct.country,
-                        "postal_code": acct.postal_code,
-                        "phone_number": acct.phone_number,
-                        "sanitized_phone": acct.sanitized_phone,
-                        "contact_email": acct.contact_email,
-                        "linkedin_url": acct.linkedin_url,
-                        "twitter_url": acct.twitter_url,
-                        "twitter_handle": acct.twitter_handle,
-                        "stock_exchange": acct.stock_exchange,
-                        "sec_cik": acct.sec_cik,
-                        "sec_edgar_url": acct.sec_edgar_url,
-                        "sec_filings_rss": acct.sec_filings_rss,
-                        "sec_submissions_url": acct.sec_submissions_url,
-                        "twitter_live_url": acct.twitter_live_url,
-                        "reddit_query": acct.reddit_query,
-                        "reddit_rss_url": acct.reddit_rss_url,
-                        "news_query": acct.news_query,
-                        "rss_url": acct.rss_url,
-                        "google_patents_url": acct.google_patents_url,
-                        "google_trends_url": acct.google_trends_url,
-                        "youtube_search_url": acct.youtube_search_url,
-                        "openalex_institution_url": acct.openalex_institution_url,
-                        "wikidata_entity_url": acct.wikidata_entity_url,
-                        "github_url": acct.github_url,
-                        "glassdoor_url": acct.glassdoor_url,
-                        "blog_url": acct.blog_url,
-                        "industries": acct.industries or [],
-                        "keywords": acct.keywords or [],
-                        "lobs_count": len(lobs_list),
-                        "total_contacts_captured": len(personas_list),
-                        "lobs": lobs_list,
-                        "personas": personas_list,
-                        "multi_source_intelligence": acct.multi_source_intelligence,
-                        "organisational_hierarchy_tree": acct.organisational_hierarchy_tree,
-                        "extracted_at": acct.extracted_at.isoformat() if acct.extracted_at else None,
-                        # ── Engagement / opportunity signals (previously captured but never exposed) ──
-                        "heat_score": acct.heat_score,
-                        "trend_score_90d": acct.trend_score_90d,
-                        "active_tech_count": acct.active_tech_count,
-                        "it_spend": acct.it_spend,
-                        "patents_granted": acct.patents_granted,
-                        "trademarks_registered": acct.trademarks_registered,
-                        "total_funding_amount_usd": acct.total_funding_amount_usd,
-                        "total_funding_currency": acct.total_funding_currency,
-                        "last_funding_type": acct.last_funding_type,
-                        "last_funding_date": acct.last_funding_date.isoformat()
-                        if acct.last_funding_date
-                        else None,
-                        "num_funding_rounds": acct.num_funding_rounds,
-                        "funding_status": acct.funding_status,
-                        "ipo_status": acct.ipo_status,
-                        "ipo_date": acct.ipo_date.isoformat() if acct.ipo_date else None,
-                        "num_suborganizations": acct.num_suborganizations,
-                        "num_acquisitions": acct.num_acquisitions,
-                        "global_traffic_rank": acct.global_traffic_rank,
-                        "monthly_visits": acct.monthly_visits,
-                        "bounce_rate": acct.bounce_rate,
-                        "visit_duration": acct.visit_duration,
-                        "page_views_per_visit": acct.page_views_per_visit,
-                        "c_suite_count": acct.c_suite_count,
-                        "vp_count": acct.vp_count,
-                        "director_count": acct.director_count,
-                        "manager_count": acct.manager_count,
-                    }
-                )
-
-            return {"accounts": result}
         finally:
             session.close()
 
     @app.get("/api/accounts", tags=["1. Account Level"])
-    def list_all_accounts_alias(response: Response):
+    def list_all_accounts_alias(response: Response, user: User = Depends(auth.get_current_user)):
         """Plural alias for /api/account list endpoint."""
-        return list_all_accounts_with_hierarchy(response)
+        return list_all_accounts_with_hierarchy(response, user)
 
     @account_router.get("/{account_id}")
-    def get_account_from_db(account_id: int):
+    def get_account_from_db(account_id: int, user: User = Depends(auth.require_account_access)):
         """Retrieves one account's full dossier from DB — complete LOBs and
         personas — fetched on demand when that account is opened."""
         session = get_session()
@@ -1755,12 +2019,12 @@ if FASTAPI_AVAILABLE:
     # ══════════════════════════════════════════════════════
 
     @app.get("/api/accounts/{account_id}", tags=["1. Accounts"])
-    def get_account_by_id(account_id: int):
+    def get_account_by_id(account_id: int, user: User = Depends(auth.require_account_access)):
         """Retrieve a specific enterprise account with its complete profile."""
-        return get_account_from_db(account_id)
+        return get_account_from_db(account_id, user)
 
     @app.get("/api/accounts/{account_id}/lobs", tags=["2. Lines of Business"])
-    def get_account_lines_of_business(account_id: int):
+    def get_account_lines_of_business(account_id: int, user: User = Depends(auth.require_account_access)):
         """Retrieve all Lines of Business (LOBs) and nested sub-divisions for an account."""
         session = get_session()
         try:
@@ -1844,7 +2108,7 @@ if FASTAPI_AVAILABLE:
             session.close()
 
     @app.get("/api/accounts/{account_id}/personas", tags=["3. Personas & Buying Committee"])
-    def get_account_buying_committee(account_id: int):
+    def get_account_buying_committee(account_id: int, user: User = Depends(auth.require_account_access)):
         """Retrieve all executive personas and decision makers mapped to an account."""
         session = get_session()
         try:
@@ -1899,7 +2163,7 @@ if FASTAPI_AVAILABLE:
             session.close()
 
     @app.get("/api/personas/{persona_id}", tags=["3. Personas & Buying Committee"])
-    def get_single_persona_profile(persona_id: int):
+    def get_single_persona_profile(persona_id: int, user: User = Depends(auth.require_persona_account_access)):
         """Retrieve full details and 58-column AI dossier for a specific executive persona."""
         session = get_session()
         try:
@@ -1933,7 +2197,7 @@ if FASTAPI_AVAILABLE:
             session.close()
 
     @app.get("/api/personas/{persona_id}/profile.pdf", tags=["3. Personas & Buying Committee"])
-    def download_persona_profile_pdf(persona_id: int):
+    def download_persona_profile_pdf(persona_id: int, user: User = Depends(auth.require_persona_account_access)):
         """Server-side "Download PDF" for a contact's full profile (contact
         info, career history, AI call-prep dossier, Personality Profile, and
         every captured post) — generated fresh from the database each time
@@ -2014,7 +2278,7 @@ if FASTAPI_AVAILABLE:
                 posts_list,
                 career_events,
             )
-            filename = f"{slugify(persona_dict['name'])}-profile.pdf"
+            filename = f"{slugify(persona_dict['name'])}-personality-report.pdf"
             return Response(
                 content=pdf_bytes,
                 media_type="application/pdf",
@@ -2024,7 +2288,7 @@ if FASTAPI_AVAILABLE:
             session.close()
 
     @app.get("/api/accounts/{account_id}/signals", tags=["1. Accounts"])
-    def get_account_intelligence_signals(account_id: int):
+    def get_account_intelligence_signals(account_id: int, user: User = Depends(auth.require_account_access)):
         """Retrieve multi-source intelligence, firmographics, heat scores, and traffic telemetry."""
         session = get_session()
         try:
@@ -2084,7 +2348,7 @@ if FASTAPI_AVAILABLE:
         }
 
     @app.get("/api/accounts/{account_id}/opportunities", tags=["1. Accounts"])
-    def get_account_opportunity_signals(account_id: int):
+    def get_account_opportunity_signals(account_id: int, user: User = Depends(auth.require_account_access)):
         """Retrieve the persisted history of growth-whitespace themes and domain-expansion
         product ideas detected for an account, including ones no longer actively recurring."""
         session = get_session()
@@ -2104,7 +2368,7 @@ if FASTAPI_AVAILABLE:
             session.close()
 
     @app.post("/api/accounts/{account_id}/opportunities/sync", tags=["1. Accounts"])
-    def sync_account_opportunity_signals(account_id: int, req: OpportunitySignalSyncRequest):
+    def sync_account_opportunity_signals(account_id: int, req: OpportunitySignalSyncRequest, user: User = Depends(auth.require_account_access)):
         """Upsert the currently-detected opportunity signals for one category (growth_theme or
         domain_expansion). Signals no longer present in `items` are marked inactive rather than
         deleted, so the account keeps a full history of what has been suggested over time."""
@@ -2179,7 +2443,7 @@ if FASTAPI_AVAILABLE:
         }
 
     @app.get("/api/accounts/{account_id}/weekly-updates", tags=["1. Accounts"])
-    def get_account_weekly_updates(account_id: int):
+    def get_account_weekly_updates(account_id: int, user: User = Depends(auth.require_account_access)):
         """Retrieve the archived history of weekly sales update emails for an account, newest first."""
         session = get_session()
         try:
@@ -2194,7 +2458,7 @@ if FASTAPI_AVAILABLE:
             session.close()
 
     @app.post("/api/accounts/{account_id}/weekly-updates/sync", tags=["1. Accounts"])
-    def sync_account_weekly_update(account_id: int, req: WeeklyDigestSyncRequest):
+    def sync_account_weekly_update(account_id: int, req: WeeklyDigestSyncRequest, user: User = Depends(auth.require_account_access)):
         """Archive the current weekly sales update email as a snapshot, if this generation hasn't
         been captured yet. The live `digests` row is overwritten every pipeline run, so this is what
         preserves past weeks' versions instead of losing them."""
@@ -2244,6 +2508,300 @@ if FASTAPI_AVAILABLE:
         except Exception as e:
             session.rollback()
             raise HTTPException(status_code=500, detail=f"Weekly update sync failed: {str(e)}")
+        finally:
+            session.close()
+
+    # ══════════════════════════════════════════════════════
+    # ACTION ITEMS — client-specific work-list (see
+    # ACTION_ITEMS_IMPLEMENTATION_PLAN.md)
+    # ══════════════════════════════════════════════════════
+    def _serialize_action_item(item: ActionItem) -> Dict[str, Any]:
+        now = datetime.now(timezone.utc)
+        due = item.due_date
+        is_overdue = bool(
+            due and item.status not in ("done", "cancelled")
+            and (due if due.tzinfo else due.replace(tzinfo=timezone.utc)) < now
+        )
+        return {
+            "id": item.id,
+            "account_id": item.account_id,
+            "persona_id": item.persona_id,
+            "persona_name": item.persona.full_name if item.persona else None,
+            "title": item.title,
+            "description": item.description,
+            "status": item.status,
+            "priority": item.priority,
+            "due_date": item.due_date.isoformat() if item.due_date else None,
+            "is_overdue": is_overdue,
+            "assigned_to_id": item.assigned_to_id,
+            "assigned_to_name": (item.assigned_to.full_name or item.assigned_to.email) if item.assigned_to else None,
+            "created_by_id": item.created_by_id,
+            "created_by_name": (item.created_by.full_name or item.created_by.email) if item.created_by else None,
+            "source": item.source,
+            "source_ref_id": item.source_ref_id,
+            "completed_at": item.completed_at.isoformat() if item.completed_at else None,
+            "created_at": item.created_at.isoformat() if item.created_at else None,
+            "updated_at": item.updated_at.isoformat() if item.updated_at else None,
+        }
+
+    def _parse_due_date(raw: Optional[str]) -> Optional[datetime]:
+        if not raw:
+            return None
+        try:
+            dt = datetime.fromisoformat(raw)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"due_date is not a valid ISO datetime: {raw}")
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+    @app.get("/api/accounts/{account_id}/action-items", tags=["8. Action Items"])
+    def list_account_action_items(
+        account_id: int,
+        status: Optional[str] = None,
+        assigned_to_id: Optional[int] = None,
+        persona_id: Optional[int] = None,
+        user: User = Depends(auth.require_account_access),
+    ):
+        """List this account's work-list items, optionally filtered by
+        status, assignee, or a specific contact."""
+        session = get_session()
+        try:
+            query = (session.query(ActionItem)
+                     .options(selectinload(ActionItem.persona), selectinload(ActionItem.assigned_to),
+                              selectinload(ActionItem.created_by))
+                     .filter_by(account_id=account_id))
+            if status:
+                query = query.filter(ActionItem.status == status)
+            if assigned_to_id:
+                query = query.filter(ActionItem.assigned_to_id == assigned_to_id)
+            if persona_id:
+                query = query.filter(ActionItem.persona_id == persona_id)
+            items = query.order_by(ActionItem.due_date.asc().nullslast(), ActionItem.created_at.desc()).all()
+            return {"account_id": account_id, "action_items": [_serialize_action_item(i) for i in items]}
+        finally:
+            session.close()
+
+    @app.post("/api/accounts/{account_id}/action-items", tags=["8. Action Items"])
+    def create_account_action_item(
+        account_id: int, body: ActionItemCreateRequest,
+        user: User = Depends(auth.require_account_access),
+    ):
+        if body.priority not in ("high", "medium", "low"):
+            raise HTTPException(status_code=400, detail="priority must be 'high', 'medium', or 'low'")
+        session = get_session()
+        try:
+            if body.persona_id is not None:
+                persona = session.query(Persona).filter_by(id=body.persona_id, account_id=account_id).first()
+                if not persona:
+                    raise HTTPException(status_code=400, detail="persona_id does not belong to this account")
+            item = ActionItem(
+                account_id=account_id, persona_id=body.persona_id, title=body.title,
+                description=body.description, priority=body.priority,
+                due_date=_parse_due_date(body.due_date), assigned_to_id=body.assigned_to_id,
+                created_by_id=user.id, source="manual",
+            )
+            session.add(item)
+            session.commit()
+            session.refresh(item)
+            item = (session.query(ActionItem)
+                    .options(selectinload(ActionItem.persona), selectinload(ActionItem.assigned_to),
+                             selectinload(ActionItem.created_by))
+                    .filter_by(id=item.id).first())
+            return _serialize_action_item(item)
+        except HTTPException:
+            raise
+        except Exception as e:
+            session.rollback()
+            raise HTTPException(status_code=500, detail=f"Could not create action item: {e}")
+        finally:
+            session.close()
+
+    @app.patch("/api/action-items/{item_id}", tags=["8. Action Items"])
+    def update_action_item(
+        item_id: int, body: ActionItemUpdateRequest, background_tasks: BackgroundTasks,
+        user: User = Depends(auth.require_action_item_account_access),
+    ):
+        session = get_session()
+        try:
+            item = (session.query(ActionItem)
+                    .options(selectinload(ActionItem.persona), selectinload(ActionItem.assigned_to),
+                             selectinload(ActionItem.created_by))
+                    .filter_by(id=item_id).first())
+            if not item:
+                raise HTTPException(status_code=404, detail="Action item not found")
+
+            if body.status is not None:
+                # 'pending_review' is deliberately excluded here — it's only
+                # ever set by the LLM-suggestion write path, and only ever
+                # left via the dedicated /approve or /reject endpoints below,
+                # never a generic field edit. See
+                # ACTION_ITEMS_LLM_SUGGESTIONS_PLAN.md §1.
+                if body.status not in ("open", "in_progress", "done", "cancelled"):
+                    raise HTTPException(status_code=400, detail="status must be open, in_progress, done, or cancelled")
+                item.status = body.status
+                item.completed_at = datetime.now(timezone.utc) if body.status == "done" else None
+            if body.priority is not None:
+                if body.priority not in ("high", "medium", "low"):
+                    raise HTTPException(status_code=400, detail="priority must be 'high', 'medium', or 'low'")
+                item.priority = body.priority
+            if body.title is not None:
+                item.title = body.title
+            if body.description is not None:
+                item.description = body.description
+            if body.due_date is not None:
+                item.due_date = _parse_due_date(body.due_date)
+            if body.persona_id is not None:
+                persona = session.query(Persona).filter_by(id=body.persona_id, account_id=item.account_id).first()
+                if not persona:
+                    raise HTTPException(status_code=400, detail="persona_id does not belong to this account")
+                item.persona_id = body.persona_id
+
+            reassigned = body.assigned_to_id is not None and body.assigned_to_id != item.assigned_to_id
+            if body.assigned_to_id is not None:
+                item.assigned_to_id = body.assigned_to_id
+
+            session.commit()
+            session.refresh(item)
+
+            if reassigned and item.assigned_to and item.assigned_to.email:
+                base_url = os.getenv("APP_BASE_URL", "http://localhost:8000")
+                due_line = f" Due {item.due_date.date().isoformat()}." if item.due_date else ""
+                background_tasks.add_task(
+                    email_sender.send_email,
+                    item.assigned_to.email, f"Action item assigned to you: {item.title}",
+                    f"Hi {item.assigned_to.full_name or item.assigned_to.email},\n\n"
+                    f"You've been assigned an action item on {item.account.display_name or item.account.legal_name}.\n\n"
+                    f"{item.title}\n{item.description or ''}\n{due_line}\n\n"
+                    f"View it here: {base_url}/?account={item.account_id}\n",
+                    html_body=email_sender.render_html(
+                        "New action item assigned to you",
+                        [f"Hi {item.assigned_to.full_name or item.assigned_to.email},",
+                         f"You've been assigned an action item on {item.account.display_name or item.account.legal_name}:",
+                         item.title] + ([item.description] if item.description else []),
+                        cta_label="View Account", cta_url=f"{base_url}/?account={item.account_id}",
+                        footnote=due_line.strip() or None,
+                    ),
+                )
+                s2 = get_session()
+                try:
+                    s2.add(ActionItemReminder(action_item_id=item.id, reminder_type="assigned",
+                                               sent_to_user_id=item.assigned_to_id))
+                    s2.commit()
+                except Exception:
+                    s2.rollback()
+                finally:
+                    s2.close()
+
+            return _serialize_action_item(item)
+        except HTTPException:
+            raise
+        except Exception as e:
+            session.rollback()
+            raise HTTPException(status_code=500, detail=f"Could not update action item: {e}")
+        finally:
+            session.close()
+
+    @app.post("/api/action-items/{item_id}/approve", tags=["8. Action Items"])
+    def approve_action_item(item_id: int, user: User = Depends(auth.require_action_item_account_access)):
+        """Turns an LLM-suggested item (status='pending_review') into a real
+        task, assigned to whoever approved it. See
+        ACTION_ITEMS_LLM_SUGGESTIONS_PLAN.md §1 — approval is a dedicated
+        endpoint, not a generic status PATCH, so it's always one deliberate
+        action rather than a side effect of an unrelated field edit."""
+        session = get_session()
+        try:
+            item = (session.query(ActionItem)
+                    .options(selectinload(ActionItem.persona), selectinload(ActionItem.assigned_to),
+                             selectinload(ActionItem.created_by))
+                    .filter_by(id=item_id).first())
+            if not item:
+                raise HTTPException(status_code=404, detail="Action item not found")
+            if item.status != "pending_review":
+                raise HTTPException(status_code=400, detail="Only a pending-review item can be approved")
+            item.status = "open"
+            item.assigned_to_id = user.id
+            session.commit()
+            session.refresh(item)
+            return _serialize_action_item(item)
+        finally:
+            session.close()
+
+    @app.post("/api/action-items/{item_id}/reject", tags=["8. Action Items"])
+    def reject_action_item(item_id: int, user: User = Depends(auth.require_action_item_account_access)):
+        """Dismisses an LLM-suggested item without ever making it a real
+        task — sets status='cancelled' so it's excluded from every existing
+        open/overdue query with no schema change, rather than deleting it
+        outright (keeps a record of what the model suggested)."""
+        session = get_session()
+        try:
+            item = (session.query(ActionItem)
+                    .options(selectinload(ActionItem.persona), selectinload(ActionItem.assigned_to),
+                             selectinload(ActionItem.created_by))
+                    .filter_by(id=item_id).first())
+            if not item:
+                raise HTTPException(status_code=404, detail="Action item not found")
+            if item.status != "pending_review":
+                raise HTTPException(status_code=400, detail="Only a pending-review item can be rejected")
+            item.status = "cancelled"
+            session.commit()
+            session.refresh(item)
+            return _serialize_action_item(item)
+        finally:
+            session.close()
+
+    @app.post("/api/action-items/{item_id}/complete", tags=["8. Action Items"])
+    def complete_action_item(item_id: int, user: User = Depends(auth.require_action_item_account_access)):
+        session = get_session()
+        try:
+            item = (session.query(ActionItem)
+                    .options(selectinload(ActionItem.persona), selectinload(ActionItem.assigned_to),
+                             selectinload(ActionItem.created_by))
+                    .filter_by(id=item_id).first())
+            if not item:
+                raise HTTPException(status_code=404, detail="Action item not found")
+            item.status = "done"
+            item.completed_at = datetime.now(timezone.utc)
+            session.commit()
+            session.refresh(item)
+            return _serialize_action_item(item)
+        finally:
+            session.close()
+
+    @app.delete("/api/action-items/{item_id}", tags=["8. Action Items"])
+    def delete_action_item(item_id: int, user: User = Depends(auth.require_action_item_account_access)):
+        session = get_session()
+        try:
+            item = session.query(ActionItem).filter_by(id=item_id).first()
+            if not item:
+                raise HTTPException(status_code=404, detail="Action item not found")
+            session.delete(item)
+            session.commit()
+            return {"ok": True}
+        finally:
+            session.close()
+
+    @app.get("/api/me/action-items", tags=["8. Action Items"])
+    def list_my_action_items(status: Optional[str] = None, user: User = Depends(auth.get_current_user)):
+        """Cross-account 'My Tasks' — every action item assigned to the
+        caller, restricted to accounts they can actually see (super_admin
+        gets everything; anyone else only what's been granted to them)."""
+        session = get_session()
+        try:
+            query = (session.query(ActionItem)
+                     .options(selectinload(ActionItem.persona), selectinload(ActionItem.assigned_to),
+                              selectinload(ActionItem.created_by), selectinload(ActionItem.account))
+                     .filter(ActionItem.assigned_to_id == user.id))
+            if user.role != "super_admin":
+                accessible_ids = auth.get_accessible_account_ids(session, user.id)
+                query = query.filter(ActionItem.account_id.in_(accessible_ids)) if accessible_ids else query.filter(False)
+            if status:
+                query = query.filter(ActionItem.status == status)
+            items = query.order_by(ActionItem.due_date.asc().nullslast(), ActionItem.created_at.desc()).all()
+            results = []
+            for i in items:
+                d = _serialize_action_item(i)
+                d["account_name"] = i.account.display_name or i.account.legal_name if i.account else None
+                results.append(d)
+            return {"action_items": results}
         finally:
             session.close()
 
@@ -2579,7 +3137,7 @@ if FASTAPI_AVAILABLE:
             session.close()
 
     @app.get("/api/accounts/{account_id}/cxo-movements", tags=["6. CXO Movements"])
-    def get_account_cxo_movements(account_id: int):
+    def get_account_cxo_movements(account_id: int, user: User = Depends(auth.require_account_access)):
         """Retrieve executive transitions for a specific account."""
         session = get_session()
         try:
@@ -2609,7 +3167,7 @@ if FASTAPI_AVAILABLE:
             session.close()
 
     @app.get("/api/accounts/{account_id}/content", tags=["4. Content Intelligence"])
-    def get_account_content_intelligence(account_id: int):
+    def get_account_content_intelligence(account_id: int, user: User = Depends(auth.require_account_access)):
         """Retrieve social listening posts, LLM channel digests, and LinkedIn jobs
         scoped to one account — the on-demand counterpart to /api/content, fetched
         when that account's Social/Content/Jobs tab is opened rather than pulling
@@ -2759,6 +3317,22 @@ if FASTAPI_AVAILABLE:
         @app.get("/", response_class=HTMLResponse, include_in_schema=False)
         async def dashboard_home(request: Request):
             return templates.TemplateResponse(request, "index.html")
+
+        @app.get("/login", response_class=HTMLResponse, include_in_schema=False)
+        async def login_page(request: Request):
+            return templates.TemplateResponse(request, "login.html")
+
+        @app.get("/reset-password", response_class=HTMLResponse, include_in_schema=False)
+        async def reset_password_page(request: Request):
+            return templates.TemplateResponse(request, "reset-password.html")
+
+        @app.get("/admin", response_class=HTMLResponse, include_in_schema=False)
+        async def admin_page(request: Request):
+            """Super-admin dashboard shell — the page itself renders for
+            anyone (no server-side session to gate on), but every
+            /api/admin/* call it makes is independently protected by
+            Depends(auth.require_role("super_admin"))."""
+            return templates.TemplateResponse(request, "admin.html")
 
         @app.get("/profile", response_class=HTMLResponse, include_in_schema=False)
         async def contact_profile_page(request: Request):

@@ -12,6 +12,7 @@ import { renderNavTree } from './nav-tree.js';
 import { renderDigest } from './digest.js';
 import { jumpToAccount } from './selection.js';
 import { openAllJobsPage } from './jobs-browser.js';
+import { initTopbarAuth } from './topbar-auth.js';
 
 initThemeToggle();
 
@@ -40,6 +41,10 @@ async function loadAccounts() {
       fetch('/api/accounts'),
       fetch('/api/cxo-movements').catch(() => null)
     ]);
+    if (acctRes.status === 401) {
+      window.location.href = `/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+      return;
+    }
     if (!acctRes.ok) throw new Error('Failed to load accounts');
     const data = await acctRes.json();
     state.accounts = data.accounts || [];
@@ -67,4 +72,13 @@ async function loadAccounts() {
   }
 }
 
-loadAccounts();
+// Account data is access-controlled server-side (see AUTH_JWT_IMPLEMENTATION_PLAN.md).
+// Unauthenticated users are redirected to login. Both super_admin (who see all accounts)
+// and regular users (who see their granted accounts) can use the Global Accounts Dashboard.
+initTopbarAuth().then((user) => {
+  if (!user) {
+    window.location.href = `/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+    return;
+  }
+  loadAccounts();
+});

@@ -14,6 +14,7 @@ from .prompts import (
     PERSON_CHANNEL_SYSTEM,
     PERSON_EMAIL_SYSTEM,
     PERSONALITY_PROFILE_SYSTEM,
+    PERSON_ACTION_SUGGESTIONS_SYSTEM,
 )
 
 
@@ -191,17 +192,11 @@ def build_email(
     return client.complete_json(system, prompt)
 
 
-def build_personality_profile(
-    client: LLMClient,
-    subject: str,
-    bio: Dict[str, Any],
-    channels: List[Dict[str, Any]],
-) -> Dict[str, Any]:
-    """Second-stage synthesis over an already-extracted person digest —
-    Executive Summary + the four Executive Profile sub-sections. See
-    PERSONALITY_PROFILE_SYSTEM for why this is a separate, explicitly-scoped
-    prompt rather than an extension of the ordinary PERSON_CHANNEL_SYSTEM
-    pass.
+def _format_bio_and_channels(subject: str, bio: Dict[str, Any], channels: List[Dict[str, Any]]) -> str:
+    """Shared prompt body for the two person-level second-stage synthesis
+    steps (Personality Profile, Action Item Suggestions) — same inputs,
+    different system prompt/job. See build_personality_profile /
+    build_action_item_suggestions.
     """
     bio_lines = [f"Name: {subject}"]
     if bio.get("title"):
@@ -230,12 +225,45 @@ def build_personality_profile(
             f"Interpretation: {ch.get('interpretation', '')}\n"
         )
 
-    prompt = (
+    return (
         f"Person: {subject}\n\n"
         "Biographical facts:\n" + "\n".join(f"- {l}" for l in bio_lines) + "\n\n"
         "Per-channel summaries (already fact-checked against source posts):\n\n"
         + "\n\n".join(blocks)
     )
+
+
+def build_personality_profile(
+    client: LLMClient,
+    subject: str,
+    bio: Dict[str, Any],
+    channels: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Second-stage synthesis over an already-extracted person digest —
+    Executive Summary + the four Executive Profile sub-sections. See
+    PERSONALITY_PROFILE_SYSTEM for why this is a separate, explicitly-scoped
+    prompt rather than an extension of the ordinary PERSON_CHANNEL_SYSTEM
+    pass.
+    """
+    prompt = _format_bio_and_channels(subject, bio, channels)
     return client.complete_json(PERSONALITY_PROFILE_SYSTEM, prompt)
+
+
+def build_action_item_suggestions(
+    client: LLMClient,
+    subject: str,
+    bio: Dict[str, Any],
+    channels: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Second-stage synthesis, same inputs as build_personality_profile —
+    suggests 0-3 individually-actionable sales tasks instead of a character
+    synthesis. See PERSON_ACTION_SUGGESTIONS_SYSTEM and
+    ACTION_ITEMS_LLM_SUGGESTIONS_PLAN.md. Always returns a plain list
+    (never raises on an empty result — an empty list is the expected,
+    common output for a quiet period).
+    """
+    prompt = _format_bio_and_channels(subject, bio, channels)
+    result = client.complete_json(PERSON_ACTION_SUGGESTIONS_SYSTEM, prompt)
+    return result.get("suggestions") or []
 
 

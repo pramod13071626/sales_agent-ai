@@ -1,0 +1,159 @@
+/* Login / forgot-password / reset-password pages — 8:4 split layout: a wide
+   branded panel on the left, a narrow dedicated form column on the right.
+   Self-contained: only depends on tokens.css + base.css, no dashboard chrome. */
+
+body.auth-page-body {
+  min-height: 100vh;
+  font-family: 'Inter', sans-serif;
+  background: var(--content-bg);
+}
+
+.auth-split {
+  display: grid;
+  grid-template-columns: 8fr 4fr;
+  min-height: 100vh;
+}
+
+/* ── Left panel (8/12) — brand / product highlights ──────────── */
+.auth-split-left {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  padding: 72px 88px;
+  color: #fff;
+  background-color: #1B2559;
+  background:
+    radial-gradient(circle at 12% 15%, rgba(255,255,255,.08) 0%, transparent 38%),
+    radial-gradient(circle at 88% 85%, rgba(255,255,255,.05) 0%, transparent 42%),
+    linear-gradient(135deg, #11183E 0%, #1B2559 55%, #233170 100%);
+}
+
+/* Faint dot-grid texture so the panel doesn't read as a flat gradient. */
+.auth-split-left::before {
+  content: '';
+  position: absolute; inset: 0;
+  background-image: radial-gradient(rgba(255,255,255,.14) 1px, transparent 1px);
+  background-size: 26px 26px;
+  mask-image: linear-gradient(160deg, rgba(0,0,0,.9) 0%, transparent 65%);
+  pointer-events: none;
+}
+
+.auth-left-content { max-width: 560px; position: relative; z-index: 1; }
+
+.auth-brand {
+  display: inline-flex; align-items: center; gap: 10px;
+  font-size: .95rem; font-weight: 700; color: #fff;
+  margin-bottom: 44px;
+  padding: 8px 16px 8px 10px;
+  background: rgba(255,255,255,.10);
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 999px;
+}
+.auth-brand i { font-size: 1.05rem; }
+.auth-brand-mobile { display: none; margin-bottom: 28px; color: #1B2559; background: rgba(27,37,89,.08); border: 1px solid rgba(27,37,89,.15); }
+
+.auth-left-title {
+  font-size: 2.6rem; font-weight: 800; line-height: 1.18;
+  margin: 0 0 18px; letter-spacing: -.02em;
+}
+.auth-left-subtitle {
+  font-size: 1.02rem; line-height: 1.7; opacity: .9;
+  margin: 0 0 40px; max-width: 460px;
+}
+
+.auth-highlights { list-style: none; padding: 0; margin: 0 0 44px; display: flex; flex-direction: column; gap: 18px; }
+.auth-highlights li {
+  display: flex; align-items: center; gap: 14px;
+  font-size: .92rem; font-weight: 600; opacity: .96;
+}
+.auth-highlights li i {
+  font-size: 1.1rem; width: 38px; height: 38px; flex-shrink: 0;
+  display: grid; place-items: center;
+  background: rgba(255,255,255,.10);
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: var(--radius-md);
+}
+
+.auth-stats-row {
+  display: flex; gap: 40px;
+  padding-top: 28px;
+  border-top: 1px solid rgba(255,255,255,.2);
+}
+.auth-stat-value { font-size: 1.5rem; font-weight: 800; letter-spacing: -.02em; }
+.auth-stat-label { font-size: .74rem; font-weight: 600; opacity: .8; margin-top: 2px; }
+
+/* ── Right panel (4/12) — the actual form ────────────────────── */
+.auth-split-right {
+  display: flex; align-items: center; justify-content: center;
+  padding: 40px 48px;
+  background: var(--panel-bg);
+  border-left: 1px solid var(--panel-border);
+}
+
+.auth-card { width: 100%; max-width: 340px; }
+
+.auth-title { font-size: 1.5rem; font-weight: 800; color: var(--text-primary); margin: 0 0 6px; letter-spacing: -.01em; }
+.auth-subtitle { font-size: .84rem; color: var(--text-muted); margin: 0 0 28px; line-height: 1.5; }
+
+.auth-label {
+  display: block; font-size: .74rem; font-weight: 700;
+  color: var(--text-secondary); margin: 18px 0 6px;
+  text-transform: uppercase; letter-spacing: .03em;
+}
+.auth-label:first-of-type { margin-top: 0; }
+
+.auth-input {
+  width: 100%; box-sizing: border-box;
+  padding: 12px 14px; font-size: .9rem; font-family: inherit;
+  background: var(--input-bg); border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-sm); color: var(--text-primary);
+  transition: var(--transition);
+}
+.auth-input:focus {
+  outline: none; border-color: #1B2559; background: var(--panel-bg);
+  box-shadow: 0 0 0 4px rgba(27, 37, 89, 0.12);
+}
+.auth-input::placeholder { color: var(--text-muted); }
+
+.auth-submit {
+  width: 100%; margin-top: 26px; padding: 13px;
+  font-size: .9rem; font-weight: 700; font-family: inherit;
+  color: #fff; background: #1B2559; border: none;
+  border-radius: var(--radius-sm); cursor: pointer;
+  box-shadow: 0 2px 8px rgba(27, 37, 89, 0.28);
+  transition: var(--transition);
+}
+.auth-submit:hover { background: #131B42; box-shadow: 0 4px 14px rgba(27, 37, 89, 0.38); transform: translateY(-1px); }
+.auth-submit:active { transform: translateY(0); }
+.auth-submit:disabled { opacity: .6; cursor: not-allowed; box-shadow: none; transform: none; }
+
+.auth-link {
+  display: block; margin-top: 20px; text-align: center;
+  font-size: .8rem; font-weight: 600; color: var(--text-secondary);
+  text-decoration: none;
+}
+.auth-link:hover { color: #1B2559; }
+
+/* display:flex must not apply while [hidden] is set — an unconditional
+   `display` on the class here would override the browser's `[hidden] {
+   display:none }` UA rule (author rules always win over UA rules,
+   regardless of selector specificity), making the hidden attribute a no-op
+   and showing an empty error/success box on first render. */
+.auth-error:not([hidden]), .auth-success:not([hidden]) {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 11px 13px; margin-bottom: 16px;
+  border-radius: var(--radius-sm); font-size: .8rem; line-height: 1.45;
+}
+.auth-error { background: rgba(255,77,79,.08); color: var(--danger); border: 1px solid rgba(255,77,79,.2); }
+.auth-success { background: rgba(0,186,136,.08); color: var(--success); border: 1px solid rgba(0,186,136,.2); }
+
+/* Below ~1000px there isn't room for a wide 8-col brand panel — drop it
+   entirely and just center the form, with the brand mark moved above it so
+   the page still reads as branded. */
+@media (max-width: 1000px) {
+  .auth-split { display: flex; }
+  .auth-split-left { display: none; }
+  .auth-split-right { flex: 1 1 100%; border-left: none; }
+  .auth-brand-mobile { display: inline-flex; }
+}

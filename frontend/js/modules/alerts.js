@@ -174,7 +174,7 @@ export function renderAlertCards(matches, opts) {
         </div>
         ${rec ? renderAlertHierarchy(buildAlertHierarchy(matchAccount, rec)) : (matchAccount ? `
           <div class="alert-contact alert-contact-empty">
-            <i class="bi bi-person-x"></i> No contacts mapped for ${esc(matchAccount.name)} yet — fetch personas in the Account Explorer first.
+            <i class="bi bi-person-x"></i> No contacts mapped for ${esc(matchAccount.name)} yet.
           </div>` : '')}
         ${ev.accountId != null ? `<button type="button" class="alert-view-account" data-jump-account="${ev.accountId}">Open ${esc(ev.account || 'account')} <i class="bi bi-arrow-right"></i></button>` : ''}
       </div>`;

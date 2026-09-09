@@ -13,7 +13,13 @@ import db
 from . import cache
 from .llm_client import LLMClient, LLMError, channel_model, describe_config
 from .renderer import render_markdown
-from .selection import build_email, build_personality_profile, select_posts, summarize_channel
+from .selection import (
+    build_action_item_suggestions,
+    build_email,
+    build_personality_profile,
+    select_posts,
+    summarize_channel,
+)
 
 
 def run(
@@ -25,12 +31,20 @@ def run(
     store_path_override: str = None,
     kind: str = "company",
     target: Dict[str, Any] = None,
+    suggest_actions: bool = False,
 ) -> Dict[str, Any]:
     """Generate one account's (or one person's) digest and write JSON + Markdown.
 
     kind: "company" (targets.py, the default) or "person" (people_targets.py).
     Pass `target` (a dict with at least "key" and "display_name") to digest
     an ad-hoc target that isn't registered in targets.py/people_targets.py.
+
+    suggest_actions: opt-in (person digests only) — also runs the LLM
+    action-item-suggestion step and writes any results into the main app's
+    action_items table as status='pending_review'. See
+    ACTION_ITEMS_LLM_SUGGESTIONS_PLAN.md. Off by default so this doesn't
+    silently start spending an extra flagship-model call (and creating DB
+    rows) on every ordinary digest run.
     """
     is_person = kind == "person"
     target = target or (
@@ -152,6 +166,34 @@ def run(
                     "executive_profile": {},
                     "caveats": [f"Personality profile synthesis error: {e}"],
                 }
+
+        if suggest_actions:
+            # Same cache-signature pattern as personality_profile above —
+            # this is a second flagship-model call, so it must not re-run
+            # (and re-write duplicate DB rows) on an unchanged digest.
+            suggestions_sig = cache.content_signature({"bio": bio, "channels": channels})
+            cached_suggestions = cache.get(key, "__action_suggestions__", suggestions_sig) if use_cache else None
+            if cached_suggestions is not None:
+                print("   action suggestions   unchanged since last digest, reusing cached synthesis")
+                action_suggestions = cached_suggestions
+            else:
+                try:
+                    print("   action suggestions   synthesising…")
+                    action_suggestions = build_action_item_suggestions(
+                        email_client, target["display_name"], bio, channels
+                    )
+                    if use_cache:
+                        cache.put(key, "__action_suggestions__", suggestions_sig, action_suggestions)
+                except LLMError as e:
+                    print(f"   action suggestions   ❌ {e}")
+                    action_suggestions = []
+
+            if action_suggestions:
+                inserted = db.create_llm_suggested_action_items(key, action_suggestions)
+                print(f"   action suggestions   {len(action_suggestions)} suggested, "
+                      f"{inserted} new (status=pending_review, awaiting review)")
+            else:
+                print("   action suggestions   nothing suggested this run")
 
     digest = {
         "company": target["display_name"],

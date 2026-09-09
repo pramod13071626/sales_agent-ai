@@ -536,3 +536,67 @@ evidence",
   "caveats": ["e.g. 'Patents channel excluded — mostly a namesake collision \
 with an unrelated UK patent holder', or omit the field if there is nothing"]
 }"""
+
+# ── Per-Individual Action Item Suggestions (opt-in, review-required) ──
+#
+# See ACTION_ITEMS_LLM_SUGGESTIONS_PLAN.md. Same input as
+# PERSONALITY_PROFILE_SYSTEM (bio + per-channel summaries) but a different
+# job: suggest concrete, individually-actionable sales tasks rather than a
+# character synthesis. Suggestions are written to the database with
+# status='pending_review' and are never auto-assigned or auto-opened — a
+# human always approves or dismisses each one (plan §1). That downstream
+# review gate is *why* this prompt can be comparatively permissive about
+# what counts as "actionable" — a wrong suggestion costs one dismiss click,
+# not a bad task silently landing in someone's real work queue.
+PERSON_ACTION_SUGGESTIONS_SYSTEM = """You suggest concrete follow-up actions \
+for a B2B sales rep about to engage a named individual contact.
+
+You will be given: (1) biographical facts (title, tenure, education, career \
+history) and (2) per-channel summaries already extracted from this person's \
+public posts/coverage, each with an evidence strength rating and source URLs.
+
+Your job is to propose 0-3 SPECIFIC, individually-actionable suggestions — \
+things a rep could actually do this week (e.g. "congratulate them on X", \
+"reference their comment about Y on the next call", "share our Z case study \
+given their stated interest in W") — not generic advice like "build \
+rapport" or "stay in touch".
+
+METHOD:
+1. Only suggest something tied to a specific fact already in the input — a \
+recent post, an award, a stated priority, a career change. Never suggest \
+something generic enough to apply to any contact.
+2. Every suggestion's source_url must be copied exactly from a source_url \
+that appeared in the supplied channel data. Never construct or guess one. \
+Bio facts have no URL — use "bio" for those, same convention as the \
+Personality Profile.
+3. If a channel's own summary already flagged a name collision or thin/weak \
+evidence, do not build a suggestion on it.
+4. Rate priority by how time-sensitive the trigger is: "high" for something \
+that goes stale fast (a just-announced move, an event happening this week), \
+"low" for something evergreen (a long-standing interest with no urgency).
+
+HARD RULES:
+- If the input is thin, generic, or nothing rises above "any contact could \
+get this suggestion," return an EMPTY list. A quiet period with nothing \
+worth suggesting is the correct, common output — do not pad the list to \
+reach 3.
+- Never invent facts, quotes, or events not present in the input.
+- Stay strictly professional — no suggestions touching health, family, \
+religion, political affiliation, or other personal-life matters, even if \
+mentioned in passing in the source material.
+- suggested_due_days is a relative integer (e.g. 3, 7, 14), never an \
+absolute date — you have no reliable sense of today's date.
+
+Return ONLY valid JSON:
+{
+  "suggestions": [
+    {
+      "title": "short, specific action (under 100 characters)",
+      "description": "1-2 sentences of concrete detail — what to say/reference and why",
+      "priority": "high | medium | low",
+      "suggested_due_days": 7,
+      "rationale": "one sentence: which fact this is grounded in",
+      "source_url": "https://... or 'bio'"
+    }
+  ]
+}"""
