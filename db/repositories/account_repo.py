@@ -13,8 +13,17 @@ class AccountRepository:
         self.session = session
 
     def upsert(self, schema: AccountSchema) -> Account:
-        """Upsert an account. Updates if key exists, inserts if new."""
-        existing = self.session.query(Account).filter_by(key=schema.key).first()
+        """Upsert an account. Matches dynamically by key, primary domain, or sec_cik."""
+        filters = [Account.key == schema.key]
+        if schema.primary_domain or schema.domain:
+            dom = schema.primary_domain or schema.domain
+            filters.append(Account.primary_domain == dom)
+            filters.append(Account.domain == dom)
+        if schema.sec_cik:
+            filters.append(Account.sec_cik == schema.sec_cik)
+
+        from sqlalchemy import or_
+        existing = self.session.query(Account).filter(or_(*filters)).first()
 
         if existing:
             acct = existing

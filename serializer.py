@@ -1,12 +1,3 @@
-"""
-Master Enterprise Sales AI Serializer — Modular Coordination Facade.
-Delegates to:
-  1. AccountSerializer  -> Master Corporate Account & Multi-Source Intelligence
-  2. LOBSerializer      -> Subsidiaries, LOB Hierarchies, Clean Snippets & Scraping URLs
-  3. PersonaSerializer  -> De-obfuscation, 4-Tier Hierarchy Nodes, Dossiers & Executive URLs
-100% Dynamic, Zero Hardcoding.
-"""
-
 import json
 from pathlib import Path
 from typing import Dict, Any, List, Optional
@@ -30,14 +21,14 @@ class MasterSerializer:
         account_data: Dict[str, Any],
         account_hierarchy: Dict[str, List[Dict[str, Any]]],
         lobs_data: List[Dict[str, Any]],
-        lobs_hierarchies: Optional[List[Dict[str, List[Dict[str, Any]]]]] = None
+        lobs_hierarchies: Optional[List[Dict[str, List[Dict[str, Any]]]]] = None,
     ) -> Dict[str, Any]:
         """
         Coordinates Account, LOB, and Persona serialization into a unified master payload.
         """
         c_suite = account_hierarchy.get("c_suite", [])
         company_domain = account_data.get("primary_domain") or account_data.get("domain")
-        company_phone = account_data.get("phone_number") or "+1 212-495-1784"
+        company_phone = account_data.get("phone_number")
         company_name = account_data.get("name") or "Corporate Account"
         sec_cik = account_data.get("sec_cik")
 
@@ -46,7 +37,9 @@ class MasterSerializer:
         other_csuite = []
         for p in c_suite:
             title = (p.get("title") or "").lower()
-            if ("ceo" in title or "chief executive" in title or "president" in title) and not ceo_person:
+            if (
+                "ceo" in title or "chief executive" in title or "president" in title
+            ) and not ceo_person:
                 ceo_person = p
             else:
                 other_csuite.append(p)
@@ -57,7 +50,9 @@ class MasterSerializer:
 
         direct_reports_nodes = []
         for p in other_csuite:
-            node = cls.persona_serializer.build_tree_node(p, company_domain=company_domain, company_phone=company_phone, level=2)
+            node = cls.persona_serializer.build_tree_node(
+                p, company_domain=company_domain, company_phone=company_phone, level=2
+            )
             direct_reports_nodes.append(node)
 
         tree_root = None
@@ -67,12 +62,14 @@ class MasterSerializer:
                 company_domain=company_domain,
                 company_phone=company_phone,
                 level=1,
-                direct_reports=direct_reports_nodes
+                direct_reports=direct_reports_nodes,
             )
 
         # 2. Serialize Account
-        serialized_account = cls.account_serializer.serialize_account(account_data, account_hierarchy, tree_root)
-        
+        serialized_account = cls.account_serializer.serialize_account(
+            account_data, account_hierarchy, tree_root
+        )
+
         # 3. Serialize all LOBs with their specific hierarchies
         lobs_hierarchies = lobs_hierarchies or []
         serialized_lobs = []
@@ -86,21 +83,31 @@ class MasterSerializer:
                     sub_lobs=sub_lobs_list,
                     parent_domain=company_domain,
                     parent_name=company_name,
-                    sec_cik=sec_cik
+                    sec_cik=sec_cik,
                 )
             )
 
-        c_suite_total = len(account_hierarchy.get("c_suite", []))
-        vp_total = len(account_hierarchy.get("vp_level", []))
-        director_total = len(account_hierarchy.get("director_level", []))
-        manager_total = len(account_hierarchy.get("manager_level", []))
+        acct_cs = len(account_hierarchy.get("c_suite", []))
+        acct_vp = len(account_hierarchy.get("vp_level", []))
+        acct_dir = len(account_hierarchy.get("director_level", []))
+        acct_mgr = len(account_hierarchy.get("manager_level", []))
+
+        lob_cs = sum(len(l.get("hierarchy", {}).get("c_suite", [])) for l in serialized_lobs)
+        lob_vp = sum(len(l.get("hierarchy", {}).get("vp_level", [])) for l in serialized_lobs)
+        lob_dir = sum(len(l.get("hierarchy", {}).get("director_level", [])) for l in serialized_lobs)
+        lob_mgr = sum(len(l.get("hierarchy", {}).get("manager_level", [])) for l in serialized_lobs)
+
+        c_suite_total = acct_cs + lob_cs
+        vp_total = acct_vp + lob_vp
+        director_total = acct_dir + lob_dir
+        manager_total = acct_mgr + lob_mgr
         total_contacts = c_suite_total + vp_total + director_total + manager_total
 
         return {
             "export_metadata": {
                 "title": f"Enterprise Sales AI — {company_name} Intelligence & Persona Hierarchy Tree",
                 "format": "Decoupled 3-Tier Serialization (Zero Platforms, Zero Duplicates, Full Social Media)",
-                "integrity": "100% Authentic Verified Data with Live AI Enrichment"
+                "integrity": "100% Authentic Verified Data with Live AI Enrichment",
             },
             "schema_version": "2.0.0",
             "extracted_at": datetime.now(timezone.utc).isoformat(),
@@ -112,15 +119,17 @@ class MasterSerializer:
                     "c_suite": c_suite_total,
                     "vp_level": vp_total,
                     "director_level": director_total,
-                    "manager_level": manager_total
-                }
+                    "manager_level": manager_total,
+                },
             },
             "account": serialized_account,
-            "lobs": serialized_lobs
+            "lobs": serialized_lobs,
         }
 
     @classmethod
-    def save_sliced_lobs(cls, lobs: List[Dict[str, Any]], company_slug: str, base_out_dir: Path) -> List[Path]:
+    def save_sliced_lobs(
+        cls, lobs: List[Dict[str, Any]], company_slug: str, base_out_dir: Path
+    ) -> List[Path]:
         """Saves individual LOB slice JSON files into enriched/lobs/{company_slug}/"""
         lob_dir = base_out_dir / "lobs" / company_slug
         lob_dir.mkdir(parents=True, exist_ok=True)
@@ -135,7 +144,9 @@ class MasterSerializer:
         return saved_paths
 
     @classmethod
-    def save_sliced_personas(cls, hierarchy: Dict[str, List[Dict[str, Any]]], company_slug: str, base_out_dir: Path) -> List[Path]:
+    def save_sliced_personas(
+        cls, hierarchy: Dict[str, List[Dict[str, Any]]], company_slug: str, base_out_dir: Path
+    ) -> List[Path]:
         """Saves individual Persona slice JSON files into enriched/personas/{company_slug}/"""
         persona_dir = base_out_dir / "personas" / company_slug
         persona_dir.mkdir(parents=True, exist_ok=True)
@@ -165,7 +176,7 @@ class MasterSerializer:
         account_hierarchy: Dict[str, List[Dict[str, Any]]],
         sublobs_data: List[Dict[str, Any]],
         lobs_hierarchies: Optional[List[Dict[str, List[Dict[str, Any]]]]] = None,
-        run_dirs: Optional[Dict[str, Any]] = None
+        run_dirs: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Coordinates full 3-tier serialization, saves Master JSON, Social Launchpad JSON,
@@ -175,7 +186,7 @@ class MasterSerializer:
             account_data=account_data,
             account_hierarchy=account_hierarchy,
             lobs_data=sublobs_data,
-            lobs_hierarchies=lobs_hierarchies
+            lobs_hierarchies=lobs_hierarchies,
         )
 
         company_name = account_data.get("name") or "Corporate Account"
@@ -188,10 +199,7 @@ class MasterSerializer:
             "target_database": "sales_ai",
             "account_required": enriched_doc["account"]["required_account"],
             "lobs_required": [
-                {
-                    "lob_name": l["lob_name"],
-                    "required_account": l["required_account"]
-                }
+                {"lob_name": l["lob_name"], "required_account": l["required_account"]}
                 for l in enriched_doc.get("lobs", [])
             ],
             "personas_required": [
@@ -199,11 +207,11 @@ class MasterSerializer:
                     "name": p.get("name"),
                     "title": p.get("title"),
                     "tier": tier,
-                    "required_person_data": p.get("required_person_data", {})
+                    "required_person_data": p.get("required_person_data", {}),
                 }
                 for tier, people in account_hierarchy.items()
                 for p in people
-            ]
+            ],
         }
 
         saved_lobs_count = 0
@@ -217,18 +225,22 @@ class MasterSerializer:
             cls.save_json(social_doc, run_dirs["social_json_path"])
 
             # 3. Save LOB Slices
-            lob_paths = cls.save_sliced_lobs(enriched_doc["lobs"], company_slug, run_dirs["enriched_dir"])
+            lob_paths = cls.save_sliced_lobs(
+                enriched_doc["lobs"], company_slug, run_dirs["enriched_dir"]
+            )
             saved_lobs_count = len(lob_paths)
 
             # 4. Save Persona Slices
-            persona_paths = cls.save_sliced_personas(account_hierarchy, company_slug, run_dirs["enriched_dir"])
+            persona_paths = cls.save_sliced_personas(
+                account_hierarchy, company_slug, run_dirs["enriched_dir"]
+            )
             saved_personas_count = len(persona_paths)
 
         return {
             "enriched_doc": enriched_doc,
             "social_doc": social_doc,
             "saved_lobs_count": saved_lobs_count,
-            "saved_personas_count": saved_personas_count
+            "saved_personas_count": saved_personas_count,
         }
 
 

@@ -15,7 +15,7 @@ Autonomous, multi-source enterprise intelligence engine designed to discover acc
 8. [Quick Start & Installation](#8-quick-start--installation)
 
 ---
-
+![[Sprint_Tasks_Planning.docx]]
 ## 1. 🔄 End-to-End Master Architecture Flowchart
 
 ```mermaid

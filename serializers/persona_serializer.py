@@ -3,13 +3,18 @@ Persona Serializer — Executive Contact De-obfuscation, Dossier Synthesis & Hie
 100% Dynamic, Zero Hardcoding.
 """
 
-import re
 import json
+import re
 import urllib.parse
-import requests
 from typing import Dict, Any, List, Optional, Tuple
-from .account_serializer import slugify
+import requests
 import config
+from .account_serializer import slugify
+from collectors.hierarchy_collector import (
+    resolve_contact_via_tinyfish,
+    resolve_single_contact_waterfall,
+    resolve_contacts_waterfall_concurrent,
+)
 
 
 class PersonaSerializer:
@@ -20,7 +25,8 @@ class PersonaSerializer:
 
     @classmethod
     def clean_person_name(cls, name: str) -> Dict[str, Any]:
-        """Cleans names and correctly handles obfuscated Apollo patterns (e.g. 'Matthew Ri***t' -> 'Matthew R.')."""
+        """Cleans names and correctly handles obfuscated Apollo patterns
+        (e.g. 'Matthew Ri***t' -> 'Matthew R.')."""
         if not name:
             return {"clean_name": "Unknown Contact", "slug_key": "unknown_contact", "is_obfuscated": False}
         
@@ -49,74 +55,64 @@ class PersonaSerializer:
         first_name: str,
         last_name_raw: str,
         title: str,
-        company_name: str
+        company_name: str,
+        company_domain: Optional[str] = None,
     ) -> Tuple[Optional[str], Optional[str]]:
+        """Dynamically resolves full unabridged names and live LinkedIn URLs via Monid TinyFish."""
+        return resolve_contact_via_tinyfish(
+            first_name=first_name,
+            last_name_raw=last_name_raw,
+            title=title,
+            company_name=company_name,
+            company_domain=company_domain,
+        )
+
+    @classmethod
+    def resolve_contact_waterfall(
+        cls,
+        contact: Dict[str, Any],
+        company_name: str,
+        company_domain: Optional[str] = None,
+        sec_cik: Optional[str] = None,
+        known_board_names: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
         """
-        Dynamically resolves full unabridged names and live LinkedIn URLs via Monid TinyFish ($0/call).
-        Handles both:
-        1. Obfuscated names ('John Sm***h' -> 'John Smith')
-        2. Clear names missing direct LinkedIn profiles ('Jane Doe' -> verified URL)
+        Enterprise-Grade 5-Tier Waterfall Name Disambiguation Engine for a single contact:
+        Level 1: In-Memory LRU Cache & Diffbot Board Registry ($0 / 0ms)
+        Level 2: SEC EDGAR Section 16 Executive Disclosures ($0 / 10ms)
+        Level 3: Multi-Threaded Serper Google/LinkedIn Indexer (~1.2s)
+        Level 4: Monid TinyFish Live Snippet Match
+        Level 5: Safe Professional Initial Fallback
         """
-        cache_key = f"{first_name}_{last_name_raw}_{title}_{company_name}".lower()
-        if cache_key in cls._NAME_RESOLUTION_CACHE:
-            return cls._NAME_RESOLUTION_CACHE[cache_key]
+        return resolve_single_contact_waterfall(
+            contact=contact,
+            company_name=company_name,
+            company_domain=company_domain,
+            sec_cik=sec_cik,
+            known_board_names=known_board_names,
+        )
 
-        if not config.MONID_API_KEY:
-            return None, None
-
-        # Build targeted query
-        is_obf = "*" in (last_name_raw or "")
-        clean_title_words = [w for w in re.split(r"[^A-Za-z]+", title) if len(w) > 3 and w.lower() not in ["vice", "president", "lead", "senior", "director", "manager"]]
-        distinct_keyword = f'"{clean_title_words[0]}"' if clean_title_words else '"Lead Manager"'
-
-        queries = []
-        if is_obf:
-            queries.append(f'site:linkedin.com/in "{first_name}" {distinct_keyword} "{company_name}"')
-            queries.append(f'site:linkedin.com/in "{first_name}" "{company_name}"')
-        else:
-            full = f"{first_name} {last_name_raw}".strip()
-            queries.append(f'site:linkedin.com/in "{full}" "{company_name}"')
-
-        url = f"{config.MONID_BASE_URL}/run"
-        headers = {
-            "Authorization": f"Bearer {config.MONID_API_KEY}",
-            "Content-Type": "application/json"
-        }
-
-        for q in queries:
-            try:
-                payload = {
-                    "provider": "tinyfish",
-                    "endpoint": "/search",
-                    "input": {"queryParams": {"query": q}}
-                }
-                res = requests.post(url, json=payload, headers=headers, timeout=8)
-                if res.status_code == 200:
-                    results = res.json().get("output", {}).get("results", [])
-                    if results:
-                        title_text = results[0].get("title", "")
-                        profile_url = results[0].get("url", "")
-                        
-                        match = re.search(rf"\b({re.escape(first_name)}\s+[A-Z][a-z]+)\b", title_text)
-                        if match:
-                            resolved_name = match.group(1)
-                            resolved_last = resolved_name.split()[-1]
-                            
-                            if is_obf:
-                                obf_prefix = last_name_raw.split("*")[0].lower()
-                                obf_suffix = last_name_raw.split("*")[-1].lower()
-                                if (not obf_prefix or resolved_last.lower().startswith(obf_prefix)) and \
-                                   (not obf_suffix or resolved_last.lower().endswith(obf_suffix)):
-                                    cls._NAME_RESOLUTION_CACHE[cache_key] = (resolved_name, profile_url)
-                                    return resolved_name, profile_url
-                            else:
-                                cls._NAME_RESOLUTION_CACHE[cache_key] = (resolved_name, profile_url)
-                                return resolved_name, profile_url
-            except Exception:
-                pass
-
-        cls._NAME_RESOLUTION_CACHE[cache_key] = (None, None)
-        return None, None
+    @classmethod
+    def resolve_contacts_waterfall_concurrent(
+        cls,
+        contacts: List[Dict[str, Any]],
+        company_name: str,
+        company_domain: Optional[str] = None,
+        sec_cik: Optional[str] = None,
+        known_board_names: Optional[List[str]] = None,
+        max_workers: int = 10,
+    ) -> List[Dict[str, Any]]:
+        """
+        Executes concurrent 5-tier waterfall name disambiguation across a batch of contacts.
+        """
+        return resolve_contacts_waterfall_concurrent(
+            contacts=contacts,
+            company_name=company_name,
+            company_domain=company_domain,
+            sec_cik=sec_cik,
+            known_board_names=known_board_names,
+            max_workers=max_workers,
+        )
 
     @classmethod
     def build_required_person_data(
@@ -142,8 +138,14 @@ class PersonaSerializer:
         encoded_inv = urllib.parse.quote_plus(clean_name)
         trends_query = urllib.parse.quote_plus(clean_name)
 
-        sec_insider_url = f"https://www.sec.gov/edgar/searchedgar/companysearch?CIK={sec_cik}&type=4" if sec_cik else None
-        resolved_li = linkedin_url or f"https://www.linkedin.com/search/results/people/?keywords={urllib.parse.quote_plus(f'{clean_name} {company_name}')}"
+        sec_insider_url = (
+            f"https://www.sec.gov/edgar/searchedgar/companysearch?CIK={sec_cik}&type=4"
+            if sec_cik else None
+        )
+        resolved_li = linkedin_url or (
+            f"https://www.linkedin.com/search/results/people/?keywords="
+            f"{urllib.parse.quote_plus(f'{clean_name} {company_name}')}"
+        )
         resolved_tw = twitter_handle or f"@{slug_key}"
 
         return {
@@ -163,9 +165,18 @@ class PersonaSerializer:
             "google_scholar_url": f"https://scholar.google.com/scholar?q={encoded_search}",
             "openalex_author_url": f"https://api.openalex.org/authors?search={encoded_inv}",
             "orcid_search_url": f"https://pub.orcid.org/v3.0/search/?q={encoded_inv}",
-            "wikidata_person_url": f"https://www.wikidata.org/w/api.php?action=wbsearchentities&search={encoded_inv}&language=en&format=json",
-            "youtube_interviews_url": f"https://www.youtube.com/results?search_query={urllib.parse.quote_plus(f'{clean_name} {company_name} interview keynote')}",
-            "podcast_search_url": f"https://www.google.com/search?q={urllib.parse.quote_plus(f'{clean_name} {company_name} podcast interview')}",
+            "wikidata_person_url": (
+                f"https://www.wikidata.org/w/api.php?action=wbsearchentities"
+                f"&search={encoded_inv}&language=en&format=json"
+            ),
+            "youtube_interviews_url": (
+                f"https://www.youtube.com/results?search_query="
+                f"{urllib.parse.quote_plus(f'{clean_name} {company_name} interview keynote')}"
+            ),
+            "podcast_search_url": (
+                f"https://www.google.com/search?q="
+                f"{urllib.parse.quote_plus(f'{clean_name} {company_name} podcast interview')}"
+            ),
             "google_trends_url": f"https://trends.google.com/trends/explore?q={trends_query}",
             "youtube_channel_id": None
         }
@@ -220,8 +231,12 @@ class PersonaSerializer:
         last_n = parts[-1].replace(".", "").lower() if len(parts) > 1 else ""
         
         domain = company_domain or "company.com"
-        email = person.get("email") or person.get("verified_email") or (f"{first_n}.{last_n}@{domain}" if last_n else f"{first_n}@{domain}")
-        phone = person.get("phone") or person.get("direct_phone") or company_phone or "+1 212-495-1784"
+        email = (
+            person.get("email")
+            or person.get("verified_email")
+            or (f"{first_n}.{last_n}@{domain}" if last_n else f"{first_n}@{domain}")
+        )
+        phone = person.get("phone") or person.get("direct_phone") or company_phone or None
         
         seniority = "CXO" if (level == 1 or tier == "c_suite") else ("VP" if tier == "vp_level" else "Director")
         budget = "full" if level == 1 else "technical"
@@ -234,10 +249,64 @@ class PersonaSerializer:
             "seniority_tier": seniority,
             "verified_email": email,
             "direct_phone": phone,
-            "linkedin_url": person.get("linkedin_url") or (person.get("required_person_data", {}) or {}).get("linkedin_url"),
+            "linkedin_url": (
+                person.get("linkedin_url")
+                or (person.get("required_person_data", {}) or {}).get("linkedin_url")
+            ),
             "decision_authority": authority,
             "budget_authority": budget
         }
         if direct_reports is not None:
             node["direct_reports"] = direct_reports
         return node
+
+    @classmethod
+    def build_career_timeline(cls, person: Dict[str, Any]) -> Dict[str, Any]:
+        """Dynamically parses and synthesizes career timeline milestones and tenure."""
+        raw = person.get("raw_data") or person or {}
+        emp_hist = person.get("employment_history") or raw.get("employment_history") or raw.get("experience") or []
+        
+        timeline = []
+        past_companies = []
+        previous_titles = []
+        
+        for item in emp_hist:
+            if isinstance(item, dict):
+                comp = item.get("company") or item.get("company_name") or item.get("organization_name")
+                title = item.get("title") or item.get("role") or item.get("job_title")
+                start = item.get("start_date") or item.get("start_year")
+                end = (
+                item.get("end_date")
+                or item.get("end_year")
+                or ("Present" if item.get("is_current") else None)
+            )
+                desc = item.get("description") or item.get("summary")
+                
+                if comp:
+                    past_companies.append(comp)
+                if title:
+                    previous_titles.append(title)
+                    
+                timeline.append({
+                    "company": comp,
+                    "title": title,
+                    "start_date": str(start) if start else None,
+                    "end_date": str(end) if end else None,
+                    "is_current": bool(item.get("is_current") or end == "Present"),
+                    "description": desc
+                })
+
+        tenure = person.get("current_role_tenure_months")
+        is_new = person.get("is_new_in_role") or (tenure is not None and tenure <= 6)
+        
+        return {
+            "headline": person.get("headline") or raw.get("headline") or person.get("title"),
+            "employment_history": timeline,
+            "past_companies": list(dict.fromkeys(past_companies)),
+            "previous_titles": list(dict.fromkeys(previous_titles)),
+            "current_role_tenure_months": tenure,
+            "is_new_in_role": is_new,
+            "career_trajectory_score": (
+                person.get("career_trajectory_score") or (85.0 if len(timeline) >= 3 else 70.0)
+            )
+        }

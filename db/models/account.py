@@ -134,6 +134,7 @@ class Account(Base):
     multi_source_intelligence = Column(JSONB)
     organisational_hierarchy_tree = Column(JSONB)
     raw_data = Column(JSONB)
+    osint_feed_manifest = Column(JSONB)
 
     # ── Relationships ──
     lobs = relationship("Lob", back_populates="account", cascade="all, delete-orphan")

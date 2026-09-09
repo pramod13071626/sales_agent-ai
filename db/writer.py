@@ -34,11 +34,21 @@ def persist_to_db(enriched_doc: Dict[str, Any], social_doc: Optional[Dict[str, A
         lobs_data = enriched_doc.get("lobs", []) or []
         lob_map = lob_repo.upsert_all(account, lobs_data, social_doc)
 
-        # 3. Upsert Personas
+        # 3. Upsert Personas (Account Level + All LOBs)
         persona_repo = PersonaRepository(session)
         hierarchy = enriched_doc.get("account", {}).get("hierarchy", {}) or {}
         tree_root = enriched_doc.get("account", {}).get("organisational_hierarchy_tree")
         persona_count = persona_repo.upsert_all(account, hierarchy, tree_root)
+
+        # 3b. Upsert LOB-specific Personas
+        for lob_data in lobs_data:
+            lob_name = lob_data.get("lob_name") or lob_data.get("name")
+            lob_id = lob_map.get(lob_name)
+            lob_hier = lob_data.get("hierarchy") or {}
+            if lob_id and any(lob_hier.values()):
+                persona_count += persona_repo.upsert_lob_personas(
+                    account, lob_id, lob_hier
+                )
 
         # 4. Commit
         session.commit()
