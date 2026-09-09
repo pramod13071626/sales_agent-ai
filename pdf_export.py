@@ -392,166 +392,142 @@ def build_psychological_profile_pdf(
     story.append(Paragraph(f"Generated on {now_str} • Verified Public Synthesis", styles["DocMetadata"]))
     story.append(HRFlowable(width="100%", color=COLOR_PRIMARY, thickness=1.2, spaceAfter=8, spaceBefore=4))
 
+    # No fabricated content below: every section is skipped outright if the
+    # real profile doesn't have it, rather than filling the gap with
+    # plausible-sounding placeholder text in what reads as a real briefing.
+    if not profile:
+        story.append(Paragraph(
+            "No Psychological Profile has been generated yet for this contact. "
+            "Run the person digest (python main.py digest &lt;key&gt; --person) to synthesize one.",
+            styles["DocBodyText"],
+        ))
+        doc.build(story, onFirstPage=lambda c, d: _header_footer(c, d, p_name, acct_name),
+                   onLaterPages=lambda c, d: _header_footer(c, d, p_name, acct_name))
+        return buf.getvalue()
+
     # ── Archetype Hero Callout ──────────────────────────────────
     synthesis = profile.get("psychological_synthesis") or {}
-    archetype = synthesis.get("archetype") or "The Principled Enterprise Builder"
-    arch_summary = synthesis.get("summary") or "Mature, integrated executive who fuses technical craft, strategic vision, and human-centered values."
-    interaction_advice = synthesis.get("interaction_advice") or "Approach with structural logic, scalable enterprise ROI, and genuine team respect."
-
-    story.append(Paragraph("Personality Archetype & Synthesis", styles["SectionHeader"]))
-    story.append(HRFlowable(width="100%", color=COLOR_LINE_DARK, thickness=0.5, spaceAfter=6, spaceBefore=0))
-
-    arch_box_data = [
-        [Paragraph(f"<b>Archetype:</b> <font color='#0061FF'><b>{_esc(archetype)}</b></font>", styles["DocSubtitle"])],
-        [Paragraph(_esc(arch_summary), styles["DocBodyText"])],
-        [Paragraph(f"<b>Interaction Guidance:</b> {_esc(interaction_advice)}", styles["DocBodyText"])],
-    ]
-    t_arch = Table(arch_box_data, colWidths=[180 * mm])
-    t_arch.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), COLOR_BG_CARD),
-        ("BOX", (0, 0), (-1, -1), 0.5, COLOR_LINE_DARK),
-        ("PADDING", (0, 0), (-1, -1), 6),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-    ]))
-    story.append(t_arch)
-    story.append(Spacer(1, 6))
+    if synthesis.get("archetype") or synthesis.get("summary"):
+        story.append(Paragraph("Psychological Archetype & Synthesis", styles["SectionHeader"]))
+        story.append(HRFlowable(width="100%", color=COLOR_LINE_DARK, thickness=0.5, spaceAfter=6, spaceBefore=0))
+        arch_box_data = []
+        if synthesis.get("archetype"):
+            arch_box_data.append([Paragraph(f"<b>Archetype:</b> <font color='#0061FF'><b>{_esc(synthesis['archetype'])}</b></font>", styles["DocSubtitle"])])
+        if synthesis.get("summary"):
+            arch_box_data.append([Paragraph(_esc(synthesis["summary"]), styles["DocBodyText"])])
+        t_arch = Table(arch_box_data, colWidths=[180 * mm])
+        t_arch.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), COLOR_BG_CARD),
+            ("BOX", (0, 0), (-1, -1), 0.5, COLOR_LINE_DARK),
+            ("PADDING", (0, 0), (-1, -1), 6),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ]))
+        story.append(t_arch)
+        story.append(Spacer(1, 6))
 
     # ── Executive Summary ───────────────────────────────────────
-    exec_summary = profile.get("executive_summary") or (
-        f"{p_name} is an established enterprise leader with extensive experience driving strategic transformation, "
-        f"platform modernization, and operational rigor in highly regulated global environments."
-    )
-    story.append(Paragraph("Executive Summary & Trajectory", styles["SectionHeader"]))
-    story.append(HRFlowable(width="100%", color=COLOR_LINE_DARK, thickness=0.5, spaceAfter=6, spaceBefore=0))
-    story.append(Paragraph(_esc(exec_summary), styles["DocBodyText"]))
-    story.append(Spacer(1, 6))
+    if profile.get("executive_summary"):
+        story.append(Paragraph("Executive Summary & Trajectory", styles["SectionHeader"]))
+        story.append(HRFlowable(width="100%", color=COLOR_LINE_DARK, thickness=0.5, spaceAfter=6, spaceBefore=0))
+        story.append(Paragraph(_esc(profile["executive_summary"]), styles["DocBodyText"]))
+        story.append(Spacer(1, 6))
 
     # ── Big Five Personality Traits ─────────────────────────────
     big_five = profile.get("big_five_traits") or {}
-    story.append(Paragraph("Big Five Personality Trait Estimates (1.0 — 10.0 Scale)", styles["SectionHeader"]))
-    story.append(HRFlowable(width="100%", color=COLOR_LINE_DARK, thickness=0.5, spaceAfter=6, spaceBefore=0))
-
-    b5_data = [
-        [
+    trait_rows = [
+        ("openness", "Openness to Experience"),
+        ("conscientiousness", "Conscientiousness"),
+        ("extraversion", "Extraversion"),
+        ("agreeableness", "Agreeableness"),
+        ("emotional_stability", "Emotional Stability"),
+    ]
+    present_traits = [(label, big_five[key]) for key, label in trait_rows if big_five.get(key) and big_five[key].get("score") is not None]
+    if present_traits:
+        story.append(Paragraph("Big Five Personality Trait Estimates (1.0 — 10.0 Scale)", styles["SectionHeader"]))
+        story.append(HRFlowable(width="100%", color=COLOR_LINE_DARK, thickness=0.5, spaceAfter=6, spaceBefore=0))
+        b5_data = [[
             Paragraph("<b>Trait Dimension</b>", styles["TableHeader"]),
             Paragraph("<b>Score</b>", styles["TableHeader"]),
-            Paragraph("<b>Behavioral Synthesis & Evidentiary Proof</b>", styles["TableHeader"]),
-        ]
-    ]
+            Paragraph("<b>Behavioral Synthesis</b>", styles["TableHeader"]),
+        ]]
+        for label, t_info in present_traits:
+            b5_data.append([
+                Paragraph(f"<b>{label}</b>", styles["DocBodyText"]),
+                Paragraph(f"<b>{t_info['score']:.1f} / 10</b>", styles["DocBodyText"]),
+                Paragraph(_esc(t_info.get("summary") or ""), styles["DocBodyText"]),
+            ])
+        t_b5 = Table(b5_data, colWidths=[45 * mm, 22 * mm, 113 * mm])
+        t_b5.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), COLOR_BG_CARD),
+            ("GRID", (0, 0), (-1, -1), 0.5, COLOR_LINE),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("PADDING", (0, 0), (-1, -1), 4),
+        ]))
+        story.append(t_b5)
+        story.append(Spacer(1, 8))
 
-    traits_def = [
-        ("openness", "Openness to Experience", 8.0, "Ecosystem innovation, platform agility, AI/data adoption."),
-        ("conscientiousness", "Conscientiousness", 7.5, "Long-term institutional tenures, sustained execution discipline."),
-        ("extraversion", "Extraversion", 8.0, "Public keynotes, board governance, transparent communication."),
-        ("agreeableness", "Agreeableness", 8.0, "Servant leadership, humble mentorship, team-first advocacy."),
-        ("emotional_stability", "Emotional Stability", 8.5, "Measured resilience across financial crises and global postings."),
-    ]
+    def _render_evidence_section(title, section):
+        if not section or not section.get("summary"):
+            return
+        story.append(Paragraph(title, styles["SectionHeader"]))
+        story.append(HRFlowable(width="100%", color=COLOR_LINE_DARK, thickness=0.5, spaceAfter=6, spaceBefore=0))
+        story.append(Paragraph(_esc(section["summary"]), styles["DocBodyText"]))
+        for b in section.get("basis") or []:
+            pt = _esc(b.get("point") or "")
+            if pt:
+                story.append(Paragraph(f"<font color='{COLOR_MUTED.hexval()}'>•</font> {pt}", styles["CitationItem"]))
+        story.append(Spacer(1, 6))
 
-    for trait_key, trait_label, def_score, def_ev in traits_def:
-        t_info = big_five.get(trait_key) or {}
-        score = t_info.get("score") if t_info.get("score") is not None else def_score
-        summary = t_info.get("summary") or ""
-        evidence = t_info.get("evidence") or def_ev
-        combined_text = f"<b>{_esc(summary)}</b> — {_esc(evidence)}" if summary else _esc(evidence)
+    _render_evidence_section("Cognitive Style", profile.get("cognitive_style"))
+    _render_evidence_section("Leadership Patterns", profile.get("leadership_patterns"))
+    _render_evidence_section("Core Values & Motivations", profile.get("core_values_and_motivations"))
+    _render_evidence_section("Interpersonal Traits", profile.get("interpersonal_traits"))
 
-        b5_data.append([
-            Paragraph(f"<b>{trait_label}</b>", styles["DocBodyText"]),
-            Paragraph(f"<b>{score:.1f} / 10</b>", styles["DocBodyText"]),
-            Paragraph(combined_text, styles["DocBodyText"]),
-        ])
-
-    t_b5 = Table(b5_data, colWidths=[45 * mm, 22 * mm, 113 * mm])
-    t_b5.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), COLOR_BG_CARD),
-        ("GRID", (0, 0), (-1, -1), 0.5, COLOR_LINE),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("PADDING", (0, 0), (-1, -1), 4),
-    ]))
-    story.append(t_b5)
-    story.append(Spacer(1, 8))
-
-    # ── Cognitive & Systems Architecture ────────────────────────
-    cog = profile.get("cognitive_style") or {}
-    story.append(Paragraph("Cognitive Style: Systems-Level Pragmatist", styles["SectionHeader"]))
-    story.append(HRFlowable(width="100%", color=COLOR_LINE_DARK, thickness=0.5, spaceAfter=6, spaceBefore=0))
-    if cog.get("summary"):
-        story.append(Paragraph(_esc(cog["summary"]), styles["DocBodyText"]))
-    if cog.get("platform_mindset"):
-        story.append(Paragraph(f"<b>Platform Mindset:</b> {_esc(cog['platform_mindset'])}", styles["DocBodyText"]))
-    for b in cog.get("basis") or []:
-        pt = _esc(b.get("point") or "")
-        story.append(Paragraph(f"<font color='{COLOR_MUTED.hexval()}'>•</font> {pt}", styles["CitationItem"]))
-    story.append(Spacer(1, 6))
-
-    # ── Leadership & Scale Dynamics ─────────────────────────────
-    lead = profile.get("leadership_patterns") or {}
-    story.append(Paragraph("Leadership Style & Scale Management", styles["SectionHeader"]))
-    story.append(HRFlowable(width="100%", color=COLOR_LINE_DARK, thickness=0.5, spaceAfter=6, spaceBefore=0))
-    if lead.get("summary"):
-        story.append(Paragraph(_esc(lead["summary"]), styles["DocBodyText"]))
-    if lead.get("scale_management"):
-        story.append(Paragraph(f"<b>Scale & Culture:</b> {_esc(lead['scale_management'])}", styles["DocBodyText"]))
-    for b in lead.get("basis") or []:
-        pt = _esc(b.get("point") or "")
-        story.append(Paragraph(f"<font color='{COLOR_MUTED.hexval()}'>•</font> {pt}", styles["CitationItem"]))
-    story.append(Spacer(1, 6))
-
-    # ── Values, Motivations & Philanthropic Governance ──────────
-    values = profile.get("core_values_and_motivations") or {}
-    story.append(Paragraph("Core Values & Philanthropic Governance", styles["SectionHeader"]))
-    story.append(HRFlowable(width="100%", color=COLOR_LINE_DARK, thickness=0.5, spaceAfter=6, spaceBefore=0))
-    if values.get("summary"):
-        story.append(Paragraph(_esc(values["summary"]), styles["DocBodyText"]))
-    boards = values.get("philanthropy_and_boards") or []
-    if boards:
-        story.append(Paragraph("<b>Board Commitments & Philanthropy:</b>", styles["DocBodyText"]))
-        for brd in boards:
-            story.append(Paragraph(f"<font color='{COLOR_MUTED.hexval()}'>•</font> {_esc(brd)}", styles["BulletItem"]))
-    story.append(Spacer(1, 6))
-
-    # ── Inferred Blind Spots ────────────────────────────────────
+    # ── Inferred Blind Spots (plain-text list per the current schema) ──
     blind_spots = profile.get("potential_blind_spots") or []
     if blind_spots:
         story.append(Paragraph("Potential Operational & Cognitive Blind Spots", styles["SectionHeader"]))
         story.append(HRFlowable(width="100%", color=COLOR_LINE_DARK, thickness=0.5, spaceAfter=6, spaceBefore=0))
         for bs in blind_spots:
-            bs_title = bs.get("blind_spot") or "Operational Consideration"
-            bs_impact = bs.get("impact") or ""
-            bs_counter = bs.get("counter_strategy") or ""
-            story.append(Paragraph(f"<b>{_esc(bs_title)}:</b> {_esc(bs_impact)}", styles["DocBodyText"]))
-            if bs_counter:
-                story.append(Paragraph(f"<i>Mitigation: {_esc(bs_counter)}</i>", styles["CitationItem"]))
+            story.append(Paragraph(f"<font color='{COLOR_MUTED.hexval()}'>•</font> {_esc(bs)}", styles["BulletItem"]))
         story.append(Spacer(1, 6))
 
     # ── Actionable Engagement Playbook ──────────────────────────
     playbook = profile.get("engagement_playbook") or {}
-    story.append(Paragraph("Actionable Executive Engagement Playbook", styles["SectionHeader"]))
-    story.append(HRFlowable(width="100%", color=COLOR_LINE_DARK, thickness=0.5, spaceAfter=6, spaceBefore=0))
+    if playbook.get("dos") or playbook.get("donts") or playbook.get("opening_hook"):
+        story.append(Paragraph("Actionable Executive Engagement Playbook", styles["SectionHeader"]))
+        story.append(HRFlowable(width="100%", color=COLOR_LINE_DARK, thickness=0.5, spaceAfter=6, spaceBefore=0))
 
-    dos = playbook.get("dos") or ["Lead with structural clarity, scalable architecture, and verifiable ROI.", "Highlight governance, compliance, and team enablement."]
-    donts = playbook.get("donts") or ["Avoid superficial 'move fast and break things' pitches.", "Do not present siloed point solutions lacking enterprise integration."]
-    opening_hook = playbook.get("opening_hook") or "Focus on enterprise data platform modernization and advisor empowerment."
-    recommended_tone = playbook.get("recommended_tone") or "Measured, respectful, architectural, and ROI-grounded."
+        if playbook.get("opening_hook"):
+            story.append(Paragraph(f"<b>Opening Conversation Hook:</b> {_esc(playbook['opening_hook'])}", styles["DocBodyText"]))
+        if playbook.get("recommended_tone"):
+            story.append(Paragraph(f"<b>Recommended Tone:</b> {_esc(playbook['recommended_tone'])}", styles["DocBodyText"]))
+        story.append(Spacer(1, 4))
 
-    story.append(Paragraph(f"<b>Opening Conversation Hook:</b> {_esc(opening_hook)}", styles["DocBodyText"]))
-    story.append(Paragraph(f"<b>Recommended Tone:</b> {_esc(recommended_tone)}", styles["DocBodyText"]))
-    story.append(Spacer(1, 4))
+        dos, donts = playbook.get("dos") or [], playbook.get("donts") or []
+        if dos or donts:
+            pb_table_data = [
+                [Paragraph("<b>DO THIS</b>", styles["TableHeader"]), Paragraph("<b>AVOID THIS</b>", styles["TableHeader"])],
+                [
+                    Paragraph("<br/>".join(f"• {_esc(d)}" for d in dos) or "—", styles["DocBodyText"]),
+                    Paragraph("<br/>".join(f"• {_esc(d)}" for d in donts) or "—", styles["DocBodyText"]),
+                ]
+            ]
+            t_pb = Table(pb_table_data, colWidths=[90 * mm, 90 * mm])
+            t_pb.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), COLOR_BG_CARD),
+                ("GRID", (0, 0), (-1, -1), 0.5, COLOR_LINE),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("PADDING", (0, 0), (-1, -1), 5),
+            ]))
+            story.append(t_pb)
 
-    pb_table_data = [
-        [Paragraph("<b>DO THIS</b>", styles["TableHeader"]), Paragraph("<b>AVOID THIS</b>", styles["TableHeader"])],
-        [
-            Paragraph("<br/>".join(f"• {_esc(d)}" for d in dos), styles["DocBodyText"]),
-            Paragraph("<br/>".join(f"• {_esc(d)}" for d in donts), styles["DocBodyText"]),
-        ]
-    ]
-    t_pb = Table(pb_table_data, colWidths=[90 * mm, 90 * mm])
-    t_pb.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), COLOR_BG_CARD),
-        ("GRID", (0, 0), (-1, -1), 0.5, COLOR_LINE),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("PADDING", (0, 0), (-1, -1), 5),
-    ]))
-    story.append(t_pb)
+    if profile.get("caveats"):
+        story.append(Spacer(1, 6))
+        story.append(Paragraph("Caveats", styles["SectionHeader"]))
+        story.append(HRFlowable(width="100%", color=COLOR_LINE_DARK, thickness=0.5, spaceAfter=6, spaceBefore=0))
+        for c in profile["caveats"]:
+            story.append(Paragraph(f"<font color='{COLOR_MUTED.hexval()}'>•</font> {_esc(c)}", styles["CitationItem"]))
 
     def _on_page(canvas, doc_):
         _header_footer(canvas, doc_, p_name, acct_name)

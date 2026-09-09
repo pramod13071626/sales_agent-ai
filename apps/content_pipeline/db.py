@@ -639,7 +639,7 @@ def get_person_psychological_context(person_key: str) -> Dict[str, Any]:
                 """
                 SELECT p.tier, p.skills, p.target_kpis, p.operational_pain_points,
                        p.key_objections, p.value_proposition, p.personalized_icebreaker,
-                       a.name, a.sector, a.employees
+                       COALESCE(a.display_name, a.legal_name), a.industries, a.employee_count_range
                 FROM personas p
                 LEFT JOIN accounts a ON p.account_id = a.id
                 WHERE p.key = %s
@@ -649,7 +649,7 @@ def get_person_psychological_context(person_key: str) -> Dict[str, Any]:
             )
             row = cur.fetchone()
             if row:
-                tier, skills, kpis, pains, objections, val_prop, icebreaker, acc_name, acc_sector, acc_emp = row
+                tier, skills, kpis, pains, objections, val_prop, icebreaker, acc_name, acc_industries, acc_emp = row
                 if tier:
                     bio["tier"] = tier
                 if skills:
@@ -661,7 +661,8 @@ def get_person_psychological_context(person_key: str) -> Dict[str, Any]:
                 if objections:
                     bio["key_objections"] = objections
                 if acc_name:
-                    bio["account_context"] = f"{acc_name} ({acc_sector or 'Enterprise'}, ~{acc_emp or 'N/A'} employees)"
+                    sector = ", ".join(acc_industries[:2]) if acc_industries else "Enterprise"
+                    bio["account_context"] = f"{acc_name} ({sector}, ~{acc_emp or 'N/A'} employees)"
         return bio
     except Exception as e:
         print(f"⚠️  [DB] Could not read psychological context for '{person_key}' ({e})")

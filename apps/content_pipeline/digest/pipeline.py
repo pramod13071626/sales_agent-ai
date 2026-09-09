@@ -33,6 +33,7 @@ def run(
     kind: str = "company",
     target: Dict[str, Any] = None,
     suggest_actions: bool = False,
+    profiles_only: bool = False,
 ) -> Dict[str, Any]:
     """Generate one account's (or one person's) digest and write JSON + Markdown.
 
@@ -46,6 +47,13 @@ def run(
     ACTION_ITEMS_LLM_SUGGESTIONS_PLAN.md. Off by default so this doesn't
     silently start spending an extra flagship-model call (and creating DB
     rows) on every ordinary digest run.
+
+    profiles_only: person digests only — skips the build_email() rollup call
+    (a separate flagship-model call producing the sales email nobody asked
+    for here) while still running the per-channel summaries, since those are
+    the required input `channels` argument to build_personality_profile()/
+    build_psychological_profile() below, not optional context. Cuts this run
+    down to exactly the two calls actually wanted instead of four.
     """
     is_person = kind == "person"
     target = target or (
@@ -115,30 +123,45 @@ def run(
     if not channels:
         raise RuntimeError("Nothing to summarise — no posts in scope.")
 
-    try:
-        email = build_email(
-            email_client, target["display_name"], target.get("ticker"), channels, kind=kind
-        )
-    except LLMError as e:
-        # Every channel above already made (and paid for) a real LLM call —
-        # discarding all of that because only the final rollup call failed
-        # is the single most expensive failure mode in this pipeline. Write
-        # a degraded but honest email instead of losing that work; the
-        # channel storylines below it are unaffected and still real.
-        print(f"   email     ❌ {e}")
+    if profiles_only:
+        print("   email     skipped (--profiles-only)")
         email = {
-            "subject": f"{target['display_name']} — digest (email synthesis failed)",
-            "body": f"Channel-level summaries below are real and complete, but "
-            f"the final email rollup failed: {e}. Re-run the digest to retry "
-            "just the email step — the channel data is already cached.",
+            "subject": f"{target['display_name']} — digest (email skipped)",
+            "body": "Email synthesis skipped for this run (--profiles-only) — "
+            "only the Personality/Psychological Profile were requested.",
             "talking_points": [],
             "capability_opportunities": [],
             "priority": "low",
-            "priority_reason": "Email synthesis failed; see data_gaps.",
-            "confidence": "low",
+            "priority_reason": "Email synthesis skipped by request, not a failure.",
+            "confidence": "n/a",
             "do_not_say": [],
-            "data_gaps": [f"Email synthesis error: {e}"],
+            "data_gaps": [],
         }
+    else:
+        try:
+            email = build_email(
+                email_client, target["display_name"], target.get("ticker"), channels, kind=kind
+            )
+        except LLMError as e:
+            # Every channel above already made (and paid for) a real LLM call —
+            # discarding all of that because only the final rollup call failed
+            # is the single most expensive failure mode in this pipeline. Write
+            # a degraded but honest email instead of losing that work; the
+            # channel storylines below it are unaffected and still real.
+            print(f"   email     ❌ {e}")
+            email = {
+                "subject": f"{target['display_name']} — digest (email synthesis failed)",
+                "body": f"Channel-level summaries below are real and complete, but "
+                f"the final email rollup failed: {e}. Re-run the digest to retry "
+                "just the email step — the channel data is already cached.",
+                "talking_points": [],
+                "capability_opportunities": [],
+                "priority": "low",
+                "priority_reason": "Email synthesis failed; see data_gaps.",
+                "confidence": "low",
+                "do_not_say": [],
+                "data_gaps": [f"Email synthesis error: {e}"],
+            }
 
     personality_profile = None
     if is_person:

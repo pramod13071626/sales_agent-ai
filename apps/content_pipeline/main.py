@@ -126,6 +126,7 @@ def cmd_digest(args) -> int:
                 store_path_override=_store_path(args, company),
                 kind=kind,
                 suggest_actions=getattr(args, "suggest_actions", False),
+                profiles_only=getattr(args, "profiles_only", False),
             )
         except (FileNotFoundError, RuntimeError, LLMError) as e:
             print(f"❌  {target['display_name']}: {e}")
@@ -775,6 +776,14 @@ def build_parser() -> argparse.ArgumentParser:
             help="person digests only: also LLM-suggest action items (written as "
                  "status=pending_review for a human to approve/reject) — see "
                  "ACTION_ITEMS_LLM_SUGGESTIONS_PLAN.md",
+        )
+        p.add_argument(
+            "--profiles-only",
+            action="store_true",
+            help="person digests only: skip the email-rollup LLM call and just "
+                 "generate the Personality Profile + Psychological Profile "
+                 "(the per-channel summaries still run — they're required input "
+                 "to those two profiles, not optional)",
         )
 
     p_scrape = sub.add_parser("scrape", help="scrape accounts into their stores")
