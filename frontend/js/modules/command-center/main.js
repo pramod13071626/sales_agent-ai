@@ -10,6 +10,9 @@ import { renderPlaybook } from './playbook.js';
 import { renderTimeline } from './timeline.js';
 import { initDrawer } from './drawer.js';
 import { initAccountsNav } from './accounts-nav.js';
+import { renderDueSoon } from './due-soon.js';
+import { renderHiringSignals } from './hiring-signals.js';
+import { renderCapitalEvents, renderCoverageGaps, renderCompetitorMentions, renderTechSignals } from './account-signals.js';
 import { kpiBase } from './data.js';
 
 function weekRangeLabel() {
@@ -36,6 +39,12 @@ function renderAll() {
   renderFeed();
   renderPlaybook();
   renderTimeline();
+  renderDueSoon();
+  renderHiringSignals();
+  renderCapitalEvents();
+  renderCoverageGaps();
+  renderCompetitorMentions();
+  renderTechSignals();
 }
 
 function initRoleTabs() {

@@ -2397,6 +2397,66 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
+    @app.post("/api/action-items/{item_id}/send-reminder", tags=["8. Action Items"])
+    def send_action_item_reminder(item_id: int, user: User = Depends(auth.require_action_item_account_access)):
+        """On-demand reminder email for one action item — same email
+        template and action_item_reminders log as the scheduled sweep
+        (scripts/send_action_reminders.py), but sent immediately (e.g. from
+        the Command Center 'Due soon' widget's Send reminder button)
+        instead of waiting for that script's next scheduled run. Unlike the
+        sweep, a deliberate manual click is allowed to re-send even if that
+        reminder stage was already logged — updates the existing log row's
+        sent_at instead of trying to insert a second one (which would hit
+        the table's unique constraint)."""
+        session = get_session()
+        try:
+            item = (session.query(ActionItem)
+                    .options(selectinload(ActionItem.assigned_to), selectinload(ActionItem.account))
+                    .filter_by(id=item_id).first())
+            if not item:
+                raise HTTPException(status_code=404, detail="Action item not found")
+            if item.status in ("done", "cancelled"):
+                raise HTTPException(status_code=400, detail="This task is already closed")
+            if not item.assigned_to or not item.assigned_to.email:
+                raise HTTPException(status_code=400, detail="This task has no assignee to notify")
+
+            assignee = item.assigned_to
+            now = datetime.now(timezone.utc)
+            due = item.due_date
+            due_utc = due.replace(tzinfo=timezone.utc) if due and not due.tzinfo else due
+            is_overdue = bool(due_utc and due_utc < now)
+            reminder_type = "overdue" if is_overdue else "due_soon"
+            account_name = (item.account.display_name or item.account.legal_name) if item.account else "an account"
+            due_str = due_utc.strftime("%b %d, %Y") if due_utc else "no date"
+            heading = "Action item overdue" if is_overdue else "Action item due soon"
+            lead_line = f"{'This action item is now overdue' if is_overdue else 'This action item is due soon'} on {account_name}:"
+
+            sent = email_sender.send_email(
+                assignee.email, f"{heading}: {item.title}",
+                f"Hi {assignee.full_name or assignee.email},\n\n{lead_line}\n\n{item.title}\n{item.description or ''}\nDue: {due_str}\n",
+                html_body=email_sender.render_html(
+                    heading,
+                    [f"Hi {assignee.full_name or assignee.email},", lead_line, item.title] + ([item.description] if item.description else []),
+                    footnote=f"Due: {due_str}",
+                ),
+            )
+            if not sent:
+                raise HTTPException(status_code=502, detail="Could not send the reminder email — check SMTP configuration (.env SMTP_* vars).")
+
+            existing = session.query(ActionItemReminder).filter_by(
+                action_item_id=item.id, reminder_type=reminder_type, sent_to_user_id=item.assigned_to_id,
+            ).first()
+            if existing:
+                existing.sent_at = now
+            else:
+                session.add(ActionItemReminder(action_item_id=item.id, reminder_type=reminder_type, sent_to_user_id=item.assigned_to_id))
+            session.commit()
+            return {"ok": True, "sent_to": assignee.email, "reminder_type": reminder_type}
+        except HTTPException:
+            raise
+        finally:
+            session.close()
+
     @app.delete("/api/action-items/{item_id}", tags=["8. Action Items"])
     def delete_action_item(item_id: int, user: User = Depends(auth.require_action_item_account_access)):
         session = get_session()

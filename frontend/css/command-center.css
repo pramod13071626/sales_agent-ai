@@ -101,6 +101,8 @@
 }
 .cc-panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .cc-panel-head h2 { font-size: .86rem; font-weight: 500; margin: 0; color: var(--text-primary); }
+.cc-panel-link { font-size: .72rem; color: var(--brand); text-decoration: none; }
+.cc-panel-link:hover { text-decoration: underline; }
 .cc-panel-note { font-size: .66rem; color: var(--text-muted); }
 
 /* ── Matrix ──────────────────────────────────────────────────── */
@@ -139,6 +141,10 @@
 .cc-badge-stale { background: var(--badge-bg); color: var(--text-muted); }
 .cc-badge-joined { background: rgba(0,186,136,.12); color: var(--success); }
 .cc-badge-neutral { background: var(--badge-bg); color: var(--text-secondary); }
+.cc-badge-warning { background: rgba(245,166,35,.14); color: var(--warning); }
+
+.cc-clickable-row { cursor: pointer; }
+.cc-feed-count { flex-shrink: 0; font-size: .72rem; font-weight: 500; color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* ── Buttons ─────────────────────────────────────────────────── */
 .cc-btn {
