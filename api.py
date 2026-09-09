@@ -3467,7 +3467,18 @@ if FASTAPI_AVAILABLE:
             # — without including those here, the contact drawer's Recent
             # Social Media Activity / Personality Profile sections always
             # found nothing, no matter how much persona-level data existed.
-            persona_keys = [p.key or slugify(p.full_name) for p in (acct.personas or [])]
+            # Three candidates per persona (mirrors _resolve_persona_digest
+            # above and resolvePersonaTargetKey on the frontend): a name with
+            # a middle initial like "Ranjit S. Samra" slugifies to
+            # "ranjit_s_samra", but people_targets.py registers them under
+            # "ranjit_samra" (initial omitted) — without the third candidate
+            # this endpoint silently omits that persona's digest/posts from
+            # its response entirely, no matter how the frontend resolves keys.
+            persona_keys = []
+            for p in (acct.personas or []):
+                persona_keys.append(p.key)
+                persona_keys.append(slugify(p.full_name or ""))
+                persona_keys.append(_slugify_dropping_initials(p.full_name or ""))
             keys = [
                 acct.key,
                 (acct.stock_symbol or "").lower(),
