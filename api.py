@@ -29,9 +29,10 @@ from datetime import datetime, timezone, timedelta
 PIPELINE_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PIPELINE_ROOT))
 
+from subprocess import run
+
 import config
 from collectors.account_collector import (
-    scrape_account,
     fetch_latest_10k_chunks,
     extract_full_patents,
     fetch_sec_exhibit_21_subsidiaries,
@@ -42,19 +43,13 @@ from collectors.account_collector import (
 )
 from collectors.sublob_collector import scrape_sublobs
 from collectors.lob_enricher import enrich_lob_segments
-from collectors.hierarchy_collector import (
-    scrape_hierarchy,
-    scrape_lob_hierarchy,
-    build_required_person_data,
-    classify_title,
-)
+from collectors.hierarchy_collector import scrape_hierarchy
 from collectors.persona_enricher import build_persona_dossier
 from collectors.validator import DataQualityValidator
-from serializer import MasterSerializer, PipelineSerializer
-from serializers.account_serializer import AccountSerializer, slugify
-from serializers.lob_serializer import LOBSerializer
-from serializers.persona_serializer import PersonaSerializer
+from serializer import MasterSerializer
+from serializers.account_serializer import slugify
 
+from sqlalchemy import or_
 from sqlalchemy.orm import selectinload
 from db.connection import get_session
 from db.models import (
@@ -74,13 +69,16 @@ from db.models import (
     ActionItemReminder,
 )
 
-from db.schemas import AccountSchema, LobSchema, PersonaSchema
+from db.schemas import AccountSchema, PersonaSchema
 from db.repositories import (
     AccountRepository,
     LobRepository,
     PersonaRepository,
 )
-from db.importer import import_run_to_db
+from db.repositories.pipeline_run_repository import PipelineRunRepository
+from services.account_service import AccountService
+from services.lob_service import LobService, LobValidator
+from services.persona_service import PersonaService, PersonaValidator
 from pdf_export import build_persona_profile_pdf
 import auth
 import email_sender
@@ -103,11 +101,10 @@ try:
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.staticfiles import StaticFiles
     from fastapi.templating import Jinja2Templates
-    from pydantic import BaseModel, Field
+    from pydantic import BaseModel
     FASTAPI_AVAILABLE = True
 except ImportError:
     FASTAPI_AVAILABLE = False
-
 
 
 if FASTAPI_AVAILABLE:
@@ -295,8 +292,11 @@ if FASTAPI_AVAILABLE:
             session.close()
 
     @app.post("/api/admin/users", tags=["0. Authentication"])
-    def create_user(body: CreateUserRequest, background_tasks: BackgroundTasks,
-                     current: User = Depends(auth.require_role("super_admin"))):
+    def create_user(
+        body: CreateUserRequest,
+        background_tasks: BackgroundTasks,
+        current: User = Depends(auth.require_role("super_admin")),
+    ):
         if body.role not in ("super_admin", "user"):
             raise HTTPException(status_code=400, detail="role must be 'super_admin' or 'user'")
         session = get_session()
@@ -305,13 +305,21 @@ if FASTAPI_AVAILABLE:
             if session.query(User).filter(User.email.ilike(email)).first():
                 raise HTTPException(status_code=409, detail="A user with this email already exists")
             new_user = User(
-                email=email, full_name=body.full_name, role=body.role,
-                hashed_password=auth.hash_password(body.password), created_by_id=current.id,
+                email=email,
+                full_name=body.full_name,
+                role=body.role,
+                hashed_password=auth.hash_password(body.password),
+                created_by_id=current.id,
             )
             session.add(new_user)
             session.commit()
-            auth.log_audit(session, current.id, "user_created", target_user_id=new_user.id,
-                            details={"role": body.role})
+            auth.log_audit(
+                session,
+                current.id,
+                "user_created",
+                target_user_id=new_user.id,
+                details={"role": body.role},
+            )
 
             base_url = os.getenv("APP_BASE_URL", "http://localhost:8000")
             access_note = (
@@ -323,13 +331,17 @@ if FASTAPI_AVAILABLE:
             )
             background_tasks.add_task(
                 email_sender.send_email,
-                new_user.email, "Welcome to Sales Intelligence",
-                f"Hi {new_user.full_name or new_user.email},\n\n"
-                f"An account has been created for you on Sales Intelligence by {current.full_name or current.email}.\n\n"
-                f"Email: {new_user.email}\nRole: {new_user.role}\n\n"
-                f"Access: {access_note}\n\n"
-                f"Sign in here: {base_url}/login\n"
-                "You'll receive a separate email shortly to set your own password.\n",
+                new_user.email,
+                "Welcome to Sales Intelligence",
+                (
+                    f"Hi {new_user.full_name or new_user.email},\n\n"
+                    f"An account has been created for you on Sales Intelligence by "
+                    f"{current.full_name or current.email}.\n\n"
+                    f"Email: {new_user.email}\nRole: {new_user.role}\n\n"
+                    f"Access: {access_note}\n\n"
+                    f"Sign in here: {base_url}/login\n"
+                    "You'll receive a separate email shortly to set your own password.\n"
+                ),
                 html_body=email_sender.render_html(
                     "Welcome to Sales Intelligence",
                     [f"Hi {new_user.full_name or new_user.email},",
@@ -862,7 +874,8 @@ if FASTAPI_AVAILABLE:
                 )
                 if existing:
                     account_data["known_lobs"] = [
-                        {"id": l.id, "name": l.lob_name, "domain": l.domain} for l in (existing.lobs or [])
+                        {"id": lob_item.id, "name": lob_item.lob_name, "domain": lob_item.domain}
+                        for lob_item in (existing.lobs or [])
                     ]
                     account_data["known_personas"] = [
                         {"id": p.id, "name": p.full_name, "title": p.title, "tier": p.tier}
@@ -1039,61 +1052,61 @@ if FASTAPI_AVAILABLE:
         vp_personas = [p for p in personas_list if p not in c_suite_personas]
         total_lobs = len(raw_lobs) or 1
         assignments = []
-        for idx, l in enumerate(raw_lobs):
+        for idx, lob_item in enumerate(raw_lobs):
             chunk_size = max(1, len(vp_personas) // total_lobs) if vp_personas else 0
             start_i = idx * chunk_size
             end_i = start_i + chunk_size if idx < total_lobs - 1 else len(vp_personas)
-            assignments.append((l, c_suite_personas[:2] + vp_personas[start_i:end_i]))
+            assignments.append((lob_item, c_suite_personas[:2] + vp_personas[start_i:end_i]))
         return assignments
 
-    def _serialize_lob_full(l: Lob, assigned_personas: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _serialize_lob_full(lob_item: Lob, assigned_personas: List[Dict[str, Any]]) -> Dict[str, Any]:
         sub_lobs_formatted = [
-            {"id": s.id, "name": s.name, "desc": f"Specialized unit under {l.lob_name}"}
-            for s in (l.sub_lobs or [])
+            {"id": s.id, "name": s.name, "desc": f"Specialized unit under {lob_item.lob_name}"}
+            for s in (lob_item.sub_lobs or [])
         ]
         return {
-            "id": l.id,
-            "name": l.lob_name,
-            "lob_name": l.lob_name,
-            "domain": l.domain,
-            "website_url": l.website_url,
-            "desc": l.overview,
-            "overview": l.overview,
-            "revenue": l.audited_segment_revenue,
-            "audited_segment_revenue": l.audited_segment_revenue,
-            "head": l.operating_head,
-            "operating_head": l.operating_head,
-            "headcount": l.segment_headcount,
-            "segment_headcount": l.segment_headcount,
-            "lei_code": l.lei_code,
-            "jurisdiction": l.jurisdiction,
-            "technologies": l.technologies or [],
-            "competitors": l.competitors or [],
-            "financial_snippets": l.financial_snippets or [],
-            "patents": l.patents or [],
-            "logo_url": l.logo_url,
-            "google_news_rss_url": l.google_news_rss_url,
-            "reddit_rss_url": l.reddit_rss_url,
-            "google_patents_url": l.google_patents_url,
-            "google_trends_url": l.google_trends_url,
-            "youtube_search_url": l.youtube_search_url,
+            "id": lob_item.id,
+            "name": lob_item.lob_name,
+            "lob_name": lob_item.lob_name,
+            "domain": lob_item.domain,
+            "website_url": lob_item.website_url,
+            "desc": lob_item.overview,
+            "overview": lob_item.overview,
+            "revenue": lob_item.audited_segment_revenue,
+            "audited_segment_revenue": lob_item.audited_segment_revenue,
+            "head": lob_item.operating_head,
+            "operating_head": lob_item.operating_head,
+            "headcount": lob_item.segment_headcount,
+            "segment_headcount": lob_item.segment_headcount,
+            "lei_code": lob_item.lei_code,
+            "jurisdiction": lob_item.jurisdiction,
+            "technologies": lob_item.technologies or [],
+            "competitors": lob_item.competitors or [],
+            "financial_snippets": lob_item.financial_snippets or [],
+            "patents": lob_item.patents or [],
+            "logo_url": lob_item.logo_url,
+            "google_news_rss_url": lob_item.google_news_rss_url,
+            "reddit_rss_url": lob_item.reddit_rss_url,
+            "google_patents_url": lob_item.google_patents_url,
+            "google_trends_url": lob_item.google_trends_url,
+            "youtube_search_url": lob_item.youtube_search_url,
             "subLobs": sub_lobs_formatted,
             "sub_lobs": sub_lobs_formatted,
             "personas": assigned_personas,
         }
 
-    def _serialize_lob_summary(l: Lob, assigned_personas_count: int) -> Dict[str, Any]:
+    def _serialize_lob_summary(lob_item: Lob, assigned_personas_count: int) -> Dict[str, Any]:
         # Trimmed: keeps technologies/competitors (read by computeSignals() for
         # EVERY account on every nav-tree/topbar render) and subLobs (nav-tree
         # renders sub-LOB names in the expanded row), drops financial_snippets/
         # patents/deep URLs which are only read once an account is opened.
-        sub_lobs_formatted = [{"id": s.id, "name": s.name} for s in (l.sub_lobs or [])]
+        sub_lobs_formatted = [{"id": s.id, "name": s.name} for s in (lob_item.sub_lobs or [])]
         return {
-            "id": l.id,
-            "name": l.lob_name,
-            "lob_name": l.lob_name,
-            "technologies": l.technologies or [],
-            "competitors": l.competitors or [],
+            "id": lob_item.id,
+            "name": lob_item.lob_name,
+            "lob_name": lob_item.lob_name,
+            "technologies": lob_item.technologies or [],
+            "competitors": lob_item.competitors or [],
             "subLobs": sub_lobs_formatted,
             "sub_lobs": sub_lobs_formatted,
             "personas_count": assigned_personas_count,
@@ -1103,8 +1116,8 @@ if FASTAPI_AVAILABLE:
         personas_list = [_serialize_persona_full(p) for p in (acct.personas or [])]
         raw_lobs = acct.lobs or []
         lobs_list = [
-            _serialize_lob_full(l, assigned)
-            for l, assigned in _distribute_personas_across_lobs(raw_lobs, personas_list)
+            _serialize_lob_full(lob_item, assigned)
+            for lob_item, assigned in _distribute_personas_across_lobs(raw_lobs, personas_list)
         ]
 
         acct_name = acct.legal_name or acct.display_name or acct.key
@@ -1245,8 +1258,8 @@ if FASTAPI_AVAILABLE:
         personas_list = [_serialize_persona_summary(p) for p in (acct.personas or [])]
         raw_lobs = acct.lobs or []
         lobs_list = [
-            _serialize_lob_summary(l, len(assigned))
-            for l, assigned in _distribute_personas_across_lobs(raw_lobs, personas_list)
+            _serialize_lob_summary(lob_item, len(assigned))
+            for lob_item, assigned in _distribute_personas_across_lobs(raw_lobs, personas_list)
         ]
 
         acct_name = acct.legal_name or acct.display_name or acct.key
@@ -1612,21 +1625,21 @@ if FASTAPI_AVAILABLE:
             lobs = session.query(Lob).filter_by(account_id=account_id).all()
             return [
                 {
-                    "id": l.id,
-                    "account_id": l.account_id,
-                    "lob_name": l.lob_name,
-                    "domain": l.domain,
-                    "website_url": l.website_url,
-                    "audited_segment_revenue": l.audited_segment_revenue,
-                    "operating_head": l.operating_head,
-                    "segment_headcount": l.segment_headcount,
-                    "google_news_rss_url": l.google_news_rss_url,
-                    "reddit_rss_url": l.reddit_rss_url,
-                    "google_patents_url": l.google_patents_url,
-                    "youtube_search_url": l.youtube_search_url,
-                    "sub_lobs": [{"id": s.id, "name": s.name} for s in (l.sub_lobs or [])],
+                    "id": lob_item.id,
+                    "account_id": lob_item.account_id,
+                    "lob_name": lob_item.lob_name,
+                    "domain": lob_item.domain,
+                    "website_url": lob_item.website_url,
+                    "audited_segment_revenue": lob_item.audited_segment_revenue,
+                    "operating_head": lob_item.operating_head,
+                    "segment_headcount": lob_item.segment_headcount,
+                    "google_news_rss_url": lob_item.google_news_rss_url,
+                    "reddit_rss_url": lob_item.reddit_rss_url,
+                    "google_patents_url": lob_item.google_patents_url,
+                    "youtube_search_url": lob_item.youtube_search_url,
+                    "sub_lobs": [{"id": s.id, "name": s.name} for s in (lob_item.sub_lobs or [])],
                 }
-                for l in lobs
+                for lob_item in lobs
             ]
         finally:
             session.close()
@@ -1740,8 +1753,6 @@ if FASTAPI_AVAILABLE:
                 "missing_important": audit.get("missing_important", []),
                 "ready_for_db": audit.get("ready_for_db", True),
             }
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Persona validation failed: {str(e)}")
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Persona validation failed: {str(e)}")
 
@@ -2030,37 +2041,37 @@ if FASTAPI_AVAILABLE:
         try:
             lobs = session.query(Lob).filter_by(account_id=account_id).all()
             result = []
-            for l in lobs:
-                sublobs = session.query(SubLob).filter_by(lob_id=l.id).all()
+            for lob_item in lobs:
+                sublobs = session.query(SubLob).filter_by(lob_id=lob_item.id).all()
                 result.append(
                     {
-                        "id": l.id,
-                        "account_id": l.account_id,
-                        "name": l.lob_name,
-                        "lob_name": l.lob_name,
-                        "key": l.key,
-                        "domain": l.domain,
-                        "website_url": l.website_url,
-                        "desc": l.overview,
-                        "overview": l.overview,
-                        "revenue": l.audited_segment_revenue,
-                        "audited_segment_revenue": l.audited_segment_revenue,
-                        "head": l.operating_head,
-                        "operating_head": l.operating_head,
-                        "headcount": l.segment_headcount,
-                        "segment_headcount": l.segment_headcount,
-                        "lei_code": l.lei_code,
-                        "jurisdiction": l.jurisdiction,
-                        "technologies": l.technologies or [],
-                        "competitors": l.competitors or [],
-                        "financial_snippets": l.financial_snippets or [],
-                        "patents": l.patents or [],
-                        "logo_url": l.logo_url,
-                        "google_news_rss_url": l.google_news_rss_url,
-                        "reddit_rss_url": l.reddit_rss_url,
-                        "google_patents_url": l.google_patents_url,
-                        "google_trends_url": l.google_trends_url,
-                        "youtube_search_url": l.youtube_search_url,
+                        "id": lob_item.id,
+                        "account_id": lob_item.account_id,
+                        "name": lob_item.lob_name,
+                        "lob_name": lob_item.lob_name,
+                        "key": lob_item.key,
+                        "domain": lob_item.domain,
+                        "website_url": lob_item.website_url,
+                        "desc": lob_item.overview,
+                        "overview": lob_item.overview,
+                        "revenue": lob_item.audited_segment_revenue,
+                        "audited_segment_revenue": lob_item.audited_segment_revenue,
+                        "head": lob_item.operating_head,
+                        "operating_head": lob_item.operating_head,
+                        "headcount": lob_item.segment_headcount,
+                        "segment_headcount": lob_item.segment_headcount,
+                        "lei_code": lob_item.lei_code,
+                        "jurisdiction": lob_item.jurisdiction,
+                        "technologies": lob_item.technologies or [],
+                        "competitors": lob_item.competitors or [],
+                        "financial_snippets": lob_item.financial_snippets or [],
+                        "patents": lob_item.patents or [],
+                        "logo_url": lob_item.logo_url,
+                        "google_news_rss_url": lob_item.google_news_rss_url,
+                        "reddit_rss_url": lob_item.reddit_rss_url,
+                        "google_patents_url": lob_item.google_patents_url,
+                        "google_trends_url": lob_item.google_trends_url,
+                        "youtube_search_url": lob_item.youtube_search_url,
                         "sub_lobs": [{"id": s.id, "name": s.name, "metadata": s.metadata_} for s in sublobs],
                         "subLobs": [{"id": s.id, "name": s.name, "metadata": s.metadata_} for s in sublobs],
                     }
@@ -2074,33 +2085,33 @@ if FASTAPI_AVAILABLE:
         """Retrieve details for a single Line of Business by its ID."""
         session = get_session()
         try:
-            l = session.query(Lob).filter_by(id=lob_id).first()
-            if not l:
+            lob_item = session.query(Lob).filter_by(id=lob_id).first()
+            if not lob_item:
                 raise HTTPException(status_code=404, detail="Line of Business not found.")
-            sublobs = session.query(SubLob).filter_by(lob_id=l.id).all()
+            sublobs = session.query(SubLob).filter_by(lob_id=lob_item.id).all()
             return {
-                "id": l.id,
-                "account_id": l.account_id,
-                "name": l.lob_name,
-                "lob_name": l.lob_name,
-                "key": l.key,
-                "domain": l.domain,
-                "website_url": l.website_url,
-                "overview": l.overview,
-                "audited_segment_revenue": l.audited_segment_revenue,
-                "operating_head": l.operating_head,
-                "segment_headcount": l.segment_headcount,
-                "lei_code": l.lei_code,
-                "jurisdiction": l.jurisdiction,
-                "technologies": l.technologies or [],
-                "competitors": l.competitors or [],
-                "financial_snippets": l.financial_snippets or [],
-                "patents": l.patents or [],
-                "google_news_rss_url": l.google_news_rss_url,
-                "reddit_rss_url": l.reddit_rss_url,
-                "google_patents_url": l.google_patents_url,
-                "google_trends_url": l.google_trends_url,
-                "youtube_search_url": l.youtube_search_url,
+                "id": lob_item.id,
+                "account_id": lob_item.account_id,
+                "name": lob_item.lob_name,
+                "lob_name": lob_item.lob_name,
+                "key": lob_item.key,
+                "domain": lob_item.domain,
+                "website_url": lob_item.website_url,
+                "overview": lob_item.overview,
+                "audited_segment_revenue": lob_item.audited_segment_revenue,
+                "operating_head": lob_item.operating_head,
+                "segment_headcount": lob_item.segment_headcount,
+                "lei_code": lob_item.lei_code,
+                "jurisdiction": lob_item.jurisdiction,
+                "technologies": lob_item.technologies or [],
+                "competitors": lob_item.competitors or [],
+                "financial_snippets": lob_item.financial_snippets or [],
+                "patents": lob_item.patents or [],
+                "google_news_rss_url": lob_item.google_news_rss_url,
+                "reddit_rss_url": lob_item.reddit_rss_url,
+                "google_patents_url": lob_item.google_patents_url,
+                "google_trends_url": lob_item.google_trends_url,
+                "youtube_search_url": lob_item.youtube_search_url,
                 "sub_lobs": [{"id": s.id, "name": s.name, "metadata": s.metadata_} for s in sublobs],
                 "subLobs": [{"id": s.id, "name": s.name, "metadata": s.metadata_} for s in sublobs],
             }
@@ -2368,7 +2379,11 @@ if FASTAPI_AVAILABLE:
             session.close()
 
     @app.post("/api/accounts/{account_id}/opportunities/sync", tags=["1. Accounts"])
-    def sync_account_opportunity_signals(account_id: int, req: OpportunitySignalSyncRequest, user: User = Depends(auth.require_account_access)):
+    def sync_account_opportunity_signals(
+        account_id: int,
+        req: OpportunitySignalSyncRequest,
+        user: User = Depends(auth.require_account_access),
+    ):
         """Upsert the currently-detected opportunity signals for one category (growth_theme or
         domain_expansion). Signals no longer present in `items` are marked inactive rather than
         deleted, so the account keeps a full history of what has been suggested over time."""
@@ -2458,7 +2473,11 @@ if FASTAPI_AVAILABLE:
             session.close()
 
     @app.post("/api/accounts/{account_id}/weekly-updates/sync", tags=["1. Accounts"])
-    def sync_account_weekly_update(account_id: int, req: WeeklyDigestSyncRequest, user: User = Depends(auth.require_account_access)):
+    def sync_account_weekly_update(
+        account_id: int,
+        req: WeeklyDigestSyncRequest,
+        user: User = Depends(auth.require_account_access),
+    ):
         """Archive the current weekly sales update email as a snapshot, if this generation hasn't
         been captured yet. The live `digests` row is overwritten every pipeline run, so this is what
         preserves past weeks' versions instead of losing them."""
@@ -2650,7 +2669,11 @@ if FASTAPI_AVAILABLE:
             if body.due_date is not None:
                 item.due_date = _parse_due_date(body.due_date)
             if body.persona_id is not None:
-                persona = session.query(Persona).filter_by(id=body.persona_id, account_id=item.account_id).first()
+                persona = (
+                    session.query(Persona)
+                    .filter_by(id=body.persona_id, account_id=item.account_id)
+                    .first()
+                )
                 if not persona:
                     raise HTTPException(status_code=400, detail="persona_id does not belong to this account")
                 item.persona_id = body.persona_id
@@ -2667,24 +2690,37 @@ if FASTAPI_AVAILABLE:
                 due_line = f" Due {item.due_date.date().isoformat()}." if item.due_date else ""
                 background_tasks.add_task(
                     email_sender.send_email,
-                    item.assigned_to.email, f"Action item assigned to you: {item.title}",
-                    f"Hi {item.assigned_to.full_name or item.assigned_to.email},\n\n"
-                    f"You've been assigned an action item on {item.account.display_name or item.account.legal_name}.\n\n"
-                    f"{item.title}\n{item.description or ''}\n{due_line}\n\n"
-                    f"View it here: {base_url}/?account={item.account_id}\n",
+                    item.assigned_to.email,
+                    f"Action item assigned to you: {item.title}",
+                    (
+                        f"Hi {item.assigned_to.full_name or item.assigned_to.email},\n\n"
+                        f"You've been assigned an action item on "
+                        f"{item.account.display_name or item.account.legal_name}.\n\n"
+                        f"{item.title}\n{item.description or ''}\n{due_line}\n\n"
+                        f"View it here: {base_url}/?account={item.account_id}\n"
+                    ),
                     html_body=email_sender.render_html(
                         "New action item assigned to you",
-                        [f"Hi {item.assigned_to.full_name or item.assigned_to.email},",
-                         f"You've been assigned an action item on {item.account.display_name or item.account.legal_name}:",
-                         item.title] + ([item.description] if item.description else []),
-                        cta_label="View Account", cta_url=f"{base_url}/?account={item.account_id}",
+                        [
+                            f"Hi {item.assigned_to.full_name or item.assigned_to.email},",
+                            f"You've been assigned an action item on "
+                            f"{item.account.display_name or item.account.legal_name}:",
+                            item.title,
+                        ] + ([item.description] if item.description else []),
+                        cta_label="View Account",
+                        cta_url=f"{base_url}/?account={item.account_id}",
                         footnote=due_line.strip() or None,
                     ),
                 )
                 s2 = get_session()
                 try:
-                    s2.add(ActionItemReminder(action_item_id=item.id, reminder_type="assigned",
-                                               sent_to_user_id=item.assigned_to_id))
+                    s2.add(
+                        ActionItemReminder(
+                            action_item_id=item.id,
+                            reminder_type="assigned",
+                            sent_to_user_id=item.assigned_to_id,
+                        )
+                    )
                     s2.commit()
                 except Exception:
                     s2.rollback()
@@ -2792,7 +2828,10 @@ if FASTAPI_AVAILABLE:
                      .filter(ActionItem.assigned_to_id == user.id))
             if user.role != "super_admin":
                 accessible_ids = auth.get_accessible_account_ids(session, user.id)
-                query = query.filter(ActionItem.account_id.in_(accessible_ids)) if accessible_ids else query.filter(False)
+                if accessible_ids:
+                    query = query.filter(ActionItem.account_id.in_(accessible_ids))
+                else:
+                    query = query.filter(False)
             if status:
                 query = query.filter(ActionItem.status == status)
             items = query.order_by(ActionItem.due_date.asc().nullslast(), ActionItem.created_at.desc()).all()

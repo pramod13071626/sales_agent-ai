@@ -2,9 +2,8 @@ import json
 import re
 from pathlib import Path
 from typing import List, Dict, Any, Optional
-from apify_client import ApifyClient
 import config
-from .account_collector import extract_domain, unwrap, save_raw_apify_response, slugify
+from .account_collector import save_raw_apify_response, slugify
 
 
 def scrape_sublobs(

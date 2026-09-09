@@ -597,7 +597,6 @@ def fetch_official_corporate_leadership(
         for item in organic_results:
             title_text = item.get("title", "") if isinstance(item, dict) else ""
             snippet_text = item.get("snippet", "") if isinstance(item, dict) else ""
-            combined_text = f"{title_text} | {snippet_text}"
 
             # Pattern match for 'Name - Title' or 'Name, Title'
             parts = re.split(r"\s*[\-\|–—•]\s*", title_text, maxsplit=2)
@@ -764,12 +763,10 @@ def fetch_apollo_hierarchy_via_monid(
                 )
 
                 people_list: List[Dict[str, Any]] = []
-                total_in_pool = 0
                 if isinstance(data, dict):
                     output_obj = data.get("output", {})
                     if isinstance(output_obj, dict):
                         people_list = output_obj.get("people", [])
-                        total_in_pool = output_obj.get("total_entries", 0)
                     elif isinstance(output_obj, list):
                         people_list = output_obj
                 elif isinstance(data, list):
@@ -1053,8 +1050,9 @@ def resolve_single_contact_waterfall(
 
         comp_variants = list(dict.fromkeys([
             v for v in [
-            company_name, clean_comp_name, dom_root.upper() if len(dom_root) <= 5 else dom_root, clean_dom
-        ]
+                company_name, clean_comp_name,
+                dom_root.upper() if len(dom_root) <= 5 else dom_root, clean_dom
+            ]
             if v and len(v) >= 2
         ]))
 
@@ -1159,7 +1157,6 @@ def resolve_contacts_waterfall_concurrent(
         f"[*] [Waterfall Resolver] Concurrently disambiguating {len(obf_contacts)} "
         f"obfuscated contacts ({max_workers} worker threads)..."
     )
-
 
     resolved_map = {}
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -1599,4 +1596,3 @@ def scrape_lob_hierarchy(
         "hierarchy": hierarchy,
         "contacts": unique_contacts,
     }
-

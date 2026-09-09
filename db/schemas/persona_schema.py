@@ -209,6 +209,9 @@ class PersonaSchema(BaseModel):
             }
 
         return cls(
+            id=person.get("id"),
+            account_id=person.get("account_id"),
+            lob_id=person.get("lob_id"),
             key=person.get("key") or fullname.lower().replace(" ", "_"),
             display_name=person.get("display_name") or f"{fullname} ({person.get('title') or 'Executive'})",
             full_name=fullname,

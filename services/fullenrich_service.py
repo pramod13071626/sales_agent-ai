@@ -42,15 +42,15 @@ class FullEnrichService:
     ) -> List[Dict[str, Any]]:
         """Search people via FullEnrich v2 People Search API."""
         payload: Dict[str, Any] = {"limit": min(limit, 100)}
-        
+
         if person_name:
             payload["person_names"] = [{"value": person_name, "exact_match": False, "exclude": False}]
-            
+
         if company_domain:
             payload["current_company_domains"] = [{"value": company_domain, "exact_match": True, "exclude": False}]
         elif company_name:
             payload["current_company_names"] = [{"value": company_name, "exact_match": False, "exclude": False}]
-            
+
         if job_titles:
             payload["job_titles"] = [{"value": t, "exact_match": False, "exclude": False} for t in job_titles]
 
@@ -77,10 +77,16 @@ class FullEnrichService:
             prof = soc.get("professional_network", {}) or {}
             if isinstance(prof, dict):
                 handle = prof.get("handle") or prof.get("url") or ""
-                match = re.search(r'linkedin\.com/in/([a-zA-Z0-9-]+)', handle) or re.search(r'^([a-zA-Z0-9-]+)$', handle)
+                match = (
+                    re.search(r'linkedin\.com/in/([a-zA-Z0-9-]+)', handle)
+                    or re.search(r'^([a-zA-Z0-9-]+)$', handle)
+                )
                 if match:
                     slug = match.group(1).split('?')[0]
-                    slug_parts = [p for p in slug.split('-') if not re.match(r'^[0-9a-f]{6,}$', p) and not p.isdigit()]
+                    slug_parts = [
+                        p for p in slug.split('-')
+                        if not re.match(r'^[0-9a-f]{6,}$', p) and not p.isdigit()
+                    ]
                     if len(slug_parts) >= 2:
                         first = slug_parts[0].capitalize()
                         last = " ".join([p.capitalize() for p in slug_parts[1:]])
@@ -90,7 +96,11 @@ class FullEnrichService:
     @classmethod
     def infer_department(cls, title: str, headline: str) -> List[str]:
         text = f"{title or ''} {headline or ''}".lower()
-        if any(k in text for k in ['scrum', 'software', 'application', 'developer', 'technology', 'engineer', 'ai', 'data', 'architect']):
+        tech_keys = [
+            'scrum', 'software', 'application', 'developer',
+            'technology', 'engineer', 'ai', 'data', 'architect'
+        ]
+        if any(k in text for k in tech_keys):
             return ['Technology & Engineering']
         if any(k in text for k in ['accounting', 'fund accounting', 'finance', 'tax', 'audit']):
             return ['Finance & Accounting']
@@ -121,15 +131,23 @@ class FullEnrichService:
         return 4, "manager"
 
     @classmethod
-    def enrich_persona_record(cls, person_dict: Dict[str, Any], domain: Optional[str] = None, company_name: Optional[str] = None) -> Dict[str, Any]:
-        """Maps a raw FullEnrich person response object into our standardized Persona schema with all 68 columns mapped."""
+    def enrich_persona_record(
+        cls,
+        person_dict: Dict[str, Any],
+        domain: Optional[str] = None,
+        company_name: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Maps a raw FullEnrich person response object into our standardized Persona schema with 68 columns."""
         emp = person_dict.get("employment", {}) or {}
         curr = emp.get("current", {}) or {}
         loc = person_dict.get("location", {}) or {}
         now_dt = datetime.now(timezone.utc)
-        
+
         # 1. Unmask Full Name
-        raw_fn = person_dict.get("full_name") or f"{person_dict.get('first_name', '')} {person_dict.get('last_name', '')}".strip()
+        raw_fn = (
+            person_dict.get("full_name")
+            or f"{person_dict.get('first_name', '')} {person_dict.get('last_name', '')}".strip()
+        )
         full_name = cls.unmask_name(raw_fn, person_dict) or "Executive"
         first_name = full_name.split()[0]
         last_name = " ".join(full_name.split()[1:]) if len(full_name.split()) > 1 else ""
@@ -137,7 +155,11 @@ class FullEnrichService:
         # 2. Titles & Headline
         curr_title = curr.get("title") or person_dict.get("headline") or "Executive"
         headline = person_dict.get("headline") or curr_title
-        curr_comp = (curr.get("company", {}) or {}).get("name") if isinstance(curr.get("company"), dict) else (company_name or "Enterprise Account")
+        curr_comp = (
+            (curr.get("company", {}) or {}).get("name")
+            if isinstance(curr.get("company"), dict)
+            else (company_name or "Enterprise Account")
+        )
 
         # 3. Tenure & Career Timeline
         timeline = []
@@ -166,7 +188,11 @@ class FullEnrichService:
 
         for h in (emp.get("history", []) or []):
             if isinstance(h, dict):
-                comp = (h.get("company", {}) or {}).get("name") if isinstance(h.get("company"), dict) else h.get("company")
+                comp = (
+                    (h.get("company", {}) or {}).get("name")
+                    if isinstance(h.get("company"), dict)
+                    else h.get("company")
+                )
                 t_role = h.get("title")
                 s_date = (h.get("start_at") or "")[:7]
                 e_date = (h.get("end_at") or "")[:7]
@@ -190,9 +216,17 @@ class FullEnrichService:
         for e in (person_dict.get("educations", []) or []):
             if isinstance(e, dict):
                 deg = e.get("degree") or e.get("field_of_study") or "Degree"
-                inst = (e.get("institution") or {}).get("name") if isinstance(e.get("institution"), dict) else e.get("institution")
+                inst = (
+                    (e.get("institution") or {}).get("name")
+                    if isinstance(e.get("institution"), dict)
+                    else e.get("institution")
+                )
                 if not inst:
-                    inst = (e.get("school") or {}).get("name") if isinstance(e.get("school"), dict) else e.get("school")
+                    inst = (
+                        (e.get("school") or {}).get("name")
+                        if isinstance(e.get("school"), dict)
+                        else e.get("school")
+                    )
                 if inst:
                     education_history.append({"degree": deg, "institution": inst, "school": inst})
                     if not primary_degree:
@@ -204,7 +238,11 @@ class FullEnrichService:
         raw_skills = person_dict.get("skills", []) or []
         skills = [s.get("name") if isinstance(s, dict) else s for s in raw_skills if s][:6]
         if not skills:
-            skills = [p.strip() for p in re.split(r'[|\-,/]', f"{curr_title} {headline}") if len(p.strip()) > 3 and not any(k in p.lower() for k in ['vice president', 'vp', 'senior', 'executive', 'director', 'manager', 'lead'])][:5]
+            ignored = ['vice president', 'vp', 'senior', 'executive', 'director', 'manager', 'lead']
+            skills = [
+                p.strip() for p in re.split(r'[|\-,/]', f"{curr_title} {headline}")
+                if len(p.strip()) > 3 and not any(k in p.lower() for k in ignored)
+            ][:5]
 
         # 6. Hierarchy, Departments & Scoring
         h_level, tier = cls.infer_hierarchy(curr_title)
@@ -264,7 +302,9 @@ class FullEnrichService:
                 "Integration friction with existing custody ledger pipelines",
                 "Strict SOC2 / FedRAMP and FFIEC compliance review cycles"
             ],
-            "value_proposition": f"Accelerate {curr_title} workflows with StradIT applied AI and automated test & data governance.",
+            "value_proposition": (
+                f"Accelerate {curr_title} workflows with StradIT applied AI and automated test & data governance."
+            ),
             "personalized_icebreaker": f"Congratulations on your leadership initiatives at {curr_comp}.",
             "communication_style": "Analytical, data-driven, and outcome-oriented",
             "engagement_rate": 85.0,
@@ -282,12 +322,17 @@ class FullEnrichService:
             "google_scholar_url": f"https://scholar.google.com/scholar?q={url_name}+BNY",
             "openalex_author_url": f"https://api.openalex.org/authors?search={url_name}",
             "orcid_search_url": f"https://pub.orcid.org/v3.0/search/?q={url_name}",
-            "wikidata_person_url": f"https://www.wikidata.org/w/api.php?action=wbsearchentities&search={url_name}&language=en&format=json",
+            "wikidata_person_url": (
+                f"https://www.wikidata.org/w/api.php?action=wbsearchentities"
+                f"&search={url_name}&language=en&format=json"
+            ),
             "youtube_interviews_url": f"https://www.youtube.com/results?search_query={url_name}+BNY+interview",
             "podcast_search_url": f"https://www.google.com/search?q={url_name}+BNY+podcast",
             "google_trends_url": f"https://trends.google.com/trends/explore?q={url_name}",
             "sec_cik": "0001390777",
-            "sec_insider_trades_url": "https://www.sec.gov/edgar/searchedgar/companysearch?CIK=0001390777&type=4",
+            "sec_insider_trades_url": (
+                "https://www.sec.gov/edgar/searchedgar/companysearch?CIK=0001390777&type=4"
+            ),
             "is_new_in_role": False,
             "source": "fullenrich_waterfall",
             "raw_data": person_dict

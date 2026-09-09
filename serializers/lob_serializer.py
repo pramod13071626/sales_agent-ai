@@ -20,20 +20,20 @@ class LOBSerializer:
         lines = raw_text.split("\n")
         clean_lines = []
         for line in lines:
-            l = line.strip()
+            line_str = line.strip()
             if (
-                not l
-                or l.startswith("#")
-                or "Skip to" in l
-                or "Quick Links" in l
-                or "image of" in l
-                or "Visit our websites" in l
-                or "Download full" in l
+                not line_str
+                or line_str.startswith("#")
+                or "Skip to" in line_str
+                or "Quick Links" in line_str
+                or "image of" in line_str
+                or "Visit our websites" in line_str
+                or "Download full" in line_str
             ):
                 continue
-            if len(l.split()) < 3 and not l.endswith("."):
+            if len(line_str.split()) < 3 and not line_str.endswith("."):
                 continue
-            clean_lines.append(l)
+            clean_lines.append(line_str)
         return " ".join(clean_lines[:4])
 
     @classmethod

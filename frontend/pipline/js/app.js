@@ -537,9 +537,9 @@ $(function () {
     const visits = account.monthly_visits
       ? `${(account.monthly_visits / 1e6).toFixed(1)}M/mo` : null;
     const itSpend = account.it_spend
-      ? `\$${Number(account.it_spend).toLocaleString()}` : null;
+      ? `$${Number(account.it_spend).toLocaleString()}` : null;
     const funding = account.total_funding_amount_usd
-      ? `\$${(account.total_funding_amount_usd / 1e6).toFixed(0)}M` : null;
+      ? `$${(account.total_funding_amount_usd / 1e6).toFixed(0)}M` : null;
 
     return `
       <div class="detail-panel fade-in" style="border-top:none;border-radius:8px">
@@ -2031,137 +2031,6 @@ $(function () {
     }
   });
 
-  function renderField(label, value, opts = {}) {
-    if (value === null || value === undefined || value === "") {
-      return `<div class="detail-field${opts.span2 ? " span-2" : ""}">
-      <div class="detail-label">${label}</div>
-      <div class="detail-val" style="color:var(--text-muted);font-style:italic;">—</div>
-    </div>`;
-    }
-    if (opts.url && value) {
-      const display =
-        opts.urlLabel ||
-        (typeof value === "string" && value.length > 60 ? value.substring(0, 60) + "..." : value);
-      return `<div class="detail-field${opts.span2 ? " span-2" : ""}">
-      <div class="detail-label">${label}</div>
-      <div class="detail-val">
-        <a href="${esc(value)}" target="_blank" style="word-break:break-all;">
-          ${esc(display)} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;"></i>
-        </a>
-      </div>
-    </div>`;
-    }
-    if (opts.chips && Array.isArray(value) && value.length) {
-      return `<div class="detail-field${opts.span2 ? " span-2" : ""}">
-      <div class="detail-label">${label}</div>
-      <div class="detail-val">
-        ${value.map((v) => `<span class="data-tag">${esc(String(v))}</span>`).join(" ")}
-      </div>
-    </div>`;
-    }
-    if (opts.json && typeof value === "object") {
-      return `<div class="detail-field span-2">
-      <div class="detail-label">${label}</div>
-      <div class="detail-val">${renderJsonSmart(label, value)}</div>
-    </div>`;
-    }
-    return `<div class="detail-field${opts.span2 ? " span-2" : ""}">
-      <div class="detail-label">${label}</div>
-      <div class="detail-val">${esc(String(value))}</div>
-    </div>`;
-  }
-
-  // Smart JSONB renderer — detects known structures and renders them as cards
-  function renderJsonSmart(label, data) {
-    if (!data) return '<span style="color:var(--text-muted);font-style:italic;">—</span>';
-    const lbl = label.toLowerCase();
-
-    // ── Employment History (array of role objects)
-    if (lbl.includes("employment") && Array.isArray(data) && data.length) {
-      return `<div class="json-card-list">${data
-        .map((job) => {
-          const title = job.title || job.role || "Role";
-          const company = job.company || job.organization || "";
-          const start = job.start_date || job.from || "";
-          const end = job.end_date || job.to || (job.is_current ? "Present" : "");
-          const desc = job.description || "";
-          return `<div class="json-card">
-          <div class="json-card-title"><i class="bi bi-briefcase"></i> ${esc(title)}</div>
-          ${company ? `<div class="json-card-sub">${esc(company)}</div>` : ""}
-          ${start || end ? `<div class="json-card-meta"><i class="bi bi-calendar3"></i> ${esc(start)}
-            ${start && end ? " → " : ""}${esc(end)}</div>` : ""}
-          ${desc ? `<div class="json-card-desc">${esc(desc)}</div>` : ""}
-        </div>`;
-        })
-        .join("")}</div>`;
-    }
-
-    // ── Education History (array of education objects)
-    if (lbl.includes("education") && Array.isArray(data) && data.length) {
-      return `<div class="json-card-list">${data
-        .map((edu) => {
-          const degree = edu.degree || edu.qualification || "";
-          const institution = edu.institution || edu.school || edu.university || "";
-          const field = edu.field_of_study || edu.major || edu.field || "";
-          const year = edu.graduation_year || edu.year || edu.end_date || "";
-          return `<div class="json-card">
-          <div class="json-card-title"><i class="bi bi-mortarboard"></i> ${esc(degree || "Degree")}</div>
-          ${institution ? `<div class="json-card-sub">${esc(institution)}</div>` : ""}
-          ${field ? `<div class="json-card-meta"><i class="bi bi-book"></i> ${esc(field)}</div>` : ""}
-          ${year ? `<div class="json-card-meta"><i class="bi bi-calendar3"></i> ${esc(String(year))}</div>` : ""}
-        </div>`;
-        })
-        .join("")}</div>`;
-    }
-
-    // ── Financial Snippets / Technologies / Competitors / Patents (array of strings or objects)
-    if (Array.isArray(data)) {
-      if (data.length === 0)
-        return '<span style="color:var(--text-muted);font-style:italic;">—</span>';
-      // Array of strings → chips
-      if (typeof data[0] === "string") {
-        return data.map((v) => `<span class="data-tag">${esc(v)}</span>`).join(" ");
-      }
-      // Array of objects → card list
-      return `<div class="json-card-list">${data
-        .map((item) => {
-          if (typeof item === "string")
-            return `<div class="json-card"><div class="json-card-desc">${esc(item)}</div></div>`;
-          const entries = Object.entries(item).filter(
-            ([k, v]) => v !== null && v !== undefined && v !== "",
-          );
-          return `<div class="json-card">${entries
-            .map(
-              ([k, v]) =>
-                `<div class="json-card-row"><span class="json-card-key"
-                  >${esc(k.replace(/_/g, " "))}</span><span class="json-card-value"
-                  >${esc(String(v))}</span></div>`,
-            )
-            .join("")}</div>`;
-        })
-        .join("")}</div>`;
-    }
-
-    // ── Plain object → key-value card
-    if (typeof data === "object" && !Array.isArray(data)) {
-      const entries = Object.entries(data).filter(
-        ([k, v]) => v !== null && v !== undefined && v !== "",
-      );
-      if (entries.length === 0)
-        return '<span style="color:var(--text-muted);font-style:italic;">—</span>';
-      return `<div class="json-card">${entries
-        .map(([k, v]) => {
-          const val = typeof v === "object" ? JSON.stringify(v) : String(v);
-          return `<div class="json-card-row">
-          <span class="json-card-key">${esc(k.replace(/_/g, " "))}</span>
-          <span class="json-card-value">${esc(val)}</span>
-        </div>`;
-        })
-        .join("")}</div>`;
-    }
-
-    return `<span>${esc(String(data))}</span>`;
-  }
 
   // ─── Batch Sequential Pipeline (Pull All → Validate All → Dump All) ─────
 
@@ -2230,7 +2099,6 @@ $(function () {
   }
 
   // Hook into account selection to reset batch states
-  const origAccountClick = $(document).data("events");
   $(document).on("click", ".account-item", function () {
     setTimeout(resetBatchStates, 100);
   });
@@ -2243,7 +2111,7 @@ $(function () {
     if (lobs.length === 0) return;
 
     lobBatchState.running = true;
-    const $progress = $("#lobBatchProgress").removeClass("d-none");
+    $("#lobBatchProgress").removeClass("d-none");
     const $fill = $("#lobProgressFill");
     const $status = $("#lobBatchStatus");
 
@@ -2392,7 +2260,7 @@ $(function () {
     if (personas.length === 0) return;
 
     personaBatchState.running = true;
-    const $progress = $("#personaBatchProgress").removeClass("d-none");
+    $("#personaBatchProgress").removeClass("d-none");
     const $fill = $("#personaProgressFill");
     const $status = $("#personaBatchStatus");
 

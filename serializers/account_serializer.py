@@ -30,15 +30,22 @@ class AccountSerializer:
             web_url = f"https://{web_url}"
         sec_cik = raw_acc.get("sec_cik")
         legal_name = raw_acc.get("legal_name") or name
-        
+
         encoded_name = urllib.parse.quote_plus(f'"{name}"')
         encoded_legal = urllib.parse.quote_plus(legal_name)
         trends_name = urllib.parse.quote_plus(name)
 
         sec_edgar_url = f"https://www.sec.gov/edgar/browse/?CIK={sec_cik}" if sec_cik else None
-        sec_filings_rss = f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={sec_cik}&output=atom" if sec_cik else None
-        sec_submissions_url = f"https://data.sec.gov/submissions/CIK{str(sec_cik).zfill(10)}.json" if sec_cik else None
-        
+        sec_filings_rss = (
+            f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={sec_cik}&output=atom"
+            if sec_cik else None
+        )
+        sec_submissions_url = (
+            f"https://data.sec.gov/submissions/CIK{str(sec_cik).zfill(10)}.json"
+            if sec_cik else None
+        )
+
+        yt_query = urllib.parse.quote_plus(f"{name} official keynote")
         return {
             "key": raw_acc.get("key") or slugify(name),
             "display_name": legal_name,
@@ -56,11 +63,17 @@ class AccountSerializer:
             "rss_url": f"https://news.google.com/rss/search?q={encoded_name}&hl=en-US&gl=US&ceid=US:en",
             "google_patents_url": f"https://patents.google.com/?assignee={encoded_legal}&sort=new",
             "google_trends_url": f"https://trends.google.com/trends/explore?q={trends_name}",
-            "youtube_search_url": f"https://www.youtube.com/results?search_query={urllib.parse.quote_plus(f'{name} official keynote')}",
+            "youtube_search_url": f"https://www.youtube.com/results?search_query={yt_query}",
             "openalex_institution_url": f"https://api.openalex.org/institutions?search={encoded_name}",
-            "wikidata_entity_url": f"https://www.wikidata.org/w/api.php?action=wbsearchentities&search={encoded_name}&language=en&format=json",
+            "wikidata_entity_url": (
+                "https://www.wikidata.org/w/api.php?action=wbsearchentities"
+                f"&search={encoded_name}&language=en&format=json"
+            ),
             "github_url": raw_acc.get("github_url") or f"https://github.com/{slugify(name).replace('_', '')}",
-            "glassdoor_url": raw_acc.get("glassdoor_url") or f"https://www.glassdoor.com/Search/results.htm?keyword={encoded_name}",
+            "glassdoor_url": (
+                raw_acc.get("glassdoor_url")
+                or f"https://www.glassdoor.com/Search/results.htm?keyword={encoded_name}"
+            ),
             "blog_url": f"{web_url.rstrip('/')}/newsroom" if web_url else None,
             "youtube_channel_id": None
         }
@@ -77,7 +90,7 @@ class AccountSerializer:
         legal_name = account_data.get("legal_name") or name
         domain = account_data.get("primary_domain") or account_data.get("domain")
         website_url = account_data.get("website_url") or (f"https://{domain}" if domain else None)
-        
+
         req_account = cls.build_required_account(account_data)
 
         # Helper to extract from either flat or nested dict
@@ -86,7 +99,13 @@ class AccountSerializer:
                 if k in account_data and account_data[k] is not None:
                     return account_data[k]
                 # Also check in nested sub-dicts
-                for sub_k in ["firmographics", "location", "contact_and_social", "financials_and_funding", "market_and_ipo", "acquisitions_and_suborgs", "web_traffic_and_growth", "tech_and_patents", "key_people"]:
+                nested_subkeys = [
+                    "firmographics", "location", "contact_and_social",
+                    "financials_and_funding", "market_and_ipo",
+                    "acquisitions_and_suborgs", "web_traffic_and_growth",
+                    "tech_and_patents", "key_people",
+                ]
+                for sub_k in nested_subkeys:
                     sub_dict = account_data.get(sub_k)
                     if isinstance(sub_dict, dict) and k in sub_dict and sub_dict[k] is not None:
                         return sub_dict[k]
@@ -94,7 +113,7 @@ class AccountSerializer:
 
         # Multi-source intelligence preservation
         multi_source = account_data.get("multi_source_intelligence") or {}
-        
+
         return {
             "required_account": req_account,
             "identity": {

@@ -381,7 +381,7 @@ def run_pipeline(company_name: str, target_url: str = None):
         f"(Grade: {telemetry.quality_grade}) | Credits Used: {telemetry.total_credits_used}"
     )
     print(
-        f"[INFO] Data is staged in JSON and recorded in 'pipeline_runs'. To dump entities to database:"
+        "[INFO] Data is staged in JSON and recorded in 'pipeline_runs'. To dump entities to database:"
     )
     print(f"       python db/importer.py --dir {run_dirs['run_dir']}")
     print("=" * 70)
@@ -402,7 +402,7 @@ def run_pipeline(company_name: str, target_url: str = None):
             print(f"    - {w}")
 
     print("\n" + "=" * 70)
-    print(f"Pipeline Run Completed Successfully (Staged & Validated)!")
+    print("Pipeline Run Completed Successfully (Staged & Validated)!")
     print(f"📁 Run Folder:             {run_dirs['run_dir']}")
     print(f"📄 Enriched Master JSON:   {run_dirs['enriched_json_path']}")
     print(f"📄 Social Launchpad JSON:  {run_dirs['social_json_path']}")

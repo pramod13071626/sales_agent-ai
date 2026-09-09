@@ -166,7 +166,6 @@ def extract_account_firmographics(
     ipo_summary = raw_org.get("ipo_summary", {})
     growth = raw_org.get("growth_and_heat", {})
     semrush = raw_org.get("semrush_summary", {})
-    builtwith = raw_org.get("builtwith_summary", {})
     ipqwery = raw_org.get("ipqwery_summary", {})
     apptopia = raw_org.get("apptopia_summary", {})
     sub_org_summary = raw_org.get("sub_organizations_summary", {})
@@ -627,14 +626,20 @@ def scrape_account(
                             "short_description": li_org.get("tagline") or li_org.get("description"),
                         },
                         "social_fields": {
-                            "linkedin": li_org.get("linkedinUrl")
-                            or f"https://www.linkedin.com/company/{slug}",
+                            "linkedin": (
+                                li_org.get("linkedinUrl")
+                                or li_org.get("url")
+                                or (
+                                    "https://www.linkedin.com/company/"
+                                    f"{re.sub(r'[^a-zA-Z0-9-]+', '', company_name.lower())}"
+                                )
+                            ),
                             "twitter": li_org.get("twitterUrl"),
                         },
                         "website_url": li_org.get("websiteUrl") or website_url,
                     }
                     print(
-                        f"[+] [AccountCollector] Successfully extracted LinkedIn company firmographics via Apify."
+                        "[+] [AccountCollector] Successfully extracted LinkedIn company firmographics via Apify."
                     )
                     return extract_account_firmographics(mapped_org, company_name, website_url)
             except Exception as li_err:
@@ -843,13 +848,19 @@ def fetch_latest_10k_chunks(
 
         # Item 1A: Risk Factors
         item1a_text = extract_longest_section([
-            r"(?:Item\s+1A\.\s+Risk\s+Factors|ITEM\s+1A\.\s+RISK\s+FACTORS)(.*?)(?:Item\s+1B\.|ITEM\s+1B\.|Item\s+2\.|ITEM\s+2\.)",
+            (
+                r"(?:Item\s+1A\.\s+Risk\s+Factors|ITEM\s+1A\.\s+RISK\s+FACTORS)"
+                r"(.*?)(?:Item\s+1B\.|ITEM\s+1B\.|Item\s+2\.|ITEM\s+2\.)"
+            ),
             r"(?:Item\s+1A\s*[-–]\s*Risk\s+Factors)(.*?)(?:Item\s+1B|Item\s+2)",
         ])
         # If Item 1A incorporates by reference or is brief, search for MD&A / main Risk Factors
         if not item1a_text or len(item1a_text) < 500:
             mda_risk_text = extract_longest_section([
-                r"(?:Risk\s+Factors|MD&A\s+[–\-]\s+Risk\s+Factors)(.*?)(?:Item\s+1B|Item\s+2|Item\s+7A|Item\s+8|\bGlossary\b)",
+                (
+                    r"(?:Risk\s+Factors|MD&A\s+[–\-]\s+Risk\s+Factors)"
+                    r"(.*?)(?:Item\s+1B|Item\s+2|Item\s+7A|Item\s+8|\bGlossary\b)"
+                ),
             ])
             if mda_risk_text and len(mda_risk_text) > (len(item1a_text) if item1a_text else 0):
                 item1a_text = mda_risk_text
@@ -859,7 +870,10 @@ def fetch_latest_10k_chunks(
 
         # Item 7: Management's Discussion & Analysis (MD&A)
         item7_text = extract_longest_section([
-            r"(?:Item\s+7\.\s+Management['’]s\s+Discussion|ITEM\s+7\.\s+MANAGEMENT['’]S\s+DISCUSSION)(.*?)(?:Item\s+7A\.|ITEM\s+7A\.|Item\s+8\.|ITEM\s+8\.)",
+            (
+                r"(?:Item\s+7\.\s+Management['’]s\s+Discussion|ITEM\s+7\.\s+MANAGEMENT['’]S\s+DISCUSSION)"
+                r"(.*?)(?:Item\s+7A\.|ITEM\s+7A\.|Item\s+8\.|ITEM\s+8\.)"
+            ),
             r"(?:Item\s+7\s*[-–]\s*Management['’]s\s+Discussion)(.*?)(?:Item\s+7A|Item\s+8)",
         ])
         if item7_text:
@@ -867,8 +881,16 @@ def fetch_latest_10k_chunks(
 
         # Item 10: Directors, Executive Officers & Corporate Governance
         item10_text = extract_longest_section([
-            r"(?:Item\s+10\.\s+Directors,\s+Executive\s+Officers|ITEM\s+10\.\s+DIRECTORS,\s+EXECUTIVE\s+OFFICERS|INFORMATION\s+ABOUT\s+OUR\s+EXECUTIVE\s+OFFICERS)(.*?)(?:Item\s+11\.|ITEM\s+11\.|Item\s+12\.|ITEM\s+12\.|Part\s+IV|SIGNATURES)",
-            r"(?:Executive\s+Officers\s+of\s+the\s+Registrant|Executive\s+Officers)(.*?)(?:Item\s+1A|Item\s+2|Item\s+11|Item\s+12|Part\s+II)",
+            (
+                r"(?:Item\s+10\.\s+Directors,\s+Executive\s+Officers|"
+                r"ITEM\s+10\.\s+DIRECTORS,\s+EXECUTIVE\s+OFFICERS|"
+                r"INFORMATION\s+ABOUT\s+OUR\s+EXECUTIVE\s+OFFICERS)"
+                r"(.*?)(?:Item\s+11\.|ITEM\s+11\.|Item\s+12\.|ITEM\s+12\.|Part\s+IV|SIGNATURES)"
+            ),
+            (
+                r"(?:Executive\s+Officers\s+of\s+the\s+Registrant|Executive\s+Officers)"
+                r"(.*?)(?:Item\s+1A|Item\s+2|Item\s+11|Item\s+12|Part\s+II)"
+            ),
         ])
         if item10_text:
             sections_extracted["Item 10 - Executive Officers"] = item10_text
@@ -880,7 +902,10 @@ def fetch_latest_10k_chunks(
             seen_officer_names = set()
 
             # Pattern A: Table-style "Rajashree Datta 48 Ms. Datta has served as..."
-            table_pat = r"(?:^|\.\s+|\n)([A-Z][a-zA-Z\.\s]{2,30})\s+(\d{2})\s+((?:(?:Mr\.|Ms\.|Dr\.)?\s*.*?(?:has served as|served as|serves as|is)\s+)?([^\.\n]{5,150}))"
+            table_pat = (
+                r"(?:^|\.\s+|\n)([A-Z][a-zA-Z\.\s]{2,30})\s+(\d{2})\s+"
+                r"((?:(?:Mr\.|Ms\.|Dr\.)?\s*.*?(?:has served as|served as|serves as|is)\s+)?([^\.\n]{5,150}))"
+            )
             for tm in re.finditer(table_pat, exec_source_text):
                 raw_name = tm.group(1).strip()
                 clean_name = re.sub(r"^(?:[A-Za-z0-9,\s]+(?:\.|\band\b|\bfrom\b)\s+)+", "", raw_name).strip()
@@ -904,7 +929,12 @@ def fetch_latest_10k_chunks(
                 ):
                     seen_officer_names.add(clean_name.lower())
                     # Extract clean title from bio snippet if available
-                    title_match = re.search(r"(?:serves\s+as|served\s+as|is\s+(?:the\s+)?)([^\.,\n]{5,80})(?:since|\bfrom\b|\band\b|\.|\,|$)", bio_snippet, re.IGNORECASE)
+                    title_match = re.search(
+                        r"(?:serves\s+as|served\s+as|is\s+(?:the\s+)?)([^\.,\n]{5,80})"
+                        r"(?:since|\bfrom\b|\band\b|\.|\,|$)",
+                        bio_snippet,
+                        re.IGNORECASE
+                    )
                     parsed_title = title_match.group(1).strip() if title_match else bio_snippet[:70]
                     structured_execs.append(
                         {
@@ -917,7 +947,10 @@ def fetch_latest_10k_chunks(
                     )
 
             # Pattern B: Inline comma format "Robin Vince, age 53, President and Chief Executive Officer"
-            inline_pat = r"([A-Z][a-zA-Z\.\s]{2,35})\s*[,|\(]\s*(?:age\s*)?(\d{2})?\s*[,|\)]\s*(?:is|has\s+served\s+as|serves\s+as)?\s*([^\.\n]{5,120})\."
+            inline_pat = (
+                r"([A-Z][a-zA-Z\.\s]{2,35})\s*[,|\(]\s*(?:age\s*)?(\d{2})?\s*[,|\)]\s*"
+                r"(?:is|has\s+served\s+as|serves\s+as)?\s*([^\.\n]{5,120})\."
+            )
             for om in re.finditer(inline_pat, exec_source_text):
                 o_name = om.group(1).strip()
                 o_age = om.group(2)
@@ -962,13 +995,29 @@ def fetch_latest_10k_chunks(
                 r_title = rt_match.group(1).strip() if rt_match else rp[:100] + "..."
 
                 rp_lower = rp.lower()
-                if any(k in rp_lower for k in ["cyber", "technology", "information security", "data breach", "cloud", "ai", "artificial intelligence", "system failure", "ransomware", "outage", "disruption"]):
+                cyber_keys = [
+                    "cyber", "technology", "information security", "data breach", "cloud",
+                    "ai", "artificial intelligence", "system failure", "ransomware", "outage", "disruption"
+                ]
+                reg_keys = [
+                    "regulation", "regulatory", "capital", "compliance", "sec", "fdic",
+                    "federal reserve", "basel", "legal", "sanctions", "litigation", "law"
+                ]
+                market_keys = [
+                    "credit", "liquidity", "market", "interest rate", "inflation",
+                    "volatility", "counterparty", "trading", "asset quality", "currency"
+                ]
+                strat_keys = [
+                    "geopolitical", "war", "climate", "esg", "reputation",
+                    "talent", "retention", "competition", "merger", "operational", "processing"
+                ]
+                if any(k in rp_lower for k in cyber_keys):
                     category = "Cyber & Technology Risk"
-                elif any(k in rp_lower for k in ["regulation", "regulatory", "capital", "compliance", "sec", "fdic", "federal reserve", "basel", "legal", "sanctions", "litigation", "law"]):
+                elif any(k in rp_lower for k in reg_keys):
                     category = "Regulatory & Compliance Risk"
-                elif any(k in rp_lower for k in ["credit", "liquidity", "market", "interest rate", "inflation", "volatility", "counterparty", "trading", "asset quality", "currency"]):
+                elif any(k in rp_lower for k in market_keys):
                     category = "Market & Financial Risk"
-                elif any(k in rp_lower for k in ["geopolitical", "war", "climate", "esg", "reputation", "talent", "retention", "competition", "merger", "operational", "processing"]):
+                elif any(k in rp_lower for k in strat_keys):
                     category = "Strategic & Operational Risk"
                 else:
                     category = "General Enterprise Risk"
@@ -1093,7 +1142,9 @@ def extract_full_patents(
                             "grant_date": item.get("publicationDate") or item.get("date"),
                             "filing_date": item.get("filingDate"),
                             "assignee": item.get("assignee") or company_name,
-                            "google_patent_url": item.get("link") or f"https://patents.google.com/?assignee={encoded_name}",
+                            "google_patent_url": (
+                                item.get("link") or f"https://patents.google.com/?assignee={encoded_name}"
+                            ),
                         }
                     )
         except Exception as serper_err:
@@ -1429,7 +1480,10 @@ def fetch_gleif_ownership_tree(
         legal_form_data = entity_attr.get("legalForm", {})
         legal_form_id = legal_form_data.get("id")
         legal_form_name = legal_form_data.get("name") or legal_form_data.get("otherLegalForm")
-        reg_auth_id = reg_attr.get("registrationAuthorityEntityId") or reg_attr.get("registrationAuthority", {}).get("registrationAuthorityId")
+        reg_auth_id = (
+            reg_attr.get("registrationAuthorityEntityId")
+            or reg_attr.get("registrationAuthority", {}).get("registrationAuthorityId")
+        )
         managing_lou = reg_attr.get("managingLou")
         registration_date = reg_attr.get("initialRegistrationDate")
         country = legal_address.get("country")
@@ -1467,8 +1521,15 @@ def fetch_gleif_ownership_tree(
                         c_country = c_entity.get("legalAddress", {}).get("country")
                         c_status = c_entity.get("status")
                         c_legal_form_dict = c_entity.get("legalForm", {})
-                        c_legal_form = c_legal_form_dict.get("name") or c_legal_form_dict.get("otherLegalForm") or c_legal_form_dict.get("id")
-                        c_reg_auth = c_reg.get("registrationAuthorityEntityId") or c_reg.get("registrationAuthority", {}).get("registrationAuthorityId")
+                        c_legal_form = (
+                            c_legal_form_dict.get("name")
+                            or c_legal_form_dict.get("otherLegalForm")
+                            or c_legal_form_dict.get("id")
+                        )
+                        c_reg_auth = (
+                            c_reg.get("registrationAuthorityEntityId")
+                            or c_reg.get("registrationAuthority", {}).get("registrationAuthorityId")
+                        )
                         is_comm = is_commercial_operating_lob(c_legal_name or "")
 
                         child_obj = {

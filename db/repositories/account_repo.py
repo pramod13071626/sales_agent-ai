@@ -34,6 +34,10 @@ class AccountRepository:
         # Map all schema fields → ORM model fields
         data = schema.model_dump(exclude={"extracted_at"})
         for field, value in data.items():
+            if field == "id" and value is None:
+                continue
+            if field in ("lobs", "personas", "action_items", "user_access", "signals"):
+                continue
             if hasattr(acct, field):
                 setattr(acct, field, value)
 

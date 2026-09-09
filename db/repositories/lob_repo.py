@@ -44,9 +44,14 @@ class LobRepository:
             lob = Lob(account_id=account.id)
             data = schema.model_dump()
             for field, value in data.items():
+                if field == "id" and value is None:
+                    continue
+                if field in ("sub_lobs", "personas", "account", "account_id"):
+                    continue
                 if hasattr(lob, field):
                     setattr(lob, field, value)
 
+            lob.account_id = account.id
             self.session.add(lob)
             self.session.flush()
             lob_map[lob.lob_name] = lob.id
@@ -80,9 +85,14 @@ class LobRepository:
         schema = LobSchema.from_enriched_json(lob_data)
         data = schema.model_dump()
         for field, value in data.items():
+            if field == "id" and value is None:
+                continue
+            if field in ("sub_lobs", "personas", "account", "account_id"):
+                continue
             if hasattr(lob, field):
                 setattr(lob, field, value)
 
+        lob.account_id = account_id
         self.session.flush()
 
         # Sub-LOBs

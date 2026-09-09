@@ -1,3 +1,4 @@
+import datetime
 import os
 import re
 import json
@@ -5,12 +6,19 @@ import time
 import urllib.parse
 from urllib.parse import urlparse
 from pathlib import Path
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List
+from apify_client import ApifyClient
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 import config
+from collectors.account_collector import (
+    fetch_latest_10k_chunks,
+    extract_full_patents,
+    fetch_sec_exhibit_21_subsidiaries,
+    fetch_gleif_ownership_tree,
+)
 
 
 class AccountServiceHTTPClient:
@@ -402,7 +410,6 @@ class AccountCoalesceEngine:
             domain or diff.get("domain") or cb.get("domain") or serp.get("domain")
         )
         sec_cik = cls.clean_text(sec.get("sec_cik") or fmp.get("cik") or diff.get("sec_cik"))
-        lei_code = cls.clean_text(gleif.get("lei") or sec.get("lei"))
         company_type = cls.clean_text(
             cb.get("company_type")
             or opencorp.get("company_type")
@@ -481,7 +488,6 @@ class AccountCoalesceEngine:
         glassdoor_url = cls.clean_text(
             gd.get("glassdoor_url") or cb.get("glassdoor_url") or serp.get("glassdoor_url")
         )
-        wikipedia_url = cls.clean_text(wiki.get("wikipedia_url") or serp.get("wikipedia_url"))
 
         # 5. SEC EDGAR URLs
         sec_edgar_url = cls.clean_text(
@@ -936,9 +942,9 @@ class AccountService:
                     ex21_data = fetch_sec_exhibit_21_subsidiaries(sec_cik_val)
                     RawDataLakeWriter.save_raw(ex21_data, "sec_exhibit21", company_name, run_raw_dir)
                     print(
-                    f"[+] [AccountService] Exhibit 21: "
-                    f"{ex21_data.get('total_subsidiaries_found', 0)} subsidiaries found"
-                )
+                        f"[+] [AccountService] Exhibit 21: "
+                        f"{ex21_data.get('total_subsidiaries_found', 0)} subsidiaries found"
+                    )
                 except Exception as e:
                     print(f"[!] [AccountService] Exhibit 21 notice: {e}")
 
@@ -1054,7 +1060,7 @@ class AccountService:
                     sec_result["sic_description"] = sub_data.get("sicDescription")
                     sec_result["fiscal_year_end"] = sub_data.get("fiscalYearEnd")
                     sec_result["phone"] = sub_data.get("phone")
-                    
+
                     addr = sub_data.get("addresses", {}).get("business", {})
                     sec_result["city"] = addr.get("city")
                     sec_result["state"] = addr.get("stateOrCountry")
