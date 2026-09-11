@@ -30,7 +30,10 @@ $(function () {
   $("#sidebarOverlay").on("click", closeSidebar);
 
   // ─── Fetch Live Data ──────────────────────────────────────────────────
-  const API_BASE = window.location.port === "8000" ? "" : "http://127.0.0.1:8000";
+  // Same-origin by default — this page is served by the API server itself
+  // (api.py mounts /pipline as a StaticFiles dir), so API calls should just
+  // hit whatever host:port the page was loaded from, not a hardcoded 8000.
+  const API_BASE = "";
   let MOCK_DATA = { accounts: [] };
   let activeAccount = null;
   let activeLob = null;
