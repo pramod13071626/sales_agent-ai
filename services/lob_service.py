@@ -573,16 +573,14 @@ class LobService:
         account_id: Optional[int] = None,
         sec_cik: Optional[str] = None,
         run_raw_dir: Optional[Path] = None,
-        max_workers: int = 4,
+        max_workers: int = 8,
     ) -> List[Dict[str, Any]]:
         """
         Batch enriches all discovered LOB subsidiaries in parallel using ThreadPoolExecutor.
-        First dynamically clusters flat subsidiaries so child units nest under parent LOBs.
+        Enriches all 15 discovered subsidiaries as individual operating units.
         """
-        clustered_list = cls.cluster_lobs_and_sublobs(lobs_list, parent_company)
         print(
-            f"[*] [LobService] Starting Batch Enrichment for {len(clustered_list)} LOBs of '{parent_company}' "
-            f"(Clustered from {len(lobs_list)} raw subsidiaries)..."
+            f"[*] [LobService] Starting Batch Enrichment for all {len(lobs_list)} LOB subsidiaries of '{parent_company}'..."
         )
         results = []
 
@@ -597,7 +595,7 @@ class LobService:
                     sec_cik,
                     run_raw_dir,
                 ): lob
-                for lob in clustered_list
+                for lob in lobs_list
                 if (lob.get("lob_name") or lob.get("name"))
             }
 

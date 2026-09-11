@@ -37,8 +37,11 @@ class PersonaRepository:
                 persona = Persona(account_id=account.id, lob_id=None)
                 data = schema.model_dump()
                 for field, value in data.items():
+                    if field in ("id", "account_id", "lob_id", "account", "lob") and value is None:
+                        continue
                     if hasattr(persona, field):
                         setattr(persona, field, value)
+                persona.account_id = account.id
 
                 self.session.add(persona)
                 count += 1
@@ -62,8 +65,12 @@ class PersonaRepository:
                 persona = Persona(account_id=account.id, lob_id=lob_id)
                 data = schema.model_dump()
                 for field, value in data.items():
+                    if field in ("id", "account_id", "lob_id", "account", "lob") and value is None:
+                        continue
                     if hasattr(persona, field):
                         setattr(persona, field, value)
+                persona.account_id = account.id
+                persona.lob_id = lob_id
 
                 if persona.key and persona.key in seen_keys:
                     existing = (
@@ -84,12 +91,28 @@ class PersonaRepository:
         return count
 
     def upsert(self, schema: PersonaSchema) -> Persona:
-        """Upsert a single Persona from PersonaSchema."""
+        """Upsert a single Persona from PersonaSchema with multi-strategy disambiguation."""
         existing = None
         if schema.id:
             existing = self.session.query(Persona).filter_by(id=schema.id).first()
+        if not existing and schema.account_id and schema.external_id:
+            existing = self.session.query(Persona).filter_by(account_id=schema.account_id, external_id=schema.external_id).first()
         if not existing and schema.account_id and schema.key:
             existing = self.session.query(Persona).filter_by(account_id=schema.account_id, key=schema.key).first()
+        if not existing and schema.account_id and schema.full_name:
+            existing = self.session.query(Persona).filter_by(account_id=schema.account_id, full_name=schema.full_name).first()
+        if not existing and schema.account_id and schema.first_name:
+            candidates = self.session.query(Persona).filter_by(account_id=schema.account_id, first_name=schema.first_name).all()
+            for cand in candidates:
+                cand_last = (cand.last_name or "").strip().replace(".", "").lower()
+                schema_last = (schema.last_name or "").strip().replace(".", "").lower()
+                if (
+                    (len(cand_last) <= 2 and schema_last.startswith(cand_last))
+                    or (len(schema_last) <= 2 and cand_last.startswith(schema_last))
+                    or (cand.title and schema.title and cand.title[:15].lower() == schema.title[:15].lower())
+                ):
+                    existing = cand
+                    break
 
         persona = existing or Persona(account_id=schema.account_id)
         if not existing:

@@ -166,26 +166,45 @@
         </div>
 
         <!-- Section 2.5: All Other Account Personas & Executive Directory (Complete Enterprise Hierarchy) -->
-        <div id="allPersonasSection" class="mt-4 d-none">
-          <div class="section-header d-flex align-items-center justify-content-between
-                      flex-wrap gap-2">
-            <div>
+        <div id="allPersonasSection" class="mt-4">
+          <div class="section-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+            <div class="d-flex align-items-center gap-2">
               <span id="allPersonasSectionTitle">
                 <i class="bi bi-person-lines-fill"></i>&nbsp; All Account Executive Personas &amp; Directory
               </span>
               <span class="text-muted" style="font-size: .75rem; font-weight: normal;"
                     id="allPersonasCountBadge"></span>
             </div>
-            <!-- Live Search Bar -->
-            <div class="persona-search-wrapper">
-              <i class="bi bi-search" style="position: absolute; left: 11px; top: 50%;
-                 transform: translateY(-50%); font-size: 0.8rem; color: var(--text-muted);
-                 pointer-events: none;"></i>
-              <input type="text" id="allPersonasSearchInput" class="persona-search-input"
-                     placeholder="Search name, title, department..." autocomplete="off" />
-              <button type="button" id="clearAllPersonasSearch" class="persona-search-clear"
-                      title="Clear search"><i class="bi bi-x"></i></button>
+            <div class="d-flex align-items-center gap-3 flex-wrap">
+              <div class="batch-pipeline-actions" id="allPersonasBatchActions">
+                <button type="button" class="batch-btn batch-btn-pull" id="allPersonasBatchPull"
+                        title="Step 1: Discover and pull live 4-tier hierarchy for all personas">
+                  <i class="bi bi-cloud-arrow-down"></i> Pull All
+                </button>
+                <button type="button" class="batch-btn batch-btn-validate" id="allPersonasBatchValidate" disabled
+                        title="Step 2: Validate all discovered personas">
+                  <i class="bi bi-shield-check"></i> Validate All
+                </button>
+                <button type="button" class="batch-btn batch-btn-dump" id="allPersonasBatchDump" disabled
+                        title="Step 3: Save all validated personas to PostgreSQL database">
+                  <i class="bi bi-database-check"></i> Dump All
+                </button>
+              </div>
+              <!-- Live Search Bar -->
+              <div class="persona-search-wrapper">
+                <i class="bi bi-search" style="position: absolute; left: 11px; top: 50%;
+                   transform: translateY(-50%); font-size: 0.8rem; color: var(--text-muted);
+                   pointer-events: none;"></i>
+                <input type="text" id="allPersonasSearchInput" class="persona-search-input"
+                       placeholder="Search name, title, department..." autocomplete="off" />
+                <button type="button" id="clearAllPersonasSearch" class="persona-search-clear"
+                        title="Clear search"><i class="bi bi-x"></i></button>
+              </div>
             </div>
+          </div>
+          <div class="batch-progress-container d-none" id="allPersonasBatchProgress">
+            <div class="batch-progress-bar"><div class="batch-progress-fill" id="allPersonasProgressFill"></div></div>
+            <div class="batch-status-text" id="allPersonasBatchStatus"></div>
           </div>
 
           <!-- Dynamic Hierarchy / Tier Filter Pills Bar -->
@@ -300,7 +319,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/app.js?v=2.6.4"></script>
+<script src="js/app.js?v=2.9.3"></script>
 <script src="js/chatbot.js?v=2.3.6"></script>
 
 <!-- ── Add New Account Modal ──────────────────────────── -->
