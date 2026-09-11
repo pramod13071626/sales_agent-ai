@@ -8,6 +8,7 @@ class PersonaSchema(BaseModel):
     id: Optional[int] = None
     account_id: Optional[int] = None
     lob_id: Optional[int] = None
+    external_id: Optional[str] = None
     key: str
     display_name: str
     full_name: str
@@ -58,24 +59,24 @@ class PersonaSchema(BaseModel):
     social_platform: Optional[str] = None
     social_profile_url: Optional[str] = None
     social_presence_level: Optional[str] = None
-    skills: Optional[List[str]] = None
-    target_kpis: Optional[List[str]] = None
-    operational_pain_points: Optional[List[str]] = None
-    key_objections: Optional[List[str]] = None
-    employment_history: Optional[List[Dict[str, Any]]] = None
-    past_companies: Optional[List[str]] = None
-    previous_titles: Optional[List[str]] = None
-    current_role_tenure_months: Optional[int] = None
-    is_new_in_role: Optional[bool] = None
-    career_trajectory_score: Optional[float] = None
+    skills: Optional[Any] = None
+    target_kpis: Optional[Any] = None
+    operational_pain_points: Optional[Any] = None
+    key_objections: Optional[Any] = None
+    employment_history: Optional[Any] = None
+    past_companies: Optional[Any] = None
+    previous_titles: Optional[Any] = None
+    current_role_tenure_months: Optional[Any] = None
+    is_new_in_role: Optional[Any] = None
+    career_trajectory_score: Optional[Any] = None
     headline: Optional[str] = None
-    education_history: Optional[List[Dict[str, Any]]] = None
+    education_history: Optional[Any] = None
     personal_email: Optional[str] = None
     direct_mobile_phone: Optional[str] = None
-    osint_feed_manifest: Optional[Dict[str, Any]] = None
+    osint_feed_manifest: Optional[Any] = None
 
     @classmethod
-    def from_enriched_json(cls, person: Dict[str, Any]) -> "PersonaSchema":
+    def from_enriched_json(cls, person: Dict[str, Any], tree_info: Optional[Dict[str, Any]] = None) -> "PersonaSchema":
         raw = person.get("raw_data") or {}
         rpd = person.get("required_person_data") or {}
         dossier = (
@@ -208,10 +209,66 @@ class PersonaSchema(BaseModel):
                 }
             }
 
+        raw_id = person.get("id")
+        valid_id = raw_id if isinstance(raw_id, int) else None
+        ext_id = str(person.get("external_id") or raw.get("id") or raw.get("apollo_id") or "") or (str(raw_id) if raw_id and not isinstance(raw_id, int) else None)
+        if ext_id == "":
+            ext_id = None
+        raw_acct_id = person.get("account_id")
+        valid_acct_id = int(raw_acct_id) if isinstance(raw_acct_id, (int, str)) and str(raw_acct_id).isdigit() else None
+        raw_lob_id = person.get("lob_id")
+        valid_lob_id = int(raw_lob_id) if isinstance(raw_lob_id, (int, str)) and str(raw_lob_id).isdigit() else None
+
+        # Department classification fallback
+        depts = (
+            person.get("departments")
+            or ([person.get("department")] if person.get("department") else None)
+        )
+        if not depts:
+            t_lower = (person.get("title") or raw.get("title") or "").lower()
+            if any(k in t_lower for k in ["tech", "information", "cio", "cto", "engineer", "software", "architect", "data", "cloud", "security", "ciso"]):
+                depts = ["Information Technology & Engineering"]
+            elif any(k in t_lower for k in ["finance", "cfo", "financial", "accounting", "treasury", "tax"]):
+                depts = ["Finance & Treasury"]
+            elif any(k in t_lower for k in ["risk", "cro", "compliance", "regulatory", "audit", "legal", "counsel"]):
+                depts = ["Risk, Compliance & Legal"]
+            elif any(k in t_lower for k in ["operations", "coo", "operating", "infrastructure"]):
+                depts = ["Global Operations"]
+            elif any(k in t_lower for k in ["hr", "people", "talent", "human resources"]):
+                depts = ["Human Resources & Talent"]
+            elif any(k in t_lower for k in ["client", "sales", "commercial", "revenue", "cro", "marketing", "cmo"]):
+                depts = ["Commercial & Client Services"]
+            elif any(k in t_lower for k in ["ceo", "president", "chief", "chair", "board"]):
+                depts = ["Executive Leadership"]
+            elif "director" in t_lower:
+                depts = ["Executive Management"]
+            else:
+                depts = ["Corporate Management"]
+
+        # Authority level classification fallback
+        tier_val = person.get("tier") or "tier3_functional_leads"
+        dec_auth = person.get("decision_authority") or l1.get("decision_authority")
+        bud_auth = person.get("budget_authority") or l1.get("budget_authority")
+        if not dec_auth:
+            t_lower = (person.get("title") or raw.get("title") or "").lower()
+            if tier_val in ["c_suite", "tier1_csuite_and_officers"] or "chief" in t_lower or "president" in t_lower or "ceo" in t_lower:
+                dec_auth = "Final Sign-off / Executive Committee"
+                bud_auth = bud_auth or "Enterprise Budget Sign-off"
+            elif tier_val in ["vp_level", "tier2_global_and_division_heads"] or "vp" in t_lower or "vice president" in t_lower or "head" in t_lower:
+                dec_auth = "Key Recommender & Decision Maker"
+                bud_auth = bud_auth or "Division Budget Owner"
+            elif tier_val in ["director_level", "tier4_directors_and_management"] or "director" in t_lower:
+                dec_auth = "Operational Evaluator"
+                bud_auth = bud_auth or "Project Budget Owner"
+            else:
+                dec_auth = "Technical Influencer"
+                bud_auth = bud_auth or "Discretionary Budget"
+
         return cls(
-            id=person.get("id"),
-            account_id=person.get("account_id"),
-            lob_id=person.get("lob_id"),
+            id=valid_id,
+            account_id=valid_acct_id,
+            lob_id=valid_lob_id,
+            external_id=ext_id,
             key=person.get("key") or fullname.lower().replace(" ", "_"),
             display_name=person.get("display_name") or f"{fullname} ({person.get('title') or 'Executive'})",
             full_name=fullname,
@@ -220,10 +277,7 @@ class PersonaSchema(BaseModel):
             title=person.get("title") or raw.get("title") or "Executive",
             tier=person.get("tier") or "tier3_functional_leads",
             seniority_raw=person.get("seniority_raw") or person.get("seniority"),
-            departments=(
-                person.get("departments")
-                or ([person.get("department")] if person.get("department") else None)
-            ),
+            departments=depts,
             email=person.get("email") or raw.get("email"),
             email_status=person.get("email_status") or raw.get("email_status"),
             phone=person.get("phone") or raw.get("phone"),
@@ -234,8 +288,8 @@ class PersonaSchema(BaseModel):
             country=person.get("country") or raw.get("country"),
             source=person.get("source") or "apollo",
             hierarchy_level=person.get("hierarchy_level") or 3,
-            decision_authority=person.get("decision_authority") or l1.get("decision_authority"),
-            budget_authority=person.get("budget_authority") or l1.get("budget_authority"),
+            decision_authority=dec_auth,
+            budget_authority=bud_auth,
             raw_data=person.get("raw_data") or person,
             twitter_handle=person.get("twitter_handle") or rpd.get("twitter_handle"),
             twitter_live_url=person.get("twitter_live_url") or rpd.get("twitter_live_url"),

@@ -24,9 +24,16 @@ class DataQualityValidator:
         """Validates if a string is a well-formed HTTP/HTTPS URL."""
         if not url or not isinstance(url, str):
             return False
+        clean = url.strip()
+        if not clean or len(clean) < 4:
+            return False
+        if clean.startswith("//"):
+            clean = "https:" + clean
+        elif not clean.startswith("http://") and not clean.startswith("https://"):
+            clean = "https://" + clean
         try:
-            result = urlparse(url)
-            return all([result.scheme in ["http", "https"], result.netloc])
+            result = urlparse(clean)
+            return bool(result.scheme in ["http", "https"] and result.netloc and "." in result.netloc)
         except Exception:
             return False
 
@@ -39,26 +46,52 @@ class DataQualityValidator:
 
     @classmethod
     def validate_account(cls, account_section: Dict[str, Any]) -> Dict[str, Any]:
-        """Audits Account firmographics, identity, and required_account scraping URLs."""
-        identity = account_section.get("identity", {}) or {}
-        firmographics = account_section.get("firmographics", {}) or {}
-        location = account_section.get("location", {}) or {}
-        market = account_section.get("market_and_ipo", {}) or {}
-        req_acc = account_section.get("required_account", {}) or {}
+        """Audits Account firmographics, identity, and required_account scraping URLs.
+        Handles flat dictionaries, nested sub-dicts, and wrapped {'account': ...} payloads.
+        """
+        # Unwrap top-level "account" key if present
+        acct = account_section.get("account", {}) if isinstance(account_section.get("account"), dict) else account_section
+        if not isinstance(acct, dict):
+            acct = account_section
+
+        _sub_dicts = [
+            acct.get("required_account", {}) if isinstance(acct.get("required_account"), dict) else {},
+            acct.get("identity", {}) if isinstance(acct.get("identity"), dict) else {},
+            acct.get("firmographics", {}) if isinstance(acct.get("firmographics"), dict) else {},
+            acct.get("location", {}) if isinstance(acct.get("location"), dict) else {},
+            acct.get("contact_and_social", {}) if isinstance(acct.get("contact_and_social"), dict) else {},
+            acct.get("financials_and_funding", {}) if isinstance(acct.get("financials_and_funding"), dict) else {},
+            acct.get("market_and_ipo", {}) if isinstance(acct.get("market_and_ipo"), dict) else {},
+            acct.get("acquisitions_and_suborgs", {}) if isinstance(acct.get("acquisitions_and_suborgs"), dict) else {},
+            acct.get("web_traffic_and_growth", {}) if isinstance(acct.get("web_traffic_and_growth"), dict) else {},
+            acct.get("tech_and_patents", {}) if isinstance(acct.get("tech_and_patents"), dict) else {},
+        ]
+
+        def _v(*keys):
+            for k in keys:
+                for d in _sub_dicts:
+                    if isinstance(d, dict) and d.get(k) is not None and d.get(k) != "":
+                        return d[k]
+                if isinstance(acct, dict) and acct.get(k) is not None and acct.get(k) != "":
+                    return acct[k]
+                if isinstance(account_section, dict) and account_section.get(k) is not None and account_section.get(k) != "":
+                    return account_section[k]
+            return None
 
         # 1. Structural and firmographic checks
+        raw_key = _v("key", "name") or "account"
         checks = {
-            "has_key": cls.is_clean_key(req_acc.get("key")),
-            "has_display_name": bool(req_acc.get("display_name")),
-            "has_legal_name": bool(identity.get("legal_name")),
-            "has_domain": bool(identity.get("domain") or identity.get("primary_domain")),
-            "has_website_url": cls.is_valid_url(identity.get("website_url")),
-            "has_crunchbase_url": cls.is_valid_url(identity.get("crunchbase_url")),
-            "has_hq_location": bool(location.get("headquarters_location")),
-            "has_founded_year": bool(firmographics.get("founded_year")),
-            "has_employee_count_range": bool(firmographics.get("employee_count_range")),
-            "has_sec_cik": bool(market.get("sec_cik")),
-            "has_stock_symbol": bool(market.get("stock_symbol")),
+            "has_key": cls.is_clean_key(str(raw_key)),
+            "has_display_name": bool(_v("display_name", "legal_name", "name")),
+            "has_legal_name": bool(_v("legal_name", "display_name", "name")),
+            "has_domain": bool(_v("domain", "primary_domain", "target_url")),
+            "has_website_url": cls.is_valid_url(_v("website_url")),
+            "has_crunchbase_url": cls.is_valid_url(_v("crunchbase_url", "company_url")),
+            "has_hq_location": bool(_v("headquarters_location", "city")),
+            "has_founded_year": bool(_v("founded_year", "founded_date")),
+            "has_employee_count_range": bool(_v("employee_count_range")),
+            "has_sec_cik": bool(_v("sec_cik")),
+            "has_stock_symbol": bool(_v("stock_symbol", "ticker")),
         }
 
         # 2. Strict Account Required URLs Audit
@@ -68,7 +101,7 @@ class DataQualityValidator:
             "google_patents_url", "google_trends_url", "youtube_search_url",
             "openalex_institution_url", "wikidata_entity_url"
         ]
-        valid_urls = {f: cls.is_valid_url(req_acc.get(f)) for f in url_fields}
+        valid_urls = {f: cls.is_valid_url(_v(f)) for f in url_fields}
         valid_urls_count = sum(1 for v in valid_urls.values() if v)
         checks["account_urls_valid"] = f"{valid_urls_count}/{len(url_fields)}"
 
@@ -76,9 +109,9 @@ class DataQualityValidator:
         score = round((passed / len(checks)) * 100, 1)
 
         warnings = []
-        if not market.get("sec_cik"):
+        if not _v("sec_cik"):
             warnings.append("SEC CIK is missing (may be a private or non-US entity).")
-        if not location.get("headquarters_location"):
+        if not _v("headquarters_location", "city"):
             warnings.append("Headquarters location is not fully resolved.")
         if valid_urls_count < len(url_fields):
             missing = [f for f, ok in valid_urls.items() if not ok]
@@ -86,8 +119,8 @@ class DataQualityValidator:
 
         # 3. Optional Enrichments Tracking
         optional_urls = {
-            "github_url": cls.is_valid_url(req_acc.get("github_url")),
-            "glassdoor_url": cls.is_valid_url(req_acc.get("glassdoor_url"))
+            "github_url": cls.is_valid_url(_v("github_url")),
+            "glassdoor_url": cls.is_valid_url(_v("glassdoor_url"))
         }
 
         return {
@@ -136,7 +169,7 @@ class DataQualityValidator:
             lei = lob.get("lei_code")
             rev = lob.get("audited_segment_revenue")
             head = lob.get("operating_head")
-            req = lob.get("required_account", {}) or {}
+            req = lob.get("required_account", {}) if isinstance(lob.get("required_account"), dict) else {}
 
             if domain:
                 total_with_domain += 1
@@ -147,7 +180,10 @@ class DataQualityValidator:
             if head:
                 total_with_operating_head += 1
 
-            urls_valid = sum(1 for f in url_fields if cls.is_valid_url(req.get(f)))
+            urls_valid = sum(
+                1 for f in url_fields
+                if cls.is_valid_url(req.get(f) or lob.get(f) or (lob.get("google_news_rss_url") if f == "rss_url" else None))
+            )
             total_valid_lob_urls += urls_valid
 
             lob_results.append({

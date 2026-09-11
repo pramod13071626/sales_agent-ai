@@ -1264,6 +1264,7 @@ if FASTAPI_AVAILABLE:
 
         acct_name = acct.legal_name or acct.display_name or acct.key
         acct_loc = acct.headquarters_location or (f"{acct.city}, {acct.country}" if acct.city else None)
+        acct_desc = acct.short_description or acct.full_description
 
         return {
             "id": acct.id,
@@ -1273,22 +1274,57 @@ if FASTAPI_AVAILABLE:
             "legal_name": acct.legal_name or acct_name,
             "ticker": acct.stock_symbol,
             "stock_symbol": acct.stock_symbol,
+            "revenue": acct.estimated_revenue_range or "Revenue N/A",
+            "estimated_revenue_range": acct.estimated_revenue_range,
             "location": acct_loc,
             "headquarters_location": acct_loc,
+            "desc": acct_desc,
+            "short_description": acct_desc,
+            "full_description": acct.full_description or acct_desc,
+            "domain": acct.domain,
+            "primary_domain": acct.primary_domain or acct.domain,
+            "website_url": acct.website_url,
+            "crunchbase_url": acct.crunchbase_url,
+            "operating_status": acct.operating_status,
             "city": acct.city,
             "state": acct.state,
             "country": acct.country,
+            "postal_code": acct.postal_code,
+            "phone_number": acct.phone_number,
+            "sanitized_phone": acct.sanitized_phone,
+            "contact_email": acct.contact_email,
             "company_type": acct.company_type,
+            "founded_year": acct.founded_year,
             "employee_count_range": acct.employee_count_range,
             "linkedin_url": acct.linkedin_url,
+            "twitter_url": acct.twitter_url,
+            "twitter_handle": acct.twitter_handle,
             "stock_exchange": acct.stock_exchange,
             "sec_cik": acct.sec_cik,
+            "sec_edgar_url": acct.sec_edgar_url,
+            "sec_filings_rss": acct.sec_filings_rss,
+            "sec_submissions_url": acct.sec_submissions_url,
+            "twitter_live_url": acct.twitter_live_url,
+            "reddit_query": acct.reddit_query,
+            "reddit_rss_url": acct.reddit_rss_url,
+            "news_query": acct.news_query,
+            "rss_url": acct.rss_url,
+            "google_patents_url": acct.google_patents_url,
+            "google_trends_url": acct.google_trends_url,
+            "youtube_search_url": acct.youtube_search_url,
+            "openalex_institution_url": acct.openalex_institution_url,
+            "wikidata_entity_url": acct.wikidata_entity_url,
+            "github_url": acct.github_url,
+            "glassdoor_url": acct.glassdoor_url,
+            "blog_url": acct.blog_url,
             "industries": acct.industries or [],
+            "keywords": acct.keywords or [],
             "lobs_count": len(lobs_list),
             "total_contacts_captured": len(personas_list),
             "lobs": lobs_list,
             "personas": personas_list,
             "multi_source_intelligence": acct.multi_source_intelligence,
+            "organisational_hierarchy_tree": acct.organisational_hierarchy_tree,
             "extracted_at": acct.extracted_at.isoformat() if acct.extracted_at else None,
             "heat_score": acct.heat_score,
             "trend_score_90d": acct.trend_score_90d,
@@ -1297,12 +1333,14 @@ if FASTAPI_AVAILABLE:
             "patents_granted": acct.patents_granted,
             "trademarks_registered": acct.trademarks_registered,
             "total_funding_amount_usd": acct.total_funding_amount_usd,
+            "total_funding_currency": acct.total_funding_currency,
             "last_funding_type": acct.last_funding_type,
             "last_funding_date": acct.last_funding_date.isoformat() if acct.last_funding_date else None,
             "num_funding_rounds": acct.num_funding_rounds,
             "funding_status": acct.funding_status,
             "ipo_status": acct.ipo_status,
             "ipo_date": acct.ipo_date.isoformat() if acct.ipo_date else None,
+            "num_suborganizations": acct.num_suborganizations,
             "num_acquisitions": acct.num_acquisitions,
             "global_traffic_rank": acct.global_traffic_rank,
             "monthly_visits": acct.monthly_visits,
@@ -1497,8 +1535,9 @@ if FASTAPI_AVAILABLE:
 
     @lobs_router.post("/fetch")
     def fetch_lobs_data(req: LobsFetchRequest):
-        """[Tab 2 - Fetch Button]: Discovers sub-organizations and enriches
-        segment revenues (single LOB or full company)."""
+        """[Tab 2 - Fetch Button]: Multi-Source LOB & Subsidiary Discovery + 10-Source Enrichment.
+        Uses SEC Exhibit 21 + GLEIF Ownership Tree + Crunchbase + Diffbot + LobService.enrich_all_lobs().
+        """
         try:
             if req.lob_name:
                 single_lob = LobService.enrich_single_lob(
@@ -1515,8 +1554,84 @@ if FASTAPI_AVAILABLE:
                     "total_lobs": 1,
                 }
             else:
-                raw_sublobs = scrape_sublobs(req.company_name)
-                enriched_lobs = enrich_lob_segments(req.company_name, raw_sublobs)
+                # ── Batch LOB Discovery Waterfall ──
+                discovered_names = []
+                sec_cik_val = None
+
+                # 1. Check if Account already exists in DB with discovered LOB names
+                session = get_session()
+                try:
+                    acct = None
+                    if req.account_id:
+                        acct = session.query(Account).filter_by(id=req.account_id).first()
+                    if not acct and req.company_name:
+                        acct = session.query(Account).filter(
+                            Account.display_name.ilike(f"%{req.company_name}%")
+                        ).first()
+
+                    if acct:
+                        sec_cik_val = acct.sec_cik
+                        # Check discovered_lob_names or multi_source_intelligence
+                        if acct.organisational_hierarchy_tree:
+                            tree = acct.organisational_hierarchy_tree
+                            for s in tree.get("sec_exhibit21_subsidiaries", []):
+                                if s.get("legal_name"):
+                                    discovered_names.append(s.get("legal_name"))
+                            for c in tree.get("gleif_children", []):
+                                if c.get("legal_name"):
+                                    discovered_names.append(c.get("legal_name"))
+                except Exception as db_err:
+                    print(f"[!] [LobFetch] DB Account lookup notice: {db_err}")
+                finally:
+                    session.close()
+
+                # 2. If no names from DB, query SEC Exhibit 21 and GLEIF directly
+                if not discovered_names and sec_cik_val:
+                    try:
+                        ex21 = fetch_sec_exhibit_21_subsidiaries(sec_cik_val)
+                        for s in ex21.get("subsidiaries", []):
+                            if s.get("legal_name"):
+                                discovered_names.append(s.get("legal_name"))
+                    except Exception as e:
+                        print(f"[!] [LobFetch] SEC Exhibit 21 live notice: {e}")
+
+                if not discovered_names and req.company_name:
+                    try:
+                        gleif_tree = fetch_gleif_ownership_tree(req.company_name, max_children=20)
+                        for c in gleif_tree.get("child_entities", []):
+                            if c.get("legal_name"):
+                                discovered_names.append(c.get("legal_name"))
+                    except Exception as e:
+                        print(f"[!] [LobFetch] GLEIF live notice: {e}")
+
+                # 3. Augment with Crunchbase sub-organizations
+                try:
+                    cb_subs = scrape_sublobs(req.company_name)
+                    for cb in cb_subs:
+                        cb_name = cb.get("name") or cb.get("sub_organization_name")
+                        if cb_name:
+                            discovered_names.append(cb_name)
+                except Exception as e:
+                    print(f"[!] [LobFetch] Crunchbase sublobs notice: {e}")
+
+                # 4. Deduplicate discovered subsidiary names
+                unique_names = list(dict.fromkeys([n.strip() for n in discovered_names if n and len(n.strip()) > 1]))
+
+                # Build input list for enrichment
+                lobs_to_enrich = [{"name": n, "lob_name": n} for n in unique_names]
+
+                # 5. Enrich via enterprise LobService
+                if lobs_to_enrich:
+                    enriched_lobs = LobService.enrich_all_lobs(
+                        lobs_list=lobs_to_enrich,
+                        parent_company=req.company_name,
+                        account_id=req.account_id,
+                        sec_cik=sec_cik_val,
+                    )
+                else:
+                    raw_sublobs = scrape_sublobs(req.company_name)
+                    enriched_lobs = enrich_lob_segments(req.company_name, raw_sublobs)
+
                 return {
                     "status": "staged",
                     "company_name": req.company_name,
@@ -1767,10 +1882,35 @@ if FASTAPI_AVAILABLE:
             if not acct:
                 raise HTTPException(status_code=404, detail=f"Account ID {req.account_id} not found in DB.")
 
-            schema = PersonaSchema.from_enriched_json(req.person_data)
+            p_data = dict(req.person_data)
+            p_data["account_id"] = acct.id
+            schema = PersonaSchema.from_enriched_json(p_data)
 
-            # Check if persona with same key exists for account
-            existing = session.query(Persona).filter_by(account_id=acct.id, key=schema.key).first()
+            # Intelligent Multi-Strategy Match: External ID -> Exact Key -> Exact Full Name -> Fuzzy Obfuscated Name
+            existing = None
+            if schema.external_id:
+                existing = session.query(Persona).filter_by(account_id=acct.id, external_id=schema.external_id).first()
+            if not existing and schema.key:
+                existing = session.query(Persona).filter_by(account_id=acct.id, key=schema.key).first()
+            if not existing and schema.full_name:
+                existing = session.query(Persona).filter_by(account_id=acct.id, full_name=schema.full_name).first()
+            if not existing and schema.first_name:
+                candidates = session.query(Persona).filter_by(account_id=acct.id, first_name=schema.first_name).all()
+                for cand in candidates:
+                    cand_last = (cand.last_name or "").strip().replace(".", "").lower()
+                    schema_last = (schema.last_name or "").strip().replace(".", "").lower()
+                    # Check if one is an initial or prefix of the other (e.g. "S" / "S." vs "La Salla")
+                    is_initial_match = (
+                        (len(cand_last) <= 2 and schema_last.startswith(cand_last))
+                        or (len(schema_last) <= 2 and cand_last.startswith(schema_last))
+                    )
+                    is_title_match = bool(
+                        cand.title and schema.title and cand.title[:15].lower() == schema.title[:15].lower()
+                    )
+                    if is_initial_match or is_title_match:
+                        existing = cand
+                        break
+
             if existing:
                 persona = existing
             else:
@@ -1779,9 +1919,12 @@ if FASTAPI_AVAILABLE:
 
             data = schema.model_dump()
             for field, value in data.items():
+                if field in ("id", "account_id", "lob_id", "account", "lob") and value is None:
+                    continue
                 if hasattr(persona, field):
                     setattr(persona, field, value)
 
+            persona.account_id = acct.id
             session.commit()
             return {
                 "status": "success",
@@ -1802,7 +1945,10 @@ if FASTAPI_AVAILABLE:
         """[Tab 4 - Full Org Hierarchy Fetch Button]: Pulls live 4-tier organization hierarchy."""
         try:
             hierarchy = scrape_hierarchy(
-                company_domain=req.company_domain, company_name=req.company_name, sec_cik=req.sec_cik
+                company_domain=req.company_domain,
+                company_name=req.company_name,
+                sec_cik=req.sec_cik,
+                max_total_records=config.DEFAULT_HIERARCHY_LIMIT,
             )
 
             if req.enrich_csuite_dossiers and hierarchy.get("c_suite"):
@@ -2230,16 +2376,17 @@ if FASTAPI_AVAILABLE:
                 if target_key
                 else []
             )
-            movements = (
-                (
-                    session.query(CxoMovement)
-                    .filter(CxoMovement.person_name.ilike(f"%{p.full_name}%"))
-                    .order_by(CxoMovement.effective_date.desc().nullslast())
-                    .all()
-                )
-                if p.full_name
-                else []
-            )
+            movements = []
+            try:
+                if p.full_name:
+                    movements = (
+                        session.query(CxoMovement)
+                        .filter(CxoMovement.person_name.ilike(f"%{p.full_name}%"))
+                        .order_by(CxoMovement.effective_date.desc().nullslast())
+                        .all()
+                    )
+            except Exception:
+                movements = []
 
             persona_dict = {
                 "name": p.full_name or p.display_name or "Executive",

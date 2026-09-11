@@ -115,8 +115,11 @@ $(function () {
     }
   }
 
+  // Expose for the Retry button's inline onclick (runs outside this closure).
+  window.loadData = loadData;
 
   // ─── UI Rendering Logic ─────────────────────────────────────────────────
+
 
   const BRAND_ICONS = {
     google_news: `
@@ -504,12 +507,12 @@ $(function () {
     return "other";
   }
 
-  // ─── Account Intelligence Data Section ─────────────────────────────────────
+  // ─── Clean Enterprise Intelligence Snapshot & Live Signals ───
   function renderAccountDataSection(account) {
     if (!account) return "";
 
     function tag(label, val, icon) {
-      if (!val && val !== 0) return "";
+      if (!val && val !== 0 && val !== "0") return "";
       return `<div class="detail-field">
         <div class="detail-label">${icon ? `<i class="bi ${icon}"></i> ` : ""}${label}</div>
         <div class="detail-val">${esc(String(val))}</div>
@@ -517,54 +520,43 @@ $(function () {
     }
     function linkTag(label, url, icon, linkText) {
       if (!url) return "";
-      const display = linkText || url.replace(/^https?:\/\//, "").slice(0, 40);
+      const display = linkText || url.replace(/^https?:\/\//, "").slice(0, 36);
       return `<div class="detail-field">
         <div class="detail-label">${icon ? `<i class="bi ${icon}"></i> ` : ""}${label}</div>
         <div class="detail-val">
-          <a href="${esc(url)}" target="_blank" rel="noopener" style="color:var(--accent)">
-            ${esc(display)}
+          <a href="${esc(url)}" target="_blank" rel="noopener" style="color:var(--brand);font-weight:600;word-break:break-all;">
+            ${esc(display)} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;"></i>
           </a>
         </div>
       </div>`;
     }
 
     const industries = (account.industries || []).join(", ");
-    const keywords = (account.keywords || []).slice(0, 8).join(", ");
-    const heatScore = account.heat_score
-      ? `${account.heat_score}/100` : null;
-    const traffic = account.global_traffic_rank
-      ? `#${Number(account.global_traffic_rank).toLocaleString()}` : null;
-    const visits = account.monthly_visits
-      ? `${(account.monthly_visits / 1e6).toFixed(1)}M/mo` : null;
-    const itSpend = account.it_spend
-      ? `$${Number(account.it_spend).toLocaleString()}` : null;
-    const funding = account.total_funding_amount_usd
-      ? `$${(account.total_funding_amount_usd / 1e6).toFixed(0)}M` : null;
+    const secOrLei = account.sec_cik
+      ? `CIK: ${account.sec_cik}`
+      : (account.organisational_hierarchy_tree?.gleif_lei ? `LEI: ${account.organisational_hierarchy_tree.gleif_lei}` : null);
+    const loc = account.headquarters_location || account.location || [account.city, account.state, account.country].filter(Boolean).join(", ");
+    const revenueVal = account.revenue && account.revenue !== "Revenue N/A" ? account.revenue : (account.estimated_revenue_range || null);
+    const websiteUrl = account.website_url || (account.domain ? (account.domain.startsWith("http") ? account.domain : `https://${account.domain}`) : null);
 
     return `
-      <div class="detail-panel fade-in" style="border-top:none;border-radius:8px">
+      <div class="detail-panel fade-in" style="border-top:none;border-radius:12px;margin-top:16px;">
         <div class="detail-section">
           <div class="detail-section-heading">
             <i class="bi bi-building-gear"></i> Enterprise Intelligence Snapshot
           </div>
           <div class="detail-grid">
-            ${tag("Industry", industries, "bi-tags")}
-            ${tag("Employees", account.employee_count_range, "bi-people")}
-            ${tag("Company Type", account.company_type, "bi-diagram-3")}
+            ${tag("Employees", account.employee_count_range || "1-5000", "bi-people")}
+            ${tag("Company Type", account.company_type || "Private", "bi-diagram-3")}
+            ${tag("Operating Status", account.operating_status || "ACTIVE", "bi-activity")}
+            ${tag("Revenue", revenueVal, "bi-cash-stack")}
+            ${tag("Location", loc, "bi-geo-alt")}
             ${tag("Founded", account.founded_year, "bi-calendar3")}
-            ${tag("Operating Status", account.operating_status, "bi-activity")}
-            ${tag("Heat Score", heatScore, "bi-fire")}
-            ${tag("Global Traffic Rank", traffic, "bi-bar-chart")}
-            ${tag("Monthly Visits", visits, "bi-cursor")}
-            ${tag("IT Spend", itSpend, "bi-server")}
-            ${tag("Total Funding", funding, "bi-currency-dollar")}
-            ${tag("Funding Status", account.funding_status, "bi-graph-up-arrow")}
-            ${tag("IPO Status", account.ipo_status, "bi-bank")}
-            ${tag("Active Tech Stack", account.active_tech_count
-              ? `${account.active_tech_count} tools` : null, "bi-code-slash")}
-            ${tag("Patents Granted", account.patents_granted, "bi-file-earmark-text")}
-            ${tag("Trademarks", account.trademarks_registered, "bi-r-circle")}
-            ${tag("Keywords", keywords, "bi-search")}
+            ${tag("Funding Status", account.funding_status || "Private", "bi-graph-up-arrow")}
+            ${tag("IPO Status", account.ipo_status || "Private", "bi-bank")}
+            ${tag("Regulatory ID", secOrLei, "bi-file-earmark-check")}
+            ${tag("Industry", industries, "bi-tags")}
+            ${linkTag("Official Website", websiteUrl, "bi-globe")}
           </div>
         </div>
         <div class="detail-section">
@@ -573,10 +565,8 @@ $(function () {
           </div>
           <div class="detail-grid">
             ${linkTag("SEC EDGAR", account.sec_edgar_url, "bi-file-earmark-ruled")}
-            ${linkTag("SEC Filings RSS", account.sec_filings_rss, "bi-rss")}
             ${linkTag("LinkedIn", account.linkedin_url, "bi-linkedin")}
-            ${linkTag("Twitter / X", account.twitter_live_url || account.twitter_url,
-              "bi-twitter-x")}
+            ${linkTag("Twitter / X", account.twitter_live_url || account.twitter_url, "bi-twitter-x")}
             ${linkTag("Google News", account.rss_url, "bi-newspaper")}
             ${linkTag("Reddit Feed", account.reddit_rss_url, "bi-reddit")}
             ${linkTag("Google Patents", account.google_patents_url, "bi-lightbulb")}
@@ -584,8 +574,6 @@ $(function () {
             ${linkTag("YouTube", account.youtube_search_url, "bi-youtube")}
             ${linkTag("Crunchbase", account.crunchbase_url, "bi-boxes")}
             ${linkTag("Wikidata", account.wikidata_entity_url, "bi-wikipedia")}
-            ${linkTag("GitHub", account.github_url, "bi-github")}
-            ${linkTag("Glassdoor", account.glassdoor_url, "bi-star")}
           </div>
         </div>
       </div>`;
@@ -626,14 +614,40 @@ $(function () {
     $("#clearAllPersonasSearch").hide();
 
     if (all.length === 0) {
-      console.warn("[renderDir] no personas — hiding section");
-      $("#allPersonasSection").addClass("d-none");
+      console.log("[renderDir] 0 personas discovered yet — showing discovery prompt");
+      $("#allPersonasSection").removeClass("d-none");
+      $("#allPersonasCountBadge").text("(0 Discovered)");
+      $("#allPersonasFilterTabs").empty();
+      $("#allPersonasCardsContainer").html(`
+        <div style="grid-column: 1/-1; padding: 36px 20px; text-align: center;
+                    color: var(--text-muted); font-size: 0.9rem;
+                    background: var(--card-bg, #fff); border: 1px dashed var(--border, #cbd5e1);
+                    border-radius: 12px; margin-top: 8px;">
+          <div style="width: 48px; height: 48px; border-radius: 50%; background: var(--badge-bg, #f1f5f9);
+                      display: inline-flex; align-items: center; justify-content: center; margin-bottom: 12px; color: var(--accent, #0ea5e9); font-size: 1.4rem;">
+            <i class="bi bi-people"></i>
+          </div>
+          <div style="font-weight: 600; color: var(--text, #1e293b); font-size: 0.95rem; margin-bottom: 4px;">
+            No Executive Personas Discovered Yet
+          </div>
+          <div style="color: var(--text-muted, #64748b); font-size: 0.8rem; max-width: 480px; margin: 0 auto 16px;">
+            Click <strong>Pull All</strong> in the header above to discover executive leadership across C-Suite, VPs, Directors &amp; Managers via Apollo, Corporate Web, and OSINT.
+          </div>
+        </div>
+      `);
+      $("#allPersonasShowMoreContainer").addClass("d-none");
+      $("#allPersonasBatchPull, #personaBatchPull").prop("disabled", false).removeClass("done running").html('<i class="bi bi-cloud-arrow-down"></i> Pull All');
+      $("#allPersonasBatchValidate, #personaBatchValidate").prop("disabled", true);
+      $("#allPersonasBatchDump, #personaBatchDump").prop("disabled", true);
       return;
     }
 
     console.log("[renderDir] showing section, rendering cards");
     $("#allPersonasSection").removeClass("d-none");
     $("#allPersonasCountBadge").text(`(${all.length} Total Captured)`);
+    $("#allPersonasBatchPull, #personaBatchPull").removeClass("running").addClass("done").html('<i class="bi bi-cloud-arrow-down"></i> Pulled ✔');
+    $("#allPersonasBatchValidate, #personaBatchValidate").prop("disabled", false);
+    $("#allPersonasBatchDump, #personaBatchDump").prop("disabled", false);
 
     renderPersonaFilterTabs();
     renderFilteredPersonaCards();
@@ -2105,11 +2119,92 @@ $(function () {
 
   // ─── Sequential LOB Batch Pipeline ───────────────────────────────────────
 
+  // ─── Sequential LOB Batch Pipeline ───────────────────────────────────────
+
   async function runBatchLobPipeline(action) {
     if (!activeAccount || lobBatchState.running) return;
     const lobs = activeAccount.lobs || [];
-    if (lobs.length === 0) return;
 
+    // ── Initial Discovery Case: When 0 LOBs exist yet for this account ──
+    if (lobs.length === 0) {
+      if (action !== "pull") return;
+      lobBatchState.running = true;
+      $("#lobBatchProgress").removeClass("d-none");
+      const $fill = $("#lobProgressFill");
+      const $status = $("#lobBatchStatus");
+      const $pullBtn = $("#lobBatchPull");
+      const $validateBtn = $("#lobBatchValidate");
+      const $dumpBtn = $("#lobBatchDump");
+
+      $fill.removeClass("validate dump");
+      $pullBtn.prop("disabled", true).addClass("running").html('<i class="bi bi-hourglass-split"></i> Discovering...');
+      $fill.css("width", "50%");
+      $status.html(`Discovering Operating Subsidiaries & LOBs for <strong>${esc(activeAccount.name)}</strong>...`);
+
+      try {
+        const res = await fetch(`${API_BASE}/api/lobs/fetch`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            account_id: activeAccount.id,
+            company_name: activeAccount.name,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const discovered = data.lobs || [];
+          activeAccount.lobs = discovered.map((l, idx) => ({
+            id: l.id || idx + 1,
+            name: l.lob_name || l.name,
+            overview: l.overview,
+            revenue: l.audited_segment_revenue,
+            domain: l.domain,
+            ...l,
+          }));
+          lobBatchState.stagedData = discovered;
+
+          // Render newly discovered LOB cards
+          const $lobCards = $("#lobCardsContainer").empty();
+          if (activeAccount.lobs.length === 0) {
+            $lobCards.append('<div style="color:var(--text-muted);font-size:.85rem;padding:8px 0;">No Lines of Business discovered for this account.</div>');
+            $("#lobCountBadge").text("(0 Divisions)");
+          } else {
+            $("#lobCountBadge").text(`(${activeAccount.lobs.length} Division${activeAccount.lobs.length > 1 ? "s" : ""})`);
+            activeAccount.lobs.forEach((lob) => {
+              const subtitle = lob.revenue ? `Rev: ${lob.revenue}` : lob.desc || lob.overview || "Business Division";
+              $lobCards.append(`
+                <div class="compact-card lob-card fade-in"
+                     data-lob-id="${lob.id}"
+                     title="Click to explore ${esc(lob.name)} division and personas">
+                  <div class="compact-card-avatar"><i class="bi bi-folder2"></i></div>
+                  <div class="compact-card-body">
+                    <div class="compact-card-title">${esc(lob.name)}</div>
+                    <div class="compact-card-subtitle">${esc(subtitle)}</div>
+                  </div>
+                </div>
+              `);
+            });
+          }
+
+          $fill.css("width", "100%");
+          $status.html(`<strong>✔ Complete:</strong> Discovered <span class="batch-success">${discovered.length} Lines of Business & Subsidiaries</span>`);
+          $pullBtn.removeClass("running").addClass("done").html('<i class="bi bi-cloud-arrow-down"></i> Pulled ✔');
+          lobBatchState.pulled = true;
+          $validateBtn.prop("disabled", false);
+        } else {
+          $status.html(`<span class="batch-fail">Discovery failed: ${res.statusText}</span>`);
+          $pullBtn.removeClass("running").prop("disabled", false).html('<i class="bi bi-cloud-arrow-down"></i> Pull All');
+        }
+      } catch (err) {
+        $status.html(`<span class="batch-fail">Error: ${err.message}</span>`);
+        $pullBtn.removeClass("running").prop("disabled", false).html('<i class="bi bi-cloud-arrow-down"></i> Pull All');
+      }
+
+      lobBatchState.running = false;
+      return;
+    }
+
+    // ── Standard Item-by-Item Batch Pipeline ──
     lobBatchState.running = true;
     $("#lobBatchProgress").removeClass("d-none");
     const $fill = $("#lobProgressFill");
@@ -2161,7 +2256,6 @@ $(function () {
             account_id: activeAccount.id,
             desc: lob.desc || lob.overview,
           };
-          // Call LOB fetch API
           const res = await fetch(`${API_BASE}/api/lobs/fetch`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -2178,7 +2272,7 @@ $(function () {
             successCount++;
           } else {
             lobBatchState.stagedData[i] = staged;
-            successCount++; // Stage with local data as fallback
+            successCount++;
           }
         } else if (action === "validate") {
           const staged = lobBatchState.stagedData[i] || lob;
@@ -2193,7 +2287,7 @@ $(function () {
             lobBatchState.stagedData[i]._score = data.score;
             successCount++;
           } else {
-            successCount++; // Continue even on validation errors
+            successCount++;
           }
         } else if (action === "dump") {
           const staged = lobBatchState.stagedData[i] || lob;
@@ -2251,26 +2345,84 @@ $(function () {
     if (!activeAccount || personaBatchState.running) return;
 
     // Get current personas (could be filtered by LOB)
-    const personas = activeLob
+    let personas = activeLob
       ? [
           ...(activeLob.personas || []),
           ...(activeLob.subLobs || []).flatMap((s) => s.personas || []),
         ]
       : activeAccount.personas || [];
-    if (personas.length === 0) return;
+
+    // ── Initial Discovery Case: When 0 Personas exist yet ──
+    if (personas.length === 0) {
+      if (action !== "pull") return;
+      personaBatchState.running = true;
+      $("#personaBatchProgress, #allPersonasBatchProgress").removeClass("d-none");
+      const $fill = $("#personaProgressFill, #allPersonasProgressFill");
+      const $status = $("#personaBatchStatus, #allPersonasBatchStatus");
+      const $pullBtn = $("#personaBatchPull, #allPersonasBatchPull");
+      const $validateBtn = $("#personaBatchValidate, #allPersonasBatchValidate");
+      const $dumpBtn = $("#personaBatchDump, #allPersonasBatchDump");
+
+      $fill.removeClass("validate dump");
+      $pullBtn.prop("disabled", true).addClass("running").html('<i class="bi bi-hourglass-split"></i> Discovering Contacts...');
+      $fill.css("width", "50%");
+      $status.html(`Discovering Executive Hierarchy & Contacts for <strong>${esc(activeAccount.name)}</strong>...`);
+
+      try {
+        const res = await fetch(`${API_BASE}/api/personas/fetch-hierarchy`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            company_domain: activeAccount.domain || activeAccount.primary_domain || "dtcc.com",
+            company_name: activeAccount.name,
+            sec_cik: activeAccount.sec_cik || null,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const hierarchy = data.hierarchy || {};
+          const flatList = [
+            ...(hierarchy.c_suite || []),
+            ...(hierarchy.vp_level || []),
+            ...(hierarchy.director_level || []),
+            ...(hierarchy.manager_level || []),
+          ];
+
+          activeAccount.personas = flatList;
+          personaBatchState.stagedData = flatList;
+          renderAllPersonasDirectory(activeAccount);
+
+          $fill.css("width", "100%");
+          $status.html(`<strong>✔ Complete:</strong> Discovered <span class="batch-success">${flatList.length} Contacts & Executives</span>`);
+          $pullBtn.removeClass("running").addClass("done").html('<i class="bi bi-cloud-arrow-down"></i> Pulled ✔');
+          personaBatchState.pulled = true;
+          $validateBtn.prop("disabled", false);
+          $dumpBtn.prop("disabled", false);
+        } else {
+          $status.html(`<span class="batch-fail">Hierarchy fetch failed: ${res.statusText}</span>`);
+          $pullBtn.removeClass("running").prop("disabled", false).html('<i class="bi bi-cloud-arrow-down"></i> Pull All');
+        }
+      } catch (err) {
+        $status.html(`<span class="batch-fail">Error: ${err.message}</span>`);
+        $pullBtn.removeClass("running").prop("disabled", false).html('<i class="bi bi-cloud-arrow-down"></i> Pull All');
+      }
+
+      personaBatchState.running = false;
+      return;
+    }
 
     personaBatchState.running = true;
-    $("#personaBatchProgress").removeClass("d-none");
-    const $fill = $("#personaProgressFill");
-    const $status = $("#personaBatchStatus");
+    $("#personaBatchProgress, #allPersonasBatchProgress").removeClass("d-none");
+    const $fill = $("#personaProgressFill, #allPersonasProgressFill");
+    const $status = $("#personaBatchStatus, #allPersonasBatchStatus");
 
     $fill.removeClass("validate dump");
     if (action === "validate") $fill.addClass("validate");
     if (action === "dump") $fill.addClass("dump");
 
-    const $pullBtn = $("#personaBatchPull");
-    const $validateBtn = $("#personaBatchValidate");
-    const $dumpBtn = $("#personaBatchDump");
+    const $pullBtn = $("#personaBatchPull, #allPersonasBatchPull");
+    const $validateBtn = $("#personaBatchValidate, #allPersonasBatchValidate");
+    const $dumpBtn = $("#personaBatchDump, #allPersonasBatchDump");
 
     let successCount = 0;
     let failCount = 0;
@@ -2400,14 +2552,14 @@ $(function () {
     runBatchLobPipeline("dump");
   });
 
-  // Persona batch buttons
-  $("#personaBatchPull").on("click", function () {
+  // Persona batch buttons (LOB level and Account Directory level)
+  $("#personaBatchPull, #allPersonasBatchPull").on("click", function () {
     runBatchPersonaPipeline("pull");
   });
-  $("#personaBatchValidate").on("click", function () {
+  $("#personaBatchValidate, #allPersonasBatchValidate").on("click", function () {
     runBatchPersonaPipeline("validate");
   });
-  $("#personaBatchDump").on("click", function () {
+  $("#personaBatchDump, #allPersonasBatchDump").on("click", function () {
     runBatchPersonaPipeline("dump");
   });
 

@@ -13,16 +13,23 @@ class AccountRepository:
         self.session = session
 
     def upsert(self, schema: AccountSchema) -> Account:
-        """Upsert an account. Matches dynamically by key, primary domain, or sec_cik."""
+        """Upsert an account. Matches dynamically by normalized domain, key, display_name, or sec_cik."""
+        from sqlalchemy import or_
+
         filters = [Account.key == schema.key]
         if schema.primary_domain or schema.domain:
-            dom = schema.primary_domain or schema.domain
-            filters.append(Account.primary_domain == dom)
-            filters.append(Account.domain == dom)
+            dom = (schema.primary_domain or schema.domain).lower().strip()
+            clean_dom = dom.replace("https://", "").replace("http://", "").split("/")[0].replace("www.", "").strip()
+            if clean_dom:
+                filters.append(Account.primary_domain.ilike(f"%{clean_dom}%"))
+                filters.append(Account.domain.ilike(f"%{clean_dom}%"))
+        if schema.display_name:
+            clean_name = schema.display_name.strip()
+            if len(clean_name) > 3:
+                filters.append(Account.display_name.ilike(f"%{clean_name}%"))
         if schema.sec_cik:
             filters.append(Account.sec_cik == schema.sec_cik)
 
-        from sqlalchemy import or_
         existing = self.session.query(Account).filter(or_(*filters)).first()
 
         if existing:

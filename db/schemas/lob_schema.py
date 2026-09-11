@@ -14,30 +14,32 @@ class LobSchema(BaseModel):
     audited_segment_revenue: Optional[str] = None
     operating_head: Optional[str] = None
     segment_headcount: Optional[str] = None
-    technologies: Optional[List[str]] = None
-    competitors: Optional[List[str]] = None
-    financial_snippets: Optional[List[Dict[str, Any]]] = None
-    patents: Optional[List[Dict[str, Any]]] = None
+    technologies: Optional[Any] = None
+    competitors: Optional[Any] = None
+    financial_snippets: Optional[Any] = None
+    patents: Optional[Any] = None
     relationship_type: Optional[str] = None
     domain: Optional[str] = None
     website_url: Optional[str] = None
     crunchbase_url: Optional[str] = None
+    wikipedia_url: Optional[str] = None
     lei_code: Optional[str] = None
     jurisdiction: Optional[str] = None
     logo_url: Optional[str] = None
+    raw_data: Optional[Any] = None
     google_news_rss_url: Optional[str] = None
     reddit_rss_url: Optional[str] = None
     google_patents_url: Optional[str] = None
     google_trends_url: Optional[str] = None
     youtube_search_url: Optional[str] = None
-    osint_feed_manifest: Optional[Dict[str, Any]] = None
-    sub_lobs: Optional[List[Dict[str, Any]]] = None
-    personas: Optional[List[Dict[str, Any]]] = None
+    osint_feed_manifest: Optional[Any] = None
+    sub_lobs: Optional[Any] = None
+    personas: Optional[Any] = None
 
     @classmethod
-    def from_enriched_json(cls, lob_data: Dict[str, Any]) -> "LobSchema":
+    def from_enriched_json(cls, lob_data: Dict[str, Any], social_urls: Optional[Dict[str, Any]] = None) -> "LobSchema":
         req = lob_data.get("required_lob") or {}
-        urls = lob_data.get("urls") or {}
+        urls = {**(lob_data.get("urls") or {}), **(social_urls or {})}
 
         name = lob_data.get("name") or lob_data.get("lob_name") or "Operating Segment"
         enc_name = urllib.parse.quote_plus(name)
@@ -152,6 +154,8 @@ class LobSchema(BaseModel):
             lei_code=lob_data.get("lei_code"),
             jurisdiction=lob_data.get("jurisdiction"),
             logo_url=lob_data.get("logo_url"),
+            wikipedia_url=lob_data.get("wikipedia_url"),
+            raw_data=lob_data.get("raw_data"),
             google_news_rss_url=news_url,
             reddit_rss_url=reddit_url,
             google_patents_url=patents_url,
