@@ -589,7 +589,13 @@ class AccountCoalesceEngine:
                 "website_url": website_url,
                 "twitter_handle": twitter_handle,
                 "twitter_live_url": cls.clean_text(
-                    f"https://x.com/{twitter_handle.lstrip('@')}" if twitter_handle else twitter_url
+                    f"https://x.com/{twitter_handle.lstrip('@')}"
+                    if twitter_handle
+                    else (
+                        (f"https://{twitter_url}" if not twitter_url.startswith("http") else twitter_url)
+                        if twitter_url
+                        else f"https://x.com/search?q={urllib.parse.quote_plus(display_name or company_name)}&f=live"
+                    )
                 ),
                 "reddit_query": reddit_query,
                 "reddit_rss_url": reddit_rss_url,
@@ -669,7 +675,13 @@ class AccountCoalesceEngine:
                 int(serp.get("trademarks_count")) if serp.get("trademarks_count") else None
             ),
             "twitter_live_url": cls.clean_text(
-                f"https://x.com/{twitter_handle.lstrip('@')}" if twitter_handle else twitter_url
+                f"https://x.com/{twitter_handle.lstrip('@')}"
+                if twitter_handle
+                else (
+                    (f"https://{twitter_url}" if not twitter_url.startswith("http") else twitter_url)
+                    if twitter_url
+                    else f"https://x.com/search?q={urllib.parse.quote_plus(display_name or company_name)}&f=live"
+                )
             ),
             "reddit_query": reddit_query,
             "reddit_rss_url": reddit_rss_url,
@@ -1019,7 +1031,7 @@ class AccountService:
     def _fetch_sec_edgar(
         company_name: str, ticker: Optional[str] = None, cik: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Free SEC EDGAR Submissions API with deep filing metadata."""
+        """Free SEC EDGAR Submissions API with deep 4-tier CIK resolution waterfall."""
         headers = {"User-Agent": "SalesAIAgentResearch admin@salesai.com"}
         session = AccountServiceHTTPClient.get_session()
         sec_result: Dict[str, Any] = {}
@@ -1028,23 +1040,95 @@ class AccountService:
             target_ticker = ticker
             target_title = None
 
+            def _is_valid_sec_candidate(candidate_name: str) -> bool:
+                if not candidate_name:
+                    return False
+                suffix_pat = r"\b(the|corporation|corp|inc|incorporated|co|company|ltd|llc|reit|trust|holdings|group|plc|sa|ag|nv)\b"
+                q_norm = re.sub(suffix_pat, "", company_name, flags=re.IGNORECASE).strip().lower()
+                c_norm = re.sub(suffix_pat, "", candidate_name, flags=re.IGNORECASE).strip().lower()
+                q_words = set(re.findall(r"\b[a-z0-9]{3,}\b", q_norm))
+                c_words = set(re.findall(r"\b[a-z0-9]{3,}\b", c_norm))
+                if not q_words or not c_words:
+                    return False
+                if q_words.issubset(c_words) or c_words.issubset(q_words):
+                    return True
+                overlap = len(q_words.intersection(c_words))
+                return overlap >= max(2, int(len(q_words) * 0.65))
+
+            # ── Tier 1: SEC Official Registrants & Tickers Index (Dynamic Matching) ──
             if not target_cik:
-                res = session.get(
-                    "https://www.sec.gov/files/company_tickers.json", headers=headers, timeout=10
-                )
-                if res.ok:
-                    data = res.json()
-                    for entry in data.values():
-                        if target_ticker and str(entry.get("ticker", "")).upper() == target_ticker.upper():
-                            target_cik = str(entry.get("cik_str")).zfill(10)
-                            target_title = entry.get("title")
-                            target_ticker = entry.get("ticker")
-                            break
-                        if company_name.lower() in str(entry.get("title", "")).lower():
-                            target_cik = str(entry.get("cik_str")).zfill(10)
-                            target_title = entry.get("title")
-                            target_ticker = entry.get("ticker")
-                            break
+                try:
+                    res = session.get(
+                        "https://www.sec.gov/files/company_tickers.json", headers=headers, timeout=10
+                    )
+                    if res.ok:
+                        data = res.json()
+                        for entry in data.values():
+                            entry_ticker = str(entry.get("ticker", "")).upper()
+                            entry_title = str(entry.get("title", ""))
+                            if target_ticker and entry_ticker == target_ticker.upper():
+                                target_cik = str(entry.get("cik_str")).zfill(10)
+                                target_title = entry.get("title")
+                                target_ticker = entry.get("ticker")
+                                break
+                            if _is_valid_sec_candidate(entry_title):
+                                target_cik = str(entry.get("cik_str")).zfill(10)
+                                target_title = entry.get("title")
+                                target_ticker = entry.get("ticker")
+                                break
+                except Exception as e:
+                    print(f"[!] SEC EDGAR Tier 1 notice: {e}")
+
+            # ── Tier 2: SEC EDGAR Official Search Index (EFTS API - Strict Registrant Matching) ──
+            if not target_cik:
+                try:
+                    search_q = urllib.parse.quote_plus(f'"{company_name}"')
+                    efts_url = f"https://efts.sec.gov/LATEST/search-index?q={search_q}&forms=10-K,10-Q,8-K,X-17A-5,CA-1,DEF 14A,C"
+                    efts_res = session.get(efts_url, headers=headers, timeout=8)
+                    if efts_res.ok:
+                        hits = efts_res.json().get("hits", {}).get("hits", [])
+                        for hit in hits[:10]:
+                            display_names = hit.get("_source", {}).get("display_names", [])
+                            cik_candidates = hit.get("_source", {}).get("ciks", [])
+                            for dname in display_names:
+                                if _is_valid_sec_candidate(dname) and cik_candidates:
+                                    target_cik = str(cik_candidates[0]).zfill(10)
+                                    target_title = dname
+                                    break
+                            if target_cik:
+                                break
+                except Exception as e:
+                    print(f"[!] SEC EDGAR Tier 2 (EFTS) notice: {e}")
+
+            # ── Tier 3: Dynamic Serper / Google OSINT Search for SEC CIK ──
+            if not target_cik and config.SERPER_API_KEY:
+                try:
+                    serp_res = session.post(
+                        "https://google.serper.dev/search",
+                        headers={"X-API-KEY": config.SERPER_API_KEY, "Content-Type": "application/json"},
+                        json={"q": f'"{company_name}" site:sec.gov/edgar/browse OR "Central Index Key" CIK', "num": 3},
+                        timeout=8,
+                    )
+                    if serp_res.ok:
+                        serp_json = serp_res.json()
+                        for org in serp_json.get("organic", []):
+                            title = org.get("title", "")
+                            link = org.get("link", "")
+                            snip = org.get("snippet", "")
+                            if not _is_valid_sec_candidate(title) and not _is_valid_sec_candidate(snip):
+                                continue
+                            cik_in_link = re.search(r"CIK[=/\s]*0*(\d{5,10})", link, re.IGNORECASE)
+                            if cik_in_link:
+                                target_cik = str(cik_in_link.group(1)).zfill(10)
+                                print(f"[+] [AccountService] Dynamically resolved CIK via EDGAR link for '{company_name}': {target_cik}")
+                                break
+                            cik_in_snip = re.search(r"\bCIK[:\s#]*0*(\d{7,10})\b", snip, re.IGNORECASE)
+                            if cik_in_snip:
+                                target_cik = str(cik_in_snip.group(1)).zfill(10)
+                                print(f"[+] [AccountService] Dynamically resolved CIK via snippet for '{company_name}': {target_cik}")
+                                break
+                except Exception as e:
+                    print(f"[!] SEC EDGAR Tier 3 (OSINT CIK) notice: {e}")
 
             if target_cik:
                 sec_result["sec_cik"] = str(target_cik).zfill(10)
@@ -1071,6 +1155,7 @@ class AccountService:
                         f.get("name") for f in sub_data.get("formerNames", []) if f.get("name")
                     ]
                     sec_result["_raw_submission"] = sub_data
+                    print(f"[+] [AccountService] SEC profile fetched for CIK {sec_result['sec_cik']} ({sub_data.get('name')})")
 
         except Exception as e:
             print(f"[!] SEC EDGAR connector warning: {e}")

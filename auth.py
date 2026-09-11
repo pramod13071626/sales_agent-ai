@@ -262,7 +262,18 @@ def log_audit(session, actor_user_id: Optional[int], action: str,
 # ── FastAPI dependencies ───────────────────────────────────────────
 
 def get_current_user(creds: Optional[HTTPAuthorizationCredentials] = Depends(_bearer)) -> User:
+    # Phase 1: auth endpoints exist but nothing requires them yet.
+    # When AUTH_ENFORCED=false, unauthenticated requests get a synthetic
+    # super_admin bypass user so every route stays reachable during dev.
     if creds is None:
+        if not AUTH_ENFORCED:
+            bypass = User()
+            bypass.id = 0
+            bypass.email = "dev-bypass@localhost"
+            bypass.role = "super_admin"
+            bypass.is_active = True
+            bypass.full_name = "Dev Bypass"
+            return bypass
         raise HTTPException(status_code=401, detail="Not authenticated")
     try:
         payload = decode_access_token(creds.credentials)

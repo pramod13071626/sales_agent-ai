@@ -904,10 +904,11 @@ class PersonaService:
     def _fetch_sec_insider_trades(
         full_name: str, company_name: str, sec_cik: Optional[str] = None
     ) -> Dict[str, Any]:
-        """SEC EDGAR Officer/Director Form 4 Insider Trading Search."""
+        """SEC EDGAR Officer/Director Form 4 Insider Trading Search with Private-Entity OSINT Fallback."""
         base_sec = "https://www.sec.gov/edgar/searchedgar/companysearch"
         sec_url = f"{base_sec}?companyName={urllib.parse.quote_plus(full_name)}"
         filings = []
+        is_private_entity = False
         if sec_cik:
             try:
                 cik_clean = str(sec_cik).lstrip("0").zfill(10)
@@ -932,12 +933,23 @@ class PersonaService:
                             })
             except Exception as e:
                 print(f"[!] SEC EDGAR Form 4 lookup notice: {e}")
+        else:
+            is_private_entity = True
+
+        # Private company / Non-filer OSINT fallback
+        osint_notes = []
+        if not filings:
+            osint_notes.append(
+                f"Private or Non-Reporting entity profile for '{company_name}'. No public Form 4 equity filings required."
+            )
 
         return {
             "reported_officer": full_name,
             "company_name": company_name,
             "form_4_filings_url": sec_url,
             "form_4_transactions": filings,
+            "is_private_entity": is_private_entity,
+            "governance_notes": osint_notes,
         }
 
     @staticmethod

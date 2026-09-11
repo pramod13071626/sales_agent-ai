@@ -480,7 +480,7 @@ APOLLO_SEARCH_PASSES = [
             "SEVP",
             "General Counsel",
         ],
-        "max_pages": 2,
+        "max_pages": 3,
         "per_page": 100,
     },
     {
@@ -495,7 +495,7 @@ APOLLO_SEARCH_PASSES = [
             "Division President",
             "Senior Executive",
         ],
-        "max_pages": 3,
+        "max_pages": 4,
         "per_page": 100,
     },
     {
@@ -513,7 +513,7 @@ APOLLO_SEARCH_PASSES = [
             "Head of Data",
             "Head of Cloud",
         ],
-        "max_pages": 2,
+        "max_pages": 3,
         "per_page": 100,
     },
     {
@@ -528,7 +528,7 @@ APOLLO_SEARCH_PASSES = [
             "VP",
             "Vice President",
         ],
-        "max_pages": 2,
+        "max_pages": 6,
         "per_page": 100,
     },
 ]
@@ -559,6 +559,8 @@ def fetch_official_corporate_leadership(
         if clean_dom
         else None,
         f'"{company_name or clean_dom}" "Executive Committee" OR "Leadership Team" OR "Executive Officers"',
+        f'site:linkedin.com/in "{company_name or clean_dom}" ("CEO" OR "Chief Executive" OR "CFO" OR "COO" OR "President" OR "General Counsel" OR "Chief Risk Officer" OR "CIO")',
+        f'"{company_name or clean_dom}" ("Board of Directors" OR "Board Member" OR "Independent Director")',
     ]
     search_queries = [q for q in search_queries if q]
 
@@ -597,9 +599,13 @@ def fetch_official_corporate_leadership(
         for item in organic_results:
             title_text = item.get("title", "") if isinstance(item, dict) else ""
             snippet_text = item.get("snippet", "") if isinstance(item, dict) else ""
+            link_url = item.get("link", "") if isinstance(item, dict) else ""
 
-            # Pattern match for 'Name - Title' or 'Name, Title'
-            parts = re.split(r"\s*[\-\|–—•]\s*", title_text, maxsplit=2)
+            # Clean LinkedIn titles: "John Doe - Chief Executive Officer - DTCC | LinkedIn"
+            cleaned_title = re.sub(r"\s*\|\s*LinkedIn.*$", "", title_text, flags=re.IGNORECASE).strip()
+            cleaned_title = re.sub(r"\s*-\s*LinkedIn.*$", "", cleaned_title, flags=re.IGNORECASE).strip()
+
+            parts = re.split(r"\s*[\-\|–—•]\s*", cleaned_title, maxsplit=2)
             if len(parts) >= 2:
                 candidate_name = parts[0].strip()
                 candidate_title = parts[1].strip()
@@ -624,6 +630,8 @@ def fetch_official_corporate_leadership(
                             "home",
                             "news",
                             "careers",
+                            "board of",
+                            "directors",
                         ]
                     )
                     and clean_name.lower() not in seen_names
@@ -631,15 +639,13 @@ def fetch_official_corporate_leadership(
                     tier = classify_title(candidate_title)
                     auth_score = calculate_executive_authority_score(candidate_title, tier)
 
-                    if tier == "c_suite" or auth_score >= 80:
+                    if tier == "c_suite" or auth_score >= 80 or "director" in candidate_title.lower() or "president" in candidate_title.lower():
                         seen_names.add(clean_name.lower())
                         req_data = build_required_person_data(
                             clean_name,
                             candidate_title,
                             company_name or clean_dom,
-                            linkedin_url=item.get("link")
-                            if "linkedin.com" in item.get("link", "")
-                            else None,
+                            linkedin_url=link_url if "linkedin.com" in link_url else None,
                             sec_cik=sec_cik,
                         )
 

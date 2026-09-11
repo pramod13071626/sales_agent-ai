@@ -18,13 +18,10 @@ class LobRepository:
     def upsert_all(self, account: Account, lobs_data: List[dict],
                    social_doc: Optional[dict] = None) -> Dict[str, int]:
         """
-        Replaces all LOBs for an account. Returns mapping of lob_name -> lob.id.
-        Also creates sub_lobs for each LOB.
+        Non-destructively upserts all LOBs for an account in-place.
+        Preserves existing Lob IDs, persona FK links, and sub_lobs.
+        Returns mapping of lob_name -> lob.id.
         """
-        # Clear existing LOBs (cascade removes sub_lobs + persona FK nulls)
-        self.session.query(Lob).filter_by(account_id=account.id).delete()
-        self.session.flush()
-
         lobs_scraping = []
         if social_doc:
             lobs_scraping = social_doc.get("lobs_scraping_urls", []) or []
@@ -40,8 +37,20 @@ class LobRepository:
             # Validate through schema
             schema = LobSchema.from_enriched_json(lob_data, social_urls)
 
-            # Create ORM object
-            lob = Lob(account_id=account.id)
+            # In-place match: check if LOB already exists for this account by name or key
+            name = schema.lob_name or lob_data.get("name")
+            key = schema.key
+
+            existing = self.session.query(Lob).filter_by(account_id=account.id, lob_name=name).first()
+            if not existing and key:
+                existing = self.session.query(Lob).filter_by(account_id=account.id, key=key).first()
+
+            if existing:
+                lob = existing
+            else:
+                lob = Lob(account_id=account.id)
+                self.session.add(lob)
+
             data = schema.model_dump()
             for field, value in data.items():
                 if field == "id" and value is None:
@@ -52,19 +61,25 @@ class LobRepository:
                     setattr(lob, field, value)
 
             lob.account_id = account.id
-            self.session.add(lob)
             self.session.flush()
-            lob_map[lob.lob_name] = lob.id
+            if lob.lob_name:
+                lob_map[lob.lob_name] = lob.id
 
-            # Sub-LOBs
+            # In-place Sub-LOBs upsert
             for sub in (lob_data.get("sub_lobs") or []):
-                sub_schema = SubLobSchema.from_raw(sub)
-                sub_lob = SubLob(
-                    lob_id=lob.id,
-                    name=sub_schema.name,
-                    metadata_=sub_schema.metadata_
-                )
-                self.session.add(sub_lob)
+                sub_name = sub.get("name") if isinstance(sub, dict) else str(sub)
+                sub_schema = SubLobSchema.from_raw(sub if isinstance(sub, dict) else {"name": sub_name})
+                sub_exists = self.session.query(SubLob).filter_by(lob_id=lob.id, name=sub_schema.name).first()
+                if not sub_exists:
+                    sub_lob = SubLob(
+                        lob_id=lob.id,
+                        name=sub_schema.name,
+                        metadata_=sub_schema.metadata_
+                    )
+                    self.session.add(sub_lob)
+                else:
+                    if sub_schema.metadata_:
+                        sub_exists.metadata_ = sub_schema.metadata_
 
         self.session.flush()
         return lob_map
