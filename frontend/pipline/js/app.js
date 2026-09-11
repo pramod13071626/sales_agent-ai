@@ -78,8 +78,46 @@ $(function () {
     try {
       const url = `${API_BASE}/api/accounts`;
       console.log("[loadData] Fetching:", url);
-      const response = await fetch(url);
+      const token = sessionStorage.getItem('access_token') || localStorage.getItem('access_token');
+      const headers = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      let response = await fetch(url, { headers, credentials: 'include' });
       console.log("[loadData] HTTP status:", response.status);
+
+      if (response.status === 401) {
+        // Try refreshing token once via cookie
+        try {
+          const refreshRes = await fetch(`${API_BASE}/api/auth/refresh`, { method: 'POST', credentials: 'include' });
+          if (refreshRes.ok) {
+            const refreshData = await refreshRes.json();
+            if (refreshData.access_token) {
+              sessionStorage.setItem('access_token', refreshData.access_token);
+              headers['Authorization'] = `Bearer ${refreshData.access_token}`;
+              response = await fetch(url, { headers, credentials: 'include' });
+            }
+          }
+        } catch (_) {}
+      }
+
+      // Check pipeline access permission
+      try {
+        const meRes = await fetch(`${API_BASE}/api/auth/me`, { headers, credentials: 'include' });
+        if (meRes.ok) {
+          const me = await meRes.json();
+          if (me && me.role !== 'super_admin' && me.has_pipeline_access === false) {
+            $("#accountList").html(
+              `<div style="padding:16px 12px;font-size:.84rem;color:#e11d48;line-height:1.5">` +
+                `<strong>Access Restricted</strong><br>` +
+                `<span style="font-size:.78rem;color:#64748b;display:block;margin-top:4px;">Your account does not have access to the Data Pipeline Console. Contact a Super Admin to request access.</span>` +
+                `<a href="/command-center" style="margin-top:12px;display:inline-block;padding:5px 12px;font-size:.78rem;border-radius:6px;background:#0ea5e9;color:#fff;text-decoration:none;font-weight:600;">Go to Command Center</a>` +
+              `</div>`
+            );
+            return;
+          }
+        }
+      } catch (_) {}
+
       if (!response.ok) {
         throw new Error(`HTTP ${response.status} from ${url}`);
       }
@@ -107,13 +145,14 @@ $(function () {
         `<div style="padding:12px 10px;font-size:.82rem;color:red;line-height:1.5">` +
           `<strong>Could not load accounts.</strong><br>` +
           `<span style="font-size:.78rem;opacity:.85">${err.message}</span><br>` +
-          `<button onclick="loadData(true)" style="margin-top:6px;padding:3px 10px;` +
+          `<button onclick="window.loadData(true)" style="margin-top:6px;padding:3px 10px;` +
           `font-size:.78rem;cursor:pointer;border-radius:4px;border:1px solid red;` +
           `background:transparent;color:red">↺ Retry</button>` +
         `</div>`
       );
     }
   }
+  window.loadData = loadData;
 
   // Expose for the Retry button's inline onclick (runs outside this closure).
   window.loadData = loadData;

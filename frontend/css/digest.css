@@ -684,3 +684,450 @@
 .movement-link:hover {
   text-decoration: underline;
 }
+
+/* ── Organisational Hiring & Strategic Trend Radar ───────────── */
+.radar-container {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.radar-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+.radar-kpi-card {
+  background: var(--card-bg, rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius, 10px);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.radar-kpi-card:hover {
+  border-color: rgba(99, 102, 241, 0.4);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
+}
+
+.radar-kpi-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.radar-kpi-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.radar-kpi-icon {
+  font-size: 1.1rem;
+}
+
+.radar-kpi-value {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+  letter-spacing: -0.01em;
+}
+
+.radar-kpi-sub {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 0.76rem;
+}
+
+.radar-tech-hubs-bar {
+  background: var(--card-bg, rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius, 10px);
+  padding: 14px 18px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+}
+
+@media (max-width: 900px) {
+  .radar-tech-hubs-bar {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+}
+
+.radar-tech-col, .radar-hubs-col {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.radar-col-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 6px;
+}
+
+.radar-col-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.radar-count-badge {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--border-color);
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+
+.radar-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.radar-item-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  border: 1px solid var(--border-color);
+  background: var(--panel-bg);
+  transition: all 0.15s ease;
+}
+
+.radar-item-pill:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+.radar-item-pill.tech-pill {
+  border-color: rgba(99, 102, 241, 0.3);
+  color: var(--text-primary);
+}
+
+.radar-item-pill.tech-pill i {
+  color: var(--brand, #6366f1);
+}
+
+.radar-item-pill.hub-pill {
+  border-color: rgba(16, 185, 129, 0.3);
+  color: var(--text-primary);
+}
+
+.radar-item-pill.hub-pill i {
+  color: #10b981;
+}
+
+.radar-item-pill .pill-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--border-color);
+  color: var(--text-secondary);
+}
+
+.radar-item-pill.tech-pill .pill-badge {
+  background: rgba(99, 102, 241, 0.15);
+  color: var(--brand, #6366f1);
+}
+
+.radar-item-pill.hub-pill .pill-badge {
+  background: rgba(16, 185, 129, 0.15);
+  color: #059669;
+}
+
+[data-theme="dark"] .radar-item-pill.hub-pill .pill-badge {
+  color: #34d399;
+}
+
+.radar-empty-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.radar-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.radar-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.radar-bars-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.radar-bar-row {
+  background: var(--card-bg, rgba(255, 255, 255, 0.02));
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm, 6px);
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.radar-bar-row:hover,
+.radar-bar-row.active {
+  border-color: var(--brand, #6366f1);
+  background: rgba(99, 102, 241, 0.05);
+  transform: translateX(2px);
+}
+
+.radar-bar-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-size: 0.82rem;
+}
+
+.radar-bar-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.radar-bar-metrics {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.radar-bar-pct {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.radar-bar-track {
+  width: 100%;
+  height: 7px;
+  background: var(--border-color, rgba(0, 0, 0, 0.08));
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.radar-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.radar-surge-pill {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.radar-surge-pill.surge-high {
+  background: rgba(239, 68, 68, 0.15);
+  color: #dc2626;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.radar-surge-pill.surge-active {
+  background: rgba(245, 158, 11, 0.15);
+  color: #d97706;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.radar-surge-pill.surge-steady {
+  background: rgba(16, 185, 129, 0.12);
+  color: #059669;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
+[data-theme="dark"] .radar-surge-pill.surge-high {
+  color: #f87171;
+}
+[data-theme="dark"] .radar-surge-pill.surge-active {
+  color: #fbbf24;
+}
+[data-theme="dark"] .radar-surge-pill.surge-steady {
+  color: #34d399;
+}
+
+.radar-triggers-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 12px;
+}
+
+.radar-trigger-card {
+  background: var(--card-bg, rgba(255, 255, 255, 0.02));
+  border: 1px solid var(--border-color);
+  border-left: 3.5px solid var(--brand, #6366f1);
+  border-radius: var(--radius-sm, 6px);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.radar-trigger-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.radar-trigger-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--brand, #6366f1);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.radar-trigger-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.radar-trigger-detail {
+  font-size: 0.77rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.radar-trigger-pitch {
+  font-size: 0.76rem;
+  color: var(--text-primary);
+  background: rgba(0, 0, 0, 0.03);
+  padding: 6px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+[data-theme="dark"] .radar-trigger-pitch {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.radar-pitch-tag {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--brand, #6366f1);
+}
+
+.radar-copy-btn {
+  align-self: flex-start;
+  margin-top: 4px;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--brand, #6366f1);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.15s ease;
+}
+
+.radar-copy-btn:hover {
+  background: var(--brand, #6366f1);
+  color: #fff;
+  border-color: var(--brand, #6366f1);
+}
+
+.radar-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.radar-chip {
+  background: var(--card-bg, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+}
+
+.radar-chip:hover {
+  border-color: var(--brand, #6366f1);
+  color: var(--text-primary);
+}
+
+.radar-chip.active {
+  background: var(--brand, #6366f1);
+  color: #fff;
+  border-color: var(--brand, #6366f1);
+}
+
+.radar-chip.active .tab-badge {
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
+}
+
+.radar-jobs-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 10px;
+}
+
+.radar-job-card {
+  margin-bottom: 0;
+}
+

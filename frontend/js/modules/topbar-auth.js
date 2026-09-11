@@ -33,9 +33,11 @@ function render() {
     return;
   }
 
+  const showTasks = user.role === 'super_admin' || user.has_tasks_access !== false;
+
   el.innerHTML = `
     ${user.role === 'super_admin' ? '<a href="/admin" class="topbar-link"><i class="bi bi-people"></i> Admin</a>' : ''}
-    <button type="button" id="topbarMyTasksBtn" class="topbar-link topbar-link-btn"><i class="bi bi-list-check"></i> My Tasks <span class="tab-badge" id="topbarMyTasksBadge">…</span></button>
+    ${showTasks ? '<button type="button" id="topbarMyTasksBtn" class="topbar-link topbar-link-btn"><i class="bi bi-list-check"></i> My Tasks <span class="tab-badge" id="topbarMyTasksBadge">…</span></button>' : ''}
     <span class="topbar-auth-user" title="${esc(user.email)}"><i class="bi bi-person-circle"></i> ${esc(user.full_name || user.email)}</span>
     <button type="button" id="topbarLogoutBtn" class="topbar-link topbar-link-btn"><i class="bi bi-box-arrow-right"></i> Logout</button>
   `;
@@ -43,13 +45,18 @@ function render() {
     await logout();
     window.location.href = '/login';
   });
-  document.getElementById('topbarMyTasksBtn').addEventListener('click', async () => {
-    openMyTasksDrawer();
-    const html = await renderMyTasksPanel();
-    myTasksDrawerBody.innerHTML = html;
-    refreshMyTasksBadge();
-  });
-  refreshMyTasksBadge();
+  if (showTasks) {
+    const tasksBtn = document.getElementById('topbarMyTasksBtn');
+    if (tasksBtn) {
+      tasksBtn.addEventListener('click', async () => {
+        openMyTasksDrawer();
+        const html = await renderMyTasksPanel();
+        myTasksDrawerBody.innerHTML = html;
+        refreshMyTasksBadge();
+      });
+      refreshMyTasksBadge();
+    }
+  }
 }
 
 async function refreshMyTasksBadge() {

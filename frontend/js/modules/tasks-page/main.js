@@ -165,5 +165,15 @@ initTopbarAuth().then((user) => {
     window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
     return;
   }
+  if (user.role !== 'super_admin' && user.has_tasks_access === false) {
+    if (user.has_command_center_access !== false) {
+      window.location.href = '/command-center?no_tasks_access=1';
+    } else if (user.has_dashboard_access !== false) {
+      window.location.href = '/?no_tasks_access=1';
+    } else {
+      window.location.href = '/command-center?no_tasks_access=1';
+    }
+    return;
+  }
   init();
 });
