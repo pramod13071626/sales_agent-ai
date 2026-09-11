@@ -19,30 +19,20 @@ initThemeToggle();
 
 async function loadAccounts(user) {
   try {
-    // Deep link: /?view=jobs opens the All Job Postings browser directly on load.
-    const wantsJobsView = window.location.search === '?view=jobs';
-    // Deep link from the content pipeline app (MERGE_PLAN.md Phase 3):
-    // /?account_key=<key> opens that account, matched by its `key` column
-    // since the linking app only knows the string key, not this app's
-    // numeric account id.
-    const deepLinkAccountKey = new URLSearchParams(window.location.search).get('account_key');
-    const wantsCcAccessNotice = new URLSearchParams(window.location.search).get('no_command_center_access') === '1';
-    // Any other query string (stale/unsupported) resets to a clean root URL on hard-refresh.
-    if (window.location.search && !wantsJobsView && !deepLinkAccountKey && !wantsCcAccessNotice) {
-      history.replaceState(null, '', window.location.pathname);
-    }
+    const searchParams = new URLSearchParams(window.location.search);
+    const wantsJobsView = searchParams.get('view') === 'jobs';
+    const deepLinkAccountId = searchParams.get('account') ? parseInt(searchParams.get('account'), 10) : null;
+    const deepLinkAccountKey = searchParams.get('account_key');
+    const deepLinkTab = searchParams.get('tab');
+    const deepLinkLobId = searchParams.get('lob') ? parseInt(searchParams.get('lob'), 10) : null;
+    const wantsCcAccessNotice = searchParams.get('no_command_center_access') === '1';
+
     if (wantsCcAccessNotice) {
       showToast("You don't have Sales Command Center access — ask a super admin to grant it.");
       history.replaceState(null, '', window.location.pathname);
     }
 
-    // Note: /api/content (every post/job/digest for every account) is NOT fetched
-    // here anymore — it's cross-account content, only needed by the digest's
-    // social_digest/sales_alerts sections, and is fetched lazily by digest.js
-    // the first time either of those sections scrolls into view (see
-    // ensureBulkContentLoaded in digest.js). Per-account content is fetched
-    // on demand when an account is selected (see ensureAccountContent in
-    // selection.js).
+    // Fetch accounts and cxo movements
     const [acctRes, movementsRes] = await Promise.all([
       fetch('/api/accounts'),
       fetch('/api/cxo-movements').catch(() => null)
@@ -55,14 +45,28 @@ async function loadAccounts(user) {
     const data = await acctRes.json();
     state.accounts = data.accounts || [];
 
-    // The Global Accounts Dashboard is admin-granted, not default access —
-    // a super_admin sees every account; anyone else only what's been
-    // explicitly granted to them via UserAccountAccess (auth.py). A regular
-    // user with zero grants has nothing to see here, so send them to the
-    // page that IS open to everyone by default instead of an empty shell.
-    if (user.role !== 'super_admin' && state.accounts.length === 0) {
-      window.location.href = '/command-center?no_dashboard_access=1';
-      return;
+    // Only redirect away from this page if the user has NO assigned accounts
+    // AND has global dashboard access revoked. If they have assigned accounts,
+    // they can stay to view their account dossiers!
+    if (user.role !== 'super_admin' && user.has_dashboard_access === false && state.accounts.length === 0) {
+      if (user.has_command_center_access !== false) {
+        window.location.href = '/command-center?no_dashboard_access=1';
+        return;
+      } else if (user.has_tasks_access !== false) {
+        window.location.href = '/tasks?no_dashboard_access=1';
+        return;
+      } else {
+        // No dashboards enabled: render in-place message, do not redirect in a loop
+        navTree.innerHTML = '<div class="nav-empty" style="padding:20px; text-align:center;"><i class="bi bi-shield-lock" style="font-size:1.5rem; display:block; margin-bottom:8px;"></i>No accounts assigned yet.</div>';
+        dashEmpty.classList.add('digest-mode');
+        dashEmpty.innerHTML = `
+          <div class="empty-block" style="margin:40px auto; max-width:440px; text-align:center; padding:32px;">
+            <div class="empty-block-icon" style="font-size:2.5rem; color:var(--text-muted); margin-bottom:12px;"><i class="bi bi-shield-lock"></i></div>
+            <div style="font-size:1.1rem; font-weight:700; color:var(--text-primary); margin-bottom:8px;">Account Access Required</div>
+            <div style="font-size:0.85rem; color:var(--text-secondary); line-height:1.5;">You do not currently have any assigned company accounts or dashboard permissions. Ask your Super Administrator to grant you access.</div>
+          </div>`;
+        return;
+      }
     }
 
     if (movementsRes && movementsRes.ok) {
@@ -71,14 +75,43 @@ async function loadAccounts(user) {
 
     renderTopbarTicker();
     renderNavTree();
-    const deepLinkAccount = deepLinkAccountKey && state.accounts.find(a => a.key === deepLinkAccountKey);
+
+    const targetAccount = deepLinkAccountId
+      ? state.accounts.find(a => a.id === deepLinkAccountId)
+      : (deepLinkAccountKey ? state.accounts.find(a => a.key === deepLinkAccountKey) : null);
+
     if (wantsJobsView) {
-      await openAllJobsPage();
-    } else if (deepLinkAccount) {
-      jumpToAccount(deepLinkAccount.id); // also corrects the URL to ?account=<id> via syncUrlState()
+      if (user.role !== 'super_admin' && user.has_dashboard_access === false) {
+        // User has no global cross-account jobs browser access: jump to account-specific jobs tab
+        const acctToOpen = targetAccount || state.accounts[0];
+        if (acctToOpen) {
+          state.activeSalesTab = 'jobs';
+          jumpToAccount(acctToOpen.id);
+        } else {
+          renderNavTree();
+        }
+      } else {
+        await openAllJobsPage();
+      }
     } else {
-      if (deepLinkAccountKey) history.replaceState(null, '', window.location.pathname); // unknown key — don't leave a dead link in the address bar
-      renderDigest();
+      if (targetAccount) {
+        if (deepLinkTab) state.activeSalesTab = deepLinkTab;
+        if (deepLinkLobId) state.activeLobId = deepLinkLobId;
+        jumpToAccount(targetAccount.id);
+      } else if (user.role !== 'super_admin' && user.has_dashboard_access === false) {
+        // User has no global digest access, but has assigned accounts: default to their first account dossier
+        if (deepLinkTab) state.activeSalesTab = deepLinkTab;
+        if (state.accounts.length > 0) {
+          jumpToAccount(state.accounts[0].id);
+        } else {
+          renderNavTree();
+        }
+      } else {
+        if (deepLinkAccountKey || deepLinkAccountId) {
+          history.replaceState(null, '', window.location.pathname);
+        }
+        renderDigest();
+      }
     }
   } catch (err) {
     console.error(err);
@@ -88,23 +121,27 @@ async function loadAccounts(user) {
   }
 }
 
-// Account data is access-controlled server-side (see AUTH_JWT_IMPLEMENTATION_PLAN.md).
-// Unauthenticated users are redirected to login. The Global Accounts Dashboard
-// itself is admin-granted, not default access — see the redirect in
-// loadAccounts() above for users with no granted accounts.
+// Account data is access-controlled server-side.
+// Unauthenticated users are redirected to login.
 initTopbarAuth().then((user) => {
   if (!user) {
     window.location.href = `/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`;
     return;
   }
-  // Sales Command Center is open by default, but a super_admin can revoke
-  // it per user (admin page's Account Access modal) — hide the nav-tree's
-  // quick-jump link for a user without it, same as the reverse case
-  // (Global Accounts Dashboard link) is hidden on that page for a user
-  // with no granted accounts.
-  if (!user.has_command_center_access) {
-    const ccLink = document.querySelector('.nav-digest-wrap a[href="/command-center"]');
-    if (ccLink) ccLink.style.display = 'none';
+  // Hide quick-jump nav links for dashboards the user has had revoked
+  if (user.role !== 'super_admin') {
+    if (user.has_dashboard_access === false) {
+      const dashBtn = document.getElementById('navDigestBtn');
+      if (dashBtn) dashBtn.style.display = 'none';
+    }
+    if (user.has_command_center_access === false) {
+      const ccLink = document.querySelector('.nav-digest-wrap a[href="/command-center"]');
+      if (ccLink) ccLink.style.display = 'none';
+    }
+    if (user.has_tasks_access === false) {
+      const tasksLink = document.querySelector('.nav-digest-wrap a[href="/tasks"]');
+      if (tasksLink) tasksLink.style.display = 'none';
+    }
   }
   loadAccounts(user);
 });

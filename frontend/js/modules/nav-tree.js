@@ -7,6 +7,8 @@ import { esc, initials } from './utils.js';
 import { computeSignals } from './signals.js';
 import { getAccountContentEntries, matchOfferings } from './alerts.js';
 import { renderSelection } from './selection.js';
+import { getCurrentUser } from './auth-client.js';
+import { showToast } from './toast.js';
 
 export function renderNavTree() {
   const q = (navSearch.value || '').trim().toLowerCase();
@@ -174,6 +176,11 @@ if (navToggleAllTree) {
 
 if (navDigestBtn) {
   navDigestBtn.addEventListener('click', function () {
+    const user = getCurrentUser ? getCurrentUser() : null;
+    if (user && user.role !== 'super_admin' && user.has_dashboard_access === false) {
+      showToast("Global Executive Digest is restricted. Please select one of your assigned accounts.");
+      return;
+    }
     state.activeView = null;
     state.activeAccountId = null;
     state.activeLobId = null;

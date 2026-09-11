@@ -168,12 +168,21 @@ initTopbarAuth().then((user) => {
   if (user.role !== 'super_admin' && user.has_tasks_access === false) {
     if (user.has_command_center_access !== false) {
       window.location.href = '/command-center?no_tasks_access=1';
+      return;
     } else if (user.has_dashboard_access !== false) {
       window.location.href = '/?no_tasks_access=1';
+      return;
     } else {
-      window.location.href = '/command-center?no_tasks_access=1';
+      // In-place restricted notice - DO NOT REDIRECT IN A LOOP!
+      const mainEl = document.getElementById('tasksMain') || document.body;
+      mainEl.innerHTML = `
+        <div class="empty-block" style="margin:80px auto; max-width:460px; text-align:center; padding:40px; background:var(--card-bg); border-radius:12px; border:1px solid var(--border-color);">
+          <div class="empty-block-icon" style="font-size:2.5rem; color:var(--text-muted); margin-bottom:16px;"><i class="bi bi-shield-lock"></i></div>
+          <div style="font-size:1.15rem; font-weight:700; color:var(--text-primary); margin-bottom:8px;">Tasks Access Restricted</div>
+          <div style="font-size:0.85rem; color:var(--text-secondary); line-height:1.5;">You do not have access to Tasks. Please ask a Super Administrator to grant you permissions.</div>
+        </div>`;
+      return;
     }
-    return;
   }
   init();
 });
