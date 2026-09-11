@@ -146,60 +146,36 @@ export function renderProfileSubsection(title, icon, section) {
 }
 
 // ── Dedicated Executive Personality Profile Renderer ──
+// No fabricated fallback content: if this contact's digest hasn't produced
+// a real personality_profile yet, say so plainly (renderPlaceholderProfile)
+// instead of showing plausible-looking canned text as if it were synthesized.
 export function renderFullPersonalityProfile(digestEntry, persona) {
   const profile = (digestEntry && digestEntry.digest) ? digestEntry.digest.personality_profile : null;
+  if (!profile) {
+    return renderPlaceholderProfile(
+      `Not generated yet for ${esc(persona.name || 'this contact')} — run the person digest ` +
+      `(python main.py digest <key> --person) to synthesize a real Personality Profile.`
+    );
+  }
 
-  const defaultSummary = `${persona.name || 'This executive'} is an established enterprise leader with extensive experience driving strategic growth, operational rigor, and digital modernization in complex institutional environments.`;
-
-  const execSummary = (profile && profile.executive_summary) ? profile.executive_summary : defaultSummary;
-  const execProfile = profile ? (profile.executive_profile || {}) : null;
-
-  const renderedSections = execProfile
-    ? PERSONALITY_SECTIONS.map(s => renderProfileSubsection(s.title, s.icon, execProfile[s.key])).filter(Boolean).join('')
-    : `
-      <div class="personality-section-card">
-        <div class="personality-sec-header">
-          <div class="personality-sec-title"><i class="bi bi-flag"></i> Leadership Character</div>
-          <span class="pill pill-muted">Observed Patterns</span>
-        </div>
-        <p class="personality-sec-body">Demonstrates disciplined, execution-focused leadership. Fosters organizational alignment, celebrates cross-functional achievements, and empowers teams across large-scale transformations.</p>
-      </div>
-      <div class="personality-section-card">
-        <div class="personality-sec-header">
-          <div class="personality-sec-title"><i class="bi bi-signpost-split"></i> Decision-Making Style</div>
-          <span class="pill pill-muted">Strategic Alignment</span>
-        </div>
-        <p class="personality-sec-body">Pragmatic and systems-oriented. Evaluates vendor partnerships through the lens of institutional scalability, regulatory robustness, and verifiable client impact.</p>
-      </div>
-      <div class="personality-section-card">
-        <div class="personality-sec-header">
-          <div class="personality-sec-title"><i class="bi bi-compass"></i> Values and Motivation</div>
-          <span class="pill pill-muted">Core Drivers</span>
-        </div>
-        <p class="personality-sec-body">Motivators center on long-term institutional stability, customer outcomes, and building high-performing organizations rather than short-term disruption.</p>
-      </div>
-      <div class="personality-section-card">
-        <div class="personality-sec-header">
-          <div class="personality-sec-title"><i class="bi bi-megaphone"></i> Public Reputation</div>
-          <span class="pill pill-muted">Industry Standing</span>
-        </div>
-        <p class="personality-sec-body">Maintains a respected public presence characterized by measured commentary, industry leadership, and positive stakeholder engagement.</p>
-      </div>
-    `;
+  const execProfile = profile.executive_profile || {};
+  const renderedSections = PERSONALITY_SECTIONS
+    .map(s => renderProfileSubsection(s.title, s.icon, execProfile[s.key]))
+    .filter(Boolean)
+    .join('');
 
   return `
-    <div class="personality-summary-card">
-      <div class="personality-summary-title"><i class="bi bi-person-badge"></i> Executive Summary</div>
-      <p class="personality-summary-text">${esc(execSummary)}</p>
-    </div>
+    ${profile.executive_summary ? `
+      <div class="personality-summary-card">
+        <div class="personality-summary-title"><i class="bi bi-person-badge"></i> Executive Summary</div>
+        <p class="personality-summary-text">${esc(profile.executive_summary)}</p>
+      </div>` : ''}
 
-    <div class="personality-sections-list">
-      ${renderedSections}
-    </div>
+    ${renderedSections ? `<div class="personality-sections-list">${renderedSections}</div>` : ''}
 
     ${renderApproachPlaybook(persona)}
 
-    ${(profile && profile.caveats && profile.caveats.length) ? `
+    ${(profile.caveats && profile.caveats.length) ? `
       <div class="personality-section-card" style="border-left: 3px solid var(--warning);">
         <div class="personality-sec-header">
           <div class="personality-sec-title" style="color:#c07a00;"><i class="bi bi-exclamation-triangle"></i> Observation Caveats</div>
@@ -220,9 +196,138 @@ export function renderPlaceholderProfile(reason) {
   `;
 }
 
-// ── Widget 2: Executive Psychological Profile (Empty / Placeholder State) ──
-export function renderFullPsychologicalProfile() {
-  return renderPlaceholderProfile('Executive psychological profiling (e.g. clinical / Big Five psychometric assessment) is not currently connected. Only public professional Executive Personality Profiles are generated.');
+// ── Widget 2: Dedicated Executive Psychological Profile Renderer ──
+// Matches PSYCHOLOGICAL_PROFILE_SYSTEM's actual schema exactly (see
+// apps/content_pipeline/digest/prompts.py) — every section here really is
+// {summary, evidence_strength, basis}, big_five_traits really is just
+// {score, summary} per trait, potential_blind_spots really is plain
+// strings. No fabricated fallback content: if nothing's been generated
+// yet, say so plainly instead of showing a fake report.
+export function renderFullPsychologicalProfile(digestEntry, persona, psychData) {
+  const profile = psychData || ((digestEntry && digestEntry.digest) ? digestEntry.digest.psychological_profile : null);
+  if (!profile) {
+    return renderPlaceholderProfile(
+      `Not generated yet for ${esc(persona.name || 'this contact')} — run the person digest ` +
+      `(python main.py digest <key> --person) to synthesize a real Psychological Profile.`
+    );
+  }
+
+  const synthesis = profile.psychological_synthesis || {};
+  const bigFive = profile.big_five_traits || {};
+  const blindSpots = profile.potential_blind_spots || [];
+  const playbook = profile.engagement_playbook || {};
+
+  const renderBigFiveMeter = (label, traitObj) => {
+    if (!traitObj || traitObj.score == null) return '';
+    const score = traitObj.score;
+    const pct = Math.min(Math.max((score / 10) * 100, 10), 100);
+    return `
+      <div class="b5-trait-row">
+        <div class="b5-trait-header">
+          <span class="b5-trait-name">${esc(label)}</span>
+          <span class="b5-trait-score">${score.toFixed(1)} <span style="font-size:.7rem; color:var(--text-muted); font-weight:500;">/ 10</span></span>
+        </div>
+        <div class="b5-meter-track">
+          <div class="b5-meter-fill" style="width:${pct}%;"></div>
+        </div>
+        ${traitObj.summary ? `<div class="b5-trait-desc">${esc(traitObj.summary)}</div>` : ''}
+      </div>
+    `;
+  };
+  const bigFiveMeters = [
+    renderBigFiveMeter('Openness to Experience', bigFive.openness),
+    renderBigFiveMeter('Conscientiousness', bigFive.conscientiousness),
+    renderBigFiveMeter('Extraversion', bigFive.extraversion),
+    renderBigFiveMeter('Agreeableness', bigFive.agreeableness),
+    renderBigFiveMeter('Emotional Stability', bigFive.emotional_stability),
+  ].filter(Boolean).join('');
+
+  return `
+    ${(synthesis.archetype || synthesis.summary) ? `
+      <div class="psych-archetype-hero">
+        <div class="psych-hero-kicker"><i class="bi bi-person-bounding-box"></i> Executive Psychological Archetype</div>
+        ${synthesis.archetype ? `<div class="psych-hero-title">${esc(synthesis.archetype)}</div>` : ''}
+        ${synthesis.summary ? `<p class="psych-hero-summary">${esc(synthesis.summary)}</p>` : ''}
+      </div>` : ''}
+
+    ${profile.executive_summary ? `
+      <div class="personality-summary-card" style="margin-top:16px;">
+        <div class="personality-summary-title"><i class="bi bi-journal-text"></i> Executive Summary &amp; Career Trajectory</div>
+        <p class="personality-summary-text">${esc(profile.executive_summary)}</p>
+      </div>` : ''}
+
+    ${bigFiveMeters ? `
+      <div class="psych-card" style="margin-top:16px;">
+        <div class="psych-card-header">
+          <div class="psych-card-title"><i class="bi bi-bar-chart-steps"></i> Big Five Personality Modeling (1.0 — 10.0 Scale)</div>
+          <span class="pill pill-muted">Estimated from Public Record</span>
+        </div>
+        <div class="b5-grid">${bigFiveMeters}</div>
+      </div>` : ''}
+
+    <div class="psych-dual-grid" style="margin-top:16px;">
+      ${renderProfileSubsection('Cognitive Style', 'bi-cpu', profile.cognitive_style)}
+      ${renderProfileSubsection('Leadership & Scale Management', 'bi-people-fill', profile.leadership_patterns)}
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:12px; margin-top:12px;">
+      ${renderProfileSubsection('Core Values & Motivations', 'bi-compass', profile.core_values_and_motivations)}
+      ${renderProfileSubsection('Interpersonal Traits', 'bi-person-heart', profile.interpersonal_traits)}
+    </div>
+
+    ${blindSpots.length ? `
+      <div class="psych-card" style="margin-top:16px; border-left:3px solid #F5A623;">
+        <div class="psych-card-header">
+          <div class="psych-card-title" style="color:#d97706;"><i class="bi bi-shield-exclamation"></i> Inferred Operational &amp; Cognitive Blind Spots</div>
+          <span class="pill pill-warning">Risk Mitigation</span>
+        </div>
+        <ul class="personality-basis-list" style="margin-top:8px;">
+          ${blindSpots.map(bs => `<li><span>${esc(bs)}</span></li>`).join('')}
+        </ul>
+      </div>` : ''}
+
+    ${(playbook.dos || playbook.donts || playbook.opening_hook) ? `
+      <div class="psych-card" style="margin-top:16px;">
+        <div class="psych-card-header">
+          <div class="psych-card-title"><i class="bi bi-briefcase"></i> Actionable Executive Engagement Playbook</div>
+          <span class="pill pill-success">Sales Strategy</span>
+        </div>
+
+        ${playbook.opening_hook ? `
+          <div class="icebreaker-card" style="margin:10px 0 14px;">
+            <div class="icebreaker-label"><i class="bi bi-chat-quote-fill"></i> Recommended Opening Hook</div>
+            <div class="icebreaker-quote">"${esc(playbook.opening_hook)}"</div>
+          </div>` : ''}
+        ${playbook.recommended_tone ? `<div class="psych-sub-block" style="margin-bottom:10px;"><strong>Recommended tone:</strong> ${esc(playbook.recommended_tone)}</div>` : ''}
+
+        <div class="playbook-dos-donts-grid">
+          ${(playbook.dos || []).length ? `
+            <div style="background:rgba(0,186,136,0.05); border:1px solid rgba(0,186,136,0.2); border-radius:var(--radius-sm); padding:12px 14px;">
+              <div style="font-weight:700; font-size:.82rem; color:var(--success); margin-bottom:8px; text-transform:uppercase; letter-spacing:0.04em;"><i class="bi bi-check-circle-fill"></i> Recommended (Do This)</div>
+              <ul style="padding-left:18px; margin:0; font-size:.82rem; color:var(--text-primary); line-height:1.55;">
+                ${playbook.dos.map(d => `<li>${esc(d)}</li>`).join('')}
+              </ul>
+            </div>` : ''}
+          ${(playbook.donts || []).length ? `
+            <div style="background:rgba(255,77,79,0.05); border:1px solid rgba(255,77,79,0.2); border-radius:var(--radius-sm); padding:12px 14px;">
+              <div style="font-weight:700; font-size:.82rem; color:var(--danger); margin-bottom:8px; text-transform:uppercase; letter-spacing:0.04em;"><i class="bi bi-x-circle-fill"></i> Avoid (Don't Do This)</div>
+              <ul style="padding-left:18px; margin:0; font-size:.82rem; color:var(--text-primary); line-height:1.55;">
+                ${playbook.donts.map(d => `<li>${esc(d)}</li>`).join('')}
+              </ul>
+            </div>` : ''}
+        </div>
+      </div>` : ''}
+
+    ${(profile.caveats && profile.caveats.length) ? `
+      <div class="personality-section-card" style="border-left: 3px solid var(--warning); margin-top:16px;">
+        <div class="personality-sec-header">
+          <div class="personality-sec-title" style="color:#c07a00;"><i class="bi bi-exclamation-triangle"></i> Observation Caveats</div>
+        </div>
+        <ul class="personality-basis-list">
+          ${profile.caveats.map(c => `<li><span>${esc(c)}</span></li>`).join('')}
+        </ul>
+      </div>` : ''}
+  `;
 }
 
 export function renderPostCard(post) {
@@ -345,15 +450,19 @@ export function renderPersonalityProfile(digestEntry) {
       <i class="bi bi-info-circle"></i> AI-synthesized from public posts, filings, and career history — hedged and cited.
     </div>
     ${profile.executive_summary ? `
-      <div class="dossier-block">
-        <div class="dossier-label"><i class="bi bi-person-badge"></i> Executive Summary</div>
-        <div class="dossier-text">${esc(profile.executive_summary)}</div>
+      <div class="personality-summary-card" style="margin-bottom:12px;">
+        <div class="personality-summary-title"><i class="bi bi-person-badge"></i> Executive Summary</div>
+        <p class="personality-summary-text">${esc(profile.executive_summary)}</p>
       </div>` : ''}
-    ${sub ? `<div class="dossier-label" style="margin-top:6px;"><i class="bi bi-diagram-3"></i> Executive Profile</div>${sub}` : ''}
+    ${sub ? `<div class="personality-sections-list">${sub}</div>` : ''}
     ${(profile.caveats && profile.caveats.length) ? `
-      <div class="dossier-block">
-        <div class="dossier-label"><i class="bi bi-exclamation-triangle"></i> Caveats</div>
-        <ul class="profile-basis-list">${profile.caveats.map(c => `<li>${esc(c)}</li>`).join('')}</ul>
+      <div class="personality-section-card" style="border-left: 3px solid var(--warning); margin-top:12px;">
+        <div class="personality-sec-header">
+          <div class="personality-sec-title" style="color:#c07a00;"><i class="bi bi-exclamation-triangle"></i> Observation Caveats</div>
+        </div>
+        <ul class="personality-basis-list">
+          ${profile.caveats.map(c => `<li><span>${esc(c)}</span></li>`).join('')}
+        </ul>
       </div>` : ''}
   `;
 }

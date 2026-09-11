@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>My Tasks | Sales Intelligence</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="css/tokens.css?v=3.0">
+  <link rel="stylesheet" href="css/base.css?v=3.0">
+  <link rel="stylesheet" href="css/shell.css?v=3.0">
+  <link rel="stylesheet" href="css/nav.css?v=3.0">
+  <link rel="stylesheet" href="css/digest.css?v=3.0">
+  <link rel="stylesheet" href="css/sections-and-workflow.css?v=3.0">
+  <link rel="stylesheet" href="css/account-detail.css?v=3.0">
+  <link rel="stylesheet" href="css/people-drawer.css?v=3.0">
+  <link rel="stylesheet" href="css/content-alerts.css?v=3.0">
+  <link rel="stylesheet" href="css/jobs.css?v=3.0">
+  <link rel="stylesheet" href="css/skeleton.css?v=3.0">
+  <link rel="stylesheet" href="css/action-items.css?v=1.0">
+  <link rel="stylesheet" href="css/profile-page.css?v=3.1">
+  <link rel="stylesheet" href="css/responsive.css?v=3.0">
+  <link rel="stylesheet" href="css/tasks-page.css?v=1.0">
+</head>
+<body>
+
+<div class="global-loading-bar" id="globalLoadingBar"></div>
+
+<div class="dash-shell">
+
+{% include "partials/topbar.html" %}
+
+  <div class="dash-body">
+
+{% include "partials/nav.html" %}
+
+    <main class="dash-main">
+      <header class="tp-header">
+        <div>
+          <div class="tp-breadcrumb"><a href="/"><i class="bi bi-arrow-left"></i> Accounts</a></div>
+          <h1 class="tp-title">My Tasks</h1>
+          <p class="tp-subtitle" id="tpSubtitle">Loading…</p>
+        </div>
+      </header>
+
+      <div class="panel">
+        <div class="tp-filter-row">
+          <div id="tpStatusFilters"></div>
+          <div class="tp-filter-controls">
+            <select id="tpAccountFilter" class="tp-select" title="Filter by account">
+              <option value="">All accounts</option>
+            </select>
+            <select id="tpPriorityFilter" class="tp-select" title="Filter by priority">
+              <option value="">All priorities</option>
+              <option value="high">High priority</option>
+              <option value="medium">Medium priority</option>
+              <option value="low">Low priority</option>
+            </select>
+            <select id="tpSort" class="tp-select" title="Sort">
+              <option value="due">Sort: Due date</option>
+              <option value="priority">Sort: Priority</option>
+              <option value="account">Sort: Account (A-Z)</option>
+              <option value="newest">Sort: Newest</option>
+            </select>
+          </div>
+        </div>
+        <div id="tpListBody"><div class="main-loading"><div class="spinner-md"></div> Loading your tasks…</div></div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+{% include "partials/drawer.html" %}
+
+<script type="module" src="js/modules/tasks-page/main.js?v=1.0"></script>
+</body>
+</html>

@@ -9,7 +9,10 @@ import { renderFullProfile } from './full-profile.js';
 import { wireProfilePdfDownload } from './contact-pdf.js';
 import { renderPostCard } from './profile-render.js';
 import { resolvePersonaTargetKey } from './utils.js';
-import { refreshAccessToken } from './auth-client.js';
+import { initThemeToggle } from './theme.js';
+import { initTopbarAuth } from './topbar-auth.js';
+
+initThemeToggle();
 
 function setupSignalsPagination(container, posts) {
   const PAGE_SIZE = 12;
@@ -169,7 +172,9 @@ async function init() {
 
   backLink.href = `/?account=${encodeURIComponent(accountId)}`;
 
-  await refreshAccessToken(); // this page opens in its own tab — restore the session from the refresh cookie first
+  // This page opens in its own tab — restore the session from the refresh
+  // cookie first (also renders the shared topbar's theme toggle / auth widget).
+  await initTopbarAuth();
 
   try {
     const [acctRes, contentRes] = await Promise.all([

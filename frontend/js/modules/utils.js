@@ -37,8 +37,21 @@ export function resolveAccountTargetKey(account) {
   ]);
 }
 
+// Drops single-letter tokens (middle initials like "S.") before slugifying —
+// the content pipeline's own people_targets.py registers "Ranjit S. Samra"
+// under the key "ranjit_samra" (initial omitted), so plain slugify() alone
+// ("ranjit_s_samra") never matches and his real, already-scraped posts
+// silently render as "no recent posts" despite existing in Postgres.
+function slugifyDroppingInitials(name) {
+  return (name || '')
+    .trim()
+    .split(/\s+/)
+    .filter(w => w.replace(/[^a-zA-Z0-9]/g, '').length > 1)
+    .join(' ');
+}
+
 export function resolvePersonaTargetKey(p) {
-  return resolveTargetKey([p.key, slugify(p.name)]);
+  return resolveTargetKey([p.key, slugify(p.name), slugify(slugifyDroppingInitials(p.name))]);
 }
 
 export function findPersonaLob(account, persona) {

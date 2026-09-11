@@ -1,11 +1,11 @@
 // Action / work-list items — client-specific tasks with status, priority,
-// due dates, and an assignee. See ACTION_ITEMS_IMPLEMENTATION_PLAN.md.
-// Rendering + data-fetch for both the per-account "Action Items" tab
-// (account-tabs.js) and the contact-drawer's per-persona section
-// (contact-drawer.js) live here; both call the same fetch/render helpers
-// so there's one source of truth for an item's markup.
+// due dates, and an assignee. See ACTION_ITEMS_IMPLEMENTATION_PLAN.md and
+// TASK_MANAGEMENT_README.md. The account-level "Action Items" tab was
+// removed (tasks now live on the dedicated /tasks page and in Command
+// Center); this module backs the contact-drawer's per-persona section
+// (contact-drawer.js) and exports renderList/renderFilterChips so
+// tasks-page/main.js can render the exact same card markup.
 import { state } from './state.js';
-import { el } from './dom.js';
 import { esc } from './utils.js';
 import { showToast } from './toast.js';
 import { getCurrentUser } from './auth-client.js';
@@ -112,7 +112,12 @@ function renderItemCard(item) {
   `;
 }
 
-function renderList(items, filterStatus) {
+// Exported so the cross-account Task Management page (tasks-page.js) can
+// reuse the exact same card/list/filter markup and CSS instead of
+// duplicating it — both render the same shape of item (_serialize_action_item),
+// just from different endpoints (/api/accounts/{id}/action-items vs
+// /api/me/action-items).
+export function renderList(items, filterStatus) {
   const filtered = filterStatus === 'all' ? items : items.filter(i => i.status === filterStatus);
   if (!filtered.length) {
     return `<div class="empty-block" style="padding:20px 4px;">
@@ -123,7 +128,7 @@ function renderList(items, filterStatus) {
   return `<div class="action-item-list">${filtered.map(renderItemCard).join('')}</div>`;
 }
 
-function renderFilterChips(items, activeStatus) {
+export function renderFilterChips(items, activeStatus) {
   const counts = { all: items.length, pending_review: 0, open: 0, in_progress: 0, done: 0, cancelled: 0 };
   items.forEach(i => { counts[i.status] = (counts[i.status] || 0) + 1; });
   const chip = (value, label) => `
@@ -136,69 +141,10 @@ function renderFilterChips(items, activeStatus) {
   </div>`;
 }
 
-function renderCreateForm(account) {
-  const personas = account.personas || [];
-  return `
-    <form class="aitem-form" id="actionItemCreateForm" data-account-id="${account.id}">
-      <div style="grid-column:1/-1;"><label>Title</label><input type="text" name="title" required placeholder="e.g. Follow up on OpenAI board news"></div>
-      <div style="grid-column:1/-1;"><label>Description</label><input type="text" name="description" placeholder="Optional detail"></div>
-      ${personas.length ? `
-        <div><label>Contact</label>
-          <select name="persona_id"><option value="">(account-wide)</option>${personas.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select>
-        </div>` : ''}
-      <div><label>Priority</label>
-        <select name="priority">
-          <option value="high">High</option>
-          <option value="medium" selected>Medium</option>
-          <option value="low">Low</option>
-        </select>
-      </div>
-      <div><label>Due Date</label><input type="date" name="due_date"></div>
-      <div><button type="submit" class="aitem-submit" id="actionItemCreateSubmit">Add</button></div>
-      <div class="aitem-form-error" id="actionItemCreateError" hidden></div>
-    </form>
-  `;
-}
-
-export function renderActionItemsTab(account) {
-  const items = state.actionItemsByAccount[account.id] || [];
-  return `
-    <div class="panel">
-      <div class="panel-title"><span><i class="bi bi-list-check"></i> Add Action Item</span></div>
-      ${renderCreateForm(account)}
-    </div>
-    <div class="panel">
-      <div class="panel-title">
-        <span><i class="bi bi-clipboard2-check"></i> Action Items</span>
-        <span class="context-badge live">${items.length}</span>
-      </div>
-      <div id="actionItemFilterBarWrap">${renderFilterChips(items, state.activeActionItemStatus)}</div>
-      <div id="actionItemListBody">${renderList(items, state.activeActionItemStatus)}</div>
-    </div>
-  `;
-}
-
-// Called when the Action Items tab is opened (see selection.js, mirroring
-// syncOpportunitySignals/syncWeeklyUpdate's fetch-then-repaint pattern) —
-// always refetches so items changed by a teammate in another session show
-// up, rather than trusting a possibly-stale cache indefinitely.
-export async function syncActionItemsTab(account) {
-  await refetchAccountActionItems(account.id);
-  if (state.activeAccountId === account.id && state.activeSalesTab === 'action-items') {
-    repaintTab(account);
-  }
-}
-
-function repaintTab(account) {
-  const filterWrap = el('actionItemFilterBarWrap');
-  const listBody = el('actionItemListBody');
-  if (!filterWrap || !listBody) return; // tab isn't currently mounted (e.g. contact-drawer view)
-  const items = state.actionItemsByAccount[account.id] || [];
-  filterWrap.innerHTML = renderFilterChips(items, state.activeActionItemStatus);
-  listBody.innerHTML = renderList(items, state.activeActionItemStatus);
-  const badge = document.querySelector('#salesTabsNav [data-tab="action-items"] .tab-badge');
-  if (badge) badge.textContent = items.filter(i => i.status === 'open' || i.status === 'in_progress').length;
-}
+// The account-level "Action Items" tab was removed (tasks are now managed
+// from the dedicated /tasks page and the Command Center) — this module now
+// only backs the contact-drawer's persona-scoped section below, plus the
+// mutation handlers it and /tasks share.
 
 // ── Contact-drawer section (persona-scoped, always-rendered like the
 // drawer's other sections — see contact-drawer.js) ─────────────────────
@@ -215,18 +161,12 @@ export function renderPersonaActionItems(account, persona) {
   `;
 }
 
-// ── Shared mutation handlers — called from the delegated click/change/submit
-// listeners in account-tabs.js and contact-drawer.js ───────────────────
+// ── Shared mutation handler — called from contact-drawer.js's delegated
+// click listener for the persona-scoped section's Take/Complete/Delete/
+// Approve/Reject buttons and its quick-add prompt ─────────────────────
 export async function handleActionItemClick(e, account) {
   const btn = e.target.closest('[data-action="take"], [data-action="complete"], [data-action="delete"], [data-action="approve"], [data-action="reject"]');
-  const filterChip = e.target.closest('[data-action="filter-status"]');
   const quickAdd = e.target.closest('#personaActionItemQuickAdd');
-
-  if (filterChip) {
-    state.activeActionItemStatus = filterChip.dataset.value;
-    repaintTab(account);
-    return true;
-  }
 
   if (quickAdd) {
     const title = window.prompt('Action item title:');
@@ -261,28 +201,12 @@ export async function handleActionItemClick(e, account) {
       await fetch(`/api/action-items/${itemId}/reject`, { method: 'POST' });
       showToast('Suggestion dismissed.');
     }
+    // Caller (contact-drawer.js) re-renders its own persona-scoped section
+    // right after this returns — refetch here just refreshes the cache it reads from.
     await refetchAccountActionItems(account.id);
-    repaintTab(account);
   } catch (err) {
     console.error('Action item update failed', err);
     showToast('Could not update the action item.');
-  }
-  return true;
-}
-
-export async function handleActionItemStatusChange(e, account) {
-  const select = e.target.closest('[data-action="set-status"]');
-  if (!select) return false;
-  try {
-    await fetch(`/api/action-items/${select.dataset.itemId}`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: select.value }),
-    });
-    await refetchAccountActionItems(account.id);
-    repaintTab(account);
-  } catch (err) {
-    console.error('Action item status update failed', err);
-    showToast('Could not update status.');
   }
   return true;
 }
@@ -297,51 +221,10 @@ async function createActionItem(accountId, payload) {
       throw new Error(data.detail || 'Could not create action item');
     }
     await refetchAccountActionItems(accountId);
-    const account = state.accounts.find(a => a.id === accountId);
-    if (account) repaintTab(account);
     showToast('Action item added.');
   } catch (err) {
     showToast(err.message);
   }
-}
-
-export async function handleActionItemFormSubmit(e) {
-  const form = e.target.closest('#actionItemCreateForm');
-  if (!form) return false;
-  e.preventDefault();
-  const accountId = Number(form.dataset.accountId);
-  const errorEl = el('actionItemCreateError');
-  const submitBtn = el('actionItemCreateSubmit');
-  errorEl.hidden = true;
-  submitBtn.disabled = true;
-  try {
-    const fd = new FormData(form);
-    const payload = {
-      title: fd.get('title'),
-      description: fd.get('description') || null,
-      priority: fd.get('priority') || 'medium',
-    };
-    const personaId = fd.get('persona_id');
-    if (personaId) payload.persona_id = Number(personaId);
-    const dueDate = fd.get('due_date');
-    if (dueDate) payload.due_date = new Date(dueDate + 'T00:00:00Z').toISOString();
-
-    const res = await fetch(`/api/accounts/${accountId}/action-items`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Could not create action item');
-    form.reset();
-    await refetchAccountActionItems(accountId);
-    const account = state.accounts.find(a => a.id === accountId);
-    if (account) repaintTab(account);
-  } catch (err) {
-    errorEl.textContent = err.message;
-    errorEl.hidden = false;
-  } finally {
-    submitBtn.disabled = false;
-  }
-  return true;
 }
 
 // ── "My Tasks" — cross-account, opened from the topbar (see topbar-auth.js) ──

@@ -21,6 +21,11 @@ class User(Base):
     full_name = Column(String(255))
     role = Column(String(50), nullable=False, default="user")  # 'super_admin' | 'user'
     is_active = Column(Boolean, nullable=False, default=True)
+    # Sales Command Center is open to every user by default (unlike the
+    # Global Accounts Dashboard, which is admin-granted per account via
+    # UserAccountAccess) — this lets a super_admin explicitly revoke it for
+    # someone, same admin "Account Access" modal as the dashboard grants.
+    has_command_center_access = Column(Boolean, nullable=False, default=True)
 
     failed_login_count = Column(Integer, nullable=False, default=0)
     locked_until = Column(DateTime(timezone=True))

@@ -21,6 +21,8 @@ import os
 import re
 import json
 import math
+import subprocess
+import tempfile
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone, timedelta
@@ -69,7 +71,7 @@ from db.models import (
     ActionItemReminder,
 )
 
-from db.schemas import AccountSchema, PersonaSchema
+from db.schemas import AccountSchema, LobSchema, PersonaSchema
 from db.repositories import (
     AccountRepository,
     LobRepository,
@@ -79,7 +81,7 @@ from db.repositories.pipeline_run_repository import PipelineRunRepository
 from services.account_service import AccountService
 from services.lob_service import LobService, LobValidator
 from services.persona_service import PersonaService, PersonaValidator
-from pdf_export import build_persona_profile_pdf
+from pdf_export import build_persona_profile_pdf, build_psychological_profile_pdf
 import auth
 import email_sender
 from main import run_pipeline
@@ -160,11 +162,14 @@ if FASTAPI_AVAILABLE:
         role: Optional[str] = None
         is_active: Optional[bool] = None
         password: Optional[str] = None
+        has_command_center_access: Optional[bool] = None
 
     def _user_public(u: User) -> Dict[str, Any]:
         return {
             "id": u.id, "email": u.email, "full_name": u.full_name,
             "role": u.role, "is_active": u.is_active,
+            # super_admin always has it, same as it always has every account
+            "has_command_center_access": u.role == "super_admin" or bool(u.has_command_center_access),
             "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
             "created_at": u.created_at.isoformat() if u.created_at else None,
         }
@@ -428,6 +433,10 @@ if FASTAPI_AVAILABLE:
                 auth.revoke_all_refresh_tokens_for_user(session, target.id)
                 details["password_changed"] = True
 
+            if body.has_command_center_access is not None and body.has_command_center_access != target.has_command_center_access:
+                details["has_command_center_access"] = {"old": target.has_command_center_access, "new": body.has_command_center_access}
+                target.has_command_center_access = body.has_command_center_access
+
             session.commit()
             if details:
                 auth.log_audit(session, current.id, "user_updated", target_user_id=target.id, details=details)
@@ -469,6 +478,7 @@ if FASTAPI_AVAILABLE:
             return {
                 "user_id": user_id,
                 "role": target.role,
+                "has_command_center_access": target.role == "super_admin" or bool(target.has_command_center_access),
                 "accounts": [
                     {
                         "id": a.id,
@@ -2366,10 +2376,13 @@ if FASTAPI_AVAILABLE:
             if not p:
                 raise HTTPException(status_code=404, detail="Persona not found.")
             acct = session.query(Account).filter_by(id=p.account_id).first()
-            target_key = p.key or slugify(p.full_name or "")
-
-            digest_row = (
-                session.query(Digest).filter_by(target_key=target_key).first() if target_key else None
+            digest_row = _resolve_persona_digest(session, p)
+            # If a digest exists, its target_key is the confirmed-correct one;
+            # otherwise fall back to the same candidate list for the posts
+            # lookup (captured posts can exist before any digest has run).
+            target_key = digest_row.target_key if digest_row else next(
+                (c for c in [p.key, slugify(p.full_name or ""), _slugify_dropping_initials(p.full_name or "")] if c),
+                None,
             )
             posts = (
                 (session.query(Post).filter_by(target_key=target_key).order_by(Post.channel, Post.rank).all())
@@ -2437,6 +2450,188 @@ if FASTAPI_AVAILABLE:
                 career_events,
             )
             filename = f"{slugify(persona_dict['name'])}-personality-report.pdf"
+            return Response(
+                content=pdf_bytes,
+                media_type="application/pdf",
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            )
+        finally:
+            session.close()
+
+    def _slugify_dropping_initials(name: str) -> str:
+        """Same idea as frontend/js/modules/utils.js's slugifyDroppingInitials
+        — a person registered in people_targets.py under a short key (e.g.
+        "ranjit_samra") won't match a slug of their full display name if it
+        includes a middle initial ("Ranjit S. Samra" -> "ranjit_s_samra")."""
+        if not name:
+            return ""
+        tokens = [t for t in name.strip().split() if len(re.sub(r"[^a-zA-Z0-9]", "", t)) > 1]
+        return slugify(" ".join(tokens))
+
+    def _resolve_persona_digest(session, p: "Persona"):
+        """Tries p.key, then slugify(full_name), then that slug with middle
+        initials dropped, against real Digest rows — mirrors
+        resolvePersonaTargetKey() on the frontend so the API and UI agree on
+        which digest belongs to this persona. Returns the Digest row or None."""
+        candidates = [p.key, slugify(p.full_name or ""), _slugify_dropping_initials(p.full_name or "")]
+        for c in candidates:
+            if not c:
+                continue
+            row = session.query(Digest).filter_by(target_key=c).first()
+            if row:
+                return row
+        return None
+
+    @app.get("/api/personas/{persona_id}/psychological-profile", tags=["3. Personas & Buying Committee"])
+    def get_persona_psychological_profile(persona_id: int, user: User = Depends(auth.require_persona_account_access)):
+        """Retrieve the compiled Psychological & Leadership Profile for a persona.
+
+        Returns profile=None (not a fabricated placeholder) when nothing has
+        been generated yet — the frontend shows an honest "not generated"
+        state for that rather than plausible-looking canned text, same
+        principle as the Personality Profile endpoint/renderer."""
+        session = get_session()
+        try:
+            p = session.query(Persona).filter_by(id=persona_id).first()
+            if not p:
+                raise HTTPException(status_code=404, detail="Persona not found.")
+            digest_row = _resolve_persona_digest(session, p)
+
+            profile = None
+            if digest_row and digest_row.digest and isinstance(digest_row.digest, dict):
+                profile = digest_row.digest.get("psychological_profile")
+            if not profile and p.raw_data and isinstance(p.raw_data, dict):
+                profile = p.raw_data.get("psychological_profile")
+
+            return {
+                "persona_id": p.id,
+                "persona_name": p.full_name,
+                "title": p.title,
+                "profile": profile,
+            }
+        finally:
+            session.close()
+
+    @app.post("/api/personas/{persona_id}/psychological-profile/generate", tags=["3. Personas & Buying Committee"])
+    def generate_persona_psychological_profile(persona_id: int, user: User = Depends(auth.require_persona_account_access)):
+        """Trigger on-demand live generation of the psychological profile using LLM synthesis."""
+        session = get_session()
+        try:
+            p = session.query(Persona).filter_by(id=persona_id).first()
+            if not p:
+                raise HTTPException(status_code=404, detail="Persona not found.")
+
+            content_pipeline_dir = Path(__file__).resolve().parent / "apps" / "content_pipeline"
+
+            # apps/content_pipeline has its own top-level module named `db`
+            # (apps/content_pipeline/db.py) — a straight name collision with
+            # this app's own `db` package, already loaded under that same
+            # name in this process's sys.modules. `import db` inside that
+            # app's own code (people_targets.py, digest/pipeline.py) would
+            # silently resolve to THIS app's db package instead of its own
+            # once cached, no matter what sys.path says. Running it as a
+            # separate process — exactly its own CLI entrypoint, exactly as
+            # a human would run it — sidesteps the collision entirely
+            # instead of fighting Python's module cache for it.
+            sys.path.insert(0, str(content_pipeline_dir))
+            from apps.content_pipeline.people_targets import ALIASES as PEOPLE_ALIASES
+
+            existing = _resolve_persona_digest(session, p)
+            candidates = [existing.target_key] if existing else []
+            candidates += [p.key, slugify(p.full_name or ""), _slugify_dropping_initials(p.full_name or "")]
+            target_key = next((c for c in candidates if c and c in PEOPLE_ALIASES), None)
+            if not target_key:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"'{p.full_name}' isn't registered in people_targets.py under any key this resolves "
+                    f"({', '.join(c for c in candidates if c)}) — add them there before generating a profile.",
+                )
+
+            # --profiles-only: on-demand generation for exactly the two
+            # profiles, skipping the separate email-rollup LLM call nobody
+            # asked for here. --all-posts: a UI click is a deliberate
+            # "(re)generate now", not a scheduled incremental digest.
+            # --since-days 3650: --all-posts only bypasses the "new since
+            # last run" filter, NOT the recency window underneath it — a
+            # contact whose captured posts are all older than the default
+            # 14 days (e.g. no recent public activity) would otherwise
+            # always fail with "no posts in scope" on a fresh generation.
+            #
+            # Logs to an explicit UTF-8-opened file rather than
+            # capture_output=True/text=True — on this box, letting the
+            # parent auto-decode the captured pipes (locale-dependent, not
+            # UTF-8) silently returned stdout=stderr=None instead of
+            # raising, hiding every real error. This is the same "open the
+            # file as UTF-8 yourself" workaround already needed manually
+            # all session for this app's own Windows-console encoding issue
+            # (main.py's banner prints a Unicode box-drawing character).
+            proc_env = dict(os.environ, PYTHONIOENCODING="utf-8")
+            log_fd, log_path = tempfile.mkstemp(suffix=".log", prefix="profile_gen_")
+            os.close(log_fd)
+            try:
+                with open(log_path, "w", encoding="utf-8") as log_fh:
+                    result = subprocess.run(
+                        [sys.executable, "main.py", "digest", target_key, "--person", "--all-posts", "--profiles-only", "--since-days", "3650"],
+                        cwd=str(content_pipeline_dir), env=proc_env,
+                        stdout=log_fh, stderr=subprocess.STDOUT, timeout=300,
+                    )
+                with open(log_path, "r", encoding="utf-8", errors="replace") as log_fh:
+                    output = log_fh.read()
+            finally:
+                try:
+                    os.remove(log_path)
+                except OSError:
+                    pass
+
+            if result.returncode != 0:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Digest generation failed (exit {result.returncode}): {(output or '(no output)')[-1000:]}",
+                )
+
+            # The subprocess's own db.upsert_digest() call already wrote the
+            # fresh row to Postgres — re-read it here rather than parsing
+            # the subprocess's stdout/local JSON file.
+            session.expire_all()
+            digest_row = _resolve_persona_digest(session, p)
+            psych = (digest_row.digest or {}).get("psychological_profile") if digest_row else None
+            if not psych:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Digest ran but produced no psychological_profile. Output: {output[-1000:]}",
+                )
+
+            return {
+                "status": "success",
+                "persona_id": p.id,
+                "profile": psych
+            }
+        finally:
+            session.close()
+
+    @app.get("/api/personas/{persona_id}/psychological-profile.pdf", tags=["3. Personas & Buying Committee"])
+    def download_persona_psychological_profile_pdf(persona_id: int, user: User = Depends(auth.require_persona_account_access)):
+        """Download high-impact executive PDF briefing for the Psychological Profile."""
+        session = get_session()
+        try:
+            p = session.query(Persona).filter_by(id=persona_id).first()
+            if not p:
+                raise HTTPException(status_code=404, detail="Persona not found.")
+            acct = session.query(Account).filter_by(id=p.account_id).first()
+            digest_row = _resolve_persona_digest(session, p)
+
+            persona_dict = {
+                "full_name": p.full_name, "title": p.title,
+                "account_name": acct.display_name or acct.legal_name if acct else "",
+                "city": p.city, "state": p.state, "country": p.country,
+                "communication_style": p.communication_style
+            }
+
+            pdf_bytes = build_psychological_profile_pdf(
+                persona_dict,
+                digest_row.digest if digest_row else None
+            )
+            filename = f"{slugify(p.full_name or 'executive')}-psychological-profile.pdf"
             return Response(
                 content=pdf_bytes,
                 media_type="application/pdf",
@@ -2949,6 +3144,66 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
+    @app.post("/api/action-items/{item_id}/send-reminder", tags=["8. Action Items"])
+    def send_action_item_reminder(item_id: int, user: User = Depends(auth.require_action_item_account_access)):
+        """On-demand reminder email for one action item — same email
+        template and action_item_reminders log as the scheduled sweep
+        (scripts/send_action_reminders.py), but sent immediately (e.g. from
+        the Command Center 'Due soon' widget's Send reminder button)
+        instead of waiting for that script's next scheduled run. Unlike the
+        sweep, a deliberate manual click is allowed to re-send even if that
+        reminder stage was already logged — updates the existing log row's
+        sent_at instead of trying to insert a second one (which would hit
+        the table's unique constraint)."""
+        session = get_session()
+        try:
+            item = (session.query(ActionItem)
+                    .options(selectinload(ActionItem.assigned_to), selectinload(ActionItem.account))
+                    .filter_by(id=item_id).first())
+            if not item:
+                raise HTTPException(status_code=404, detail="Action item not found")
+            if item.status in ("done", "cancelled"):
+                raise HTTPException(status_code=400, detail="This task is already closed")
+            if not item.assigned_to or not item.assigned_to.email:
+                raise HTTPException(status_code=400, detail="This task has no assignee to notify")
+
+            assignee = item.assigned_to
+            now = datetime.now(timezone.utc)
+            due = item.due_date
+            due_utc = due.replace(tzinfo=timezone.utc) if due and not due.tzinfo else due
+            is_overdue = bool(due_utc and due_utc < now)
+            reminder_type = "overdue" if is_overdue else "due_soon"
+            account_name = (item.account.display_name or item.account.legal_name) if item.account else "an account"
+            due_str = due_utc.strftime("%b %d, %Y") if due_utc else "no date"
+            heading = "Action item overdue" if is_overdue else "Action item due soon"
+            lead_line = f"{'This action item is now overdue' if is_overdue else 'This action item is due soon'} on {account_name}:"
+
+            sent = email_sender.send_email(
+                assignee.email, f"{heading}: {item.title}",
+                f"Hi {assignee.full_name or assignee.email},\n\n{lead_line}\n\n{item.title}\n{item.description or ''}\nDue: {due_str}\n",
+                html_body=email_sender.render_html(
+                    heading,
+                    [f"Hi {assignee.full_name or assignee.email},", lead_line, item.title] + ([item.description] if item.description else []),
+                    footnote=f"Due: {due_str}",
+                ),
+            )
+            if not sent:
+                raise HTTPException(status_code=502, detail="Could not send the reminder email — check SMTP configuration (.env SMTP_* vars).")
+
+            existing = session.query(ActionItemReminder).filter_by(
+                action_item_id=item.id, reminder_type=reminder_type, sent_to_user_id=item.assigned_to_id,
+            ).first()
+            if existing:
+                existing.sent_at = now
+            else:
+                session.add(ActionItemReminder(action_item_id=item.id, reminder_type=reminder_type, sent_to_user_id=item.assigned_to_id))
+            session.commit()
+            return {"ok": True, "sent_to": assignee.email, "reminder_type": reminder_type}
+        except HTTPException:
+            raise
+        finally:
+            session.close()
+
     @app.delete("/api/action-items/{item_id}", tags=["8. Action Items"])
     def delete_action_item(item_id: int, user: User = Depends(auth.require_action_item_account_access)):
         session = get_session()
@@ -3369,7 +3624,18 @@ if FASTAPI_AVAILABLE:
             # — without including those here, the contact drawer's Recent
             # Social Media Activity / Personality Profile sections always
             # found nothing, no matter how much persona-level data existed.
-            persona_keys = [p.key or slugify(p.full_name) for p in (acct.personas or [])]
+            # Three candidates per persona (mirrors _resolve_persona_digest
+            # above and resolvePersonaTargetKey on the frontend): a name with
+            # a middle initial like "Ranjit S. Samra" slugifies to
+            # "ranjit_s_samra", but people_targets.py registers them under
+            # "ranjit_samra" (initial omitted) — without the third candidate
+            # this endpoint silently omits that persona's digest/posts from
+            # its response entirely, no matter how the frontend resolves keys.
+            persona_keys = []
+            for p in (acct.personas or []):
+                persona_keys.append(p.key)
+                persona_keys.append(slugify(p.full_name or ""))
+                persona_keys.append(_slugify_dropping_initials(p.full_name or ""))
             keys = [
                 acct.key,
                 (acct.stock_symbol or "").lower(),
@@ -3527,6 +3793,23 @@ if FASTAPI_AVAILABLE:
             Reuses the same drawer markup/rendering as the dashboard's
             sliding drawer; see frontend/js/modules/profile-page.js."""
             return templates.TemplateResponse(request, "profile.html")
+
+        @app.get("/command-center", response_class=HTMLResponse, include_in_schema=False)
+        async def sales_command_center_page(request: Request):
+            """Action-first rep/manager/exec dashboard — KPI strip, account
+            priority matrix, priority signal feed, playbook and exec
+            movements timeline. Currently runs on mock seed data; see
+            frontend/js/modules/command-center/data.js."""
+            return templates.TemplateResponse(request, "command-center.html")
+
+        @app.get("/tasks", response_class=HTMLResponse, include_in_schema=False)
+        async def tasks_page(request: Request):
+            """Personal, cross-account Task Management page — every action
+            item assigned to the caller (GET /api/me/action-items), with
+            status/priority/account filtering and sorting. See
+            TASK_MANAGEMENT_README.md. A team/manager-wide view is a
+            deliberately deferred v2 (no endpoint for it exists yet)."""
+            return templates.TemplateResponse(request, "tasks.html")
 
         css_dir = frontend_dir / "css"
         js_dir = frontend_dir / "js"

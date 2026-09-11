@@ -15,6 +15,7 @@ from .prompts import (
     PERSON_EMAIL_SYSTEM,
     PERSONALITY_PROFILE_SYSTEM,
     PERSON_ACTION_SUGGESTIONS_SYSTEM,
+    PSYCHOLOGICAL_PROFILE_SYSTEM,
 )
 
 
@@ -201,12 +202,45 @@ def _format_bio_and_channels(subject: str, bio: Dict[str, Any], channels: List[D
     bio_lines = [f"Name: {subject}"]
     if bio.get("title"):
         bio_lines.append(f"Title: {bio['title']}")
+    if bio.get("headline"):
+        bio_lines.append(f"LinkedIn headline: {bio['headline']}")
     if bio.get("location"):
         bio_lines.append(f"Location: {bio['location']}")
+    if bio.get("about"):
+        bio_lines.append(f"Self-authored LinkedIn summary: {bio['about']}")
     if bio.get("education"):
         bio_lines.append(f"Education: {bio['education']}")
+    for line in bio.get("education_history", []):
+        bio_lines.append(f"Education record: {line}")
+    if bio.get("career_trajectory_score") is not None:
+        bio_lines.append(f"Career trajectory score: {bio['career_trajectory_score']}")
+    if bio.get("past_companies"):
+        bio_lines.append(f"Prior employers: {', '.join(bio['past_companies'])}")
+    if bio.get("previous_titles"):
+        bio_lines.append(f"Prior titles held (most recent first): {', '.join(bio['previous_titles'][:8])}")
+    for line in bio.get("employment_history", []):
+        bio_lines.append(f"Employment record: {line}")
+    for line in bio.get("volunteering", []):
+        bio_lines.append(f"Volunteering / community role: {line}")
+    for line in bio.get("recommendations", []):
+        bio_lines.append(f"Received recommendation — {line}")
     if bio.get("communication_style"):
         bio_lines.append(f"Noted communication style: {bio['communication_style']}")
+    # Added by get_person_psychological_context() (psychological-profile
+    # runs only) but previously never rendered into the prompt at all —
+    # the extra DB join it does was silently going nowhere.
+    if bio.get("tier"):
+        bio_lines.append(f"Seniority tier: {bio['tier']}")
+    if bio.get("skills"):
+        bio_lines.append(f"Skills: {', '.join(bio['skills'][:15])}")
+    if bio.get("target_kpis"):
+        bio_lines.append(f"Target KPIs: {', '.join(bio['target_kpis'][:6])}")
+    if bio.get("operational_pain_points"):
+        bio_lines.append(f"Operational pain points: {', '.join(bio['operational_pain_points'][:6])}")
+    if bio.get("key_objections"):
+        bio_lines.append(f"Known objections: {', '.join(bio['key_objections'][:6])}")
+    if bio.get("account_context"):
+        bio_lines.append(f"Account context: {bio['account_context']}")
     for event in bio.get("career", []):
         bio_lines.append(f"Career event: {event}")
 
@@ -265,5 +299,21 @@ def build_action_item_suggestions(
     prompt = _format_bio_and_channels(subject, bio, channels)
     result = client.complete_json(PERSON_ACTION_SUGGESTIONS_SYSTEM, prompt)
     return result.get("suggestions") or []
+
+
+def build_psychological_profile(
+    client: LLMClient,
+    subject: str,
+    bio: Dict[str, Any],
+    channels: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Second-stage deep synthesis — In-depth Executive Psychological &
+    Leadership Profile (Archetype, Cognitive Style, Leadership & Scale, Big Five
+    1.0-10.0 Trait Modeling, Core Values & Philanthropy, Blind Spots, and Playbook).
+    See PSYCHOLOGICAL_PROFILE_SYSTEM in prompts.py.
+    """
+    prompt = _format_bio_and_channels(subject, bio, channels)
+    return client.complete_json(PSYCHOLOGICAL_PROFILE_SYSTEM, prompt)
+
 
 

@@ -105,15 +105,15 @@ function renderPersonalityProfileWidget(digestEntry, persona) {
   `;
 }
 
-// Widget: Executive Psychological Profile (Placeholder / Not Connected)
-function renderPsychologicalProfileWidget() {
+// Widget: Executive Psychological Profile
+function renderPsychologicalProfileWidget(digestEntry, persona) {
   return `
     <div class="profile-widget">
       <div class="profile-widget-header">
         <div class="profile-widget-title"><i class="bi bi-activity"></i> Executive Psychological Profile</div>
-        <button type="button" class="profile-action-btn btn-primary disabled" style="padding: 5px 12px; font-size: .8rem; font-weight: 600;" title="Psychological profile is not currently connected"><i class="bi bi-file-earmark-pdf"></i> Download Psychological Report</button>
+        <button type="button" class="profile-action-btn btn-primary" id="downloadPsychologicalPdfBtn" style="padding: 5px 12px; font-size: .8rem; font-weight: 600;"><i class="bi bi-file-earmark-pdf"></i> Download Psychological Report</button>
       </div>
-      ${renderFullPsychologicalProfile()}
+      ${renderFullPsychologicalProfile(digestEntry, persona)}
     </div>
   `;
 }
@@ -148,7 +148,7 @@ export function renderFullProfile(p) {
     <!-- Parallel Pair 2: Executive Personality Profile || Psychological Profile -->
     <div class="profile-bento-grid">
       ${renderPersonalityProfileWidget(digestEntry, p)}
-      ${renderPsychologicalProfileWidget()}
+      ${renderPsychologicalProfileWidget(digestEntry, p)}
     </div>
 
     <!-- Multi-Channel Signals & Public Activity Feed -->

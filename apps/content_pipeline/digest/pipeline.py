@@ -17,6 +17,7 @@ from .selection import (
     build_action_item_suggestions,
     build_email,
     build_personality_profile,
+    build_psychological_profile,
     select_posts,
     summarize_channel,
 )
@@ -32,6 +33,7 @@ def run(
     kind: str = "company",
     target: Dict[str, Any] = None,
     suggest_actions: bool = False,
+    profiles_only: bool = False,
 ) -> Dict[str, Any]:
     """Generate one account's (or one person's) digest and write JSON + Markdown.
 
@@ -45,6 +47,13 @@ def run(
     ACTION_ITEMS_LLM_SUGGESTIONS_PLAN.md. Off by default so this doesn't
     silently start spending an extra flagship-model call (and creating DB
     rows) on every ordinary digest run.
+
+    profiles_only: person digests only — skips the build_email() rollup call
+    (a separate flagship-model call producing the sales email nobody asked
+    for here) while still running the per-channel summaries, since those are
+    the required input `channels` argument to build_personality_profile()/
+    build_psychological_profile() below, not optional context. Cuts this run
+    down to exactly the two calls actually wanted instead of four.
     """
     is_person = kind == "person"
     target = target or (
@@ -114,34 +123,54 @@ def run(
     if not channels:
         raise RuntimeError("Nothing to summarise — no posts in scope.")
 
-    try:
-        email = build_email(
-            email_client, target["display_name"], target.get("ticker"), channels, kind=kind
-        )
-    except LLMError as e:
-        # Every channel above already made (and paid for) a real LLM call —
-        # discarding all of that because only the final rollup call failed
-        # is the single most expensive failure mode in this pipeline. Write
-        # a degraded but honest email instead of losing that work; the
-        # channel storylines below it are unaffected and still real.
-        print(f"   email     ❌ {e}")
+    if profiles_only:
+        print("   email     skipped (--profiles-only)")
         email = {
-            "subject": f"{target['display_name']} — digest (email synthesis failed)",
-            "body": f"Channel-level summaries below are real and complete, but "
-            f"the final email rollup failed: {e}. Re-run the digest to retry "
-            "just the email step — the channel data is already cached.",
+            "subject": f"{target['display_name']} — digest (email skipped)",
+            "body": "Email synthesis skipped for this run (--profiles-only) — "
+            "only the Personality/Psychological Profile were requested.",
             "talking_points": [],
             "capability_opportunities": [],
             "priority": "low",
-            "priority_reason": "Email synthesis failed; see data_gaps.",
-            "confidence": "low",
+            "priority_reason": "Email synthesis skipped by request, not a failure.",
+            "confidence": "n/a",
             "do_not_say": [],
-            "data_gaps": [f"Email synthesis error: {e}"],
+            "data_gaps": [],
         }
+    else:
+        try:
+            email = build_email(
+                email_client, target["display_name"], target.get("ticker"), channels, kind=kind
+            )
+        except LLMError as e:
+            # Every channel above already made (and paid for) a real LLM call —
+            # discarding all of that because only the final rollup call failed
+            # is the single most expensive failure mode in this pipeline. Write
+            # a degraded but honest email instead of losing that work; the
+            # channel storylines below it are unaffected and still real.
+            print(f"   email     ❌ {e}")
+            email = {
+                "subject": f"{target['display_name']} — digest (email synthesis failed)",
+                "body": f"Channel-level summaries below are real and complete, but "
+                f"the final email rollup failed: {e}. Re-run the digest to retry "
+                "just the email step — the channel data is already cached.",
+                "talking_points": [],
+                "capability_opportunities": [],
+                "priority": "low",
+                "priority_reason": "Email synthesis failed; see data_gaps.",
+                "confidence": "low",
+                "do_not_say": [],
+                "data_gaps": [f"Email synthesis error: {e}"],
+            }
 
     personality_profile = None
     if is_person:
-        bio = db.get_person_bio(key) or {}
+        # people_targets.py's registered key and the main app's personas.key
+        # are generated independently and often don't match (especially for
+        # names with middle initials) — full_name_hint lets get_person_bio
+        # fall back to an ILIKE-on-full_name lookup so bio data isn't
+        # silently dropped for those people.
+        bio = db.get_person_bio(key, full_name_hint=target.get("display_name")) or {}
         # Unlike the per-channel calls above, this step has no natural
         # "new_in_last_run" filter of its own — without caching it re-spent
         # a full LLM call on every single digest run even when every channel
@@ -166,6 +195,25 @@ def run(
                     "executive_profile": {},
                     "caveats": [f"Personality profile synthesis error: {e}"],
                 }
+
+        psychological_profile = None
+        psych_context = db.get_person_psychological_context(key, full_name_hint=target.get("display_name")) or bio
+        psych_sig = cache.content_signature({"bio": psych_context, "channels": channels, "kind": "psychological"})
+        cached_psych = cache.get(key, "__psychological_profile__", psych_sig) if use_cache else None
+        if cached_psych is not None:
+            print("   psychological profile unchanged since last digest, reusing cached synthesis")
+            psychological_profile = cached_psych
+        else:
+            try:
+                print("   psychological profile synthesising…")
+                psychological_profile = build_psychological_profile(
+                    email_client, target["display_name"], psych_context, channels
+                )
+                if use_cache:
+                    cache.put(key, "__psychological_profile__", psych_sig, psychological_profile)
+            except LLMError as e:
+                print(f"   psychological profile ❌ {e}")
+                psychological_profile = None
 
         if suggest_actions:
             # Same cache-signature pattern as personality_profile above —
@@ -215,6 +263,8 @@ def run(
     }
     if personality_profile is not None:
         digest["personality_profile"] = personality_profile
+    if is_person and psychological_profile is not None:
+        digest["psychological_profile"] = psychological_profile
 
     os.makedirs(out_dir, exist_ok=True)
     json_path = os.path.join(out_dir, f"{key}_digest.json")

@@ -230,6 +230,11 @@
 .nav-digest-wrap {
   padding: 8px 10px 4px;
 }
+.nav-digest-wrap a.nav-digest-btn {
+  text-decoration: none;
+  color: inherit;
+  margin-top: 8px;
+}
 .nav-digest-btn {
   width: 100%;
   display: flex;
