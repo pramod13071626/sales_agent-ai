@@ -267,25 +267,54 @@ def get_current_user(creds: Optional[HTTPAuthorizationCredentials] = Depends(_be
     # super_admin bypass user so every route stays reachable during dev.
     if creds is None:
         if not AUTH_ENFORCED:
-            bypass = User()
-            bypass.id = 0
-            bypass.email = "dev-bypass@localhost"
-            bypass.role = "super_admin"
-            bypass.is_active = True
-            bypass.full_name = "Dev Bypass"
-            return bypass
+            session = get_session()
+            try:
+                user = session.query(User).filter_by(role="super_admin").first() or session.query(User).first()
+                if user:
+                    session.expunge(user)
+                    return user
+                return User(
+                    id=1, email="admin@local", role="super_admin", is_active=True,
+                    has_dashboard_access=True, has_command_center_access=True,
+                    has_tasks_access=True, has_pipeline_access=True
+                )
+            finally:
+                session.close()
         raise HTTPException(status_code=401, detail="Not authenticated")
     try:
         payload = decode_access_token(creds.credentials)
     except jwt.ExpiredSignatureError:
+        if not AUTH_ENFORCED:
+            session = get_session()
+            try:
+                user = session.query(User).filter_by(role="super_admin").first() or session.query(User).first()
+                if user:
+                    session.expunge(user)
+                    return user
+            finally:
+                session.close()
         raise HTTPException(status_code=401, detail="Access token expired")
     except jwt.PyJWTError:
+        if not AUTH_ENFORCED:
+            session = get_session()
+            try:
+                user = session.query(User).filter_by(role="super_admin").first() or session.query(User).first()
+                if user:
+                    session.expunge(user)
+                    return user
+            finally:
+                session.close()
         raise HTTPException(status_code=401, detail="Invalid access token")
 
     session = get_session()
     try:
         user = session.query(User).filter_by(id=int(payload["sub"])).first()
         if not user or not user.is_active:
+            if not AUTH_ENFORCED:
+                admin_user = session.query(User).filter_by(role="super_admin").first() or session.query(User).first()
+                if admin_user:
+                    session.expunge(admin_user)
+                    return admin_user
             raise HTTPException(status_code=401, detail="Account is inactive")
         # Detach from the session before closing it so the caller can still
         # read attributes (SQLAlchemy would otherwise lazy-reload on access
@@ -298,6 +327,8 @@ def get_current_user(creds: Optional[HTTPAuthorizationCredentials] = Depends(_be
 
 def require_role(*roles: str):
     def dependency(user: User = Depends(get_current_user)) -> User:
+        if not AUTH_ENFORCED:
+            return user
         if user.role not in roles:
             raise HTTPException(status_code=403, detail="Not authorized")
         return user
@@ -310,7 +341,7 @@ def require_account_access(account_id: int, user: User = Depends(get_current_use
     automatically. super_admin always passes; anyone else needs an explicit
     UserAccountAccess grant for this specific account (see
     db/models/user_account_access.py)."""
-    if user.role == "super_admin":
+    if not AUTH_ENFORCED or user.role == "super_admin":
         return user
     session = get_session()
     try:
@@ -325,7 +356,7 @@ def require_account_access(account_id: int, user: User = Depends(get_current_use
 def require_persona_account_access(persona_id: int, user: User = Depends(get_current_user)) -> User:
     """Same as require_account_access, but for a route keyed by persona_id —
     resolves the persona's account first, then applies the same check."""
-    if user.role == "super_admin":
+    if not AUTH_ENFORCED or user.role == "super_admin":
         return user
     session = get_session()
     try:
@@ -345,7 +376,7 @@ def require_action_item_account_access(item_id: int, user: User = Depends(get_cu
     """Same as require_account_access, but for a route keyed by an
     action_items id — resolves the item's account first, then applies the
     same check. See ACTION_ITEMS_IMPLEMENTATION_PLAN.md §2."""
-    if user.role == "super_admin":
+    if not AUTH_ENFORCED or user.role == "super_admin":
         return user
     session = get_session()
     try:

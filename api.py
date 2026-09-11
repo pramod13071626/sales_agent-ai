@@ -162,14 +162,20 @@ if FASTAPI_AVAILABLE:
         role: Optional[str] = None
         is_active: Optional[bool] = None
         password: Optional[str] = None
+        has_dashboard_access: Optional[bool] = None
         has_command_center_access: Optional[bool] = None
+        has_tasks_access: Optional[bool] = None
+        has_pipeline_access: Optional[bool] = None
 
     def _user_public(u: User) -> Dict[str, Any]:
+        is_sa = u.role == "super_admin"
         return {
             "id": u.id, "email": u.email, "full_name": u.full_name,
             "role": u.role, "is_active": u.is_active,
-            # super_admin always has it, same as it always has every account
-            "has_command_center_access": u.role == "super_admin" or bool(u.has_command_center_access),
+            "has_dashboard_access": is_sa or (u.has_dashboard_access if u.has_dashboard_access is not None else True),
+            "has_command_center_access": is_sa or (u.has_command_center_access if u.has_command_center_access is not None else True),
+            "has_tasks_access": is_sa or (u.has_tasks_access if u.has_tasks_access is not None else True),
+            "has_pipeline_access": is_sa or (u.has_pipeline_access if u.has_pipeline_access is not None else True),
             "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
             "created_at": u.created_at.isoformat() if u.created_at else None,
         }
@@ -429,13 +435,25 @@ if FASTAPI_AVAILABLE:
             if body.password:
                 if len(body.password) < 6:
                     raise HTTPException(status_code=400, detail="Password must be at least 6 characters long")
-                target.password_hash = auth.hash_password(body.password)
+                target.hashed_password = auth.hash_password(body.password)
                 auth.revoke_all_refresh_tokens_for_user(session, target.id)
                 details["password_changed"] = True
+
+            if body.has_dashboard_access is not None and body.has_dashboard_access != target.has_dashboard_access:
+                details["has_dashboard_access"] = {"old": target.has_dashboard_access, "new": body.has_dashboard_access}
+                target.has_dashboard_access = body.has_dashboard_access
 
             if body.has_command_center_access is not None and body.has_command_center_access != target.has_command_center_access:
                 details["has_command_center_access"] = {"old": target.has_command_center_access, "new": body.has_command_center_access}
                 target.has_command_center_access = body.has_command_center_access
+
+            if body.has_tasks_access is not None and body.has_tasks_access != target.has_tasks_access:
+                details["has_tasks_access"] = {"old": target.has_tasks_access, "new": body.has_tasks_access}
+                target.has_tasks_access = body.has_tasks_access
+
+            if body.has_pipeline_access is not None and body.has_pipeline_access != target.has_pipeline_access:
+                details["has_pipeline_access"] = {"old": target.has_pipeline_access, "new": body.has_pipeline_access}
+                target.has_pipeline_access = body.has_pipeline_access
 
             session.commit()
             if details:
@@ -475,10 +493,14 @@ if FASTAPI_AVAILABLE:
                 raise HTTPException(status_code=404, detail="User not found")
             granted_ids = set(auth.get_accessible_account_ids(session, user_id))
             accounts = session.query(Account).order_by(Account.display_name).all()
+            is_sa = target.role == "super_admin"
             return {
                 "user_id": user_id,
                 "role": target.role,
-                "has_command_center_access": target.role == "super_admin" or bool(target.has_command_center_access),
+                "has_dashboard_access": is_sa or (target.has_dashboard_access if target.has_dashboard_access is not None else True),
+                "has_command_center_access": is_sa or (target.has_command_center_access if target.has_command_center_access is not None else True),
+                "has_tasks_access": is_sa or (target.has_tasks_access if target.has_tasks_access is not None else True),
+                "has_pipeline_access": is_sa or (target.has_pipeline_access if target.has_pipeline_access is not None else True),
                 "accounts": [
                     {
                         "id": a.id,
