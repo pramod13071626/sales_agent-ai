@@ -58,19 +58,7 @@ export function renderSalesAlerts(account) {
 
 export function renderAccountJobsTab(account) {
   const jobs = getAccountJobs(account);
-  return `
-    <div class="panel">
-      <div class="panel-title">
-        <span><i class="bi bi-linkedin"></i> Recent LinkedIn Job Postings</span>
-        <span class="context-badge live">${jobs.length} open role${jobs.length !== 1 ? 's' : ''}</span>
-      </div>
-      <p class="section-desc">Job postings scraped from ${esc(account.name)}'s LinkedIn presence — a useful signal for hiring pushes, team growth, and tech-stack clues.</p>
-      ${jobs.length ? jobs.map(j => renderJobCard(j)).join('') : `<div class="empty-block">
-        <div class="empty-block-icon"><i class="bi bi-linkedin"></i></div>
-        <div class="empty-block-text">No LinkedIn job postings captured yet for this account.</div>
-      </div>`}
-    </div>
-  `;
+  return renderHiringTrendRadar(account, jobs, activeRadarFilter);
 }
 
 // ── Quick Outreach Arsenal Copy Helpers ────────────────────────
@@ -410,7 +398,10 @@ dashContent.addEventListener('click', async function (e) {
     const jobsTabEl = document.getElementById('salesTabContentArea');
     if (jobsTabEl && state.activeSalesTab === 'jobs') {
       const account = state.accounts.find(a => a.id === state.activeAccountId);
-      if (account) jobsTabEl.innerHTML = renderAccountJobsTab(account);
+      if (account) {
+        const jobs = getAccountJobs(account);
+        jobsTabEl.innerHTML = renderHiringTrendRadar(account, jobs, activeRadarFilter);
+      }
     }
     return;
   }
