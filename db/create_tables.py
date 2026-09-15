@@ -46,6 +46,30 @@ def ensure_schema_compatibility():
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS has_command_center_access BOOLEAN NOT NULL DEFAULT TRUE;",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS has_tasks_access BOOLEAN NOT NULL DEFAULT TRUE;",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS has_pipeline_access BOOLEAN NOT NULL DEFAULT TRUE;",
+            # 5. Manual-verification flag/timestamp (db/models/{account,lob,sub_lob,persona}.py)
+            "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS is_manually_verified BOOLEAN DEFAULT FALSE;",
+            "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS manually_verified_at TIMESTAMPTZ;",
+            "ALTER TABLE lobs ADD COLUMN IF NOT EXISTS is_manually_verified BOOLEAN DEFAULT FALSE;",
+            "ALTER TABLE lobs ADD COLUMN IF NOT EXISTS manually_verified_at TIMESTAMPTZ;",
+            "ALTER TABLE personas ADD COLUMN IF NOT EXISTS is_manually_verified BOOLEAN DEFAULT FALSE;",
+            "ALTER TABLE personas ADD COLUMN IF NOT EXISTS manually_verified_at TIMESTAMPTZ;",
+            # 6. sub_lobs grew a full entity-data model (legal name, LEI, jurisdiction,
+            # parent-lob linkage, ...) that was never migrated — this table was still
+            # at its original 4 columns.
+            "ALTER TABLE sub_lobs ADD COLUMN IF NOT EXISTS legal_name VARCHAR(500);",
+            "ALTER TABLE sub_lobs ADD COLUMN IF NOT EXISTS lei_code VARCHAR(50);",
+            "ALTER TABLE sub_lobs ADD COLUMN IF NOT EXISTS jurisdiction VARCHAR(50);",
+            "ALTER TABLE sub_lobs ADD COLUMN IF NOT EXISTS country VARCHAR(100);",
+            "ALTER TABLE sub_lobs ADD COLUMN IF NOT EXISTS city VARCHAR(255);",
+            "ALTER TABLE sub_lobs ADD COLUMN IF NOT EXISTS relationship_type VARCHAR(255);",
+            "ALTER TABLE sub_lobs ADD COLUMN IF NOT EXISTS status VARCHAR(100) DEFAULT 'ACTIVE';",
+            "ALTER TABLE sub_lobs ADD COLUMN IF NOT EXISTS entity_level VARCHAR(100) DEFAULT 'Level 3 (Operating Sub-LOB)';",
+            "ALTER TABLE sub_lobs ADD COLUMN IF NOT EXISTS parent_lob_lei VARCHAR(50);",
+            "ALTER TABLE sub_lobs ADD COLUMN IF NOT EXISTS parent_lob_name VARCHAR(500);",
+            "ALTER TABLE sub_lobs ADD COLUMN IF NOT EXISTS domain VARCHAR(255);",
+            "ALTER TABLE sub_lobs ADD COLUMN IF NOT EXISTS website_url TEXT;",
+            "ALTER TABLE sub_lobs ADD COLUMN IF NOT EXISTS is_manually_verified BOOLEAN DEFAULT FALSE;",
+            "ALTER TABLE sub_lobs ADD COLUMN IF NOT EXISTS manually_verified_at TIMESTAMPTZ;",
         ]
         for stmt in alter_statements:
             try:

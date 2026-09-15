@@ -1,16 +1,30 @@
 // BNY-Dedicated Elaborative Hiring Signals Intelligence Module
 // Uses dedicated endpoints:
-// 1. GET /api/accounts/11/hiring-summary (Lightweight aggregate metrics on page load)
-// 2. GET /api/accounts/11/jobs (Paginated on-demand live requisitions on dropdown click)
+// 1. GET /api/accounts/{id}/hiring-summary (Lightweight aggregate metrics on page load)
+// 2. GET /api/accounts/{id}/jobs (Paginated on-demand live requisitions on dropdown click)
 
 import { openDossier } from './drawer.js';
 import { esc } from './utils.js';
 import { showToast } from '../toast.js';
+import { resolveRealAccount } from './real-accounts.js';
 
 let summaryPromise = null;
 let personasPromise = null;
+let bnyAccountIdPromise = null;
 
-function loadHiringSummary(accountId = 11) {
+// BNY's accounts.id isn't stable across environments/seeds — this module
+// used to hardcode 11, which 404s as soon as a database seeds BNY under a
+// different id (this one has it as 3). Resolve it the same way the rest of
+// Command Center maps a display name to a real accounts.id, instead of
+// hardcoding a number that can silently go stale.
+function getBnyAccountId() {
+  if (!bnyAccountIdPromise) {
+    bnyAccountIdPromise = resolveRealAccount('Bank of New York Mellon').then(acct => acct ? acct.id : null);
+  }
+  return bnyAccountIdPromise;
+}
+
+function loadHiringSummary(accountId) {
   if (!summaryPromise) {
     summaryPromise = fetch(`/api/accounts/${accountId}/hiring-summary`)
       .then(res => {
@@ -25,9 +39,9 @@ function loadHiringSummary(accountId = 11) {
   return summaryPromise;
 }
 
-function loadBnyPersonas() {
+function loadBnyPersonas(accountId) {
   if (!personasPromise) {
-    personasPromise = fetch('/api/accounts/11/personas')
+    personasPromise = fetch(`/api/accounts/${accountId}/personas`)
       .then(res => {
         if (!res.ok) return { personas: [] };
         return res.json();
@@ -51,13 +65,19 @@ export async function renderHiringSignals() {
 
   list.innerHTML = '<li class="cc-drawer-empty">Loading BNY hiring intelligence…</li>';
 
+  const accountId = await getBnyAccountId();
+  if (!accountId) {
+    list.innerHTML = '<li class="cc-drawer-empty">BNY account not found or not accessible to your login.</li>';
+    return;
+  }
+
   let summary = null;
   let personas = [];
 
   try {
     const [summaryData, allPersonas] = await Promise.all([
-      loadHiringSummary(11),
-      loadBnyPersonas(),
+      loadHiringSummary(accountId),
+      loadBnyPersonas(accountId),
     ]);
     summary = summaryData;
     personas = allPersonas;
@@ -162,12 +182,12 @@ export async function renderHiringSignals() {
   // ── Event Handlers for Hiring Signals ─────────────────────
   document.getElementById('btnOpenBnyRadar')?.addEventListener('click', (e) => {
     e.stopPropagation();
-    window.location.href = '/?account=11&tab=jobs';
+    window.location.href = `/?account=${accountId}&tab=jobs`;
   });
 
   document.getElementById('btnOpenBnyCommittee')?.addEventListener('click', (e) => {
     e.stopPropagation();
-    window.location.href = '/?account=11&tab=committee';
+    window.location.href = `/?account=${accountId}&tab=committee`;
   });
 
   const toggleBtn = document.getElementById('btnToggleBnyJobs');
@@ -189,7 +209,7 @@ export async function renderHiringSignals() {
           itemsContainer.innerHTML = '<div style="padding:20px; text-align:center; color:var(--text-muted); font-size:0.75rem;"><i class="bi bi-hourglass-split"></i> Loading live requisitions from database…</div>';
         }
         try {
-          const res = await fetch('/api/accounts/11/jobs?page=1&page_size=50');
+          const res = await fetch(`/api/accounts/${accountId}/jobs?page=1&page_size=50`);
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const data = await res.json();
           requisitionsLoaded = true;
@@ -257,13 +277,19 @@ export async function renderStrategicInvestmentTracks() {
 
   container.innerHTML = '<div class="cc-drawer-empty">Loading strategic investment tracks &amp; decision makers…</div>';
 
+  const accountId = await getBnyAccountId();
+  if (!accountId) {
+    container.innerHTML = '<div class="cc-drawer-empty">BNY account not found or not accessible to your login.</div>';
+    return;
+  }
+
   let summary = null;
   let personas = [];
 
   try {
     const [summaryData, allPersonas] = await Promise.all([
-      loadHiringSummary(11),
-      loadBnyPersonas(),
+      loadHiringSummary(accountId),
+      loadBnyPersonas(accountId),
     ]);
     summary = summaryData;
     personas = allPersonas;
@@ -337,7 +363,7 @@ export async function renderStrategicInvestmentTracks() {
           <button type="button" class="cc-track-btn cc-track-btn-primary" id="btnCopyAiTrackPitch">
             <i class="bi bi-clipboard-check"></i> Copy AI Pitch
           </button>
-          <a href="/?account=11&tab=committee" class="cc-track-btn" title="View in Executive Committee Dossier">
+          <a href="/?account=${accountId}&tab=committee" class="cc-track-btn" title="View in Executive Committee Dossier">
             <i class="bi bi-people"></i> View Committee
           </a>
         </div>
@@ -376,7 +402,7 @@ export async function renderStrategicInvestmentTracks() {
           <button type="button" class="cc-track-btn cc-track-btn-primary" id="btnCopyCloudTrackPitch">
             <i class="bi bi-clipboard-check"></i> Copy Cloud Pitch
           </button>
-          <a href="/?account=11&tab=committee" class="cc-track-btn" title="View in Executive Committee Dossier">
+          <a href="/?account=${accountId}&tab=committee" class="cc-track-btn" title="View in Executive Committee Dossier">
             <i class="bi bi-people"></i> View Committee
           </a>
         </div>

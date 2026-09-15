@@ -1187,8 +1187,20 @@ if FASTAPI_AVAILABLE:
         }
 
     def _serialize_persona_summary(p: Persona) -> Dict[str, Any]:
-        # Return full persona data so all 58 columns are available throughout the app
-        return _serialize_persona_full(p)
+        # Trimmed for the account-list view: only what nav-tree/digest/topbar's
+        # cross-account rollups (target-key resolution, tier labeling, C-suite
+        # detection) actually read. Full dossier fields (raw_data, icebreakers,
+        # KPIs, every enrichment URL, ...) are only fetched once an account is
+        # opened, via _serialize_persona_full.
+        return {
+            "id": p.id,
+            "key": p.key,
+            "name": p.full_name,
+            "full_name": p.full_name,
+            "title": p.title,
+            "tier": p.tier,
+            "hierarchy_level": p.hierarchy_level,
+        }
 
     def _distribute_personas_across_lobs(raw_lobs, personas_list):
         """Synthetic C-suite + VP-cohort split across LOBs for display grouping —
@@ -1277,9 +1289,26 @@ if FASTAPI_AVAILABLE:
             "personas_count": len(assigned_personas),
         }
 
-    def _serialize_lob_summary(lob_item: Lob, assigned_personas_count: int, assigned_personas: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
-        # Return full LOB data with all 27 attributes so no detail is stripped
-        return _serialize_lob_full(lob_item, assigned_personas or [])
+    def _serialize_lob_summary(lob_item: Lob, assigned_personas_count: int) -> Dict[str, Any]:
+        # Trimmed: keeps technologies/competitors (read by computeSignals()/
+        # _compute_signals_count and the competitors-card-grid feature for
+        # EVERY account on every nav-tree/topbar/command-center render — entries
+        # may be plain strings or {name,...} objects, both pass through as-is,
+        # the frontend already normalizes either shape) and subLobs (nav-tree
+        # renders sub-LOB names in the expanded row), drops financial_snippets/
+        # patents/deep URLs/the sub-LOB's own 18-attribute entity data, which
+        # are only read once an account is opened.
+        sub_lobs_formatted = [{"id": s.id, "name": s.name} for s in (lob_item.sub_lobs or [])]
+        return {
+            "id": lob_item.id,
+            "name": lob_item.lob_name,
+            "lob_name": lob_item.lob_name,
+            "technologies": lob_item.technologies or [],
+            "competitors": lob_item.competitors or [],
+            "subLobs": sub_lobs_formatted,
+            "sub_lobs": sub_lobs_formatted,
+            "personas_count": assigned_personas_count,
+        }
 
     def _serialize_account_full(acct: Account) -> Dict[str, Any]:
         personas_list = [_serialize_persona_full(p) for p in (acct.personas or [])]
@@ -1483,7 +1512,7 @@ if FASTAPI_AVAILABLE:
         personas_list = [_serialize_persona_summary(p) for p in (acct.personas or [])]
         raw_lobs = acct.lobs or []
         lobs_list = [
-            _serialize_lob_full(lob_item, assigned)
+            _serialize_lob_summary(lob_item, len(assigned))
             for lob_item, assigned in _distribute_personas_across_lobs(raw_lobs, personas_list)
         ]
 
@@ -1507,8 +1536,6 @@ if FASTAPI_AVAILABLE:
             "lobs": lobs_list,
             "personas": personas_list,
             "extracted_at": acct.extracted_at.isoformat() if acct.extracted_at else None,
-            "created_at": acct.created_at.isoformat() if acct.created_at else None,
-            "updated_at": acct.updated_at.isoformat() if acct.updated_at else None,
             "heat_score": acct.heat_score,
             "trend_score_90d": acct.trend_score_90d,
             "signals_count": _compute_signals_count(acct, lobs_list, personas_list),
