@@ -1,7 +1,7 @@
 """Account ORM Model — 89 columns. Core company identity, firmographics, financials, scraping URLs."""
 
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, BigInteger, String, Text, Float, Date, DateTime, ARRAY
+from sqlalchemy import Column, Integer, BigInteger, String, Text, Float, Date, DateTime, ARRAY, Boolean
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from db.models.base import Base
@@ -94,6 +94,10 @@ class Account(Base):
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
                         onupdate=lambda: datetime.now(timezone.utc))
+
+    # ── Manual Verification Flag ──
+    is_manually_verified = Column(Boolean, default=False)
+    manually_verified_at = Column(DateTime(timezone=True))
 
     # ── Pipeline Run Metadata ──
     extracted_at = Column(DateTime(timezone=True))

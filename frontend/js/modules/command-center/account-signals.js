@@ -95,9 +95,21 @@ export function renderCoverageGaps() {
 }
 
 // ── Competitor mentions ─────────────────────────────────────────────────
+function extractCompetitorName(c) {
+  if (!c) return '';
+  if (typeof c === 'string') return c.trim();
+  if (typeof c === 'object') return (c.name || c.display_name || c.competitor || '').trim();
+  return String(c).trim();
+}
+
 function competitorsFor(a) {
   const set = new Set();
-  (a.lobs || []).forEach(l => (l.competitors || []).forEach(c => set.add(c)));
+  (a.lobs || []).forEach(l => {
+    (l.competitors || []).forEach(c => {
+      const name = extractCompetitorName(c);
+      if (name) set.add(name);
+    });
+  });
   return [...set];
 }
 function competitorEntries(accounts) {
@@ -110,8 +122,8 @@ function competitorRowHtml({ account: a, competitors }) {
   return `
     <li class="cc-feed-row cc-clickable-row" data-account-id="${a.id}">
       <div class="cc-feed-body">
-        <div class="cc-feed-title-row"><span class="cc-feed-title">${esc(a.name)}</span></div>
-        <div class="cc-feed-summary">Competitors tracked: ${esc(competitors.slice(0, 3).join(', '))}</div>
+        <div class="cc-feed-title-row"><span class="cc-feed-title">${esc(a.name || a.display_name)}</span></div>
+        <div class="cc-feed-summary">Competitors tracked: ${esc(competitors.slice(0, 3).join(', '))}${competitors.length > 3 ? ` +${competitors.length - 3} more` : ''}</div>
       </div>
       <div class="cc-feed-count">${competitors.length}</div>
     </li>`;

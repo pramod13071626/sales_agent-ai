@@ -67,17 +67,43 @@ class LobRepository:
 
             # In-place Sub-LOBs upsert
             for sub in (lob_data.get("sub_lobs") or []):
-                sub_name = sub.get("name") if isinstance(sub, dict) else str(sub)
-                sub_schema = SubLobSchema.from_raw(sub if isinstance(sub, dict) else {"name": sub_name})
+                sub_schema = SubLobSchema.from_raw(sub)
+                if not sub_schema.name:
+                    continue
                 sub_exists = self.session.query(SubLob).filter_by(lob_id=lob.id, name=sub_schema.name).first()
+                if not sub_exists and sub_schema.lei_code:
+                    sub_exists = self.session.query(SubLob).filter_by(lob_id=lob.id, lei_code=sub_schema.lei_code).first()
+
                 if not sub_exists:
                     sub_lob = SubLob(
                         lob_id=lob.id,
                         name=sub_schema.name,
-                        metadata_=sub_schema.metadata_
+                        legal_name=sub_schema.legal_name,
+                        lei_code=sub_schema.lei_code,
+                        jurisdiction=sub_schema.jurisdiction,
+                        country=sub_schema.country,
+                        city=sub_schema.city,
+                        relationship_type=sub_schema.relationship_type,
+                        status=sub_schema.status,
+                        entity_level=sub_schema.entity_level,
+                        parent_lob_lei=sub_schema.parent_lob_lei,
+                        parent_lob_name=sub_schema.parent_lob_name or lob.lob_name,
+                        domain=sub_schema.domain,
+                        website_url=sub_schema.website_url,
+                        is_manually_verified=sub_schema.is_manually_verified or False,
+                        manually_verified_at=sub_schema.manually_verified_at,
+                        metadata_=sub_schema.metadata_,
                     )
                     self.session.add(sub_lob)
                 else:
+                    for field in [
+                        "legal_name", "lei_code", "jurisdiction", "country", "city",
+                        "relationship_type", "status", "entity_level", "parent_lob_lei",
+                        "parent_lob_name", "domain", "website_url"
+                    ]:
+                        val = getattr(sub_schema, field, None)
+                        if val is not None:
+                            setattr(sub_exists, field, val)
                     if sub_schema.metadata_:
                         sub_exists.metadata_ = sub_schema.metadata_
 
@@ -112,16 +138,45 @@ class LobRepository:
 
         # Sub-LOBs
         for sub in (lob_data.get("sub_lobs") or []):
-            sub_name = sub.get("name") if isinstance(sub, dict) else str(sub)
-            sub_exists = self.session.query(SubLob).filter_by(lob_id=lob.id, name=sub_name).first()
+            sub_schema = SubLobSchema.from_raw(sub)
+            if not sub_schema.name:
+                continue
+            sub_exists = self.session.query(SubLob).filter_by(lob_id=lob.id, name=sub_schema.name).first()
+            if not sub_exists and sub_schema.lei_code:
+                sub_exists = self.session.query(SubLob).filter_by(lob_id=lob.id, lei_code=sub_schema.lei_code).first()
+
             if not sub_exists:
-                sub_schema = SubLobSchema.from_raw(sub if isinstance(sub, dict) else {"name": sub_name})
                 sub_lob = SubLob(
                     lob_id=lob.id,
                     name=sub_schema.name,
-                    metadata_=sub_schema.metadata_
+                    legal_name=sub_schema.legal_name,
+                    lei_code=sub_schema.lei_code,
+                    jurisdiction=sub_schema.jurisdiction,
+                    country=sub_schema.country,
+                    city=sub_schema.city,
+                    relationship_type=sub_schema.relationship_type,
+                    status=sub_schema.status,
+                    entity_level=sub_schema.entity_level,
+                    parent_lob_lei=sub_schema.parent_lob_lei,
+                    parent_lob_name=sub_schema.parent_lob_name or lob.lob_name,
+                    domain=sub_schema.domain,
+                    website_url=sub_schema.website_url,
+                    is_manually_verified=sub_schema.is_manually_verified or False,
+                    manually_verified_at=sub_schema.manually_verified_at,
+                    metadata_=sub_schema.metadata_,
                 )
                 self.session.add(sub_lob)
+            else:
+                for field in [
+                    "legal_name", "lei_code", "jurisdiction", "country", "city",
+                    "relationship_type", "status", "entity_level", "parent_lob_lei",
+                    "parent_lob_name", "domain", "website_url"
+                ]:
+                    val = getattr(sub_schema, field, None)
+                    if val is not None:
+                        setattr(sub_exists, field, val)
+                if sub_schema.metadata_:
+                    sub_exists.metadata_ = sub_schema.metadata_
 
         self.session.flush()
         return lob
