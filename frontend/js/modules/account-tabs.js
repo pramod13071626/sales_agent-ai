@@ -19,8 +19,6 @@ import { openSignalModal, closeSignalModal } from './signal-modal.js';
 import { renderSelection } from './selection.js';
 import { renderNavTree } from './nav-tree.js';
 
-let activeRadarFilter = 'all';
-
 export function renderScoreRing(account) {
   const score = account.heat_score;
   if (score == null) {
@@ -58,7 +56,7 @@ export function renderSalesAlerts(account) {
 
 export function renderAccountJobsTab(account) {
   const jobs = getAccountJobs(account);
-  return renderHiringTrendRadar(account, jobs, activeRadarFilter);
+  return renderHiringTrendRadar(account, jobs);
 }
 
 // ── Quick Outreach Arsenal Copy Helpers ────────────────────────
@@ -390,22 +388,6 @@ export function renderCenter(account, lob) {
 }
 
 dashContent.addEventListener('click', async function (e) {
-  // Radar filter toggle
-  const radarFilterBtn = e.target.closest('[data-radar-filter]');
-  if (radarFilterBtn) {
-    const filter = radarFilterBtn.dataset.radarFilter;
-    activeRadarFilter = (activeRadarFilter === filter && filter !== 'all') ? 'all' : filter;
-    const jobsTabEl = document.getElementById('salesTabContentArea');
-    if (jobsTabEl && state.activeSalesTab === 'jobs') {
-      const account = state.accounts.find(a => a.id === state.activeAccountId);
-      if (account) {
-        const jobs = getAccountJobs(account);
-        jobsTabEl.innerHTML = renderHiringTrendRadar(account, jobs, activeRadarFilter);
-      }
-    }
-    return;
-  }
-
   // Radar Talking Point Copy
   const copyTalkingPointBtn = e.target.closest('[data-talking-point]');
   if (copyTalkingPointBtn) {

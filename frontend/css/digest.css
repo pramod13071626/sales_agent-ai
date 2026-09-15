@@ -899,16 +899,11 @@
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm, 6px);
   padding: 10px 14px;
-  cursor: pointer;
   transition: all 0.15s ease;
-  user-select: none;
 }
 
-.radar-bar-row:hover,
-.radar-bar-row.active {
-  border-color: var(--brand, #6366f1);
-  background: rgba(99, 102, 241, 0.05);
-  transform: translateX(2px);
+.radar-bar-row:hover {
+  border-color: rgba(99, 102, 241, 0.3);
 }
 
 .radar-bar-info {

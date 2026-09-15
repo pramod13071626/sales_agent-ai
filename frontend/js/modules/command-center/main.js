@@ -11,7 +11,7 @@ import { renderTimeline } from './timeline.js';
 import { initDrawer } from './drawer.js';
 import { initAccountsNav } from './accounts-nav.js';
 import { renderDueSoon } from './due-soon.js';
-import { renderHiringSignals } from './hiring-signals.js';
+import { renderHiringSignals, renderStrategicInvestmentTracks } from './hiring-signals.js';
 import { renderCapitalEvents, renderCoverageGaps, renderCompetitorMentions, renderTechSignals } from './account-signals.js';
 import { kpiBase } from './data.js';
 
@@ -41,22 +41,11 @@ function renderAll() {
   renderTimeline();
   renderDueSoon();
   renderHiringSignals();
+  renderStrategicInvestmentTracks();
   renderCapitalEvents();
   renderCoverageGaps();
   renderCompetitorMentions();
   renderTechSignals();
-}
-
-function initRoleTabs() {
-  const tabs = document.querySelectorAll('.cc-role-tab');
-  tabs.forEach(tab => {
-    tab.addEventListener('click', () => {
-      tabs.forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
-      ccState.activeRole = tab.dataset.role;
-      renderKpi();
-    });
-  });
 }
 
 function checkDashboardAccessNotice() {
@@ -72,7 +61,6 @@ function init() {
   initThemeToggle();
   checkDashboardAccessNotice();
   renderSubtitle();
-  initRoleTabs();
   initDrawer();
   initAccountsNav();
   renderAll();

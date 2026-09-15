@@ -3474,6 +3474,149 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
+    @app.get("/api/accounts/{account_id}/hiring-summary", tags=["5. LinkedIn Jobs"])
+    def get_account_hiring_summary(account_id: int):
+        """Retrieve aggregated lightweight hiring metrics & strategic track stats for an account.
+        Designed for instant page-load performance across millions of rows."""
+        session = get_session()
+        try:
+            account = session.query(Account).filter(Account.id == account_id).first()
+            if not account:
+                raise HTTPException(status_code=404, detail="Account not found")
+
+            candidate_keys = set(filter(None, [
+                account.key,
+                (account.stock_symbol or "").lower(),
+                slugify(account.display_name) if account.display_name else None,
+                slugify(account.legal_name) if account.legal_name else None,
+            ]))
+
+            jobs = session.query(LinkedInJob).filter(LinkedInJob.target_key.in_(candidate_keys)).all()
+
+            total_roles = len(jobs)
+            leadership_rx = re.compile(r"director|\bvp\b|vice president|\bsvp\b|senior vice president|head of|chief|lead", re.I)
+            contract_rx = re.compile(r"contract|\(contract\)", re.I)
+            ai_rx = re.compile(r"\bai\b|artificial|machine learning|\bml\b|genai|process analyst|automation", re.I)
+            cloud_rx = re.compile(r"cloud|full-stack|full stack|platform|devops|systems lead|software engineer", re.I)
+
+            leadership_count = 0
+            contract_roles = []
+            loc_counts: Dict[str, int] = {}
+            ai_count = 0
+            cloud_count = 0
+
+            for j in jobs:
+                t = j.title or ""
+                emp = j.employment_type or ""
+                loc = (j.location or "US").split("/")[0].strip()
+                if loc:
+                    loc_counts[loc] = loc_counts.get(loc, 0) + 1
+
+                if leadership_rx.search(t):
+                    leadership_count += 1
+
+                if contract_rx.search(emp) or contract_rx.search(t):
+                    contract_roles.append({
+                        "id": j.id,
+                        "title": j.title,
+                        "location": j.location or "US",
+                        "employment_type": j.employment_type or "Contract",
+                        "workplace_type": (j.workplace_type or "on_site").replace("_", " "),
+                        "applicants": j.applicants,
+                        "job_url": j.job_url,
+                    })
+
+                if ai_rx.search(t):
+                    ai_count += 1
+                elif cloud_rx.search(t):
+                    cloud_count += 1
+
+            top_hubs = [{"location": loc, "count": count} for loc, count in sorted(loc_counts.items(), key=lambda x: x[1], reverse=True)[:6]]
+
+            return {
+                "account_id": account.id,
+                "account_name": account.legal_name or account.display_name,
+                "ticker": account.stock_symbol or account.ticker or "BK",
+                "total_roles": total_roles,
+                "leadership_count": leadership_count,
+                "contract_count": len(contract_roles),
+                "top_hubs": top_hubs,
+                "track_counts": {
+                    "ai": ai_count,
+                    "cloud": cloud_count,
+                },
+                "contract_leads": contract_roles[:5],
+            }
+        finally:
+            session.close()
+
+    @app.get("/api/accounts/{account_id}/jobs", tags=["5. LinkedIn Jobs"])
+    def get_account_jobs(
+        account_id: int,
+        sort: str = "newest",
+        page: int = 1,
+        page_size: int = 25,
+    ):
+        """Retrieve paginated live LinkedIn job postings for a specific account.
+        Used for on-demand lazy loading when expanding the Requisitions Browser."""
+        session = get_session()
+        try:
+            account = session.query(Account).filter(Account.id == account_id).first()
+            if not account:
+                raise HTTPException(status_code=404, detail="Account not found")
+
+            candidate_keys = set(filter(None, [
+                account.key,
+                (account.stock_symbol or "").lower(),
+                slugify(account.display_name) if account.display_name else None,
+                slugify(account.legal_name) if account.legal_name else None,
+            ]))
+
+            page = max(1, page)
+            page_size = max(1, min(page_size, 100))
+
+            base_query = session.query(LinkedInJob).filter(LinkedInJob.target_key.in_(candidate_keys))
+            total = base_query.count()
+
+            if sort == "applicants":
+                base_query = base_query.order_by(LinkedInJob.applicants.desc().nullslast())
+            elif sort == "views":
+                base_query = base_query.order_by(LinkedInJob.views.desc().nullslast())
+            else:
+                base_query = base_query.order_by(LinkedInJob.first_seen.desc().nullslast(), LinkedInJob.id.desc())
+
+            jobs_rows = base_query.offset((page - 1) * page_size).limit(page_size).all()
+            total_pages = max(1, math.ceil(total / page_size))
+
+            job_cards = []
+            for j in jobs_rows:
+                job_cards.append({
+                    "id": j.id,
+                    "title": j.title or "Untitled Role",
+                    "company_name": j.company_name or account.legal_name or "Enterprise",
+                    "location": j.location or "US",
+                    "employment_type": j.employment_type,
+                    "workplace_type": j.workplace_type,
+                    "posted_date": j.posted_date,
+                    "applicants": j.applicants,
+                    "views": j.views,
+                    "job_url": j.job_url,
+                    "first_seen": j.first_seen.isoformat() if j.first_seen else None,
+                    "new_in_last_run": j.new_in_last_run,
+                })
+
+            return {
+                "account_id": account.id,
+                "account_name": account.legal_name or account.display_name,
+                "total": total,
+                "page": page,
+                "page_size": page_size,
+                "total_pages": total_pages,
+                "jobs": job_cards,
+            }
+        finally:
+            session.close()
+
     # ══════════════════════════════════════════════════════
     # CXO MOVEMENTS & TRANSITIONS ENDPOINTS
     # ══════════════════════════════════════════════════════
