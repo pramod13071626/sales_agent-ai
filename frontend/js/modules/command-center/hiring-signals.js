@@ -1,52 +1,63 @@
-// BNY-Dedicated Elaborative Hiring Signals Intelligence Module
-// Uses dedicated endpoints:
-// 1. GET /api/accounts/{id}/hiring-summary (Lightweight aggregate metrics on page load)
-// 2. GET /api/accounts/{id}/jobs (Paginated on-demand live requisitions on dropdown click)
+// Multi-Organization Executive News Bulletin & Flash Intelligence Module
+// Renders concise, high-impact executive hiring signals across all database organizations on the Command Center.
+// Detailed deep-dives (Requisitions browser, staff-aug lists, etc.) are hosted in the Account Level "Hiring Trend Radar".
 
 import { loadRealAccounts } from './real-accounts.js';
 import { esc } from './utils.js';
-import { showToast } from '../toast.js';
-import { resolveRealAccount } from './real-accounts.js';
 
-let summaryPromise = null;
-let personasPromise = null;
-let bnyAccountIdPromise = null;
+// Cache for lightweight summaries
+const summaryCache = new Map();
+const personasCache = new Map();
 
-// BNY's accounts.id isn't stable across environments/seeds — this module
-// used to hardcode 11, which 404s as soon as a database seeds BNY under a
-// different id (this one has it as 3). Resolve it the same way the rest of
-// Command Center maps a display name to a real accounts.id, instead of
-// hardcoding a number that can silently go stale.
-function getBnyAccountId() {
-  if (!bnyAccountIdPromise) {
-    bnyAccountIdPromise = resolveRealAccount('Bank of New York Mellon').then(acct => acct ? acct.id : null);
+async function loadHiringSummary(accountId) {
+  if (summaryCache.has(accountId)) {
+    return summaryCache.get(accountId);
   }
-  return bnyAccountIdPromise;
-}
-
-function loadHiringSummary(accountId) {
-  if (!summaryPromise) {
-    summaryPromise = fetch(`/api/accounts/${accountId}/hiring-summary`)
-      .then(res => {
-        if (!res.ok) throw new Error(`Failed to load hiring summary (${res.status})`);
-        return res.json();
-      })
-      .catch(err => {
-        console.error('Error fetching hiring summary:', err);
-        return null;
-      });
+  try {
+    const res = await fetch(`/api/accounts/${accountId}/hiring-summary`);
+    if (!res.ok) throw new Error(`Failed to load hiring summary (${res.status})`);
+    const data = await res.json();
+    summaryCache.set(accountId, data);
+    return data;
+  } catch (err) {
+    console.error(`Error fetching hiring summary for account ${accountId}:`, err);
+    return null;
   }
 }
 
-function loadBnyPersonas(accountId) {
-  if (!personasPromise) {
-    personasPromise = fetch(`/api/accounts/${accountId}/personas`)
-      .then(res => {
-        if (!res.ok) return { personas: [] };
-        return res.json();
-      })
-      .then(data => data.personas || [])
-      .catch(() => []);
+async function loadPersonas(accountId = 11) {
+  if (personasCache.has(accountId)) {
+    return personasCache.get(accountId);
+  }
+  try {
+    const res = await fetch(`/api/accounts/${accountId}/personas`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    const list = data.personas || [];
+    personasCache.set(accountId, list);
+    return list;
+  } catch {
+    return [];
+  }
+}
+
+function getOrgShortName(account) {
+  if (!account) return 'Enterprise';
+  const name = account.display_name || account.name || account.legal_name || '';
+  if (/bny|mellon/i.test(name)) return 'BNY Mellon';
+  if (/blackrock/i.test(name)) return 'BlackRock';
+  if (/northern\s*trust/i.test(name)) return 'Northern Trust';
+  if (/vanguard/i.test(name)) return 'The Vanguard Group';
+  if (/depository|dtcc/i.test(name)) return 'DTCC';
+  return name.split(/,|\s-\s/)[0].trim();
+}
+
+function getOrgTickerTag(summary, account) {
+  const sym = (summary && summary.ticker) || (account && (account.stock_symbol || account.ticker)) || '';
+  if (sym && sym !== 'ORG' && sym !== 'THE' && sym !== 'DEPO') {
+    if (sym === 'BNY' || sym === 'BLK') return `NYSE: ${sym}`;
+    if (sym === 'NTRS') return `NASDAQ: ${sym}`;
+    return sym;
   }
   const name = (summary && summary.account_name) || (account && (account.display_name || account.name)) || '';
   if (/vanguard/i.test(name)) return 'PRIVATE · ASSET MGT';
@@ -112,29 +123,15 @@ export async function renderHiringSignals() {
   const list = document.getElementById('ccHiringList');
   if (!list) return;
 
-  list.innerHTML = '<li class="cc-drawer-empty">Loading BNY hiring intelligence…</li>';
-
-  const accountId = await getBnyAccountId();
-  if (!accountId) {
-    list.innerHTML = '<li class="cc-drawer-empty">BNY account not found or not accessible to your login.</li>';
-    return;
-  }
-
-  let summary = null;
-  let personas = [];
+  list.innerHTML = '<li class="cc-drawer-empty">Loading executive hiring signals bulletin…</li>';
 
   try {
-    const [summaryData, allPersonas] = await Promise.all([
-      loadHiringSummary(accountId),
-      loadBnyPersonas(accountId),
-    ]);
-    summary = summaryData;
-    personas = allPersonas;
-  } catch (err) {
-    console.error('Failed to load hiring signals:', err);
-    list.innerHTML = '<li class="cc-drawer-empty">Could not load hiring signals data.</li>';
-    return;
-  }
+    // 1. Load all real accounts
+    const allAccounts = await loadRealAccounts();
+    if (!allAccounts || !allAccounts.length) {
+      list.innerHTML = '<li class="cc-drawer-empty">No tracked organizations found in database.</li>';
+      return;
+    }
 
     // 2. Concurrently fetch lightweight hiring summaries
     const summaryPromises = allAccounts.map(async (acc) => {
@@ -181,46 +178,39 @@ export async function renderHiringSignals() {
             </div>
           </div>
 
-  // ── Event Handlers for Hiring Signals ─────────────────────
-  document.getElementById('btnOpenBnyRadar')?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    window.location.href = `/?account=${accountId}&tab=jobs`;
-  });
+          <!-- Body Column -->
+          <div class="cc-feed-body">
+            <div class="cc-feed-title-row">
+              <span class="cc-feed-title">${esc(shortName)}</span>
+              <span class="hs-ticker-pill">${esc(tickerTag)}</span>
+              ${bulletin.domainTag}
+            </div>
 
-  document.getElementById('btnOpenBnyCommittee')?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    window.location.href = `/?account=${accountId}&tab=committee`;
-  });
+            <div class="hs-bulletin-headline">
+              ${bulletin.headline}
+            </div>
 
-  const toggleBtn = document.getElementById('btnToggleBnyJobs');
-  const drawer = document.getElementById('bnyJobsDrawer');
-  const caret = document.getElementById('bnyCaret');
-  const itemsContainer = document.getElementById('bnyJobsItemsScroll');
-  let requisitionsLoaded = false;
+            <div class="hs-bulletin-meta-row">
+              <span class="hs-stat-tag"><i class="bi bi-briefcase"></i> <strong>${totalRoles.toLocaleString()}</strong> roles</span>
+              <span class="hs-stat-tag"><i class="bi bi-people"></i> <strong>${leadershipCount.toLocaleString()}</strong> leadership</span>
+              ${contractCount > 0 ? `
+                <span class="hs-stat-tag hs-stat-contract"><i class="bi bi-lightning-fill"></i> <strong>${contractCount}</strong> contract leads</span>
+              ` : `
+                <span class="hs-stat-tag"><i class="bi bi-buildings"></i> <strong>${topHubsCount}</strong> hubs</span>
+              `}
+              <span class="hs-action-link">Open Radar <i class="bi bi-chevron-right"></i></span>
+            </div>
+          </div>
+        </li>
+      `;
+    }).join('');
 
-  toggleBtn?.addEventListener('click', async () => {
-    if (!drawer) return;
-    const isHidden = drawer.style.display === 'none';
-    if (isHidden) {
-      drawer.style.display = 'block';
-      if (caret) caret.className = 'bi bi-chevron-up';
-
-      // ── On-Demand (Lazy) API Fetch on first expand ─────────
-      if (!requisitionsLoaded) {
-        if (itemsContainer) {
-          itemsContainer.innerHTML = '<div style="padding:20px; text-align:center; color:var(--text-muted); font-size:0.75rem;"><i class="bi bi-hourglass-split"></i> Loading live requisitions from database…</div>';
-        }
-        try {
-          const res = await fetch(`/api/accounts/${accountId}/jobs?page=1&page_size=50`);
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          const data = await res.json();
-          requisitionsLoaded = true;
-          renderRequisitionsList(itemsContainer, data.jobs || []);
-        } catch (err) {
-          console.error('Failed to load requisitions on-demand:', err);
-          if (itemsContainer) {
-            itemsContainer.innerHTML = '<div style="padding:16px; text-align:center; color:var(--danger); font-size:0.75rem;"><i class="bi bi-exclamation-triangle"></i> Could not load live requisitions.</div>';
-          }
+    // 4. Click handler: Direct drill-down to Account Level Hiring Trend Radar tab
+    list.querySelectorAll('.hs-bulletin-row').forEach(row => {
+      row.addEventListener('click', () => {
+        const accountId = row.dataset.accountId;
+        if (accountId) {
+          window.location.href = `/?account=${accountId}&tab=jobs`;
         }
       });
     });
@@ -237,19 +227,13 @@ export async function renderStrategicInvestmentTracks() {
 
   container.innerHTML = '<div class="cc-drawer-empty">Loading strategic investment tracks &amp; decision makers…</div>';
 
-  const accountId = await getBnyAccountId();
-  if (!accountId) {
-    container.innerHTML = '<div class="cc-drawer-empty">BNY account not found or not accessible to your login.</div>';
-    return;
-  }
-
   let summary = null;
   let personas = [];
 
   try {
     const [summaryData, allPersonas] = await Promise.all([
-      loadHiringSummary(accountId),
-      loadBnyPersonas(accountId),
+      loadHiringSummary(11),
+      loadPersonas(11),
     ]);
     summary = summaryData;
     personas = allPersonas;
@@ -315,15 +299,6 @@ export async function renderStrategicInvestmentTracks() {
             <strong>Recommended Pitch Play:</strong> StradIT Enterprise AI Governance, Agentic Workflow Orchestration, and LLMOps Advisory.
           </div>
         </div>
-
-        <div class="cc-track-actions">
-          <button type="button" class="cc-track-btn cc-track-btn-primary" id="btnCopyAiTrackPitch">
-            <i class="bi bi-clipboard-check"></i> Copy AI Pitch
-          </button>
-          <a href="/?account=${accountId}&tab=committee" class="cc-track-btn" title="View in Executive Committee Dossier">
-            <i class="bi bi-people"></i> View Committee
-          </a>
-        </div>
       </div>
 
       <!-- Track 2: Cloud & Full-Stack Modernization -->
@@ -353,15 +328,6 @@ export async function renderStrategicInvestmentTracks() {
           <div>
             <strong>Recommended Pitch Play:</strong> Hybrid Cloud Modernization, Legacy Decoupling, and SRE Scale.
           </div>
-        </div>
-
-        <div class="cc-track-actions">
-          <button type="button" class="cc-track-btn cc-track-btn-primary" id="btnCopyCloudTrackPitch">
-            <i class="bi bi-clipboard-check"></i> Copy Cloud Pitch
-          </button>
-          <a href="/?account=${accountId}&tab=committee" class="cc-track-btn" title="View in Executive Committee Dossier">
-            <i class="bi bi-people"></i> View Committee
-          </a>
         </div>
       </div>
     </div>
