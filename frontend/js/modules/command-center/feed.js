@@ -1,7 +1,7 @@
 import { signals, accountById, DOMAINS } from './data.js';
 import { esc, relativeTime, ageInDays } from './utils.js';
 import { ccState } from './state.js';
-import { logTouch, createTask } from './actions.js';
+import { createTask } from './actions.js';
 
 function visibleSignals() {
   return signals
@@ -42,10 +42,8 @@ function renderAccountFilterPill() {
 
 function rowHtml(sig) {
   const acct = accountById(sig.accountId);
-  const age = ageInDays(sig.detectedAt);
-  const isStale = age >= 3;
   return `
-    <li class="cc-feed-row ${isStale ? 'cc-feed-row-stale' : ''}" data-signal-id="${esc(sig.id)}">
+    <li class="cc-feed-row" data-signal-id="${esc(sig.id)}">
       <div class="cc-feed-score">
         <div class="cc-feed-score-num">${sig.score}</div>
         <div class="cc-feed-score-bar"><div class="cc-feed-score-fill" style="width:${sig.score}%"></div></div>
@@ -53,13 +51,11 @@ function rowHtml(sig) {
       <div class="cc-feed-body">
         <div class="cc-feed-title-row">
           <span class="cc-feed-title">${esc(sig.title)}</span>
-          ${isStale ? '<span class="cc-badge cc-badge-stale">stale</span>' : ''}
         </div>
         <div class="cc-feed-meta">${esc(acct ? acct.name : '')} &middot; ${esc(relativeTime(sig.detectedAt))} &middot; <span class="cc-domain-tag">${esc(sig.domain)}</span></div>
         <div class="cc-feed-summary">${esc(sig.summary)}</div>
       </div>
       <div class="cc-feed-actions">
-        <button type="button" class="cc-btn cc-btn-ghost cc-btn-sm" data-act="touch">Log touch</button>
         <button type="button" class="cc-btn cc-btn-primary cc-btn-sm" data-act="task">Create task</button>
       </div>
     </li>`;
@@ -79,10 +75,6 @@ export function renderFeed() {
   list.querySelectorAll('.cc-feed-row').forEach(row => {
     const sig = signals.find(s => s.id === row.dataset.signalId);
     const acct = accountById(sig.accountId);
-    row.querySelector('[data-act="touch"]').addEventListener('click', (e) => {
-      e.stopPropagation();
-      logTouch(acct.name, sig.title);
-    });
     row.querySelector('[data-act="task"]').addEventListener('click', async (e) => {
       e.stopPropagation();
       const btn = e.currentTarget;

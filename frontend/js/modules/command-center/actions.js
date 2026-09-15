@@ -74,12 +74,6 @@ export async function createTask(accountName, title, opts = {}) {
 }
 
 export async function pushToCrm(accountName, title, opts = {}) {
-  const ok = await createRealActionItem({
-    accountName,
-    title,
-    description: opts.description || null,
-    priority: opts.priority || 'high',
-  });
-  if (ok) showToast(`Pushed to CRM: ${title} — see My Tasks`);
-  return ok;
+  showToast('Coming soon');
+  return false;
 }

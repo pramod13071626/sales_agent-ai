@@ -2,7 +2,7 @@
 // Dynamically extracts strategic domain investment, leadership expansion indices,
 // tech stack signals, and actionable sales pitch triggers from live PostgreSQL job records.
 
-import { esc, formatJobSalary, formatWeekOf } from './utils.js';
+import { esc } from './utils.js';
 import { STRADIT_OFFERINGS } from './constants.js';
 
 export const HIRING_DOMAINS = [
@@ -235,7 +235,7 @@ export function analyzeHiringTrends(jobs, account) {
   };
 }
 
-export function renderHiringTrendRadar(account, jobs, activeFilter = 'all') {
+export function renderHiringTrendRadar(account, jobs) {
   if (!jobs || !jobs.length) {
     return `
       <div class="panel">
@@ -253,14 +253,6 @@ export function renderHiringTrendRadar(account, jobs, activeFilter = 'all') {
 
   const analysis = analyzeHiringTrends(jobs, account);
   const { total, domains, topDomain, leadershipCount, leadershipPct, topTech, topLocations, triggers } = analysis;
-
-  // Filter jobs based on activeFilter
-  let filteredJobs = jobs;
-  if (activeFilter === 'leadership') {
-    filteredJobs = analysis.leadershipRoles;
-  } else if (activeFilter !== 'all') {
-    filteredJobs = analysis.categorizedJobs.get(activeFilter) || jobs;
-  }
 
   const primaryHub = topLocations.length ? topLocations[0].location : 'Global';
 
@@ -352,11 +344,10 @@ export function renderHiringTrendRadar(account, jobs, activeFilter = 'all') {
       <div class="radar-section">
         <div class="radar-section-title">
           <i class="bi bi-bar-chart-steps"></i> Domain Investment Distribution
-          <span style="font-size:0.75rem; font-weight:normal; color:var(--text-muted); margin-left:auto;">Click any bar to filter requisitions</span>
         </div>
         <div class="radar-bars-wrap">
           ${domains.map(d => `
-            <div class="radar-bar-row ${activeFilter === d.id ? 'active' : ''}" data-radar-filter="${d.id}" title="Click to view ${d.count} ${esc(d.name)} roles">
+            <div class="radar-bar-row">
               <div class="radar-bar-info">
                 <span class="radar-bar-name"><i class="bi ${d.icon}"></i> ${esc(d.name)}</span>
                 <div class="radar-bar-metrics">
@@ -399,69 +390,6 @@ export function renderHiringTrendRadar(account, jobs, activeFilter = 'all') {
         </div>
       </div>
 
-      <!-- 3. Filterable Requisitions Explorer -->
-      <div class="radar-section" id="radarRequisitionsSection">
-        <div class="radar-section-title">
-          <i class="bi bi-list-columns-reverse"></i> Live Requisitions Explorer
-          <span class="context-badge live" style="margin-left:auto;">${filteredJobs.length} of ${total} Roles</span>
-        </div>
-
-        <div class="radar-filter-chips">
-          <button type="button" class="radar-chip ${activeFilter === 'all' ? 'active' : ''}" data-radar-filter="all">
-            All Roles <span class="tab-badge">${total}</span>
-          </button>
-          ${domains.map(d => `
-            <button type="button" class="radar-chip ${activeFilter === d.id ? 'active' : ''}" data-radar-filter="${d.id}">
-              <i class="bi ${d.icon}"></i> ${esc(d.name)} <span class="tab-badge">${d.count}</span>
-            </button>
-          `).join('')}
-          ${leadershipCount > 0 ? `
-            <button type="button" class="radar-chip ${activeFilter === 'leadership' ? 'active' : ''}" data-radar-filter="leadership">
-              <i class="bi bi-award-fill"></i> Leadership Only <span class="tab-badge">${leadershipCount}</span>
-            </button>
-          ` : ''}
-        </div>
-
-        <div class="radar-jobs-list">
-          ${filteredJobs.map(job => renderRadarJobCard(job)).join('')}
-        </div>
-      </div>
-
-    </div>
-  `;
-}
-
-function renderRadarJobCard(job) {
-  const salaryText = formatJobSalary(job.salary);
-  return `
-    <div class="job-card radar-job-card">
-      <div class="job-card-header">
-        <div class="job-card-title-wrap">
-          <div class="job-card-title">${esc(job.title || 'Untitled Role')}</div>
-          <div class="job-card-company">
-            <i class="bi bi-building"></i> ${esc(job.company_name || 'Enterprise')}
-            ${job.location ? ` · <i class="bi bi-geo-alt"></i> ${esc(job.location)}` : ''}
-          </div>
-        </div>
-        ${job.new_in_last_run ? '<span class="pill pill-success"><i class="bi bi-stars"></i> New</span>' : ''}
-      </div>
-
-      ${(job.employment_type || job.workplace_type || salaryText) ? `
-        <div class="chip-row" style="margin:8px 0;">
-          ${job.employment_type ? `<span class="chip">${esc(job.employment_type)}</span>` : ''}
-          ${job.workplace_type ? `<span class="chip">${esc(job.workplace_type)}</span>` : ''}
-          ${salaryText ? `<span class="chip"><i class="bi bi-cash-stack"></i> ${esc(salaryText)}</span>` : ''}
-        </div>` : ''}
-
-      <div class="job-card-meta">
-        ${job.posted_date ? `<span><i class="bi bi-calendar3"></i> Posted ${esc(formatWeekOf(job.posted_date))}</span>` : ''}
-        ${job.applicants != null ? `<span><i class="bi bi-people"></i> ${job.applicants} applicants</span>` : ''}
-        ${job.views != null ? `<span><i class="bi bi-eye"></i> ${job.views} views</span>` : ''}
-      </div>
-
-      <div class="job-card-actions">
-        ${job.job_url ? `<a href="${esc(job.job_url)}" target="_blank" rel="noopener" class="job-card-link"><i class="bi bi-box-arrow-up-right"></i> View LinkedIn Requisition</a>` : ''}
-      </div>
     </div>
   `;
 }
