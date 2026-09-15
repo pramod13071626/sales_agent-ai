@@ -1278,15 +1278,65 @@ if FASTAPI_AVAILABLE:
             ),
         }
 
+    def _compute_signals_count(
+        acct: Account, lobs_list: List[Dict[str, Any]], personas_list: List[Dict[str, Any]]
+    ) -> int:
+        """Server-side count mirroring signals.js's computeSignals(account, null).
+        The nav tree / topbar ticker only ever display the COUNT of signals per
+        account (a badge number), never the underlying detail — so this replaces
+        shipping multi_source_intelligence (and every other field computeSignals
+        reads) to the client for every account in the list, just to count it
+        client-side. Full signal detail is still available once an account is
+        opened, via _serialize_account_full / GET /api/accounts/{id}."""
+        count = 0
+        msi = acct.multi_source_intelligence or {}
+        linkedin_metrics = msi.get("linkedin_metrics") or {}
+        if linkedin_metrics.get("follower_count"):
+            count += 1
+        if linkedin_metrics.get("exact_employee_headcount"):
+            count += 1
+        if (msi.get("sec_10k_chunks_meta") or {}).get("sections_found"):
+            count += 1
+        if (msi.get("gleif_intel") or {}).get("lei_code"):
+            count += 1
+        if acct.company_type == "Public":
+            count += 1
+        if acct.last_funding_type:
+            count += 1
+        if acct.ipo_status:
+            count += 1
+        if acct.patents_granted:
+            count += 1
+        if acct.active_tech_count:
+            count += 1
+        if acct.num_acquisitions:
+            count += 1
+        if len(lobs_list) > 1:
+            count += 1
+        if personas_list:
+            count += 1
+        if acct.industries:
+            count += 1
+        if any(lob_item.get("competitors") for lob_item in lobs_list):
+            count += 1
+        return count
+
     def _serialize_account_summary(acct: Account) -> Dict[str, Any]:
-        # Trimmed for the account-LIST view (nav tree, digest, topbar ticker).
-        # Keeps every field those cross-account rollups actually read — traced
-        # via computeSignals() (signals.js), computeDomainExpansionOpportunities()
-        # (opportunities.js), resolveAccountTargetKey()/resolvePersonaTargetKey()
-        # (utils.js) and nav-tree.js/topbar.js/digest.js directly — and drops the
-        # rest (descriptive text, contact/social URLs, org chart tree, and each
-        # persona's full dossier / each LOB's deep intelligence fields), which are
-        # only needed once a specific account is opened, via _serialize_account_full.
+        # Trimmed for the account-LIST view (nav tree, digest, topbar ticker,
+        # command-center sidebar, admin account switcher). Keeps only the fields
+        # those cross-account rollups actually read — traced via signals_count
+        # (replaces computeSignals() from signals.js — see _compute_signals_count),
+        # computeDomainExpansionOpportunities() (opportunities.js),
+        # resolveAccountTargetKey()/resolvePersonaTargetKey() (utils.js), and
+        # nav-tree.js/topbar.js/digest.js/admin-page.js/accounts-nav.js directly.
+        # Drops everything else — descriptive text, contact/social/enrichment
+        # URLs, org chart tree, multi_source_intelligence, funding/IPO/traffic
+        # fields, buying-committee tier counts (none of those are read by any
+        # list-wide consumer; unused ones like c_suite_count/vp_count/
+        # director_count/manager_count aren't read by the frontend at all) — all
+        # of it is only needed once a specific account is opened, via
+        # _serialize_account_full / GET /api/accounts/{id}, which selection.js's
+        # ensureAccountDetail() fetches and merges in on demand at that point.
         personas_list = [_serialize_persona_summary(p) for p in (acct.personas or [])]
         raw_lobs = acct.lobs or []
         lobs_list = [
@@ -1296,7 +1346,6 @@ if FASTAPI_AVAILABLE:
 
         acct_name = acct.legal_name or acct.display_name or acct.key
         acct_loc = acct.headquarters_location or (f"{acct.city}, {acct.country}" if acct.city else None)
-        acct_desc = acct.short_description or acct.full_description
 
         return {
             "id": acct.id,
@@ -1306,118 +1355,18 @@ if FASTAPI_AVAILABLE:
             "legal_name": acct.legal_name or acct_name,
             "ticker": acct.stock_symbol,
             "stock_symbol": acct.stock_symbol,
-            "revenue": acct.estimated_revenue_range or "Revenue N/A",
-            "estimated_revenue_range": acct.estimated_revenue_range,
             "location": acct_loc,
-            "headquarters_location": acct_loc,
-            "desc": acct_desc,
-            "short_description": acct_desc,
-            "full_description": acct.full_description or acct_desc,
-            "domain": acct.domain,
-            "primary_domain": acct.primary_domain or acct.domain,
-            "website_url": acct.website_url,
-            "crunchbase_url": acct.crunchbase_url,
-            "operating_status": acct.operating_status,
-            "city": acct.city,
-            "state": acct.state,
-            "country": acct.country,
-            "postal_code": acct.postal_code,
-            "phone_number": acct.phone_number,
-            "sanitized_phone": acct.sanitized_phone,
-            "contact_email": acct.contact_email,
             "company_type": acct.company_type,
-            "founded_year": acct.founded_year,
             "employee_count_range": acct.employee_count_range,
-            "linkedin_url": acct.linkedin_url,
-            "twitter_url": acct.twitter_url,
-            "twitter_handle": acct.twitter_handle,
-            "stock_exchange": acct.stock_exchange,
-            "sec_cik": acct.sec_cik,
-            "sec_edgar_url": acct.sec_edgar_url,
-            "sec_filings_rss": acct.sec_filings_rss,
-            "sec_submissions_url": acct.sec_submissions_url,
-            "twitter_live_url": acct.twitter_live_url,
-            "reddit_query": acct.reddit_query,
-            "reddit_rss_url": acct.reddit_rss_url,
-            "news_query": acct.news_query,
-            "rss_url": acct.rss_url,
-            "google_patents_url": acct.google_patents_url,
-            "google_trends_url": acct.google_trends_url,
-            "youtube_search_url": acct.youtube_search_url,
-            "openalex_institution_url": acct.openalex_institution_url,
-            "wikidata_entity_url": acct.wikidata_entity_url,
-            "github_url": acct.github_url,
-            "glassdoor_url": acct.glassdoor_url,
-            "blog_url": acct.blog_url,
             "industries": acct.industries or [],
-            "keywords": acct.keywords or [],
             "lobs_count": len(lobs_list),
             "total_contacts_captured": len(personas_list),
             "lobs": lobs_list,
             "personas": personas_list,
-            "multi_source_intelligence": acct.multi_source_intelligence,
-            "organisational_hierarchy_tree": acct.organisational_hierarchy_tree,
             "extracted_at": acct.extracted_at.isoformat() if acct.extracted_at else None,
             "heat_score": acct.heat_score,
             "trend_score_90d": acct.trend_score_90d,
-            "active_tech_count": acct.active_tech_count,
-            "it_spend": acct.it_spend,
-            "patents_granted": acct.patents_granted,
-            "trademarks_registered": acct.trademarks_registered,
-            "total_funding_amount_usd": acct.total_funding_amount_usd,
-            "total_funding_currency": acct.total_funding_currency,
-            "last_funding_type": acct.last_funding_type,
-            "last_funding_date": acct.last_funding_date.isoformat() if acct.last_funding_date else None,
-            "num_funding_rounds": acct.num_funding_rounds,
-            "funding_status": acct.funding_status,
-            "ipo_status": acct.ipo_status,
-            "ipo_date": acct.ipo_date.isoformat() if acct.ipo_date else None,
-            "num_suborganizations": acct.num_suborganizations,
-            "num_acquisitions": acct.num_acquisitions,
-            "global_traffic_rank": acct.global_traffic_rank,
-            "monthly_visits": acct.monthly_visits,
-            "bounce_rate": acct.bounce_rate,
-            "visit_duration": acct.visit_duration,
-            "page_views_per_visit": acct.page_views_per_visit,
-            "c_suite_count": acct.c_suite_count
-            or len(
-                [
-                    p
-                    for p in personas_list
-                    if (p.get("tier") or "").lower() in ["c-suite", "c_suite", "c"]
-                    or any(
-                        w in (p.get("title") or "").lower()
-                        for w in ["chief", "president", "ceo", "chairman", "board"]
-                    )
-                ]
-            ),
-            "vp_count": acct.vp_count
-            or len(
-                [
-                    p
-                    for p in personas_list
-                    if "vp" in (p.get("tier") or "").lower()
-                    or "vice president" in (p.get("title") or "").lower()
-                ]
-            ),
-            "director_count": acct.director_count
-            or len(
-                [
-                    p
-                    for p in personas_list
-                    if "director" in (p.get("tier") or "").lower()
-                    or "director" in (p.get("title") or "").lower()
-                ]
-            ),
-            "manager_count": acct.manager_count
-            or len(
-                [
-                    p
-                    for p in personas_list
-                    if "manager" in (p.get("tier") or "").lower()
-                    or "manager" in (p.get("title") or "").lower()
-                ]
-            ),
+            "signals_count": _compute_signals_count(acct, lobs_list, personas_list),
         }
 
     @account_router.get("")
