@@ -14,6 +14,7 @@ import { jumpToAccount } from './selection.js';
 import { openAllJobsPage } from './jobs-browser.js';
 import { initTopbarAuth } from './topbar-auth.js';
 import { showToast } from './toast.js';
+import { loadAccountsCached, AccountsAuthError } from './accounts-cache.js';
 
 initThemeToggle();
 
@@ -32,18 +33,21 @@ async function loadAccounts(user) {
       history.replaceState(null, '', window.location.pathname);
     }
 
-    // Fetch accounts and cxo movements
-    const [acctRes, movementsRes] = await Promise.all([
-      fetch('/api/accounts'),
-      fetch('/api/cxo-movements').catch(() => null)
-    ]);
-    if (acctRes.status === 401) {
-      window.location.href = `/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`;
-      return;
+    // Fetch accounts (sessionStorage-cached across page navigations — see
+    // accounts-cache.js) and cxo movements in parallel.
+    let accounts;
+    const movementsPromise = fetch('/api/cxo-movements').catch(() => null);
+    try {
+      accounts = await loadAccountsCached();
+    } catch (err) {
+      if (err instanceof AccountsAuthError) {
+        window.location.href = `/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+        return;
+      }
+      throw new Error('Failed to load accounts');
     }
-    if (!acctRes.ok) throw new Error('Failed to load accounts');
-    const data = await acctRes.json();
-    state.accounts = data.accounts || [];
+    const movementsRes = await movementsPromise;
+    state.accounts = accounts;
 
     // Only redirect away from this page if the user has NO assigned accounts
     // AND has global dashboard access revoked. If they have assigned accounts,

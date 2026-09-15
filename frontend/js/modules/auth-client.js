@@ -9,6 +9,8 @@
 // fetch-instrumentation.js patches window.fetch), not window.fetch, so the
 // 401-retry logic in fetch-instrumentation.js never has to reason about its
 // own login/refresh/logout calls recursing into itself.
+import { clearAccountsCache } from './accounts-cache.js';
+
 const nativeFetch = window.fetch.bind(window);
 
 let accessToken = null;
@@ -50,6 +52,11 @@ export async function login(email, password) {
     credentials: 'include',
     body: JSON.stringify({ email, password }),
   });
+  // Clears out anything cached under a previous session on this same tab —
+  // e.g. a different user signed in here before, or this account's own list
+  // of visible accounts changed since — before adopting the new session, not
+  // after, so nothing else can race a read of stale cached data in between.
+  clearAccountsCache();
   return _applySession(await _parseOrThrow(res));
 }
 
@@ -58,6 +65,7 @@ export async function logout() {
     await nativeFetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
   } finally {
     clearSession();
+    clearAccountsCache();
   }
 }
 

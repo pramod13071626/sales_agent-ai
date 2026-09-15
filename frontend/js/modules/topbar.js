@@ -1,6 +1,5 @@
 import { state } from './state.js';
 import { topbarTicker } from './dom.js';
-import { computeSignals } from './signals.js';
 
 export function renderTopbarTicker() {
   if (!topbarTicker) return;
@@ -8,7 +7,7 @@ export function renderTopbarTicker() {
   const totalContacts = state.accounts.reduce((s, a) => s + (a.total_contacts_captured || (a.personas || []).length || 0), 0);
   let totalSignals = 0;
   state.accounts.forEach(a => {
-    totalSignals += computeSignals(a, null).length;
+    totalSignals += a.signals_count || 0;
   });
 
   topbarTicker.innerHTML = `

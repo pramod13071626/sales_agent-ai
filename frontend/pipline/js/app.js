@@ -61,6 +61,26 @@ $(function () {
     return actionStateStore[key];
   }
 
+  // This page runs its own independent copy of /api/accounts (loadData()
+  // above) rather than sharing accounts-cache.js's ES module, but it's served
+  // from the same origin as the Global Dashboard and Command Center — which
+  // DO share that module's sessionStorage-backed cache (see the frontend
+  // caching writeup). Without this, saving a persona/LOB/account here would
+  // leave that cache serving a stale account list to those pages for up to
+  // its 60s TTL. Dynamic import() works from a classic (non-module) script,
+  // so this doesn't require converting this whole file to `type="module"`.
+  // Best-effort only: this page's own dump flow already succeeded by the time
+  // this runs, so a failure here (e.g. the module 404s from some other deploy
+  // layout) shouldn't surface as an error to the user.
+  async function refreshAccountsCache() {
+    try {
+      const mod = await import("../../js/modules/accounts-cache.js");
+      await mod.loadAccountsCached({ force: true });
+    } catch (e) {
+      console.warn("[pipeline] Could not refresh the shared accounts cache:", e);
+    }
+  }
+
   // Exposes live selection state to the chatbot widget (chatbot.js), which
   // runs outside this closure and has no other way to read these variables.
   window.getSalesAssistantContext = function () {
@@ -1706,6 +1726,7 @@ $(function () {
         state.message = `<span style="color:#10b981;">✔ Saved to database</span>`;
         $btn.text("💾 Dumped ✔").prop("disabled", false);
         $status.html(state.message);
+        refreshAccountsCache();
       } else {
         $btn.text("💾 Dump").prop("disabled", false);
         state.message = `<span style="color:#ef4444;">Error: ${data.message}</span>`;
@@ -2376,6 +2397,7 @@ $(function () {
     } else if (action === "dump") {
       lobBatchState.dumped = true;
       actionBtn.html('<i class="bi bi-database-check"></i> Dumped ✔');
+      if (successCount > 0) refreshAccountsCache();
     }
 
     lobBatchState.running = false;
@@ -2576,6 +2598,7 @@ $(function () {
     } else if (action === "dump") {
       personaBatchState.dumped = true;
       actionBtn.html('<i class="bi bi-database-check"></i> Dumped ✔');
+      if (successCount > 0) refreshAccountsCache();
     }
 
     personaBatchState.running = false;
@@ -2826,6 +2849,7 @@ $(function () {
             `saved to database (ID: ${data.account_id})`,
           "success",
         );
+        refreshAccountsCache();
 
         // Reload sidebar so the updated account name/revenue appears
         setTimeout(() => {

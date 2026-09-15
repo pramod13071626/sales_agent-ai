@@ -4,7 +4,6 @@ import {
   navCollapseBtn, dashNav, navCollapseIcon, navSortSelect, navToggleAllTree, navAccountCount
 } from './dom.js';
 import { esc, initials } from './utils.js';
-import { computeSignals } from './signals.js';
 import { getAccountContentEntries, matchOfferings } from './alerts.js';
 import { renderSelection } from './selection.js';
 import { getCurrentUser } from './auth-client.js';
@@ -31,10 +30,9 @@ export function renderNavTree() {
       return (a.heat_score || 0) >= 70;
     }
     if (state.navFilter === 'signal_ready') {
-      const sigs = computeSignals(a, null);
       const entries = getAccountContentEntries(a);
       const matches = matchOfferings(entries);
-      return sigs.length > 0 || matches.length > 0;
+      return (a.signals_count || 0) > 0 || matches.length > 0;
     }
     if (state.navFilter === 'deep_org') {
       const contacts = a.total_contacts_captured || (a.personas || []).length || 0;
@@ -78,7 +76,7 @@ export function renderNavTree() {
     const scoreClass = score >= 70 ? 'high' : (score >= 40 ? 'mid' : 'none');
     const scoreLabel = score != null ? `${score} SCORE` : '— SCORE';
     const contactsCount = a.total_contacts_captured || (a.personas || []).length || 0;
-    const signalsCount = computeSignals(a, null).length;
+    const signalsCount = a.signals_count || 0;
     const subtitle = [a.ticker ? `Ticker: ${a.ticker}` : '', (a.industries || [])[0] || ''].filter(Boolean).join(' · ') || (a.location || 'Enterprise');
 
     const lobsHtml = isOpen ? `

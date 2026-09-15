@@ -1,16 +1,13 @@
 // Resolves a Command Center mock account (by name) to a real accounts.id in
 // the database, so "Create task" / "Push to CRM" can write a real ActionItem
-// rather than simulate one. Loaded once and shared (accounts-nav.js reuses
-// the same fetch for the sidebar so the page only hits /api/accounts once).
-let accountsPromise = null;
+// rather than simulate one. Backed by the shared sessionStorage cache in
+// accounts-cache.js (accounts-nav.js reuses this same call for the sidebar),
+// which — unlike a plain module-level promise — survives the full-page
+// navigation between Command Center pages, not just repeat calls within one.
+import { loadAccountsCached } from '../accounts-cache.js';
 
 export function loadRealAccounts() {
-  if (!accountsPromise) {
-    accountsPromise = fetch('/api/accounts')
-      .then(res => { if (!res.ok) throw new Error(`Failed to load accounts (${res.status})`); return res.json(); })
-      .then(data => data.accounts || []);
-  }
-  return accountsPromise;
+  return loadAccountsCached();
 }
 
 function normalize(s) {
