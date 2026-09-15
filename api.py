@@ -137,6 +137,14 @@ if FASTAPI_AVAILABLE:
         allow_headers=["*"],
     )
 
+    @app.on_event("startup")
+    def on_startup():
+        try:
+            from db.create_tables import ensure_schema_compatibility
+            ensure_schema_compatibility()
+        except Exception as e:
+            print(f"[WARN] Schema compatibility check failed on startup: {e}")
+
     # ══════════════════════════════════════════════════════
     # AUTHENTICATION (see AUTH_JWT_IMPLEMENTATION_PLAN.md)
     # ══════════════════════════════════════════════════════

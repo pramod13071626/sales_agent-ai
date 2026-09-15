@@ -4,29 +4,26 @@ import { openDossier } from './drawer.js';
 import { loadMatrixAccounts } from './real-accounts.js';
 import { renderSkeleton } from '../skeleton.js';
 
-const RADIUS_MIN = 9, RADIUS_MAX = 36;
+const RADIUS_MIN = 12, RADIUS_MAX = 38;
 
 function radiusFor(dealPotential, dealMin, dealMax) {
   const t = (dealPotential - dealMin) / (dealMax - dealMin || 1);
   return RADIUS_MIN + t * (RADIUS_MAX - RADIUS_MIN);
 }
 
-// Sequential blue scale — strongest composite score renders darkest.
+// 4-Tier Vibrant Heatmap Spectrum
 function colorFor(score) {
-  const t = Math.max(0, Math.min(1, score / 100));
-  const stops = [
-    { t: 0, c: [191, 219, 254] },   // light blue
-    { t: 0.5, c: [59, 130, 246] },  // brand blue
-    { t: 1, c: [30, 58, 138] },     // darkest blue
-  ];
-  let a = stops[0], b = stops[stops.length - 1];
-  for (let i = 0; i < stops.length - 1; i++) {
-    if (t >= stops[i].t && t <= stops[i + 1].t) { a = stops[i]; b = stops[i + 1]; break; }
-  }
-  const span = (b.t - a.t) || 1;
-  const lt = (t - a.t) / span;
-  const rgb = a.c.map((v, i) => Math.round(v + (b.c[i] - v) * lt));
-  return `rgb(${rgb.join(',')})`;
+  if (score >= 80) return 'rgba(239, 68, 68, 0.92)';   // High Heat Crimson/Coral
+  if (score >= 68) return 'rgba(249, 115, 22, 0.92)';  // Flame Orange
+  if (score >= 50) return 'rgba(245, 158, 11, 0.90)';  // Active Amber/Gold
+  return 'rgba(14, 165, 233, 0.88)';                   // Cool Blue
+}
+
+function borderFor(score) {
+  if (score >= 80) return 'rgba(254, 202, 202, 0.95)';
+  if (score >= 68) return 'rgba(254, 215, 170, 0.95)';
+  if (score >= 50) return 'rgba(254, 240, 138, 0.95)';
+  return 'rgba(186, 230, 253, 0.95)';
 }
 
 const quadrantPlugin = {
@@ -36,8 +33,31 @@ const quadrantPlugin = {
     if (!chartArea) return;
     const xMid = scales.x.getPixelForValue(50);
     const yMid = scales.y.getPixelForValue(50);
+
     ctx.save();
-    ctx.strokeStyle = 'rgba(148,163,184,0.5)';
+
+    // 1. Quadrant Fills (Heatmap Backdrop)
+    // Top-Right: Act Now (High Heat Red/Amber gradient)
+    const actNowGrad = ctx.createLinearGradient(xMid, yMid, chartArea.right, chartArea.top);
+    actNowGrad.addColorStop(0, 'rgba(239, 68, 68, 0.04)');
+    actNowGrad.addColorStop(1, 'rgba(239, 68, 68, 0.15)');
+    ctx.fillStyle = actNowGrad;
+    ctx.fillRect(xMid, chartArea.top, chartArea.right - xMid, yMid - chartArea.top);
+
+    // Top-Left: Nurture (Teal / Emerald)
+    ctx.fillStyle = 'rgba(16, 185, 129, 0.04)';
+    ctx.fillRect(chartArea.left, chartArea.top, xMid - chartArea.left, yMid - chartArea.top);
+
+    // Bottom-Right: Re-engage (Indigo / Violet)
+    ctx.fillStyle = 'rgba(99, 102, 241, 0.04)';
+    ctx.fillRect(xMid, yMid, chartArea.right - xMid, chartArea.bottom - yMid);
+
+    // Bottom-Left: Watch (Slate)
+    ctx.fillStyle = 'rgba(148, 163, 184, 0.03)';
+    ctx.fillRect(chartArea.left, yMid, xMid - chartArea.left, chartArea.bottom - yMid);
+
+    // 2. Center Dividing Gridlines
+    ctx.strokeStyle = 'rgba(148, 163, 184, 0.35)';
     ctx.setLineDash([4, 4]);
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -47,25 +67,54 @@ const quadrantPlugin = {
     ctx.lineTo(chartArea.right, yMid);
     ctx.stroke();
 
-    // Highlight the "act now" quadrant (top-right: high strength, high recency).
-    ctx.setLineDash([5, 4]);
-    ctx.strokeStyle = 'rgba(30,58,138,0.55)';
+    // Highlight "Act Now" border
+    ctx.strokeStyle = 'rgba(239, 68, 68, 0.45)';
     ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 4]);
     ctx.strokeRect(xMid, chartArea.top, chartArea.right - xMid, yMid - chartArea.top);
-    ctx.restore();
 
-    const labelStyle = () => {
-      ctx.font = '600 11px Inter, system-ui, sans-serif';
-      ctx.fillStyle = 'rgba(100,116,139,0.85)';
+    // 3. Quadrant Title Badges
+    const drawBadge = (text, x, y, color, bg) => {
+      ctx.font = '700 10px Inter, system-ui, sans-serif';
+      const textWidth = ctx.measureText(text).width;
+      ctx.fillStyle = bg;
+      ctx.fillRect(x, y - 11, textWidth + 8, 15);
+      ctx.fillStyle = color;
+      ctx.fillText(text, x + 4, y);
     };
-    ctx.save();
-    labelStyle();
-    ctx.fillText('Act now', xMid + 10, chartArea.top + 16);
-    ctx.fillText('Nurture', chartArea.left + 10, chartArea.top + 16);
-    ctx.fillText('Re-engage', xMid + 10, chartArea.bottom - 8);
-    ctx.fillText('Watch', chartArea.left + 10, chartArea.bottom - 8);
+
+    drawBadge('🔥 ACT NOW (HIGH HEAT)', xMid + 10, chartArea.top + 18, '#dc2626', 'rgba(239, 68, 68, 0.14)');
+    drawBadge('🌱 NURTURE', chartArea.left + 10, chartArea.top + 18, '#059669', 'rgba(16, 185, 129, 0.12)');
+    drawBadge('⚡ RE-ENGAGE', xMid + 10, chartArea.bottom - 10, '#4f46e5', 'rgba(99, 102, 241, 0.12)');
+    drawBadge('👁️ WATCH', chartArea.left + 10, chartArea.bottom - 10, '#64748b', 'rgba(148, 163, 184, 0.12)');
+
     ctx.restore();
   },
+  afterDatasetsDraw(chart) {
+    const { ctx } = chart;
+    const meta = chart.getDatasetMeta(0);
+    if (!meta || !meta.data) return;
+
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    meta.data.forEach((element) => {
+      const { x, y } = element.getProps(['x', 'y'], true);
+      const raw = element.$context?.raw?.account;
+      if (!raw) return;
+
+      const label = raw.ticker || (raw.name || '').split(/,|\s-\s|\s/)[0].slice(0, 5).toUpperCase();
+      
+      ctx.font = '700 9.5px Inter, system-ui, sans-serif';
+      ctx.fillStyle = '#ffffff';
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.65)';
+      ctx.shadowBlur = 3;
+      ctx.fillText(label, x, y);
+    });
+
+    ctx.restore();
+  }
 };
 
 export async function renderMatrix() {
@@ -114,43 +163,49 @@ export async function renderMatrix() {
       datasets: [{
         data,
         backgroundColor: data.map(d => colorFor(d.account.compositeScore)),
-        borderColor: 'rgba(255,255,255,0.9)',
-        borderWidth: 1.5,
-        hoverBorderColor: '#1A1D23',
-        hoverBorderWidth: 2,
+        borderColor: data.map(d => borderFor(d.account.compositeScore)),
+        borderWidth: 2,
+        hoverBorderColor: '#0f172a',
+        hoverBorderWidth: 2.5,
       }],
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      layout: { padding: 4 },
+      layout: { padding: 8 },
       scales: {
         x: {
           min: 0, max: 100,
-          title: { display: true, text: 'Buying signal strength', font: { size: 11, weight: '500' } },
-          grid: { color: 'rgba(148,163,184,0.15)' },
+          title: { display: true, text: 'Buying signal strength (0-100)', font: { size: 11, weight: '600' } },
+          grid: { color: 'rgba(148,163,184,0.12)' },
           ticks: { font: { size: 10 } },
         },
         y: {
           min: 0, max: 100,
-          title: { display: true, text: 'Engagement recency', font: { size: 11, weight: '500' } },
-          grid: { color: 'rgba(148,163,184,0.15)' },
+          title: { display: true, text: 'Engagement recency (0-100)', font: { size: 11, weight: '600' } },
+          grid: { color: 'rgba(148,163,184,0.12)' },
           ticks: { font: { size: 10 } },
         },
       },
       plugins: {
         legend: { display: false },
         tooltip: {
-          backgroundColor: '#1A1D23',
-          padding: 10,
-          titleFont: { size: 12, weight: '600' },
+          backgroundColor: 'rgba(15, 23, 42, 0.95)',
+          padding: 12,
+          cornerRadius: 8,
+          titleFont: { size: 12, weight: '700' },
           bodyFont: { size: 11 },
           callbacks: {
             title: (items) => items[0].raw.account.name,
-            label: (item) => [
-              `Composite score: ${item.raw.account.compositeScore}`,
-              `Deal potential (est.): ${formatMoney(item.raw.account.dealPotential)}`,
-            ],
+            label: (item) => {
+              const a = item.raw.account;
+              return [
+                `Composite Heat Score: ${a.compositeScore} / 100`,
+                `Signal Strength: ${a.signalStrength} / 100`,
+                `Engagement Recency: ${a.engagementRecency} / 100`,
+                `Deal Potential (est.): ${formatMoney(a.dealPotential)}`,
+              ];
+            },
           },
         },
       },

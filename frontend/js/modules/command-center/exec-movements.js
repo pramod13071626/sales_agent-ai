@@ -35,12 +35,10 @@ export function markMovementActioned(id) {
   try { localStorage.setItem(ACTIONED_KEY, JSON.stringify([...set])); } catch (e) { /* private browsing / storage disabled */ }
 }
 
-// first_seen (the ingestion timestamp) is null for a chunk of bulk-imported
-// rows, so recency falls back through published_at / effective_date — both
-// free-text fields scraped from the source article rather than real Date
-// columns, hence the parse-and-skip-if-invalid approach.
+// Resolve the actual event date from effective_date or published_at.
+// DB ingestion timestamp (first_seen) is excluded to ensure only true last 30-day events appear.
 function resolveDate(m) {
-  for (const raw of [m.first_seen, m.published_at, m.effective_date]) {
+  for (const raw of [m.effective_date, m.published_at]) {
     if (!raw) continue;
     const d = new Date(raw);
     if (!isNaN(d.getTime())) return d;
@@ -48,14 +46,15 @@ function resolveDate(m) {
   return null;
 }
 
-/** Movements from the last 30 days, newest first. */
+/** Movements strictly from the last 30 days, newest first. */
 export async function loadRecentMovements() {
   const movements = await loadRawMovements();
   const actioned = getActionedSet();
-  const cutoff = Date.now() - 30 * 86400000;
+  const now = Date.now();
+  const cutoff = now - 30 * 86400000;
   return movements
     .map(m => ({ ...m, _date: resolveDate(m) }))
-    .filter(m => m._date && m._date.getTime() >= cutoff)
+    .filter(m => m._date && m._date.getTime() >= cutoff && m._date.getTime() <= (now + 86400000))
     .map(m => ({
       id: m.id,
       person: m.person_name,
@@ -63,9 +62,7 @@ export async function loadRecentMovements() {
       company: m.account_name || m.company_name,
       type: (m.event_type || '').toLowerCase(), // joined | resigned | retired | promoted
       date: m._date,
-      // effective_date is free text scraped from the source article — shown
-      // when present since it reads better than a raw ingestion timestamp.
-      displayDate: m.effective_date || null,
+      displayDate: m.effective_date || (m.published_at ? new Date(m.published_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : null),
       actioned: actioned.has(m.id),
       accountId: m.account_id,
     }))
