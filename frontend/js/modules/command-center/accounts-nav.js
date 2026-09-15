@@ -94,40 +94,58 @@ function markCurrentPage() {
   if (here) here.classList.add('active');
 }
 
-// The Global Accounts Dashboard is admin-granted, not default access (see
-// main.js's matching redirect for the same rule) — a super_admin sees every
-// account; anyone else needs an explicit grant. Hide the quick-jump link
-// entirely for a user with nothing to see there, rather than sending them
-// to a page that would just bounce them straight back here.
+// The Global Accounts Dashboard is admin-granted, not default access.
+// If the user has global dashboard access, point to / (Global Overview).
+// If the user lacks global dashboard access but HAS assigned accounts,
+// point to their assigned accounts directly (e.g. /?account_key=...).
+// Only hide the link if they have neither.
 function updateDashboardLinkAccess() {
   const dashBtn = el('navDigestBtn');
   if (!dashBtn) return;
   const user = getCurrentUser();
-  const canAccess = user && (user.role === 'super_admin' || accounts.length > 0);
-  if (!canAccess) {
+  const hasAccounts = accounts.length > 0;
+  const hasDashAccess = user && (user.role === 'super_admin' || user.has_dashboard_access !== false);
+
+  if (!hasDashAccess && !hasAccounts) {
     dashBtn.style.display = 'none';
     return;
   }
+
+  if (!hasDashAccess && hasAccounts) {
+    const titleEl = dashBtn.querySelector('.nav-digest-title');
+    const subEl = dashBtn.querySelector('.nav-digest-sub');
+    if (titleEl) titleEl.textContent = 'Company Accounts';
+    if (subEl) subEl.textContent = 'View assigned account dossiers';
+    dashBtn.addEventListener('click', () => {
+      const first = accounts[0];
+      const key = first.key || first.ticker || first.name;
+      window.location.href = `/?account_key=${encodeURIComponent(key)}`;
+    });
+    return;
+  }
+
   dashBtn.addEventListener('click', () => { window.location.href = '/'; });
 }
 
-// Sales Command Center is open by default, but a super_admin can revoke it
-// per user — hide the quick-jump link on other pages (e.g. /tasks) for a
-// user without it, same reasoning as updateDashboardLinkAccess above.
+// Sales Command Center is open by default, but a super_admin can revoke it per user
 function updateCommandCenterLinkAccess() {
   const ccLink = document.querySelector('.nav-digest-wrap a[href="/command-center"]');
   if (!ccLink) return;
   const user = getCurrentUser();
-  if (!user || !user.has_command_center_access) ccLink.style.display = 'none';
+  if (!user || (user.role !== 'super_admin' && user.has_command_center_access === false)) ccLink.style.display = 'none';
+}
+
+function updateTasksLinkAccess() {
+  const tasksLink = document.querySelector('.nav-digest-wrap a[href="/tasks"]');
+  if (!tasksLink) return;
+  const user = getCurrentUser();
+  if (!user || (user.role !== 'super_admin' && user.has_tasks_access === false)) tasksLink.style.display = 'none';
 }
 
 export async function initAccountsNav() {
   markCurrentPage();
-  // Runs before the accounts fetch below (not after, like
-  // updateDashboardLinkAccess) — it only needs the already-resolved user,
-  // not the account list, so hiding it here means it's never visible even
-  // for the instant the account list takes to load, not just once loaded.
   updateCommandCenterLinkAccess();
+  updateTasksLinkAccess();
   // LOB drill-down isn't relevant here — this navigator only switches
   // accounts, so hide the expand/collapse-all control nav-tree.js otherwise offers.
   const toggleAllBtn = el('navToggleAllTree');

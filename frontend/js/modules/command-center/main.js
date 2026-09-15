@@ -11,7 +11,7 @@ import { renderTimeline } from './timeline.js';
 import { initDrawer } from './drawer.js';
 import { initAccountsNav } from './accounts-nav.js';
 import { renderDueSoon } from './due-soon.js';
-import { renderHiringSignals } from './hiring-signals.js';
+import { renderHiringSignals, renderStrategicInvestmentTracks } from './hiring-signals.js';
 import { renderCapitalEvents, renderCoverageGaps, renderCompetitorMentions, renderTechSignals } from './account-signals.js';
 import { kpiBase } from './data.js';
 
@@ -41,22 +41,11 @@ function renderAll() {
   renderTimeline();
   renderDueSoon();
   renderHiringSignals();
+  renderStrategicInvestmentTracks();
   renderCapitalEvents();
   renderCoverageGaps();
   renderCompetitorMentions();
   renderTechSignals();
-}
-
-function initRoleTabs() {
-  const tabs = document.querySelectorAll('.cc-role-tab');
-  tabs.forEach(tab => {
-    tab.addEventListener('click', () => {
-      tabs.forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
-      ccState.activeRole = tab.dataset.role;
-      renderKpi();
-    });
-  });
 }
 
 function checkDashboardAccessNotice() {
@@ -72,7 +61,6 @@ function init() {
   initThemeToggle();
   checkDashboardAccessNotice();
   renderSubtitle();
-  initRoleTabs();
   initDrawer();
   initAccountsNav();
   renderAll();
@@ -87,12 +75,24 @@ initTopbarAuth().then((user) => {
     window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
     return;
   }
-  // Open to everyone by default, but a super_admin can explicitly revoke it
-  // per user (admin page's Account Access modal) — mirrors the Global
-  // Accounts Dashboard's opposite default (admin-granted, not default-open).
-  if (!user.has_command_center_access) {
-    window.location.href = '/?no_command_center_access=1';
-    return;
+  if (user.role !== 'super_admin' && user.has_command_center_access === false) {
+    if (user.has_dashboard_access !== false) {
+      window.location.href = '/?no_command_center_access=1';
+      return;
+    } else if (user.has_tasks_access !== false) {
+      window.location.href = '/tasks?no_command_center_access=1';
+      return;
+    } else {
+      // In-place restricted notice - DO NOT REDIRECT IN A LOOP!
+      const container = document.querySelector('.cc-container') || document.body;
+      container.innerHTML = `
+        <div class="empty-block" style="margin:80px auto; max-width:460px; text-align:center; padding:40px; background:var(--card-bg); border-radius:12px; border:1px solid var(--border-color);">
+          <div class="empty-block-icon" style="font-size:2.5rem; color:var(--text-muted); margin-bottom:16px;"><i class="bi bi-shield-lock"></i></div>
+          <div style="font-size:1.15rem; font-weight:700; color:var(--text-primary); margin-bottom:8px;">Command Center Access Restricted</div>
+          <div style="font-size:0.85rem; color:var(--text-secondary); line-height:1.5;">You do not have access to the Sales Command Center. Please ask a Super Administrator to grant you permissions.</div>
+        </div>`;
+      return;
+    }
   }
   init();
 });

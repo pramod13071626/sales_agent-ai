@@ -41,23 +41,11 @@ def ensure_schema_compatibility():
             "ALTER TABLE lobs ADD COLUMN IF NOT EXISTS wikipedia_url TEXT;",
             "ALTER TABLE lobs ADD COLUMN IF NOT EXISTS patents JSONB;",
             "ALTER TABLE lobs ADD COLUMN IF NOT EXISTS raw_data JSONB;",
-            # 4. Add columns to sub_lobs if missing (Full Enterprise Level 3 Model)
-            "ALTER TABLE sub_lobs ADD COLUMN IF NOT EXISTS legal_name VARCHAR(500);",
-            "ALTER TABLE sub_lobs ADD COLUMN IF NOT EXISTS lei_code VARCHAR(50);",
-            "ALTER TABLE sub_lobs ADD COLUMN IF NOT EXISTS jurisdiction VARCHAR(50);",
-            "ALTER TABLE sub_lobs ADD COLUMN IF NOT EXISTS country VARCHAR(100);",
-            "ALTER TABLE sub_lobs ADD COLUMN IF NOT EXISTS city VARCHAR(255);",
-            "ALTER TABLE sub_lobs ADD COLUMN IF NOT EXISTS relationship_type VARCHAR(255);",
-            "ALTER TABLE sub_lobs ADD COLUMN IF NOT EXISTS status VARCHAR(100) DEFAULT 'ACTIVE';",
-            "ALTER TABLE sub_lobs ADD COLUMN IF NOT EXISTS entity_level VARCHAR(100) DEFAULT 'Level 3 (Operating Sub-LOB)';",
-            "ALTER TABLE sub_lobs ADD COLUMN IF NOT EXISTS parent_lob_lei VARCHAR(50);",
-            "ALTER TABLE sub_lobs ADD COLUMN IF NOT EXISTS parent_lob_name VARCHAR(500);",
-            "ALTER TABLE sub_lobs ADD COLUMN IF NOT EXISTS domain VARCHAR(255);",
-            "ALTER TABLE sub_lobs ADD COLUMN IF NOT EXISTS website_url TEXT;",
-            "ALTER TABLE sub_lobs ADD COLUMN IF NOT EXISTS is_manually_verified BOOLEAN DEFAULT FALSE;",
-            "ALTER TABLE sub_lobs ADD COLUMN IF NOT EXISTS manually_verified_at TIMESTAMP WITH TIME ZONE;",
-            # 5. Per-user Sales Command Center access toggle
+            # 4. Per-user Dashboard & Feature access toggles
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS has_dashboard_access BOOLEAN NOT NULL DEFAULT TRUE;",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS has_command_center_access BOOLEAN NOT NULL DEFAULT TRUE;",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS has_tasks_access BOOLEAN NOT NULL DEFAULT TRUE;",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS has_pipeline_access BOOLEAN NOT NULL DEFAULT TRUE;",
         ]
         for stmt in alter_statements:
             try:

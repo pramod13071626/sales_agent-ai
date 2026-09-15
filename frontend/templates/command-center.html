@@ -42,11 +42,6 @@
           <h1 class="cc-title">Sales Command Center</h1>
           <p class="cc-subtitle" id="ccSubtitle">Loading…</p>
         </div>
-        <div class="cc-role-tabs" role="tablist" aria-label="Role scope">
-          <button type="button" class="cc-role-tab active" data-role="ae" role="tab">Account exec</button>
-          <button type="button" class="cc-role-tab" data-role="manager" role="tab">Manager</button>
-          <button type="button" class="cc-role-tab" data-role="exec" role="tab">Executive</button>
-        </div>
       </header>
 
       <section class="cc-kpi-strip" id="ccKpiStrip"></section>
@@ -102,9 +97,19 @@
         <div class="cc-panel">
           <div class="cc-panel-head">
             <h2>Hiring signals</h2>
-            <span class="cc-panel-note">New LinkedIn job postings, last 30 days</span>
+            <span class="cc-panel-note">BNY Mellon Hiring Intelligence · 32 live roles monitored</span>
           </div>
           <ul class="cc-feed-list" id="ccHiringList"></ul>
+        </div>
+      </section>
+
+      <section class="cc-row">
+        <div class="cc-panel">
+          <div class="cc-panel-head">
+            <h2>Strategic investment tracks &amp; key sponsoring decision makers</h2>
+            <span class="cc-panel-note">Executive Sponsoring Tracks &middot; BNY Mellon</span>
+          </div>
+          <div id="ccTracksList"></div>
         </div>
       </section>
 
@@ -157,6 +162,6 @@
 
 {% include "partials/drawer.html" %}
 
-<script type="module" src="js/modules/command-center/main.js?v=1.0"></script>
+<script type="module" src="js/modules/command-center/main.js?v=4.2"></script>
 </body>
 </html>

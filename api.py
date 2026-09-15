@@ -163,14 +163,20 @@ if FASTAPI_AVAILABLE:
         role: Optional[str] = None
         is_active: Optional[bool] = None
         password: Optional[str] = None
+        has_dashboard_access: Optional[bool] = None
         has_command_center_access: Optional[bool] = None
+        has_tasks_access: Optional[bool] = None
+        has_pipeline_access: Optional[bool] = None
 
     def _user_public(u: User) -> Dict[str, Any]:
+        is_sa = u.role == "super_admin"
         return {
             "id": u.id, "email": u.email, "full_name": u.full_name,
             "role": u.role, "is_active": u.is_active,
-            # super_admin always has it, same as it always has every account
-            "has_command_center_access": u.role == "super_admin" or bool(u.has_command_center_access),
+            "has_dashboard_access": is_sa or (u.has_dashboard_access if u.has_dashboard_access is not None else True),
+            "has_command_center_access": is_sa or (u.has_command_center_access if u.has_command_center_access is not None else True),
+            "has_tasks_access": is_sa or (u.has_tasks_access if u.has_tasks_access is not None else True),
+            "has_pipeline_access": is_sa or (u.has_pipeline_access if u.has_pipeline_access is not None else True),
             "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
             "created_at": u.created_at.isoformat() if u.created_at else None,
         }
@@ -430,13 +436,25 @@ if FASTAPI_AVAILABLE:
             if body.password:
                 if len(body.password) < 6:
                     raise HTTPException(status_code=400, detail="Password must be at least 6 characters long")
-                target.password_hash = auth.hash_password(body.password)
+                target.hashed_password = auth.hash_password(body.password)
                 auth.revoke_all_refresh_tokens_for_user(session, target.id)
                 details["password_changed"] = True
+
+            if body.has_dashboard_access is not None and body.has_dashboard_access != target.has_dashboard_access:
+                details["has_dashboard_access"] = {"old": target.has_dashboard_access, "new": body.has_dashboard_access}
+                target.has_dashboard_access = body.has_dashboard_access
 
             if body.has_command_center_access is not None and body.has_command_center_access != target.has_command_center_access:
                 details["has_command_center_access"] = {"old": target.has_command_center_access, "new": body.has_command_center_access}
                 target.has_command_center_access = body.has_command_center_access
+
+            if body.has_tasks_access is not None and body.has_tasks_access != target.has_tasks_access:
+                details["has_tasks_access"] = {"old": target.has_tasks_access, "new": body.has_tasks_access}
+                target.has_tasks_access = body.has_tasks_access
+
+            if body.has_pipeline_access is not None and body.has_pipeline_access != target.has_pipeline_access:
+                details["has_pipeline_access"] = {"old": target.has_pipeline_access, "new": body.has_pipeline_access}
+                target.has_pipeline_access = body.has_pipeline_access
 
             session.commit()
             if details:
@@ -476,10 +494,14 @@ if FASTAPI_AVAILABLE:
                 raise HTTPException(status_code=404, detail="User not found")
             granted_ids = set(auth.get_accessible_account_ids(session, user_id))
             accounts = session.query(Account).order_by(Account.display_name).all()
+            is_sa = target.role == "super_admin"
             return {
                 "user_id": user_id,
                 "role": target.role,
-                "has_command_center_access": target.role == "super_admin" or bool(target.has_command_center_access),
+                "has_dashboard_access": is_sa or (target.has_dashboard_access if target.has_dashboard_access is not None else True),
+                "has_command_center_access": is_sa or (target.has_command_center_access if target.has_command_center_access is not None else True),
+                "has_tasks_access": is_sa or (target.has_tasks_access if target.has_tasks_access is not None else True),
+                "has_pipeline_access": is_sa or (target.has_pipeline_access if target.has_pipeline_access is not None else True),
                 "accounts": [
                     {
                         "id": a.id,
@@ -1399,9 +1421,66 @@ if FASTAPI_AVAILABLE:
             "manually_verified_at": acct.manually_verified_at.isoformat() if getattr(acct, "manually_verified_at", None) else None,
         }
 
+    def _compute_signals_count(
+        acct: Account, lobs_list: List[Dict[str, Any]], personas_list: List[Dict[str, Any]]
+    ) -> int:
+        """Server-side count mirroring signals.js's computeSignals(account, null).
+        The nav tree / topbar ticker only ever display the COUNT of signals per
+        account (a badge number), never the underlying detail — so this replaces
+        shipping multi_source_intelligence (and every other field computeSignals
+        reads) to the client for every account in the list, just to count it
+        client-side. Full signal detail is still available once an account is
+        opened, via _serialize_account_full / GET /api/accounts/{id}."""
+        count = 0
+        msi = acct.multi_source_intelligence or {}
+        linkedin_metrics = msi.get("linkedin_metrics") or {}
+        if linkedin_metrics.get("follower_count"):
+            count += 1
+        if linkedin_metrics.get("exact_employee_headcount"):
+            count += 1
+        if (msi.get("sec_10k_chunks_meta") or {}).get("sections_found"):
+            count += 1
+        if (msi.get("gleif_intel") or {}).get("lei_code"):
+            count += 1
+        if acct.company_type == "Public":
+            count += 1
+        if acct.last_funding_type:
+            count += 1
+        if acct.ipo_status:
+            count += 1
+        if acct.patents_granted:
+            count += 1
+        if acct.active_tech_count:
+            count += 1
+        if acct.num_acquisitions:
+            count += 1
+        if len(lobs_list) > 1:
+            count += 1
+        if personas_list:
+            count += 1
+        if acct.industries:
+            count += 1
+        if any(lob_item.get("competitors") for lob_item in lobs_list):
+            count += 1
+        return count
+
     def _serialize_account_summary(acct: Account) -> Dict[str, Any]:
-        # Full serialization for Account, LOBs, and Personas ensures the UI receives 100% of data attributes
-        personas_list = [_serialize_persona_full(p) for p in (acct.personas or [])]
+        # Trimmed for the account-LIST view (nav tree, digest, topbar ticker,
+        # command-center sidebar, admin account switcher). Keeps only the fields
+        # those cross-account rollups actually read — traced via signals_count
+        # (replaces computeSignals() from signals.js — see _compute_signals_count),
+        # computeDomainExpansionOpportunities() (opportunities.js),
+        # resolveAccountTargetKey()/resolvePersonaTargetKey() (utils.js), and
+        # nav-tree.js/topbar.js/digest.js/admin-page.js/accounts-nav.js directly.
+        # Drops everything else — descriptive text, contact/social/enrichment
+        # URLs, org chart tree, multi_source_intelligence, funding/IPO/traffic
+        # fields, buying-committee tier counts (none of those are read by any
+        # list-wide consumer; unused ones like c_suite_count/vp_count/
+        # director_count/manager_count aren't read by the frontend at all) — all
+        # of it is only needed once a specific account is opened, via
+        # _serialize_account_full / GET /api/accounts/{id}, which selection.js's
+        # ensureAccountDetail() fetches and merges in on demand at that point.
+        personas_list = [_serialize_persona_summary(p) for p in (acct.personas or [])]
         raw_lobs = acct.lobs or []
         lobs_list = [
             _serialize_lob_full(lob_item, assigned)
@@ -1410,7 +1489,6 @@ if FASTAPI_AVAILABLE:
 
         acct_name = acct.legal_name or acct.display_name or acct.key
         acct_loc = acct.headquarters_location or (f"{acct.city}, {acct.country}" if acct.city else None)
-        acct_desc = acct.short_description or acct.full_description
 
         return {
             "id": acct.id,
@@ -1420,124 +1498,20 @@ if FASTAPI_AVAILABLE:
             "legal_name": acct.legal_name or acct_name,
             "ticker": acct.stock_symbol,
             "stock_symbol": acct.stock_symbol,
-            "revenue": acct.estimated_revenue_range or "Revenue N/A",
-            "estimated_revenue_range": acct.estimated_revenue_range,
             "location": acct_loc,
-            "headquarters_location": acct_loc,
-            "desc": acct_desc,
-            "short_description": acct_desc,
-            "full_description": acct.full_description or acct_desc,
-            "domain": acct.domain,
-            "primary_domain": acct.primary_domain or acct.domain,
-            "website_url": acct.website_url,
-            "crunchbase_url": acct.crunchbase_url,
-            "operating_status": acct.operating_status,
-            "city": acct.city,
-            "state": acct.state,
-            "country": acct.country,
-            "postal_code": acct.postal_code,
-            "phone_number": acct.phone_number,
-            "sanitized_phone": acct.sanitized_phone,
-            "contact_email": acct.contact_email,
             "company_type": acct.company_type,
-            "founded_year": acct.founded_year,
             "employee_count_range": acct.employee_count_range,
-            "linkedin_url": acct.linkedin_url,
-            "twitter_url": acct.twitter_url,
-            "twitter_handle": acct.twitter_handle,
-            "stock_exchange": acct.stock_exchange,
-            "sec_cik": acct.sec_cik,
-            "sec_edgar_url": acct.sec_edgar_url,
-            "sec_filings_rss": acct.sec_filings_rss,
-            "sec_submissions_url": acct.sec_submissions_url,
-            "twitter_live_url": acct.twitter_live_url,
-            "reddit_query": acct.reddit_query,
-            "reddit_rss_url": acct.reddit_rss_url,
-            "news_query": acct.news_query,
-            "rss_url": acct.rss_url,
-            "google_patents_url": acct.google_patents_url,
-            "google_trends_url": acct.google_trends_url,
-            "youtube_search_url": acct.youtube_search_url,
-            "openalex_institution_url": acct.openalex_institution_url,
-            "wikidata_entity_url": acct.wikidata_entity_url,
-            "github_url": acct.github_url,
-            "glassdoor_url": acct.glassdoor_url,
-            "blog_url": acct.blog_url,
             "industries": acct.industries or [],
-            "keywords": acct.keywords or [],
             "lobs_count": len(lobs_list),
             "total_contacts_captured": len(personas_list),
             "lobs": lobs_list,
             "personas": personas_list,
-            "multi_source_intelligence": acct.multi_source_intelligence,
-            "organisational_hierarchy_tree": acct.organisational_hierarchy_tree,
             "extracted_at": acct.extracted_at.isoformat() if acct.extracted_at else None,
             "created_at": acct.created_at.isoformat() if acct.created_at else None,
             "updated_at": acct.updated_at.isoformat() if acct.updated_at else None,
             "heat_score": acct.heat_score,
             "trend_score_90d": acct.trend_score_90d,
-            "active_tech_count": acct.active_tech_count,
-            "it_spend": acct.it_spend,
-            "patents_granted": acct.patents_granted,
-            "trademarks_registered": acct.trademarks_registered,
-            "total_funding_amount_usd": acct.total_funding_amount_usd,
-            "total_funding_currency": acct.total_funding_currency,
-            "last_funding_type": acct.last_funding_type,
-            "last_funding_date": acct.last_funding_date.isoformat() if acct.last_funding_date else None,
-            "num_funding_rounds": acct.num_funding_rounds,
-            "funding_status": acct.funding_status,
-            "ipo_status": acct.ipo_status,
-            "ipo_date": acct.ipo_date.isoformat() if acct.ipo_date else None,
-            "num_suborganizations": acct.num_suborganizations,
-            "num_acquisitions": acct.num_acquisitions,
-            "global_traffic_rank": acct.global_traffic_rank,
-            "monthly_visits": acct.monthly_visits,
-            "bounce_rate": acct.bounce_rate,
-            "visit_duration": acct.visit_duration,
-            "page_views_per_visit": acct.page_views_per_visit,
-            "c_suite_count": acct.c_suite_count
-            or len(
-                [
-                    p
-                    for p in personas_list
-                    if (p.get("tier") or "").lower() in ["c-suite", "c_suite", "c"]
-                    or any(
-                        w in (p.get("title") or "").lower()
-                        for w in ["chief", "president", "ceo", "chairman", "board"]
-                    )
-                ]
-            ),
-            "vp_count": acct.vp_count
-            or len(
-                [
-                    p
-                    for p in personas_list
-                    if "vp" in (p.get("tier") or "").lower()
-                    or "vice president" in (p.get("title") or "").lower()
-                ]
-            ),
-            "director_count": acct.director_count
-            or len(
-                [
-                    p
-                    for p in personas_list
-                    if "director" in (p.get("tier") or "").lower()
-                    or "director" in (p.get("title") or "").lower()
-                ]
-            ),
-            "manager_count": acct.manager_count
-            or len(
-                [
-                    p
-                    for p in personas_list
-                    if "manager" in (p.get("tier") or "").lower()
-                    or "manager" in (p.get("title") or "").lower()
-                ]
-            ),
-            "created_at": acct.created_at.isoformat() if getattr(acct, "created_at", None) else None,
-            "updated_at": acct.updated_at.isoformat() if getattr(acct, "updated_at", None) else None,
-            "is_manually_verified": bool(getattr(acct, "is_manually_verified", False)),
-            "manually_verified_at": acct.manually_verified_at.isoformat() if getattr(acct, "manually_verified_at", None) else None,
+            "signals_count": _compute_signals_count(acct, lobs_list, personas_list),
         }
 
     @account_router.get("")
@@ -4709,6 +4683,149 @@ if FASTAPI_AVAILABLE:
             detail = _job_summary_dict(j, acct, job_category)
             detail["description"] = j.description
             return detail
+        finally:
+            session.close()
+
+    @app.get("/api/accounts/{account_id}/hiring-summary", tags=["5. LinkedIn Jobs"])
+    def get_account_hiring_summary(account_id: int):
+        """Retrieve aggregated lightweight hiring metrics & strategic track stats for an account.
+        Designed for instant page-load performance across millions of rows."""
+        session = get_session()
+        try:
+            account = session.query(Account).filter(Account.id == account_id).first()
+            if not account:
+                raise HTTPException(status_code=404, detail="Account not found")
+
+            candidate_keys = set(filter(None, [
+                account.key,
+                (account.stock_symbol or "").lower(),
+                slugify(account.display_name) if account.display_name else None,
+                slugify(account.legal_name) if account.legal_name else None,
+            ]))
+
+            jobs = session.query(LinkedInJob).filter(LinkedInJob.target_key.in_(candidate_keys)).all()
+
+            total_roles = len(jobs)
+            leadership_rx = re.compile(r"director|\bvp\b|vice president|\bsvp\b|senior vice president|head of|chief|lead", re.I)
+            contract_rx = re.compile(r"contract|\(contract\)", re.I)
+            ai_rx = re.compile(r"\bai\b|artificial|machine learning|\bml\b|genai|process analyst|automation", re.I)
+            cloud_rx = re.compile(r"cloud|full-stack|full stack|platform|devops|systems lead|software engineer", re.I)
+
+            leadership_count = 0
+            contract_roles = []
+            loc_counts: Dict[str, int] = {}
+            ai_count = 0
+            cloud_count = 0
+
+            for j in jobs:
+                t = j.title or ""
+                emp = j.employment_type or ""
+                loc = (j.location or "US").split("/")[0].strip()
+                if loc:
+                    loc_counts[loc] = loc_counts.get(loc, 0) + 1
+
+                if leadership_rx.search(t):
+                    leadership_count += 1
+
+                if contract_rx.search(emp) or contract_rx.search(t):
+                    contract_roles.append({
+                        "id": j.id,
+                        "title": j.title,
+                        "location": j.location or "US",
+                        "employment_type": j.employment_type or "Contract",
+                        "workplace_type": (j.workplace_type or "on_site").replace("_", " "),
+                        "applicants": j.applicants,
+                        "job_url": j.job_url,
+                    })
+
+                if ai_rx.search(t):
+                    ai_count += 1
+                elif cloud_rx.search(t):
+                    cloud_count += 1
+
+            top_hubs = [{"location": loc, "count": count} for loc, count in sorted(loc_counts.items(), key=lambda x: x[1], reverse=True)[:6]]
+
+            return {
+                "account_id": account.id,
+                "account_name": account.legal_name or account.display_name,
+                "ticker": account.stock_symbol or account.ticker or "BK",
+                "total_roles": total_roles,
+                "leadership_count": leadership_count,
+                "contract_count": len(contract_roles),
+                "top_hubs": top_hubs,
+                "track_counts": {
+                    "ai": ai_count,
+                    "cloud": cloud_count,
+                },
+                "contract_leads": contract_roles[:5],
+            }
+        finally:
+            session.close()
+
+    @app.get("/api/accounts/{account_id}/jobs", tags=["5. LinkedIn Jobs"])
+    def get_account_jobs(
+        account_id: int,
+        sort: str = "newest",
+        page: int = 1,
+        page_size: int = 25,
+    ):
+        """Retrieve paginated live LinkedIn job postings for a specific account.
+        Used for on-demand lazy loading when expanding the Requisitions Browser."""
+        session = get_session()
+        try:
+            account = session.query(Account).filter(Account.id == account_id).first()
+            if not account:
+                raise HTTPException(status_code=404, detail="Account not found")
+
+            candidate_keys = set(filter(None, [
+                account.key,
+                (account.stock_symbol or "").lower(),
+                slugify(account.display_name) if account.display_name else None,
+                slugify(account.legal_name) if account.legal_name else None,
+            ]))
+
+            page = max(1, page)
+            page_size = max(1, min(page_size, 100))
+
+            base_query = session.query(LinkedInJob).filter(LinkedInJob.target_key.in_(candidate_keys))
+            total = base_query.count()
+
+            if sort == "applicants":
+                base_query = base_query.order_by(LinkedInJob.applicants.desc().nullslast())
+            elif sort == "views":
+                base_query = base_query.order_by(LinkedInJob.views.desc().nullslast())
+            else:
+                base_query = base_query.order_by(LinkedInJob.first_seen.desc().nullslast(), LinkedInJob.id.desc())
+
+            jobs_rows = base_query.offset((page - 1) * page_size).limit(page_size).all()
+            total_pages = max(1, math.ceil(total / page_size))
+
+            job_cards = []
+            for j in jobs_rows:
+                job_cards.append({
+                    "id": j.id,
+                    "title": j.title or "Untitled Role",
+                    "company_name": j.company_name or account.legal_name or "Enterprise",
+                    "location": j.location or "US",
+                    "employment_type": j.employment_type,
+                    "workplace_type": j.workplace_type,
+                    "posted_date": j.posted_date,
+                    "applicants": j.applicants,
+                    "views": j.views,
+                    "job_url": j.job_url,
+                    "first_seen": j.first_seen.isoformat() if j.first_seen else None,
+                    "new_in_last_run": j.new_in_last_run,
+                })
+
+            return {
+                "account_id": account.id,
+                "account_name": account.legal_name or account.display_name,
+                "total": total,
+                "page": page,
+                "page_size": page_size,
+                "total_pages": total_pages,
+                "jobs": job_cards,
+            }
         finally:
             session.close()
 

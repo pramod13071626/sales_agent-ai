@@ -378,15 +378,18 @@ function renderModalShell() {
     <div class="admin-modal-backdrop" id="accessModalBackdrop">
       <div class="admin-modal">
         <div class="admin-modal-header">
-          <div class="admin-modal-title" id="accessModalTitle">Manage Account Access</div>
+          <div class="admin-modal-title" id="accessModalTitle">Manage Account &amp; Dashboard Access</div>
           <button type="button" class="admin-modal-close" id="accessModalClose"><i class="bi bi-x-lg"></i></button>
         </div>
-        <div id="accessModalCommandCenter"></div>
+        <div id="accessModalDashboardToggles"></div>
         <div class="admin-access-section-label" id="accessModalDashboardLabel" style="display:none;">
-          <i class="bi bi-diagram-3"></i> Global Accounts Dashboard — per-account access
+          <i class="bi bi-buildings"></i> Assigned Company Accounts &amp; Dossiers
+        </div>
+        <div style="font-size:0.75rem; color:var(--text-muted); padding:0 24px 8px 24px; margin-top:-4px; display:none;" id="accessModalAccountSubLabel">
+          Assign individual company accounts (e.g. BNY Mellon, BlackRock) to grant access to company intelligence, org charts, hiring trends, and financials.
         </div>
         <div class="admin-modal-toolbar" id="accessModalToolbar">
-          <input type="text" class="admin-modal-search" id="accessModalSearch" placeholder="Filter company accounts...">
+          <input type="text" class="admin-modal-search" id="accessModalSearch" placeholder="Filter company accounts (e.g. BNY, BlackRock)...">
         </div>
         <div class="admin-modal-body" id="accessModalBody"></div>
       </div>
@@ -844,40 +847,88 @@ function closeAccessModal() {
   document.getElementById('accessModalBackdrop').classList.remove('open');
 }
 
-function renderCommandCenterToggle(userId, hasAccess, disabled) {
-  const wrap = document.getElementById('accessModalCommandCenter');
+function renderDashboardAccessToggles(userId, permissions, disabled) {
+  const wrap = document.getElementById('accessModalDashboardToggles');
+  if (!wrap) return;
+
+  const dashboards = [
+    {
+      key: 'has_dashboard_access',
+      name: 'Global Executive Digest & Radar',
+      icon: 'bi-bar-chart-line-fill',
+      path: '/',
+      sub: 'Cross-account portfolio overview, executive briefing & macro sales alerts',
+    },
+    {
+      key: 'has_command_center_access',
+      name: 'Sales Command Center',
+      icon: 'bi-graph-up-arrow',
+      path: '/command-center',
+      sub: 'Action-first rep & manager daily command dashboard',
+    },
+    {
+      key: 'has_tasks_access',
+      name: 'My Tasks & Action Items',
+      icon: 'bi-list-check',
+      path: '/tasks',
+      sub: 'Personal task manager, reminders & cross-account deliverables',
+    },
+    {
+      key: 'has_pipeline_access',
+      name: 'Data Pipeline Console',
+      icon: 'bi-compass',
+      path: '/pipeline',
+      sub: 'Raw data ingestion pipeline & automated scraper runs',
+    },
+  ];
+
   wrap.innerHTML = `
     <div class="admin-access-section-label">
-      <i class="bi bi-graph-up-arrow"></i> Sales Command Center
+      <i class="bi bi-grid-1x2"></i> Dashboard &amp; View Permissions
     </div>
-    <div class="admin-access-row">
-      <label class="admin-access-toggle">
-        <input type="checkbox" id="accessModalCcToggle" ${hasAccess ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
-        <span>Action-first rep &amp; manager dashboard</span>
-      </label>
-      <span style="font-size:0.7rem; color:var(--text-muted);">
-        ${disabled ? 'Always on for Super Admin' : (hasAccess ? '<i class="bi bi-check-circle-fill" style="color:var(--success);"></i> Granted' : 'Restricted')}
-      </span>
+    <div class="admin-access-dashboards-grid">
+      ${dashboards.map(d => {
+        const hasAccess = !!permissions[d.key];
+        return `
+          <div class="admin-access-row">
+            <label class="admin-access-toggle">
+              <input type="checkbox" data-perm-key="${d.key}" ${hasAccess ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
+              <div>
+                <div><i class="bi ${d.icon}" style="margin-right:4px; color:var(--brand);"></i> <strong>${esc(d.name)}</strong> <span style="font-size:0.7rem; color:var(--text-muted);">(${d.path})</span></div>
+                <div style="font-size:0.72rem; color:var(--text-muted); font-weight:normal;">${esc(d.sub)}</div>
+              </div>
+            </label>
+            <span style="font-size:0.7rem; color:var(--text-muted); white-space:nowrap; margin-left:8px;">
+              ${disabled ? 'Always on for Super Admin' : (hasAccess ? '<i class="bi bi-check-circle-fill" style="color:var(--success);"></i> Granted' : '<i class="bi bi-slash-circle" style="color:var(--danger);"></i> Restricted')}
+            </span>
+          </div>
+        `;
+      }).join('')}
     </div>
   `;
+
   if (disabled) return;
-  document.getElementById('accessModalCcToggle').addEventListener('change', async (e) => {
-    const cb = e.target;
-    cb.disabled = true;
-    try {
-      const res = await fetch(`/api/admin/users/${userId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ has_command_center_access: cb.checked }),
-      });
-      if (!res.ok) throw new Error('Request failed');
-      showToast(`Sales Command Center access ${cb.checked ? 'granted' : 'revoked'}`);
-      renderCommandCenterToggle(userId, cb.checked, false);
-    } catch (err) {
-      alert('Failed to update Sales Command Center access');
-      cb.checked = !cb.checked;
-      cb.disabled = false;
-    }
+
+  wrap.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+    cb.addEventListener('change', async () => {
+      const permKey = cb.dataset.permKey;
+      cb.disabled = true;
+      try {
+        const res = await fetch(`/api/admin/users/${userId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ [permKey]: cb.checked }),
+        });
+        if (!res.ok) throw new Error('Request failed');
+        permissions[permKey] = cb.checked;
+        showToast(`Updated dashboard permission`);
+        renderDashboardAccessToggles(userId, permissions, false);
+      } catch (err) {
+        showToast('Failed to update dashboard access permission.');
+        cb.checked = !cb.checked;
+        cb.disabled = false;
+      }
+    });
   });
 }
 
@@ -887,11 +938,14 @@ async function openAccessModal(userId, email) {
   const searchInput = document.getElementById('accessModalSearch');
   const toolbar = document.getElementById('accessModalToolbar');
   const dashboardLabel = document.getElementById('accessModalDashboardLabel');
+  const accountSubLabel = document.getElementById('accessModalAccountSubLabel');
+  const togglesWrap = document.getElementById('accessModalDashboardToggles');
 
-  document.getElementById('accessModalTitle').textContent = `Account Access — ${email}`;
-  document.getElementById('accessModalCommandCenter').innerHTML = '';
-  dashboardLabel.style.display = 'none';
-  body.innerHTML = '<div class="admin-page-loading" style="margin:20px auto;"><div class="spinner-sm"></div> Loading accounts…</div>';
+  document.getElementById('accessModalTitle').textContent = `Account & Dashboard Access — ${email}`;
+  if (togglesWrap) togglesWrap.innerHTML = '';
+  if (dashboardLabel) dashboardLabel.style.display = 'none';
+  if (accountSubLabel) accountSubLabel.style.display = 'none';
+  body.innerHTML = '<div class="admin-page-loading" style="margin:20px auto;"><div class="spinner-sm"></div> Loading permissions &amp; accounts…</div>';
   backdrop.classList.add('open');
 
   try {
@@ -899,21 +953,33 @@ async function openAccessModal(userId, email) {
     const data = await res.json();
     if (data.role === 'super_admin') {
       toolbar.style.display = 'none';
-      renderCommandCenterToggle(userId, true, true);
+      renderDashboardAccessToggles(userId, {
+        has_dashboard_access: true,
+        has_command_center_access: true,
+        has_tasks_access: true,
+        has_pipeline_access: true,
+      }, true);
       body.innerHTML = `
         <div style="padding:24px; text-align:center; color:var(--text-secondary);">
           <i class="bi bi-shield-lock" style="font-size:2rem; color:var(--brand); display:block; margin-bottom:12px;"></i>
           <strong>Super Admin Global Access</strong>
           <p style="font-size:0.8rem; color:var(--text-muted); margin-top:6px;">
-            This user is a Super Admin and automatically holds unrestricted access to all accounts.
+            This user is a Super Admin and automatically holds unrestricted access to all dashboards and accounts.
           </p>
         </div>
       `;
       return;
     }
 
-    renderCommandCenterToggle(userId, !!data.has_command_center_access, false);
-    dashboardLabel.style.display = 'flex';
+    renderDashboardAccessToggles(userId, {
+      has_dashboard_access: data.has_dashboard_access !== false,
+      has_command_center_access: data.has_command_center_access !== false,
+      has_tasks_access: data.has_tasks_access !== false,
+      has_pipeline_access: data.has_pipeline_access !== false,
+    }, false);
+
+    if (dashboardLabel) dashboardLabel.style.display = 'flex';
+    if (accountSubLabel) accountSubLabel.style.display = 'block';
     toolbar.style.display = 'flex';
     searchInput.value = '';
 
@@ -942,19 +1008,19 @@ async function openAccessModal(userId, email) {
             if (acc) acc.granted = cb.checked;
             showToast(`Access ${cb.checked ? 'granted' : 'revoked'}`);
           } catch (err) {
-            alert('Failed to update access grant');
+            showToast('Failed to update access grant.');
           } finally {
             cb.disabled = false;
           }
         });
       });
-    }
+    };
 
     renderAccountList('');
 
-    searchInput.oninput = (e) => {
+    searchInput.addEventListener('input', (e) => {
       renderAccountList(e.target.value.trim());
-    };
+    });
   } catch (err) {
     body.innerHTML = `<div class="admin-form-error">Could not load accounts — ${esc(err.message)}</div>`;
   }
@@ -1001,7 +1067,7 @@ function renderTopbarAccountsList(accounts) {
     const contacts = a.total_contacts_captured || (a.personas || []).length || 0;
 
     return `
-      <div class="dropdown-account-item">
+      <div class="dropdown-account-item" data-account-id="${a.id}" style="cursor:pointer;" onclick="window.location.href='/?account=${a.id}'">
         <div class="dropdown-account-avatar">${esc(initStr)}</div>
         <div class="dropdown-account-info">
           <div class="dropdown-account-name">${esc(name)}</div>
@@ -1092,5 +1158,3 @@ async function init() {
 }
 
 init();
-
-

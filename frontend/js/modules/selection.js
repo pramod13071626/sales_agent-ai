@@ -10,6 +10,7 @@ import { renderAllJobsPage, openAllJobsPage } from './jobs-browser.js';
 import { syncOpportunitySignals } from './opportunities.js';
 import { syncWeeklyUpdate } from './weekly-update.js';
 import { renderSkeleton } from './skeleton.js';
+import { getCurrentUser } from './auth-client.js';
 
 // Full per-account detail (persona dossiers, LOB financials/patents, org chart) is
 // intentionally NOT included in the bulk /api/accounts payload (see api.py's
@@ -98,6 +99,11 @@ export async function renderSelection() {
 
   const account = state.accounts.find(a => a.id === state.activeAccountId);
   if (!account) {
+    const user = getCurrentUser ? getCurrentUser() : null;
+    if (user && user.role !== 'super_admin' && user.has_dashboard_access === false && state.accounts.length > 0) {
+      jumpToAccount(state.accounts[0].id);
+      return;
+    }
     if (dashBody) dashBody.classList.add('no-account');
     if (dashPeople) dashPeople.classList.add('d-none');
     dashEmpty.classList.remove('d-none');

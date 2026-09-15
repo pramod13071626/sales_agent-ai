@@ -8,6 +8,7 @@ import { showToast } from './toast.js';
 import { getAccountContentEntries, matchOfferings, renderAlertCards } from './alerts.js';
 import { renderGrowthOpportunities, renderDomainExpansionOpportunities } from './opportunities.js';
 import { getAccountJobs, renderJobCard } from './jobs.js';
+import { renderHiringTrendRadar } from './jobs-radar.js';
 import { computeSignals, renderEngagementPanel } from './signals.js';
 import { renderOrgChart } from './org-chart.js';
 import { renderContentPanel } from './content-panel.js';
@@ -55,19 +56,7 @@ export function renderSalesAlerts(account) {
 
 export function renderAccountJobsTab(account) {
   const jobs = getAccountJobs(account);
-  return `
-    <div class="panel">
-      <div class="panel-title">
-        <span><i class="bi bi-linkedin"></i> Recent LinkedIn Job Postings</span>
-        <span class="context-badge live">${jobs.length} open role${jobs.length !== 1 ? 's' : ''}</span>
-      </div>
-      <p class="section-desc">Job postings scraped from ${esc(account.name)}'s LinkedIn presence — a useful signal for hiring pushes, team growth, and tech-stack clues.</p>
-      ${jobs.length ? jobs.map(j => renderJobCard(j)).join('') : `<div class="empty-block">
-        <div class="empty-block-icon"><i class="bi bi-linkedin"></i></div>
-        <div class="empty-block-text">No LinkedIn job postings captured yet for this account.</div>
-      </div>`}
-    </div>
-  `;
+  return renderHiringTrendRadar(account, jobs);
 }
 
 // ── Quick Outreach Arsenal Copy Helpers ────────────────────────
@@ -386,8 +375,8 @@ export function renderCenter(account, lob) {
       <button type="button" class="tab-btn ${state.activeSalesTab === 'weekly' ? 'active' : ''}" data-tab="weekly" title="Weekly sales update email, current and archived past weeks">
         <i class="bi bi-envelope-paper"></i> Weekly Update Mail <span class="tab-badge">${(state.weeklyUpdateHistory[account.id] || []).length}</span>
       </button>
-      <button type="button" class="tab-btn ${state.activeSalesTab === 'jobs' ? 'active' : ''}" data-tab="jobs" title="Recent LinkedIn job postings for this account">
-        <i class="bi bi-linkedin"></i> Job Postings <span class="tab-badge">${getAccountJobs(account).length}</span>
+      <button type="button" class="tab-btn ${state.activeSalesTab === 'jobs' ? 'active' : ''}" data-tab="jobs" title="Organisational hiring trends, domain distribution & strategic talent radar">
+        <i class="bi bi-graph-up-arrow"></i> Hiring Trend Radar <span class="tab-badge">${getAccountJobs(account).length}</span>
       </button>
     </div>
 
@@ -399,6 +388,19 @@ export function renderCenter(account, lob) {
 }
 
 dashContent.addEventListener('click', async function (e) {
+  // Radar Talking Point Copy
+  const copyTalkingPointBtn = e.target.closest('[data-talking-point]');
+  if (copyTalkingPointBtn) {
+    const text = copyTalkingPointBtn.dataset.talkingPoint;
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast('Copied executive talking point to clipboard!');
+    } catch (err) {
+      showToast('Failed to copy. Clipboard permission required.');
+    }
+    return;
+  }
+
   // Tab switcher
   const tabBtn = e.target.closest('.tab-btn');
   if (tabBtn && tabBtn.dataset.tab) {
