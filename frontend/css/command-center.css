@@ -108,6 +108,39 @@
 /* ── Matrix ──────────────────────────────────────────────────── */
 .cc-matrix-canvas-wrap { position: relative; height: 380px; }
 
+.cc-matrix-legend {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-color, #e2e8f0);
+}
+.cc-legend-title {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-primary, #0f172a);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.cc-legend-tier {
+  font-size: 0.66rem;
+  font-weight: 500;
+  color: var(--text-secondary, #64748b);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.cc-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
 /* ── Signal feed ─────────────────────────────────────────────── */
 .cc-feed-filter-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
 .cc-feed-list { list-style: none; margin: 0; padding: 0; max-height: 380px; overflow-y: auto; }

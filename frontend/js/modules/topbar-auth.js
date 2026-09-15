@@ -9,18 +9,24 @@ import { renderMyTasksPanel } from './action-items.js';
 import { myTasksDrawer, myTasksDrawerBackdrop, myTasksDrawerBody } from './dom.js';
 
 function openMyTasksDrawer() {
-  myTasksDrawerBody.innerHTML = '<div class="empty-block-text" style="padding:16px 4px;">Loading…</div>';
-  myTasksDrawer.classList.add('open');
-  myTasksDrawerBackdrop.classList.add('open');
+  const drawer = document.getElementById('myTasksDrawer');
+  const backdrop = document.getElementById('myTasksDrawerBackdrop');
+  const body = document.getElementById('myTasksDrawerBody');
+  if (!drawer || !backdrop || !body) return;
+  body.innerHTML = '<div class="empty-block-text" style="padding:16px 4px;">Loading…</div>';
+  drawer.classList.add('open');
+  backdrop.classList.add('open');
 }
 
 function closeMyTasksDrawer() {
-  myTasksDrawer.classList.remove('open');
-  myTasksDrawerBackdrop.classList.remove('open');
+  const drawer = document.getElementById('myTasksDrawer');
+  const backdrop = document.getElementById('myTasksDrawerBackdrop');
+  if (drawer) drawer.classList.remove('open');
+  if (backdrop) backdrop.classList.remove('open');
 }
 
-document.getElementById('myTasksDrawerClose').addEventListener('click', closeMyTasksDrawer);
-myTasksDrawerBackdrop.addEventListener('click', closeMyTasksDrawer);
+document.getElementById('myTasksDrawerClose')?.addEventListener('click', closeMyTasksDrawer);
+document.getElementById('myTasksDrawerBackdrop')?.addEventListener('click', closeMyTasksDrawer);
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMyTasksDrawer(); });
 
 function render() {
@@ -51,7 +57,8 @@ function render() {
       tasksBtn.addEventListener('click', async () => {
         openMyTasksDrawer();
         const html = await renderMyTasksPanel();
-        myTasksDrawerBody.innerHTML = html;
+        const body = document.getElementById('myTasksDrawerBody');
+        if (body) body.innerHTML = html;
         refreshMyTasksBadge();
       });
       refreshMyTasksBadge();
