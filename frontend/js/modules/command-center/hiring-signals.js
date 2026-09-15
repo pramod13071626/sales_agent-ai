@@ -3,7 +3,7 @@
 // 1. GET /api/accounts/{id}/hiring-summary (Lightweight aggregate metrics on page load)
 // 2. GET /api/accounts/{id}/jobs (Paginated on-demand live requisitions on dropdown click)
 
-import { openDossier } from './drawer.js';
+import { loadRealAccounts } from './real-accounts.js';
 import { esc } from './utils.js';
 import { showToast } from '../toast.js';
 import { resolveRealAccount } from './real-accounts.js';
@@ -36,7 +36,6 @@ function loadHiringSummary(accountId) {
         return null;
       });
   }
-  return summaryPromise;
 }
 
 function loadBnyPersonas(accountId) {
@@ -49,14 +48,64 @@ function loadBnyPersonas(accountId) {
       .then(data => data.personas || [])
       .catch(() => []);
   }
-  return personasPromise;
+  const name = (summary && summary.account_name) || (account && (account.display_name || account.name)) || '';
+  if (/vanguard/i.test(name)) return 'PRIVATE · ASSET MGT';
+  if (/dtcc|depository/i.test(name)) return 'FINANCIAL UTILITY';
+  return 'ENTERPRISE';
 }
 
-function formatDate(isoStr) {
-  if (!isoStr) return '';
-  const d = new Date(isoStr);
-  if (isNaN(d.getTime())) return '';
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+function generateNewsBulletin(summary, account) {
+  const name = getOrgShortName(account);
+  const total = summary.total_roles || 0;
+  const leadership = summary.leadership_count || 0;
+  const contract = summary.contract_count || 0;
+  const hubsList = (summary.top_hubs || []).map(h => h.location).slice(0, 2);
+  const hubText = hubsList.length ? ` across ${hubsList.join(' & ')} hubs` : '';
+
+  const aiCount = summary.track_counts?.ai || 0;
+
+  if (aiCount >= 10 || /bny|mellon/i.test(name)) {
+    return {
+      avatarClass: 'avatar-ai',
+      iconClass: 'bi-cpu-fill',
+      domainTag: '<span class="hs-domain-tag tag-ai"><i class="bi bi-cpu-fill"></i> AI &amp; ML Pivot</span>',
+      headline: `Aggressively pivoting towards AI Hub &amp; Machine Learning initiatives with <strong>${leadership}</strong> leadership roles and <strong>${contract > 0 ? `${contract} active contractor openings` : 'heavy direct-hire demand'}</strong>${hubText}.`,
+    };
+  }
+
+  if (/blackrock/i.test(name)) {
+    return {
+      avatarClass: 'avatar-fintech',
+      iconClass: 'bi-gear-wide-connected',
+      domainTag: '<span class="hs-domain-tag tag-fintech"><i class="bi bi-gear-wide-connected"></i> Aladdin &amp; FinTech</span>',
+      headline: `Aladdin Wealth Tech &amp; platform engineering scaling with <strong>${total}</strong> live requisitions and <strong>${leadership} VP/Director-level leaders</strong>${hubText}.`,
+    };
+  }
+
+  if (/northern\s*trust/i.test(name)) {
+    return {
+      avatarClass: 'avatar-core',
+      iconClass: 'bi-building',
+      domainTag: '<span class="hs-domain-tag tag-core"><i class="bi bi-building"></i> Core Banking Tech</span>',
+      headline: `Accelerating direct-hire core banking modernization &amp; asset servicing technology with <strong>${total}</strong> engineering openings${hubText}.`,
+    };
+  }
+
+  if (/vanguard/i.test(name)) {
+    return {
+      avatarClass: 'avatar-cloud',
+      iconClass: 'bi-cloud-check-fill',
+      domainTag: '<span class="hs-domain-tag tag-cloud"><i class="bi bi-cloud-check-fill"></i> Cloud &amp; Cyber</span>',
+      headline: `Scaling enterprise cloud infrastructure, quantitative tech &amp; DevSecOps with <strong>${total}</strong> active roles across regional hubs.`,
+    };
+  }
+
+  return {
+    avatarClass: 'avatar-ai',
+    iconClass: 'bi-briefcase-fill',
+    domainTag: '<span class="hs-domain-tag"><i class="bi bi-briefcase-fill"></i> Talent Expansion</span>',
+    headline: `Active enterprise talent expansion with <strong>${total}</strong> open requisitions, <strong>${leadership}</strong> leadership hires, and <strong>${summary.top_hubs?.length || 0}</strong> active tech hubs.`,
+  };
 }
 
 export async function renderHiringSignals() {
@@ -87,97 +136,50 @@ export async function renderHiringSignals() {
     return;
   }
 
-  if (!summary || !summary.total_roles) {
-    list.innerHTML = '<li class="cc-drawer-empty">No active job postings recorded for BNY.</li>';
-    return;
-  }
+    // 2. Concurrently fetch lightweight hiring summaries
+    const summaryPromises = allAccounts.map(async (acc) => {
+      const s = await loadHiringSummary(acc.id);
+      return { account: acc, summary: s };
+    });
 
-  const totalRoles = summary.total_roles || 0;
-  const leadershipCount = summary.leadership_count || 0;
-  const contractCount = summary.contract_count || 0;
-  const topHubs = summary.top_hubs || [];
-  const contractLeads = summary.contract_leads || [];
+    const results = await Promise.all(summaryPromises);
 
-  // ── Render Hiring Signals Widget HTML ─────────────────────
-  list.innerHTML = `
-    <li class="bny-hs-card">
-      <!-- 1. BNY Pulse Header -->
-      <div class="bny-hs-header">
-        <div class="bny-hs-title-block">
-          <span class="bny-hs-name">${esc(summary.account_name || 'The Bank of New York Mellon')}</span>
-          <span class="bny-hs-ticker">NYSE: ${esc(summary.ticker || 'BK')}</span>
-          <span class="hs-urgency-pill hs-pill-hot"><i class="bi bi-fire"></i> STRATEGIC SURGE</span>
-        </div>
-        <div class="bny-hs-actions-top">
-          <button type="button" class="hs-btn hs-btn-outline" id="btnOpenBnyRadar" title="Open Hiring Trend Radar for BNY">
-            <i class="bi bi-graph-up-arrow"></i> Radar
-          </button>
-          <button type="button" class="hs-btn hs-btn-outline" id="btnOpenBnyCommittee" title="View 320 Executive Personas in DB">
-            <i class="bi bi-people-fill"></i> Committee (${personas.length || 320})
-          </button>
-        </div>
-      </div>
+    // Filter accounts with monitored roles
+    const activeOrgs = results.filter(r => r.summary && r.summary.total_roles > 0);
 
-      <!-- 2. KPI Stat Strip -->
-      <div class="bny-kpi-grid">
-        <div class="bny-kpi-item">
-          <span class="bny-kpi-num">${totalRoles}</span>
-          <span class="bny-kpi-label">Open Requisitions</span>
-        </div>
-        <div class="bny-kpi-item bny-kpi-highlight">
-          <span class="bny-kpi-num">${leadershipCount}</span>
-          <span class="bny-kpi-label">VP &amp; Executive Roles</span>
-        </div>
-        <div class="bny-kpi-item bny-kpi-contract">
-          <span class="bny-kpi-num">${contractCount}</span>
-          <span class="bny-kpi-label">Staff Aug / Contract</span>
-        </div>
-        <div class="bny-kpi-item">
-          <span class="bny-kpi-num">${topHubs.length}</span>
-          <span class="bny-kpi-label">Tech Hubs Active</span>
-        </div>
-      </div>
+    if (!activeOrgs.length) {
+      list.innerHTML = '<li class="cc-drawer-empty">No active hiring signals recorded in the database.</li>';
+      return;
+    }
 
-      <!-- 3. Immediate Revenue Callout: Staff Augmentation -->
-      ${contractLeads.length > 0 ? `
-      <div class="bny-contract-banner">
-        <div class="bny-contract-header">
-          <span class="bny-contract-badge"><i class="bi bi-briefcase-fill"></i> IMMEDIATE STAFF AUGMENTATION LEAD</span>
-          <span class="bny-contract-sub">BNY is actively sourcing external contractors for ${contractCount} specialized roles:</span>
-        </div>
-        <div class="bny-contract-roles-list">
-          ${contractLeads.map(j => `
-            <div class="bny-contract-role-row">
-              <span class="bny-contract-role-title"><i class="bi bi-check2-circle"></i> ${esc(j.title)}</span>
-              <span class="bny-contract-role-meta">${esc(j.location || 'US')} · ${j.workplace_type ? esc(j.workplace_type) : 'On-site'} · ${j.applicants ? `${j.applicants} applicants` : 'Active'}</span>
+    // Sort by role count (highest hiring volume first)
+    activeOrgs.sort((a, b) => (b.summary?.total_roles || 0) - (a.summary?.total_roles || 0));
+
+    // Update panel note with total aggregated jobs
+    const totalJobsAll = activeOrgs.reduce((sum, a) => sum + (a.summary?.total_roles || 0), 0);
+    const panelNote = document.getElementById('ccHiringPanelNote');
+    if (panelNote) {
+      panelNote.textContent = `Multi-Organization Executive Flash Intel · ${totalJobsAll.toLocaleString()} live roles across ${activeOrgs.length} accounts`;
+    }
+
+    // 3. Render Executive News Bulletin Flash Rows
+    list.innerHTML = activeOrgs.map(({ account, summary }) => {
+      const shortName = getOrgShortName(account);
+      const tickerTag = getOrgTickerTag(summary, account);
+      const bulletin = generateNewsBulletin(summary, account);
+      const totalRoles = summary.total_roles || 0;
+      const leadershipCount = summary.leadership_count || 0;
+      const contractCount = summary.contract_count || 0;
+      const topHubsCount = (summary.top_hubs || []).length;
+
+      return `
+        <li class="cc-feed-row cc-clickable-row hs-bulletin-row" data-account-id="${account.id}" title="Click to open Hiring Trend Radar for ${esc(shortName)}">
+          <!-- Icon Column -->
+          <div class="hs-bulletin-icon-col">
+            <div class="hs-bulletin-avatar ${bulletin.avatarClass}">
+              <i class="bi ${bulletin.iconClass}"></i>
             </div>
-          `).join('')}
-        </div>
-        <div class="bny-contract-footer">
-          <button type="button" class="bny-pitch-btn" id="btnCopyStaffAugPitch">
-            <i class="bi bi-clipboard-check"></i> Copy Staff Aug Pitch
-          </button>
-          <span class="bny-pitch-hint">Pitch vetted financial-domain AI engineers ready for instant SOW onboarding</span>
-        </div>
-      </div>` : ''}
-
-      <!-- 4. Collapsible Requisition Browser (Lazy Loaded On Click) -->
-      <div class="bny-jobs-collapsible">
-        <button type="button" class="bny-toggle-jobs-btn" id="btnToggleBnyJobs">
-          <span><i class="bi bi-folder2-open"></i> Live Requisitions Browser (${totalRoles} Postings)</span>
-          <span class="bny-toggle-caret"><i class="bi bi-chevron-down" id="bnyCaret"></i></span>
-        </button>
-        <div class="bny-jobs-list-drawer" id="bnyJobsDrawer" style="display: none;">
-          <div class="bny-drawer-meta">
-            <span>Showing verified LinkedIn postings from PostgreSQL database · Click any role to view on LinkedIn</span>
           </div>
-          <div class="bny-jobs-items-scroll" id="bnyJobsItemsScroll">
-            <!-- Populated on-demand via dedicated API query when user clicks the toggle -->
-          </div>
-        </div>
-      </div>
-    </li>
-  `;
 
   // ── Event Handlers for Hiring Signals ─────────────────────
   document.getElementById('btnOpenBnyRadar')?.addEventListener('click', (e) => {
@@ -220,55 +222,13 @@ export async function renderHiringSignals() {
             itemsContainer.innerHTML = '<div style="padding:16px; text-align:center; color:var(--danger); font-size:0.75rem;"><i class="bi bi-exclamation-triangle"></i> Could not load live requisitions.</div>';
           }
         }
-      }
-    } else {
-      drawer.style.display = 'none';
-      if (caret) caret.className = 'bi bi-chevron-down';
-    }
-  });
+      });
+    });
 
-  document.getElementById('btnCopyStaffAugPitch')?.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    const pitch = `Hi team, we noted BNY's active requisitions for contract AI Software Engineers and Process Analysts in Dallas and Pittsburgh. StradIT provides vetted, financial-domain AI engineers and process architects ready for immediate SOW deployment with zero onboarding delay.`;
-    try {
-      await navigator.clipboard.writeText(pitch);
-      showToast('Staff Augmentation pitch copied to clipboard!', 'success');
-    } catch {
-      showToast('Could not copy pitch to clipboard.', 'warning');
-    }
-  });
-}
-
-function renderRequisitionsList(container, jobsList) {
-  if (!container) return;
-  if (!jobsList || !jobsList.length) {
-    container.innerHTML = '<div style="padding:16px; text-align:center; color:var(--text-muted); font-size:0.75rem;">No active job postings recorded.</div>';
-    return;
+  } catch (err) {
+    console.error('Failed to load hiring signals bulletin:', err);
+    list.innerHTML = '<li class="cc-drawer-empty">Could not load hiring signals data.</li>';
   }
-  const leadershipKeywords = [/director/i, /\bvp\b/i, /vice president/i, /\bsvp\b/i, /senior vice president/i, /head of/i, /chief/i, /lead/i];
-  container.innerHTML = jobsList.map(j => {
-    const isContract = (j.employment_type || '').toLowerCase() === 'contract' || /\(contract\)/i.test(j.title || '');
-    const isLead = leadershipKeywords.some(rx => rx.test(j.title || ''));
-    return `
-      <div class="bny-job-item">
-        <div class="bny-job-top">
-          <a href="${j.job_url ? esc(j.job_url) : '#'}" target="_blank" rel="noopener" class="bny-job-link" title="Open on LinkedIn">
-            ${esc(j.title)} <i class="bi bi-box-arrow-up-right"></i>
-          </a>
-          <div class="bny-job-pills">
-            ${isContract ? '<span class="bny-tag-contract">CONTRACT</span>' : ''}
-            ${isLead ? '<span class="bny-tag-lead">LEADERSHIP</span>' : ''}
-            ${j.workplace_type ? `<span class="bny-tag-mode">${esc(j.workplace_type).replace('_', ' ')}</span>` : ''}
-          </div>
-        </div>
-        <div class="bny-job-bot">
-          <span class="bny-job-loc"><i class="bi bi-geo-alt"></i> ${esc(j.location || 'New York, NY')}</span>
-          ${j.applicants ? `<span class="bny-job-apps"><i class="bi bi-people"></i> ${j.applicants} applicants</span>` : ''}
-          ${j.first_seen ? `<span class="bny-job-date"><i class="bi bi-clock"></i> ${formatDate(j.first_seen)}</span>` : ''}
-        </div>
-      </div>
-    `;
-  }).join('');
 }
 
 export async function renderStrategicInvestmentTracks() {
@@ -308,7 +268,7 @@ export async function renderStrategicInvestmentTracks() {
   const aiRolesCount = trackCounts.ai || 14;
   const cloudRolesCount = trackCounts.cloud || 12;
 
-  // Match Key Personas from 320 in DB
+  // Match Key Personas from DB
   const findPersona = (keywords) => {
     return personas.find(p => {
       const title = (p.job_title || p.title || '').toLowerCase();
@@ -324,9 +284,6 @@ export async function renderStrategicInvestmentTracks() {
   const aiExecTitle = aiExecutive ? (aiExecutive.job_title || aiExecutive.title) : 'Head of Treasury and CIO Engineering (C-Suite)';
   const cloudExecName = cloudExecutive ? (cloudExecutive.full_name || cloudExecutive.name) : 'Rosemary Redondo';
   const cloudExecTitle = cloudExecutive ? (cloudExecutive.job_title || cloudExecutive.title) : 'CAO Corporate Trust Technology (VP Level)';
-
-  const aiPitchText = `Hi Pathman, following BNY's expansion across AI Process Analysts and AI Software Engineering roles, StradIT provides enterprise AI governance frameworks, agentic workflow orchestration, and high-throughput LLMOps advisory to accelerate these programs with institutional safety.`;
-  const cloudPitchText = `Hi Rosemary, noting BNY's active expansion in VP and SVP Full-Stack Engineering across New York and Boston, StradIT delivers hybrid cloud modernization, legacy decoupling accelerators, and site reliability engineering scale for tier-1 financial infrastructure.`;
 
   container.innerHTML = `
     <div class="cc-tracks-grid">
@@ -409,25 +366,4 @@ export async function renderStrategicInvestmentTracks() {
       </div>
     </div>
   `;
-
-  // ── Event Handlers for Investment Tracks ──────────────────
-  document.getElementById('btnCopyAiTrackPitch')?.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    try {
-      await navigator.clipboard.writeText(aiPitchText);
-      showToast('AI Track pitch copied to clipboard!', 'success');
-    } catch {
-      showToast('Could not copy pitch to clipboard.', 'warning');
-    }
-  });
-
-  document.getElementById('btnCopyCloudTrackPitch')?.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    try {
-      await navigator.clipboard.writeText(cloudPitchText);
-      showToast('Cloud Modernization pitch copied to clipboard!', 'success');
-    } catch {
-      showToast('Could not copy pitch to clipboard.', 'warning');
-    }
-  });
 }
