@@ -3536,7 +3536,7 @@ if FASTAPI_AVAILABLE:
             return {
                 "account_id": account.id,
                 "account_name": account.legal_name or account.display_name,
-                "ticker": account.stock_symbol or account.ticker or "BK",
+                "ticker": account.stock_symbol,
                 "total_roles": total_roles,
                 "leadership_count": leadership_count,
                 "contract_count": len(contract_roles),

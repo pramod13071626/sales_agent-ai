@@ -13,6 +13,7 @@ import { initAccountsNav } from './accounts-nav.js';
 import { renderDueSoon } from './due-soon.js';
 import { renderHiringSignals, renderStrategicInvestmentTracks } from './hiring-signals.js';
 import { renderCapitalEvents, renderCoverageGaps, renderCompetitorMentions, renderTechSignals } from './account-signals.js';
+import { initWidgetGuides } from './widget-guide.js';
 import { kpiBase } from './data.js';
 
 function weekRangeLabel() {
@@ -65,6 +66,7 @@ function init() {
   initAccountsNav();
   renderAll();
   renderMatrix();
+  initWidgetGuides();
   window.addEventListener('resize', () => {
     if (ccState.matrixChart) ccState.matrixChart.resize();
   });
