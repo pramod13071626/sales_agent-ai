@@ -171,10 +171,15 @@ export function computeSignals(account, lob) {
     });
   }
   const competitors = new Set();
-  (lob ? [lob] : (account.lobs || [])).forEach(l => (l.competitors || []).forEach(c => competitors.add(c)));
+  (lob ? [lob] : (account.lobs || [])).forEach(l => {
+    (l.competitors || []).forEach(c => {
+      const name = typeof c === 'object' && c !== null ? (c.name || c.display_name || c.competitor || '') : String(c || '');
+      if (name.trim()) competitors.add(name.trim());
+    });
+  });
   if (competitors.size) {
     signals.push({
-      icon: 'bi-shield-exclamation', text: `Competitors tracked: ${[...competitors].slice(0, 3).join(', ')}`,
+      icon: 'bi-shield-exclamation', text: `Competitors tracked: ${[...competitors].slice(0, 3).join(', ')}${competitors.size > 3 ? ` +${competitors.size - 3} more` : ''}`,
       title: 'Competitive Landscape',
       detail: `<div class="chip-row">${[...competitors].map(c => `<span class="chip"><i class="bi bi-shield-exclamation"></i> ${esc(c)}</span>`).join('')}</div>`
     });

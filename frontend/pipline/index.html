@@ -24,7 +24,7 @@
         <div class="brand-name">Sales Intel</div>
         <div class="brand-sub">Account Explorer</div>
       </div>
-      <button class="theme-btn" id="themeToggle" title="Toggle theme"><i class="bi bi-moon-stars"></i></button>
+      <button type="button" class="sidebar-collapse-btn" id="sidebarCollapseBtn" title="Shrink sidebar"><i class="bi bi-layout-sidebar-inset"></i></button>
     </div>
 
     <!-- Search & Action Buttons -->
@@ -33,17 +33,17 @@
              autocomplete="off" name="presentation" data-lpignore="true">
     </div>
 
-    <button type="button" class="run-pipeline-nav" id="runPipelineNav">
-      <i class="bi bi-play-fill"></i>&nbsp; Run Pipeline
+    <button type="button" class="run-pipeline-nav" id="runPipelineNav" title="Run Pipeline">
+      <i class="bi bi-play-fill"></i>&nbsp;<span>Run Pipeline</span>
     </button>
-    <button type="button" class="run-pipeline-nav api-docs-nav" id="apiDocsNav">
-      <i class="bi bi-file-text"></i>&nbsp; API Docs
+    <button type="button" class="run-pipeline-nav api-docs-nav" id="apiDocsNav" title="API Docs">
+      <i class="bi bi-file-text"></i>&nbsp;<span>API Docs</span>
     </button>
     <!-- Add New Account button -->
     <button type="button" class="run-pipeline-nav" id="addNewAccountBtn"
             style="background:linear-gradient(135deg,#0ea5e9,#6366f1);margin-top:2px;"
-            title="Fetch and onboard a brand-new account not yet in the database">
-      <i class="bi bi-plus-circle"></i>&nbsp; Add New Account
+            title="Add New Account">
+      <i class="bi bi-plus-circle"></i>&nbsp;<span>Add New Account</span>
     </button>
 
     <div class="sidebar-label">Accounts</div>
@@ -53,13 +53,25 @@
       <div class="spinner-wrap"><div class="spinner"></div></div>
     </div>
 
-    <div class="sidebar-footer">Connected to NeonDB</div>
+    <div class="sidebar-footer"><span>Connected to NeonDB</span></div>
   </aside>
 
   <!-- ── Main Content ────────────────────────────────────────── -->
   <div class="content">
 
     <div class="main-pad">
+
+      <!-- Top Brand Header Bar -->
+      <div class="pipeline-top-bar">
+        <div class="pipeline-top-left">
+          <div class="pipeline-top-logo">K</div>
+          <div class="pipeline-top-title">Account Data Pipeline</div>
+        </div>
+        <div class="pipeline-top-right">
+          <span class="pipeline-status-ready"><i class="bi bi-circle-fill" style="font-size:0.45rem;"></i> Pipeline: Ready</span>
+          <div class="pipeline-user-avatar">A</div>
+        </div>
+      </div>
 
       <!-- Empty state -->
       <div id="emptyState" class="empty-state fade-in">
@@ -83,23 +95,29 @@
 
       <!-- Main Dashboard Container (Visible when account is clicked) -->
       <div id="dashboardContainer" class="d-none">
-        
-        <!-- Account Hero Header -->
-        <div class="account-hero fade-in">
-          <div class="hero-avatar" id="heroAvatar"></div>
-          <div class="hero-info">
-            <h1 class="hero-name" id="accountName"></h1>
-            <div class="hero-meta">
-              <span class="pill pill-brand" id="accountTicker" title="Public / Private stock ticker"></span>
-              <span class="pill" id="accountRevenue" title="Reported annual revenue"></span>
-              <span class="pill pill-success" id="accountLocation" title="Headquarters location"></span>
-            </div>
-            <p class="account-desc" id="accountDesc"></p>
-          </div>
+
+        <!-- Dynamic Breadcrumb Bar -->
+        <div class="modern-breadcrumb" id="breadcrumbsBar"></div>
+
+        <!-- ══════════════════════════════════════════════════════════
+             VIEW 1: ACCOUNT INTELLIGENCE VIEW (IMAGE 1)
+             ══════════════════════════════════════════════════════════ -->
+        <div id="accountViewWrapper">
+          <!-- Account Hero Header -->
+          <div id="accountHeroContainer" class="modern-view-card fade-in"></div>
+
+          <!-- Data Completeness Section -->
+          <div id="completenessContainer" class="modern-view-card fade-in"></div>
+
+          <!-- Tabs Strip Bar (Overview, LOBs, Personas, Feeds, Activity) -->
+          <div id="tabsContainer" class="pipeline-tabs-bar"></div>
+
+          <!-- Account Overview Content (2-Column Grid) -->
+          <div id="accountOverviewContainer" class="pipeline-2col-layout fade-in"></div>
         </div>
 
-        <!-- Section 0: Full Account Intelligence Data -->
-        <div id="accountDataSection" class="mt-4 d-none"></div>
+        <!-- Backward compatible accountDataSection (hidden, handled in overview) -->
+        <div id="accountDataSection" class="d-none"></div>
 
         <!-- Section 1: Lines of Business (LOB Cards) -->
         <div id="lobSection" class="mt-4 d-none">
@@ -131,6 +149,12 @@
           </p>
           <div class="compact-card-grid" id="lobCardsContainer"></div>
         </div>
+
+        <!-- ══════════════════════════════════════════════════════════
+             VIEW 2: LOB DETAIL VIEW (IMAGE 2)
+             Appears directly below LOB cards when an LOB is selected
+             ══════════════════════════════════════════════════════════ -->
+        <div id="lobDetailViewContainer" class="d-none fade-in"></div>
 
         <!-- Section 2: Personas / Hierarchy Cards (Visible after LOB click) -->
         <div id="personaSection" class="mt-4 d-none">
@@ -225,7 +249,12 @@
           </div>
         </div>
 
-        <!-- Section 3: Categorized Detail Panel & Action Center (LOB or Persona) -->
+        <!-- ══════════════════════════════════════════════════════════
+             VIEW 3: PERSONA DETAIL VIEW (IMAGE 3)
+             ══════════════════════════════════════════════════════════ -->
+        <div id="personaDetailViewContainer" class="d-none fade-in"></div>
+
+        <!-- Fallback Legacy Detail Panel Container -->
         <div id="detailPanelContainer" class="d-none"></div>
 
       </div>
@@ -424,6 +453,189 @@
     </div>
   </div>
 </div>
+
+<!-- Universal Account Edit Modal -->
+<div class="modal fade" id="universalAccountEditModal" tabindex="-1" aria-labelledby="universalAccountEditModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content" style="border-radius:16px;border:1px solid var(--border,#e2e8f0);box-shadow:0 20px 60px rgba(0,0,0,0.15);">
+      <div class="modal-header" style="border-bottom:1px solid var(--border,#e2e8f0);padding:18px 24px;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#0284c7,#6366f1);display:flex;align-items:center;justify-content:center;color:#fff;font-size:1.1rem;">
+            <i class="bi bi-pencil-square"></i>
+          </div>
+          <div>
+            <h5 class="modal-title" id="universalAccountEditModalLabel" style="margin:0;font-size:1rem;font-weight:700;">Universal Edit &mdash; Account Dossier</h5>
+            <p style="margin:0;font-size:.72rem;color:var(--text-muted,#64748b);">Directly updates PostgreSQL, marks Manually Verified, and updates timestamp</p>
+          </div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" style="padding:22px 24px;">
+        <form id="universalAccountEditForm" autocomplete="off">
+          <input type="hidden" id="editAcctId">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label" style="font-size:0.75rem;font-weight:600;">COMPANY DISPLAY NAME</label>
+              <input type="text" id="editAcctDisplayName" class="form-control" style="font-size:0.85rem;" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" style="font-size:0.75rem;font-weight:600;">OPERATING DOMAIN</label>
+              <input type="text" id="editAcctDomain" class="form-control" style="font-size:0.85rem;" placeholder="e.g. dtcc.com">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" style="font-size:0.75rem;font-weight:600;">ANNUAL REVENUE RANGE</label>
+              <input type="text" id="editAcctRevenue" class="form-control" style="font-size:0.85rem;" placeholder="e.g. $2.5B+">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" style="font-size:0.75rem;font-weight:600;">EMPLOYEE COUNT RANGE</label>
+              <input type="text" id="editAcctEmployees" class="form-control" style="font-size:0.85rem;" placeholder="e.g. 5,000-10,000">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" style="font-size:0.75rem;font-weight:600;">COMPANY TYPE</label>
+              <input type="text" id="editAcctCompanyType" class="form-control" style="font-size:0.85rem;" placeholder="e.g. Privately Held / Public">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" style="font-size:0.75rem;font-weight:600;">OPERATING STATUS</label>
+              <input type="text" id="editAcctOpStatus" class="form-control" style="font-size:0.85rem;" placeholder="e.g. Active">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" style="font-size:0.75rem;font-weight:600;">HEADQUARTERS LOCATION</label>
+              <input type="text" id="editAcctHq" class="form-control" style="font-size:0.85rem;" placeholder="e.g. New York, NY, USA">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" style="font-size:0.75rem;font-weight:600;">FOUNDED YEAR</label>
+              <input type="number" id="editAcctFoundedYear" class="form-control" style="font-size:0.85rem;" placeholder="e.g. 1973">
+            </div>
+            <div class="col-12">
+              <label class="form-label" style="font-size:0.75rem;font-weight:600;">COMPANY DESCRIPTION / OVERVIEW</label>
+              <textarea id="editAcctDesc" class="form-control" rows="3" style="font-size:0.85rem;" placeholder="Summary of enterprise mission and operations..."></textarea>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer" style="border-top:1px solid var(--border,#e2e8f0);padding:14px 24px;gap:8px;">
+        <button type="button" class="btn btn-sm" data-bs-dismiss="modal" style="border-radius:8px;border:1px solid #cbd5e1;padding:8px 16px;">Cancel</button>
+        <button type="button" id="saveUniversalAcctBtn" style="border-radius:8px;font-size:.82rem;padding:8px 20px;background:linear-gradient(135deg,#0284c7,#10b981);color:#fff;border:none;font-weight:600;cursor:pointer;">
+          <i class="bi bi-check2-circle"></i> Save &amp; Mark Verified
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Universal Persona Edit Modal -->
+<div class="modal fade" id="universalPersonaEditModal" tabindex="-1" aria-labelledby="universalPersonaEditModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content" style="border-radius:16px;border:1px solid var(--border,#e2e8f0);box-shadow:0 20px 60px rgba(0,0,0,0.15);">
+      <div class="modal-header" style="border-bottom:1px solid var(--border,#e2e8f0);padding:18px 24px;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#8b5cf6,#0284c7);display:flex;align-items:center;justify-content:center;color:#fff;font-size:1.1rem;">
+            <i class="bi bi-person-badge"></i>
+          </div>
+          <div>
+            <h5 class="modal-title" id="universalPersonaEditModalLabel" style="margin:0;font-size:1rem;font-weight:700;">Universal Edit &mdash; Executive Persona</h5>
+            <p style="margin:0;font-size:.72rem;color:var(--text-muted,#64748b);">Directly updates PostgreSQL, marks Manually Verified, and updates timestamp</p>
+          </div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" style="padding:22px 24px;">
+        <form id="universalPersonaEditForm" autocomplete="off">
+          <input type="hidden" id="editPersonaId">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label" style="font-size:0.75rem;font-weight:600;">FULL NAME</label>
+              <input type="text" id="editPersonaFullName" class="form-control" style="font-size:0.85rem;" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" style="font-size:0.75rem;font-weight:600;">CORPORATE TITLE</label>
+              <input type="text" id="editPersonaTitle" class="form-control" style="font-size:0.85rem;" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" style="font-size:0.75rem;font-weight:600;">CORPORATE EMAIL</label>
+              <input type="email" id="editPersonaEmail" class="form-control" style="font-size:0.85rem;" placeholder="e.g. name@company.com">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" style="font-size:0.75rem;font-weight:600;">EMAIL STATUS</label>
+              <select id="editPersonaEmailStatus" class="form-select" style="font-size:0.85rem;">
+                <option value="Verified">Verified</option>
+                <option value="Predicted">Predicted</option>
+                <option value="Unverified">Unverified</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" style="font-size:0.75rem;font-weight:600;">DIRECT PHONE / MOBILE</label>
+              <input type="text" id="editPersonaPhone" class="form-control" style="font-size:0.85rem;" placeholder="e.g. +1 (212) 555-0199">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" style="font-size:0.75rem;font-weight:600;">CITY / BASE LOCATION</label>
+              <input type="text" id="editPersonaCity" class="form-control" style="font-size:0.85rem;" placeholder="e.g. New York, NY">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" style="font-size:0.75rem;font-weight:600;">DEGREE / ACADEMIC BACKGROUND</label>
+              <input type="text" id="editPersonaDegree" class="form-control" style="font-size:0.85rem;" placeholder="e.g. BS Economics, NYU">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" style="font-size:0.75rem;font-weight:600;">PRIOR COMPANY / EXPERIENCE</label>
+              <input type="text" id="editPersonaPriorCompany" class="form-control" style="font-size:0.85rem;" placeholder="e.g. BNY Mellon, Pershing">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" style="font-size:0.75rem;font-weight:600;">DECISION AUTHORITY</label>
+              <input type="text" id="editPersonaDecisionAuthority" class="form-control" style="font-size:0.85rem;" placeholder="e.g. Final Sign-off">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" style="font-size:0.75rem;font-weight:600;">BUDGET AUTHORITY</label>
+              <input type="text" id="editPersonaBudgetAuthority" class="form-control" style="font-size:0.85rem;" placeholder="e.g. > $10M CapEx">
+            </div>
+            <div class="col-12">
+              <label class="form-label" style="font-size:0.75rem;font-weight:600;">LINKEDIN PROFILE URL</label>
+              <input type="url" id="editPersonaLinkedinUrl" class="form-control" style="font-size:0.85rem;" placeholder="https://www.linkedin.com/in/...">
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer" style="border-top:1px solid var(--border,#e2e8f0);padding:14px 24px;gap:8px;">
+        <button type="button" class="btn btn-sm" data-bs-dismiss="modal" style="border-radius:8px;border:1px solid #cbd5e1;padding:8px 16px;">Cancel</button>
+        <button type="button" id="saveUniversalPersonaBtn" style="border-radius:8px;font-size:.82rem;padding:8px 20px;background:linear-gradient(135deg,#8b5cf6,#10b981);color:#fff;border:none;font-weight:600;cursor:pointer;">
+          <i class="bi bi-check2-circle"></i> Save &amp; Mark Verified
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Sub-LOB Enterprise Details & Verification Modal -->
+<div class="modal fade" id="subLobDetailModal" tabindex="-1" aria-labelledby="subLobDetailModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content" style="border:none;border-radius:14px;box-shadow:0 20px 45px rgba(0,0,0,0.18);overflow:hidden;">
+      <div class="modal-header" style="border-bottom:1px solid var(--border,#e2e8f0);padding:18px 24px;background:#f8fafc;">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div style="width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,#d97706,#0284c7);display:flex;align-items:center;justify-content:center;color:#fff;font-size:1.2rem;">
+            <i class="bi bi-diagram-3-fill"></i>
+          </div>
+          <div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <h5 class="modal-title" id="subLobDetailModalLabel" style="margin:0;font-size:1.05rem;font-weight:700;">Sub-LOB Corporate Details</h5>
+              <span class="badge" style="background:#fef3c7;color:#92400e;font-size:0.68rem;font-weight:700;">Level 3 Sub-LOB</span>
+            </div>
+            <p style="margin:0;font-size:.74rem;color:var(--text-muted,#64748b);">Verified Legal Entity &amp; Operating Division Dossier</p>
+          </div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="subLobDetailModalBody" style="padding:22px 24px;">
+        <!-- Dynamically rendered content -->
+      </div>
+      <div class="modal-footer" style="border-top:1px solid var(--border,#e2e8f0);padding:14px 24px;gap:8px;background:#f8fafc;">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal" style="border-radius:8px;padding:7px 16px;">Close</button>
+        <button type="button" id="modalVerifySubLobBtn" class="btn btn-sm btn-primary" style="border-radius:8px;padding:7px 18px;font-weight:600;display:inline-flex;align-items:center;gap:6px;">
+          <i class="bi bi-check2-circle"></i> Mark Verified
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 
 <!-- Floating Notification Toast Container -->
 <div id="toastNotificationContainer"

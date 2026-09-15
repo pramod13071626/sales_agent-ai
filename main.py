@@ -193,15 +193,74 @@ def run_pipeline(company_name: str, target_url: str = None):
                     sublobs_raw.append(
                         {
                             "name": c_name,
+                            "lob_name": c_name,
+                            "legal_name": c_name,
+                            "lei_code": child.get("lei"),
+                            "jurisdiction": child.get("jurisdiction"),
+                            "country": child.get("country"),
+                            "city": child.get("city"),
+                            "status": child.get("status") or "ACTIVE",
                             "relationship_type": (
-                                f"Global Entity ({child.get('country', 'Global')})"
+                                f"Direct Operating LOB ({child.get('country', 'Global')})"
                             ),
                             "source": "GLEIF G20 LEI Database",
+                            "sub_lobs": [],
                         }
                     )
 
+            # Store rich hierarchy tree on account_data
+            account_data["organisational_hierarchy_tree"] = {
+                "gleif_lei": gleif_tree.get("lei"),
+                "gleif_children": gleif_tree.get("child_entities", []),
+                "gleif_indirect_sublobs": gleif_tree.get("indirect_sub_lobs", []),
+                "all_subsidiaries": gleif_tree.get("all_subsidiaries", []),
+                "sec_exhibit21_subsidiaries": ex21.get("subsidiaries", []) if sec_cik and "ex21" in locals() and ex21.get("status") == "success" else [],
+                "total_subsidiaries_sec": ex21.get("total_subsidiaries_found", 0) if sec_cik and "ex21" in locals() and ex21.get("status") == "success" else 0,
+                "total_children_gleif": gleif_tree.get("total_child_entities_found", 0),
+                "total_indirect_sublobs": gleif_tree.get("total_indirect_sub_lobs_found", 0),
+                "total_ultimate_children": gleif_tree.get("total_ultimate_children_found", 0),
+            }
+
         # 3b. Dynamic Semantic Hierarchy Clustering (LOBs & Sub-LOBs)
         clustered_subs = LobService.cluster_lobs_and_sublobs(sublobs_raw, company_name)
+
+        # 3c. Attach Level 3 Indirect Grandchild Sub-LOBs to their Direct Parent LOBs
+        indirect_subs = gleif_tree.get("indirect_sub_lobs", []) if gleif_tree.get("status") == "success" else []
+        if indirect_subs:
+            for ind_sub in indirect_subs:
+                p_legal = (ind_sub.get("parent_legal_name") or "").lower().strip()
+                matched_lob = None
+                for lob_entry in clustered_subs:
+                    lob_nm = (lob_entry.get("name") or lob_entry.get("lob_name") or "").lower().strip()
+                    if p_legal and (p_legal in lob_nm or lob_nm in p_legal):
+                        matched_lob = lob_entry
+                        break
+
+                sub_formatted = {
+                    "name": ind_sub.get("legal_name") or ind_sub.get("name"),
+                    "legal_name": ind_sub.get("legal_name"),
+                    "lei_code": ind_sub.get("lei"),
+                    "jurisdiction": ind_sub.get("jurisdiction"),
+                    "country": ind_sub.get("country"),
+                    "city": ind_sub.get("city"),
+                    "status": ind_sub.get("status") or "ACTIVE",
+                    "entity_level": "Level 3 (Operating Sub-LOB)",
+                    "relationship_type": "Level 3: Operating Sub-LOB / Grandchild",
+                    "parent_lob_name": ind_sub.get("parent_legal_name"),
+                    "parent_lob_lei": ind_sub.get("parent_lob_lei"),
+                    "metadata": ind_sub,
+                }
+
+                if matched_lob is not None:
+                    if "sub_lobs" not in matched_lob or not isinstance(matched_lob["sub_lobs"], list):
+                        matched_lob["sub_lobs"] = []
+                    existing_sub_names = {
+                        (s.get("name") if isinstance(s, dict) else str(s)) for s in matched_lob["sub_lobs"]
+                    }
+                    if sub_formatted["name"] not in existing_sub_names:
+                        matched_lob["sub_lobs"].append(sub_formatted)
+                elif clustered_subs:
+                    clustered_subs[0].setdefault("sub_lobs", []).append(sub_formatted)
 
         # 4. Enrich LOB Segments with Audited Revenues
         sublobs_data = enrich_lob_segments(

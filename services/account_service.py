@@ -988,9 +988,13 @@ class AccountService:
             account_dossier["organisational_hierarchy_tree"] = {
                 "gleif_lei": gleif_tree_data.get("lei"),
                 "gleif_children": gleif_tree_data.get("child_entities", []),
+                "gleif_indirect_sublobs": gleif_tree_data.get("indirect_sub_lobs", []),
+                "all_subsidiaries": gleif_tree_data.get("all_subsidiaries", []),
                 "sec_exhibit21_subsidiaries": ex21_data.get("subsidiaries", []),
                 "total_subsidiaries_sec": ex21_data.get("total_subsidiaries_found", 0),
                 "total_children_gleif": gleif_tree_data.get("total_child_entities_found", 0),
+                "total_indirect_sublobs": gleif_tree_data.get("total_indirect_sub_lobs_found", 0),
+                "total_ultimate_children": gleif_tree_data.get("total_ultimate_children_found", 0),
             }
 
             # Populate multi_source_intelligence column with all deep data

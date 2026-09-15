@@ -1,6 +1,6 @@
 """Lob ORM Model — 17 columns. Lines of Business / Sub-Organizations with scraping URLs."""
 
-from sqlalchemy import Column, Integer, String, Text, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, Boolean, DateTime
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from db.models.base import Base
@@ -33,6 +33,10 @@ class Lob(Base):
     patents = Column(JSONB)
     raw_data = Column(JSONB)
     osint_feed_manifest = Column(JSONB)
+
+    # ── Manual Verification Flag ──
+    is_manually_verified = Column(Boolean, default=False)
+    manually_verified_at = Column(DateTime(timezone=True))
 
     # ── LOB Scraping URLs ──
     google_news_rss_url = Column(Text)
