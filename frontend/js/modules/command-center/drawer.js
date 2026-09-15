@@ -2,6 +2,7 @@ import { esc, formatMoney } from './utils.js';
 import { ccState } from './state.js';
 import { logTouch, createTask } from './actions.js';
 import { loadRecentMovements } from './exec-movements.js';
+import { renderSkeleton } from '../skeleton.js';
 
 function el(id) { return document.getElementById(id); }
 
@@ -35,7 +36,7 @@ export async function openDossier(account) {
   el('ccDrawerBody').innerHTML = metricsHtml(account) + `
     <div class="cc-drawer-section">
       <div class="cc-drawer-section-label">Exec movements (30d)</div>
-      <div id="ccDrawerExecMovements"><div class="cc-drawer-empty">Loading…</div></div>
+      <div id="ccDrawerExecMovements">${renderSkeleton('lines')}</div>
     </div>
     <div class="cc-drawer-section">
       <a class="cc-btn cc-btn-ghost" href="/?account_key=${encodeURIComponent(account.key || account.ticker || account.name)}">Open full account view <i class="bi bi-arrow-right"></i></a>

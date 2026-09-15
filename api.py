@@ -5164,15 +5164,34 @@ if FASTAPI_AVAILABLE:
             deliberately deferred v2 (no endpoint for it exists yet)."""
             return templates.TemplateResponse(request, "tasks.html")
 
+        class NoCacheStaticFiles(StaticFiles):
+            """Forces browsers to revalidate every CSS/JS fetch against the
+            server (via the ETag/Last-Modified this already returns) instead
+            of silently reusing a cached copy. Without this, a plain reload
+            can keep serving an old version of a file indefinitely — these
+            are ES modules pulled in via bare `import`s (only the page's own
+            entry script has a `?v=` cache-busting query string; anything it
+            imports does not inherit that), and during active development
+            files here can change several times an hour. A stale cached copy
+            of one earlier today produced a genuinely confusing
+            "Unexpected token" browser error even though the file on disk
+            (and every version in git history) was valid JS the whole time.
+            Still cheap: an unchanged file gets a 304 Not Modified, not a
+            full re-download."""
+            def file_response(self, *args, **kwargs):
+                response = super().file_response(*args, **kwargs)
+                response.headers["Cache-Control"] = "no-cache"
+                return response
+
         css_dir = frontend_dir / "css"
         js_dir = frontend_dir / "js"
         pipline_dir = frontend_dir / "pipline"
         if css_dir.exists():
-            app.mount("/css", StaticFiles(directory=str(css_dir)), name="frontend-css")
+            app.mount("/css", NoCacheStaticFiles(directory=str(css_dir)), name="frontend-css")
         if js_dir.exists():
-            app.mount("/js", StaticFiles(directory=str(js_dir)), name="frontend-js")
+            app.mount("/js", NoCacheStaticFiles(directory=str(js_dir)), name="frontend-js")
         if pipline_dir.exists():
-            app.mount("/pipline", StaticFiles(directory=str(pipline_dir), html=True), name="frontend-pipline")
+            app.mount("/pipline", NoCacheStaticFiles(directory=str(pipline_dir), html=True), name="frontend-pipline")
 
 
 if __name__ == "__main__":
