@@ -1,6 +1,6 @@
 """Persona ORM Model — 58 columns. Executives with scraping URLs, AI dossier, skills, KPIs."""
 
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, ARRAY, Boolean, Float
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, ARRAY, Boolean, Float, DateTime
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from db.models.base import Base
@@ -89,6 +89,10 @@ class Persona(Base):
     education_history = Column(JSONB)
     personal_email = Column(String(255))
     direct_mobile_phone = Column(String(100))
+
+    # ── Manual Verification Flag ──
+    is_manually_verified = Column(Boolean, default=False)
+    manually_verified_at = Column(DateTime(timezone=True))
 
     # ── Relationships ──
     account = relationship("Account", back_populates="personas")

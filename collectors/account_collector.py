@@ -1439,8 +1439,9 @@ def fetch_gleif_ownership_tree(
         return {"status": "error", "message": "No company name provided."}
 
     print(f"[*] [GLEIF Resolver] Querying global LEI records for '{company_name}'...")
+    print(f"[*] [GLEIF Resolver] Querying global LEI records for '{company_name}'...")
     enc_name = urllib.parse.quote_plus(company_name)
-    gleif_search_url = f"https://api.gleif.org/api/v1/lei-records?filter[entity.legalName]={enc_name}&page[size]=1"
+    gleif_search_url = f"https://api.gleif.org/api/v1/lei-records?filter[entity.legalName]={enc_name}&page[size]=10"
 
     headers = {
         "Accept": "application/vnd.api+json",
@@ -1464,8 +1465,34 @@ def fetch_gleif_ownership_tree(
         if not items:
             return {"status": "empty", "message": f"No LEI record found for '{company_name}'."}
 
+        # Select the best corporate holding entity from candidates
         primary_record = items[0]
+        if len(items) > 1:
+            for it in items:
+                attr = it.get("attributes", {}).get("entity", {})
+                nm = (attr.get("legalName", {}).get("name") or "").upper()
+                cat = attr.get("category") or ""
+                if cat == "GENERAL" and any(k in nm for k in ["CORPORATION", "CORP", "HOLDING", "HOLDINGS", "GROUP"]):
+                    primary_record = it
+                    break
+
         lei = primary_record.get("attributes", {}).get("lei") or primary_record.get("id")
+
+        # Check if selected entity has an ultimate parent in GLEIF; if so, ascend to the Level 1 parent
+        try:
+            for it in items:
+                it_lei = it.get("attributes", {}).get("lei") or it.get("id")
+                up_chk = requests.get(f"https://api.gleif.org/api/v1/lei-records/{it_lei}/ultimate-parent", headers=headers, timeout=5)
+                if up_chk.status_code == 200:
+                    up_data = up_chk.json().get("data")
+                    if up_data and up_data.get("attributes", {}).get("lei"):
+                        primary_record = up_data
+                        lei = up_data.get("attributes", {}).get("lei")
+                        print(f"[+] [GLEIF Resolver] Ascended to Ultimate Parent Holding Entity: {up_data.get('attributes', {}).get('entity', {}).get('legalName', {}).get('name')} (LEI: {lei})")
+                        break
+        except Exception as e_ascend:
+            print(f"[!] [GLEIF Resolver] Parent ascent notice: {e_ascend}")
+
         entity_attr = primary_record.get("attributes", {}).get("entity", {})
         reg_attr = primary_record.get("attributes", {}).get("registration", {})
 
@@ -1501,9 +1528,11 @@ def fetch_gleif_ownership_tree(
             .get("related")
         )
 
-        # ── Fetch Direct Child Subsidiaries if Available ──
+        # ── Fetch Direct Child Subsidiaries (Level 2 LOBs) ──
         child_subsidiaries = []
         structured_child_lobs = []
+        direct_lei_set = set()
+
         if lei:
             children_url = (
                 f"https://api.gleif.org/api/v1/lei-records/{lei}/direct-children?page[size]={max_children}"
@@ -1517,6 +1546,8 @@ def fetch_gleif_ownership_tree(
                         c_reg = c_item.get("attributes", {}).get("registration", {})
                         c_legal_name = c_entity.get("legalName", {}).get("name")
                         c_lei = c_item.get("attributes", {}).get("lei") or c_item.get("id")
+                        if c_lei:
+                            direct_lei_set.add(c_lei)
                         c_jurisdiction = c_entity.get("jurisdiction")
                         c_country = c_entity.get("legalAddress", {}).get("country")
                         c_status = c_entity.get("status")
@@ -1541,7 +1572,10 @@ def fetch_gleif_ownership_tree(
                             "country": c_country,
                             "status": c_status,
                             "is_commercial_lob": is_comm,
+                            "is_sub_lob": False,
+                            "hierarchy_level": 2,
                             "relationship_type": "Direct Child Entity (GLEIF Level 2)",
+                            "parent_legal_name": legal_name,
                         }
                         child_subsidiaries.append(child_obj)
 
@@ -1556,14 +1590,89 @@ def fetch_gleif_ownership_tree(
                                 "source": "GLEIF Global LEI Registry",
                             })
             except Exception as e:
-                print(f"[!] [GLEIF Resolver] Notice fetching child entities: {e}")
+                print(f"[!] [GLEIF Resolver] Notice fetching direct child entities: {e}")
 
-        commercial_count = sum(1 for c in child_subsidiaries if c.get("is_commercial_lob"))
-        passive_count = len(child_subsidiaries) - commercial_count
+            # ── Fetch Ultimate Child Subsidiaries (Level 3+ Operating Sub-LOBs) ──
+            indirect_sub_lobs = []
+            try:
+                ult_url = (
+                    f"https://api.gleif.org/api/v1/lei-records/{lei}/ultimate-children?page[size]={max_children}"
+                )
+                u_res = requests.get(ult_url, headers=headers, timeout=15)
+                if u_res.status_code == 200:
+                    u_data = u_res.json()
+                    for u_item in u_data.get("data", []):
+                        u_lei = u_item.get("attributes", {}).get("lei") or u_item.get("id")
+                        # If not already in direct children, this is an indirect grandchild / Sub-LOB!
+                        if u_lei and u_lei not in direct_lei_set:
+                            u_entity = u_item.get("attributes", {}).get("entity", {})
+                            u_reg = u_item.get("attributes", {}).get("registration", {})
+                            u_legal_name = u_entity.get("legalName", {}).get("name")
+                            u_jurisdiction = u_entity.get("jurisdiction")
+                            u_country = u_entity.get("legalAddress", {}).get("country")
+                            u_status = u_entity.get("status")
+                            u_legal_form_dict = u_entity.get("legalForm", {})
+                            u_legal_form = (
+                                u_legal_form_dict.get("name")
+                                or u_legal_form_dict.get("otherLegalForm")
+                                or u_legal_form_dict.get("id")
+                            )
+                            u_reg_auth = (
+                                u_reg.get("registrationAuthorityEntityId")
+                                or u_reg.get("registrationAuthority", {}).get("registrationAuthorityId")
+                            )
+                            u_is_comm = is_commercial_operating_lob(u_legal_name or "")
+
+                            # Resolve direct parent LOB for this indirect Sub-LOB from GLEIF
+                            sub_parent_name = legal_name
+                            sub_parent_lei = lei
+                            try:
+                                dp_res = requests.get(f"https://api.gleif.org/api/v1/lei-records/{u_lei}/direct-parent", headers=headers, timeout=5)
+                                if dp_res.status_code == 200:
+                                    dp_data = dp_res.json().get("data")
+                                    if dp_data:
+                                        sub_parent_name = dp_data.get("attributes", {}).get("entity", {}).get("legalName", {}).get("name") or sub_parent_name
+                                        sub_parent_lei = dp_data.get("attributes", {}).get("lei") or sub_parent_lei
+                            except Exception:
+                                pass
+
+                            sub_lob_obj = {
+                                "lei": u_lei,
+                                "legal_name": u_legal_name,
+                                "legal_form": u_legal_form,
+                                "registration_authority_id": u_reg_auth,
+                                "jurisdiction": u_jurisdiction,
+                                "country": u_country,
+                                "status": u_status,
+                                "is_commercial_lob": u_is_comm,
+                                "is_sub_lob": True,
+                                "hierarchy_level": 3,
+                                "relationship_type": "Indirect Sub-LOB (GLEIF Level 3+)",
+                                "parent_legal_name": sub_parent_name,
+                                "parent_lob_lei": sub_parent_lei,
+                            }
+                            indirect_sub_lobs.append(sub_lob_obj)
+                            if u_is_comm and u_legal_name:
+                                structured_child_lobs.append({
+                                    "lob_name": u_legal_name,
+                                    "lei": u_lei,
+                                    "legal_form": u_legal_form,
+                                    "jurisdiction": u_jurisdiction,
+                                    "country": u_country,
+                                    "classification": "Commercial Operating Sub-LOB / Grandchild",
+                                    "source": "GLEIF Global LEI Registry",
+                                })
+            except Exception as e:
+                print(f"[!] [GLEIF Resolver] Notice fetching ultimate/sub-lob child entities: {e}")
+
+        all_subsidiaries = child_subsidiaries + indirect_sub_lobs
+        commercial_count = sum(1 for c in all_subsidiaries if c.get("is_commercial_lob"))
+        passive_count = len(all_subsidiaries) - commercial_count
 
         print(
-            f"[+] [GLEIF Resolver] Matched LEI '{lei}' with {len(child_subsidiaries)} registered child entities "
-            f"({commercial_count} commercial LOBs, {passive_count} passive entities)."
+            f"[+] [GLEIF Resolver] Matched LEI '{lei}' with {len(all_subsidiaries)} total child entities "
+            f"({len(child_subsidiaries)} direct LOBs, {len(indirect_sub_lobs)} indirect sub-LOBs; "
+            f"{commercial_count} commercial, {passive_count} passive)."
         )
 
         return {
@@ -1594,10 +1703,14 @@ def fetch_gleif_ownership_tree(
             "direct_parent_relationship_url": direct_parent_link,
             "ultimate_parent_relationship_url": ultimate_parent_link,
             "total_child_entities_found": len(child_subsidiaries),
+            "total_indirect_sub_lobs_found": len(indirect_sub_lobs),
+            "total_ultimate_children_found": len(all_subsidiaries),
             "commercial_operating_lobs_count": commercial_count,
             "passive_entity_count": passive_count,
             "structured_child_lobs": structured_child_lobs,
             "child_entities": child_subsidiaries,
+            "indirect_sub_lobs": indirect_sub_lobs,
+            "all_subsidiaries": all_subsidiaries,
         }
 
     except Exception as e:

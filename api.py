@@ -81,6 +81,7 @@ from db.repositories.pipeline_run_repository import PipelineRunRepository
 from services.account_service import AccountService
 from services.lob_service import LobService, LobValidator
 from services.persona_service import PersonaService, PersonaValidator
+from services.pipeline_run_logger import PipelineRunLogger
 from pdf_export import build_persona_profile_pdf, build_psychological_profile_pdf
 import auth
 import email_sender
@@ -862,6 +863,7 @@ if FASTAPI_AVAILABLE:
         (memo23/glassdoor-scraper), Diffbot KG, Serper, Wikipedia, FEC — plus standalone
         connectors: 10-K chunks, USPTO patents, SEC Exhibit 21 subsidiaries, GLEIF ownership tree.
         """
+        t0 = datetime.now(timezone.utc)
         try:
             account_data = AccountService.collect(
                 company_name=req.company_name,
@@ -937,15 +939,74 @@ if FASTAPI_AVAILABLE:
                 "key_people": account_data,
             }
 
+            audit = account_data.get("_validation_audit") or {}
+            raw_dir_val = account_data.get("raw_dir") or account_data.get("raw_storage_dir")
+
+            PipelineRunLogger.log_event(
+                company_name=req.company_name,
+                target_url=req.target_url,
+                level="account",
+                action="pull",
+                status="staged",
+                quality_score=float(audit.get("score", 0.0)),
+                quality_grade=audit.get("grade", "N/A"),
+                started_at=t0,
+                completed_at=datetime.now(timezone.utc),
+                raw_storage_dir=str(raw_dir_val) if raw_dir_val else None,
+                entities_extracted={
+                    "known_lobs_count": len(account_data.get("known_lobs", [])),
+                    "known_personas_count": len(account_data.get("known_personas", [])),
+                    "discovered_lobs_count": len(account_data.get("discovered_lob_names", [])),
+                    "display_name": account_data.get("display_name"),
+                },
+            )
+
             return {"status": "staged", "company_name": req.company_name, "account": wrapped}
         except Exception as e:
+            PipelineRunLogger.log_event(
+                company_name=req.company_name,
+                target_url=req.target_url,
+                level="account",
+                action="pull",
+                status="failed",
+                started_at=t0,
+                completed_at=datetime.now(timezone.utc),
+                error_message=str(e),
+            )
             raise HTTPException(status_code=500, detail=f"Account fetch failed: {str(e)}")
 
     @account_router.post("/validate")
     def validate_account_data(account_data: Dict[str, Any] = Body(...)):
         """[Tab 1 - Validate Button]: Validates staged account data."""
+        t0 = datetime.now(timezone.utc)
+        comp_name = (
+            account_data.get("display_name")
+            or account_data.get("legal_name")
+            or account_data.get("company_name")
+            or "Account"
+        )
         try:
             report = DataQualityValidator.validate_account(account_data)
+            score = float(report.get("score", 0.0))
+            grade = "A" if score >= 90 else ("B" if score >= 75 else ("C" if score >= 60 else "D"))
+
+            PipelineRunLogger.log_event(
+                company_name=comp_name,
+                target_url=account_data.get("domain") or account_data.get("website_url"),
+                level="account",
+                action="validate",
+                status="validated",
+                quality_score=score,
+                quality_grade=grade,
+                started_at=t0,
+                completed_at=datetime.now(timezone.utc),
+                entities_extracted={
+                    "score": score,
+                    "warnings": report.get("warnings", []),
+                    "checks": report.get("checks", {}),
+                },
+            )
+
             return {
                 "status": "validated",
                 "score": report["score"],
@@ -953,11 +1014,27 @@ if FASTAPI_AVAILABLE:
                 "warnings": report["warnings"],
             }
         except Exception as e:
+            PipelineRunLogger.log_event(
+                company_name=comp_name,
+                level="account",
+                action="validate",
+                status="failed",
+                started_at=t0,
+                completed_at=datetime.now(timezone.utc),
+                error_message=str(e),
+            )
             raise HTTPException(status_code=500, detail=f"Account validation failed: {str(e)}")
 
     @account_router.post("/dump-db")
     def dump_account_to_db(req: AccountDumpRequest):
         """[Tab 1 - Dump DB Button]: Commits validated account data into PostgreSQL `accounts` table."""
+        t0 = datetime.now(timezone.utc)
+        comp_name = (
+            req.account_data.get("display_name")
+            or req.account_data.get("legal_name")
+            or req.account_data.get("company_name")
+            or "Account"
+        )
         session = get_session()
         try:
             wrapper_doc = {"account": req.account_data}
@@ -965,6 +1042,22 @@ if FASTAPI_AVAILABLE:
             repo = AccountRepository(session)
             acct = repo.upsert(schema)
             session.commit()
+
+            PipelineRunLogger.log_event(
+                company_name=acct.legal_name or acct.display_name or comp_name,
+                target_url=acct.domain or acct.primary_domain,
+                level="account",
+                action="dump",
+                status="success",
+                started_at=t0,
+                completed_at=datetime.now(timezone.utc),
+                entities_extracted={
+                    "account_id": acct.id,
+                    "key": acct.key,
+                    "legal_name": acct.legal_name,
+                },
+            )
+
             return {
                 "status": "success",
                 "account_id": acct.id,
@@ -974,15 +1067,34 @@ if FASTAPI_AVAILABLE:
             }
         except Exception as e:
             session.rollback()
+            PipelineRunLogger.log_event(
+                company_name=comp_name,
+                level="account",
+                action="dump",
+                status="failed",
+                started_at=t0,
+                completed_at=datetime.now(timezone.utc),
+                error_message=str(e),
+            )
             raise HTTPException(status_code=500, detail=f"Account DB dump failed: {str(e)}")
         finally:
             session.close()
 
     def _serialize_persona_full(p: Persona) -> Dict[str, Any]:
+        p_raw = p.raw_data if isinstance(p.raw_data, dict) else {}
+        loc_str = (
+            (p.city + (f", {p.state}" if p.state else (f", {p.country}" if p.country else "")))
+            if p.city
+            else (p.country or None)
+        )
         return {
             "id": p.id,
+            "account_id": p.account_id,
+            "lob_id": p.lob_id,
+            "external_id": p.external_id,
             "key": p.key,
-            "name": p.full_name,
+            "name": p.full_name or p.display_name or "Executive",
+            "display_name": p.display_name or p.full_name or "Executive",
             "full_name": p.full_name,
             "first_name": p.first_name,
             "last_name": p.last_name,
@@ -991,15 +1103,21 @@ if FASTAPI_AVAILABLE:
             "seniority_raw": p.seniority_raw,
             "departments": p.departments or ["Executive"],
             "email": p.email,
-            "email_status": p.email_status,
+            "email_status": p.email_status or ("Verified" if p.email else None),
             "phone": p.phone,
+            "personal_email": p.personal_email,
+            "direct_mobile_phone": p.direct_mobile_phone,
             "linkedin_url": p.linkedin_url,
+            "crunchbase_permalink": p.crunchbase_permalink,
             "city": p.city,
             "state": p.state,
             "country": p.country,
+            "location": loc_str,
+            "source": p.source,
             "hierarchy_level": p.hierarchy_level,
             "decision_authority": p.decision_authority,
             "budget_authority": p.budget_authority,
+            "reports_to": p_raw.get("reports_to") or p_raw.get("reportsTo") or None,
             "twitter_handle": p.twitter_handle,
             "twitter_live_url": p.twitter_live_url,
             "reddit_query": p.reddit_query,
@@ -1032,24 +1150,23 @@ if FASTAPI_AVAILABLE:
             "social_platform": p.social_platform,
             "social_profile_url": p.social_profile_url,
             "social_presence_level": p.social_presence_level,
+            "headline": p.headline,
+            "employment_history": p.employment_history or [],
+            "past_companies": p.past_companies or [],
+            "previous_titles": p.previous_titles or [],
+            "current_role_tenure_months": p.current_role_tenure_months,
+            "is_new_in_role": p.is_new_in_role or False,
+            "career_trajectory_score": p.career_trajectory_score,
+            "education_history": p.education_history or [],
+            "osint_feed_manifest": p.osint_feed_manifest or {},
+            "is_manually_verified": bool(getattr(p, "is_manually_verified", False)),
+            "manually_verified_at": p.manually_verified_at.isoformat() if getattr(p, "manually_verified_at", None) else None,
             "raw_data": p.raw_data,
         }
 
     def _serialize_persona_summary(p: Persona) -> Dict[str, Any]:
-        # Trimmed for the account-list view: only what nav-tree/digest/topbar's
-        # cross-account rollups (target-key resolution, tier labeling, C-suite
-        # detection) actually read. Full dossier fields (raw_data, icebreakers,
-        # KPIs, every enrichment URL, ...) are only fetched once an account is
-        # opened, via _serialize_persona_full.
-        return {
-            "id": p.id,
-            "key": p.key,
-            "name": p.full_name,
-            "full_name": p.full_name,
-            "title": p.title,
-            "tier": p.tier,
-            "hierarchy_level": p.hierarchy_level,
-        }
+        # Return full persona data so all 58 columns are available throughout the app
+        return _serialize_persona_full(p)
 
     def _distribute_personas_across_lobs(raw_lobs, personas_list):
         """Synthetic C-suite + VP-cohort split across LOBs for display grouping —
@@ -1069,17 +1186,44 @@ if FASTAPI_AVAILABLE:
             assignments.append((lob_item, c_suite_personas[:2] + vp_personas[start_i:end_i]))
         return assignments
 
+    def _serialize_sublob_obj(s: SubLob, parent_name: str = "") -> Dict[str, Any]:
+        return {
+            "id": s.id,
+            "lob_id": s.lob_id,
+            "name": s.name,
+            "legal_name": getattr(s, "legal_name", None) or s.name,
+            "lei_code": getattr(s, "lei_code", None),
+            "jurisdiction": getattr(s, "jurisdiction", None),
+            "country": getattr(s, "country", None),
+            "city": getattr(s, "city", None),
+            "relationship_type": getattr(s, "relationship_type", None) or "Level 3: Operating Sub-LOB / Grandchild",
+            "status": getattr(s, "status", None) or "ACTIVE",
+            "entity_level": getattr(s, "entity_level", None) or "Level 3 (Operating Sub-LOB)",
+            "parent_lob_lei": getattr(s, "parent_lob_lei", None),
+            "parent_lob_name": getattr(s, "parent_lob_name", None) or parent_name,
+            "domain": getattr(s, "domain", None),
+            "website_url": getattr(s, "website_url", None),
+            "is_manually_verified": bool(getattr(s, "is_manually_verified", False)),
+            "manually_verified_at": s.manually_verified_at.isoformat() if getattr(s, "manually_verified_at", None) else None,
+            "metadata": getattr(s, "metadata_", {}) or {},
+            "desc": f"Specialized unit under {parent_name or 'Parent LOB'}",
+        }
+
     def _serialize_lob_full(lob_item: Lob, assigned_personas: List[Dict[str, Any]]) -> Dict[str, Any]:
         sub_lobs_formatted = [
-            {"id": s.id, "name": s.name, "desc": f"Specialized unit under {lob_item.lob_name}"}
+            _serialize_sublob_obj(s, lob_item.lob_name)
             for s in (lob_item.sub_lobs or [])
         ]
         return {
             "id": lob_item.id,
+            "account_id": lob_item.account_id,
+            "key": lob_item.key,
             "name": lob_item.lob_name,
             "lob_name": lob_item.lob_name,
             "domain": lob_item.domain,
             "website_url": lob_item.website_url,
+            "crunchbase_url": lob_item.crunchbase_url,
+            "relationship_type": lob_item.relationship_type,
             "desc": lob_item.overview,
             "overview": lob_item.overview,
             "revenue": lob_item.audited_segment_revenue,
@@ -1095,32 +1239,25 @@ if FASTAPI_AVAILABLE:
             "financial_snippets": lob_item.financial_snippets or [],
             "patents": lob_item.patents or [],
             "logo_url": lob_item.logo_url,
+            "wikipedia_url": lob_item.wikipedia_url,
             "google_news_rss_url": lob_item.google_news_rss_url,
             "reddit_rss_url": lob_item.reddit_rss_url,
             "google_patents_url": lob_item.google_patents_url,
             "google_trends_url": lob_item.google_trends_url,
             "youtube_search_url": lob_item.youtube_search_url,
+            "raw_data": lob_item.raw_data,
+            "osint_feed_manifest": lob_item.osint_feed_manifest or {},
+            "is_manually_verified": bool(getattr(lob_item, "is_manually_verified", False)),
+            "manually_verified_at": lob_item.manually_verified_at.isoformat() if getattr(lob_item, "manually_verified_at", None) else None,
             "subLobs": sub_lobs_formatted,
             "sub_lobs": sub_lobs_formatted,
             "personas": assigned_personas,
+            "personas_count": len(assigned_personas),
         }
 
-    def _serialize_lob_summary(lob_item: Lob, assigned_personas_count: int) -> Dict[str, Any]:
-        # Trimmed: keeps technologies/competitors (read by computeSignals() for
-        # EVERY account on every nav-tree/topbar render) and subLobs (nav-tree
-        # renders sub-LOB names in the expanded row), drops financial_snippets/
-        # patents/deep URLs which are only read once an account is opened.
-        sub_lobs_formatted = [{"id": s.id, "name": s.name} for s in (lob_item.sub_lobs or [])]
-        return {
-            "id": lob_item.id,
-            "name": lob_item.lob_name,
-            "lob_name": lob_item.lob_name,
-            "technologies": lob_item.technologies or [],
-            "competitors": lob_item.competitors or [],
-            "subLobs": sub_lobs_formatted,
-            "sub_lobs": sub_lobs_formatted,
-            "personas_count": assigned_personas_count,
-        }
+    def _serialize_lob_summary(lob_item: Lob, assigned_personas_count: int, assigned_personas: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+        # Return full LOB data with all 27 attributes so no detail is stripped
+        return _serialize_lob_full(lob_item, assigned_personas or [])
 
     def _serialize_account_full(acct: Account) -> Dict[str, Any]:
         personas_list = [_serialize_persona_full(p) for p in (acct.personas or [])]
@@ -1193,6 +1330,8 @@ if FASTAPI_AVAILABLE:
             "multi_source_intelligence": acct.multi_source_intelligence,
             "organisational_hierarchy_tree": acct.organisational_hierarchy_tree,
             "extracted_at": acct.extracted_at.isoformat() if acct.extracted_at else None,
+            "created_at": acct.created_at.isoformat() if acct.created_at else None,
+            "updated_at": acct.updated_at.isoformat() if acct.updated_at else None,
             # ── Engagement / opportunity signals (previously captured but never exposed) ──
             "heat_score": acct.heat_score,
             "trend_score_90d": acct.trend_score_90d,
@@ -1254,21 +1393,18 @@ if FASTAPI_AVAILABLE:
                     or "manager" in (p.get("title") or "").lower()
                 ]
             ),
+            "created_at": acct.created_at.isoformat() if getattr(acct, "created_at", None) else None,
+            "updated_at": acct.updated_at.isoformat() if getattr(acct, "updated_at", None) else None,
+            "is_manually_verified": bool(getattr(acct, "is_manually_verified", False)),
+            "manually_verified_at": acct.manually_verified_at.isoformat() if getattr(acct, "manually_verified_at", None) else None,
         }
 
     def _serialize_account_summary(acct: Account) -> Dict[str, Any]:
-        # Trimmed for the account-LIST view (nav tree, digest, topbar ticker).
-        # Keeps every field those cross-account rollups actually read — traced
-        # via computeSignals() (signals.js), computeDomainExpansionOpportunities()
-        # (opportunities.js), resolveAccountTargetKey()/resolvePersonaTargetKey()
-        # (utils.js) and nav-tree.js/topbar.js/digest.js directly — and drops the
-        # rest (descriptive text, contact/social URLs, org chart tree, and each
-        # persona's full dossier / each LOB's deep intelligence fields), which are
-        # only needed once a specific account is opened, via _serialize_account_full.
-        personas_list = [_serialize_persona_summary(p) for p in (acct.personas or [])]
+        # Full serialization for Account, LOBs, and Personas ensures the UI receives 100% of data attributes
+        personas_list = [_serialize_persona_full(p) for p in (acct.personas or [])]
         raw_lobs = acct.lobs or []
         lobs_list = [
-            _serialize_lob_summary(lob_item, len(assigned))
+            _serialize_lob_full(lob_item, assigned)
             for lob_item, assigned in _distribute_personas_across_lobs(raw_lobs, personas_list)
         ]
 
@@ -1336,6 +1472,8 @@ if FASTAPI_AVAILABLE:
             "multi_source_intelligence": acct.multi_source_intelligence,
             "organisational_hierarchy_tree": acct.organisational_hierarchy_tree,
             "extracted_at": acct.extracted_at.isoformat() if acct.extracted_at else None,
+            "created_at": acct.created_at.isoformat() if acct.created_at else None,
+            "updated_at": acct.updated_at.isoformat() if acct.updated_at else None,
             "heat_score": acct.heat_score,
             "trend_score_90d": acct.trend_score_90d,
             "active_tech_count": acct.active_tech_count,
@@ -1396,6 +1534,10 @@ if FASTAPI_AVAILABLE:
                     or "manager" in (p.get("title") or "").lower()
                 ]
             ),
+            "created_at": acct.created_at.isoformat() if getattr(acct, "created_at", None) else None,
+            "updated_at": acct.updated_at.isoformat() if getattr(acct, "updated_at", None) else None,
+            "is_manually_verified": bool(getattr(acct, "is_manually_verified", False)),
+            "manually_verified_at": acct.manually_verified_at.isoformat() if getattr(acct, "manually_verified_at", None) else None,
         }
 
     @account_router.get("")
@@ -1452,6 +1594,65 @@ if FASTAPI_AVAILABLE:
             if not acct:
                 raise HTTPException(status_code=404, detail="Account not found.")
             return _serialize_account_full(acct)
+        finally:
+            session.close()
+
+    @account_router.patch("/{account_id}")
+    @app.patch("/api/accounts/{account_id}", tags=["1. Account Level"])
+    def update_account(account_id: int, payload: Dict[str, Any] = Body(...)):
+        """
+        [Universal & Inline Edit]: Updates account fields directly in PostgreSQL.
+        Automatically sets is_manually_verified = True, updates manually_verified_at to now,
+        updates updated_at, logs audit event to pipeline_runs, and returns the full serialized account.
+        """
+        session = get_session()
+        t0 = datetime.now(timezone.utc)
+        try:
+            acct = session.query(Account).options(
+                selectinload(Account.personas),
+                selectinload(Account.lobs).selectinload(Lob.sub_lobs)
+            ).filter_by(id=account_id).first()
+            if not acct:
+                raise HTTPException(status_code=404, detail="Account not found.")
+
+            immutable = {"id", "created_at"}
+            updated_fields = {}
+            for k, v in payload.items():
+                if k in immutable or not hasattr(Account, k):
+                    continue
+                setattr(acct, k, v)
+                updated_fields[k] = v
+
+            now_utc = datetime.now(timezone.utc)
+            acct.is_manually_verified = True
+            acct.manually_verified_at = now_utc
+            acct.updated_at = now_utc
+
+            session.commit()
+            session.refresh(acct)
+
+            PipelineRunLogger.log_event(
+                company_name=acct.legal_name or acct.display_name or acct.key,
+                target_url=acct.domain or acct.website_url,
+                level="account",
+                action="manual_edit",
+                status="success",
+                started_at=t0,
+                completed_at=now_utc,
+                entities_extracted={
+                    "account_id": acct.id,
+                    "updated_fields": list(updated_fields.keys()),
+                    "is_manually_verified": True,
+                    "manually_verified_at": acct.manually_verified_at.isoformat(),
+                },
+            )
+            return {"status": "success", "account": _serialize_account_full(acct)}
+        except HTTPException:
+            session.rollback()
+            raise
+        except Exception as e:
+            session.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to update account: {str(e)}")
         finally:
             session.close()
 
@@ -1548,6 +1749,7 @@ if FASTAPI_AVAILABLE:
         """[Tab 2 - Fetch Button]: Multi-Source LOB & Subsidiary Discovery + 10-Source Enrichment.
         Uses SEC Exhibit 21 + GLEIF Ownership Tree + Crunchbase + Diffbot + LobService.enrich_all_lobs().
         """
+        t0 = datetime.now(timezone.utc)
         try:
             if req.lob_name:
                 single_lob = LobService.enrich_single_lob(
@@ -1555,6 +1757,20 @@ if FASTAPI_AVAILABLE:
                     parent_company=req.company_name,
                     account_id=req.account_id,
                     lob_domain=req.lob_domain,
+                )
+                PipelineRunLogger.log_event(
+                    company_name=req.company_name or "Company",
+                    target_url=req.lob_domain,
+                    level="lob",
+                    action="pull",
+                    status="staged",
+                    started_at=t0,
+                    completed_at=datetime.now(timezone.utc),
+                    entities_extracted={
+                        "lob_name": req.lob_name,
+                        "account_id": req.account_id,
+                        "domain": req.lob_domain,
+                    },
                 )
                 return {
                     "status": "staged",
@@ -1642,6 +1858,20 @@ if FASTAPI_AVAILABLE:
                     raw_sublobs = scrape_sublobs(req.company_name)
                     enriched_lobs = enrich_lob_segments(req.company_name, raw_sublobs)
 
+                PipelineRunLogger.log_event(
+                    company_name=req.company_name or "Company",
+                    level="lob",
+                    action="pull",
+                    status="staged",
+                    started_at=t0,
+                    completed_at=datetime.now(timezone.utc),
+                    entities_extracted={
+                        "total_lobs": len(enriched_lobs),
+                        "account_id": req.account_id,
+                        "discovered_names_count": len(unique_names),
+                    },
+                )
+
                 return {
                     "status": "staged",
                     "company_name": req.company_name,
@@ -1649,13 +1879,42 @@ if FASTAPI_AVAILABLE:
                     "lobs": enriched_lobs,
                 }
         except Exception as e:
+            PipelineRunLogger.log_event(
+                company_name=req.company_name or "Company",
+                level="lob",
+                action="pull",
+                status="failed",
+                started_at=t0,
+                completed_at=datetime.now(timezone.utc),
+                error_message=str(e),
+            )
             raise HTTPException(status_code=500, detail=f"LOB fetch failed: {str(e)}")
 
     @lobs_router.post("/validate")
     def validate_lobs_data(lobs_data: List[Dict[str, Any]] = Body(...)):
         """[Tab 2 - Validate Button]: Validates LOB and Sub-LOB data."""
+        t0 = datetime.now(timezone.utc)
         try:
             report = DataQualityValidator.validate_lobs(lobs_data)
+            score = float(report.get("score", 0.0))
+            grade = "A" if score >= 90 else ("B" if score >= 75 else ("C" if score >= 60 else "D"))
+
+            PipelineRunLogger.log_event(
+                company_name="Batch LOBs",
+                level="lob",
+                action="validate",
+                status="validated",
+                quality_score=score,
+                quality_grade=grade,
+                started_at=t0,
+                completed_at=datetime.now(timezone.utc),
+                entities_extracted={
+                    "lobs_count": report.get("lobs_count"),
+                    "total_with_domain": report.get("total_with_domain"),
+                    "warnings": report.get("warnings", []),
+                },
+            )
+
             return {
                 "status": "validated",
                 "score": report["score"],
@@ -1665,11 +1924,23 @@ if FASTAPI_AVAILABLE:
                 "warnings": report["warnings"],
             }
         except Exception as e:
+            PipelineRunLogger.log_event(
+                company_name="Batch LOBs",
+                level="lob",
+                action="validate",
+                status="failed",
+                started_at=t0,
+                completed_at=datetime.now(timezone.utc),
+                error_message=str(e),
+            )
             raise HTTPException(status_code=500, detail=f"LOB validation failed: {str(e)}")
 
     @lobs_router.post("/validate-single")
     def validate_single_lob(lob_data: Dict[str, Any] = Body(...)):
         """[Tab 2 - Individual Validate Button]: Validates a single LOB entity."""
+        t0 = datetime.now(timezone.utc)
+        lob_name = lob_data.get("name") or lob_data.get("lob_name") or "LOB"
+        parent_comp = lob_data.get("parent_company") or lob_data.get("company_name") or "Company"
         try:
             audit = LobValidator.validate_lob(lob_data)
             warnings = []
@@ -1679,6 +1950,28 @@ if FASTAPI_AVAILABLE:
                 warnings.append("Operating head not identified.")
             if not lob_data.get("technologies"):
                 warnings.append("Technology stack not detected.")
+
+            score = float(audit.get("score", 85))
+            grade = audit.get("grade", "B")
+
+            PipelineRunLogger.log_event(
+                company_name=parent_comp,
+                target_url=lob_data.get("domain") or lob_data.get("website_url"),
+                level="lob",
+                action="validate",
+                status="validated",
+                quality_score=score,
+                quality_grade=grade,
+                started_at=t0,
+                completed_at=datetime.now(timezone.utc),
+                entities_extracted={
+                    "lob_name": lob_name,
+                    "account_id": lob_data.get("account_id"),
+                    "ready_for_db": audit.get("ready_for_db", True),
+                    "warnings": warnings,
+                },
+            )
+
             return {
                 "status": "validated",
                 "score": audit.get("score", 85),
@@ -1689,11 +1982,21 @@ if FASTAPI_AVAILABLE:
                 "missing_important": audit.get("missing_important", []),
             }
         except Exception as e:
+            PipelineRunLogger.log_event(
+                company_name=parent_comp,
+                level="lob",
+                action="validate",
+                status="failed",
+                started_at=t0,
+                completed_at=datetime.now(timezone.utc),
+                error_message=str(e),
+            )
             raise HTTPException(status_code=500, detail=f"LOB validation failed: {str(e)}")
 
     @lobs_router.post("/dump-single-db")
     def dump_single_lob_to_db(req: Dict[str, Any] = Body(...)):
         """[Tab 2 - Individual Dump DB Button]: Commits a single validated LOB into PostgreSQL `lobs` table."""
+        t0 = datetime.now(timezone.utc)
         session = get_session()
         try:
             account_id = req.get("account_id")
@@ -1705,13 +2008,38 @@ if FASTAPI_AVAILABLE:
             lob_repo = LobRepository(session)
             saved = lob_repo.upsert_single_lob(acct.id, lob_data)
             session.commit()
+
+            lob_name = lob_data.get("name") or lob_data.get("lob_name") or "LOB"
+            PipelineRunLogger.log_event(
+                company_name=acct.legal_name or acct.display_name or acct.key,
+                level="lob",
+                action="dump",
+                status="success",
+                started_at=t0,
+                completed_at=datetime.now(timezone.utc),
+                entities_extracted={
+                    "lob_id": getattr(saved, "id", None),
+                    "lob_name": lob_name,
+                    "account_id": acct.id,
+                },
+            )
+
             return {
                 "status": "success",
                 "lob_id": getattr(saved, "id", None),
-                "message": f"LOB '{lob_data.get('name') or lob_data.get('lob_name')}' saved to database.",
+                "message": f"LOB '{lob_name}' saved to database.",
             }
         except Exception as e:
             session.rollback()
+            PipelineRunLogger.log_event(
+                company_name="Company",
+                level="lob",
+                action="dump",
+                status="failed",
+                started_at=t0,
+                completed_at=datetime.now(timezone.utc),
+                error_message=str(e),
+            )
             raise HTTPException(status_code=500, detail=f"LOB DB dump failed: {str(e)}")
         finally:
             session.close()
@@ -1720,6 +2048,7 @@ if FASTAPI_AVAILABLE:
     def dump_lobs_to_db(req: LobsDumpRequest):
         """[Tab 2 - Dump DB Button]: Commits validated LOBs and Sub-LOBs to
         PostgreSQL `lobs` & `sub_lobs` tables."""
+        t0 = datetime.now(timezone.utc)
         session = get_session()
         try:
             acct = session.query(Account).filter_by(id=req.account_id).first()
@@ -1729,6 +2058,20 @@ if FASTAPI_AVAILABLE:
             lob_repo = LobRepository(session)
             lob_map = lob_repo.upsert_all(acct, req.lobs_data)
             session.commit()
+
+            PipelineRunLogger.log_event(
+                company_name=acct.legal_name or acct.display_name or acct.key,
+                level="lob",
+                action="dump",
+                status="success",
+                started_at=t0,
+                completed_at=datetime.now(timezone.utc),
+                entities_extracted={
+                    "account_id": acct.id,
+                    "lobs_saved_count": len(lob_map),
+                },
+            )
+
             return {
                 "status": "success",
                 "account_id": acct.id,
@@ -1761,11 +2104,190 @@ if FASTAPI_AVAILABLE:
                     "google_news_rss_url": lob_item.google_news_rss_url,
                     "reddit_rss_url": lob_item.reddit_rss_url,
                     "google_patents_url": lob_item.google_patents_url,
-                    "youtube_search_url": lob_item.youtube_search_url,
-                    "sub_lobs": [{"id": s.id, "name": s.name} for s in (lob_item.sub_lobs or [])],
+                    "sub_lobs": [
+                        {
+                            "id": s.id,
+                            "lob_id": s.lob_id,
+                            "name": s.name,
+                            "legal_name": getattr(s, "legal_name", None) or s.name,
+                            "lei_code": getattr(s, "lei_code", None),
+                            "jurisdiction": getattr(s, "jurisdiction", None),
+                            "country": getattr(s, "country", None),
+                            "city": getattr(s, "city", None),
+                            "relationship_type": getattr(s, "relationship_type", None) or "Level 3: Operating Sub-LOB / Grandchild",
+                            "status": getattr(s, "status", None) or "ACTIVE",
+                            "entity_level": getattr(s, "entity_level", None) or "Level 3 (Operating Sub-LOB)",
+                            "parent_lob_lei": getattr(s, "parent_lob_lei", None),
+                            "parent_lob_name": getattr(s, "parent_lob_name", None) or lob_item.lob_name,
+                            "domain": getattr(s, "domain", None),
+                            "website_url": getattr(s, "website_url", None),
+                            "is_manually_verified": bool(getattr(s, "is_manually_verified", False)),
+                            "manually_verified_at": s.manually_verified_at.isoformat() if getattr(s, "manually_verified_at", None) else None,
+                            "metadata": getattr(s, "metadata_", {}) or {},
+                        }
+                        for s in (lob_item.sub_lobs or [])
+                    ],
                 }
                 for lob_item in lobs
             ]
+        finally:
+            session.close()
+
+    @lobs_router.patch("/{lob_id}")
+    @app.patch("/api/lob/{lob_id}", tags=["2. LOB & Sub-LOB Level"])
+    def update_lob(lob_id: int, payload: Dict[str, Any] = Body(...)):
+        """
+        [Universal & Inline Edit]: Updates LOB fields directly in PostgreSQL.
+        Automatically sets is_manually_verified = True, updates manually_verified_at to now,
+        logs audit event to pipeline_runs, and returns the serialized LOB.
+        """
+        session = get_session()
+        t0 = datetime.now(timezone.utc)
+        try:
+            lob = session.query(Lob).options(
+                selectinload(Lob.sub_lobs),
+                selectinload(Lob.account)
+            ).filter_by(id=lob_id).first()
+            if not lob:
+                raise HTTPException(status_code=404, detail="LOB not found.")
+
+            immutable = {"id", "created_at"}
+            updated_fields = {}
+            for k, v in payload.items():
+                if k in immutable or not hasattr(Lob, k):
+                    continue
+                setattr(lob, k, v)
+                updated_fields[k] = v
+
+            now_utc = datetime.now(timezone.utc)
+            lob.is_manually_verified = True
+            lob.manually_verified_at = now_utc
+
+            session.commit()
+            session.refresh(lob)
+
+            company_name = lob.account.display_name if lob.account else "Company"
+            PipelineRunLogger.log_event(
+                company_name=company_name,
+                target_url=lob.domain or lob.website_url,
+                level="lob",
+                action="manual_edit",
+                status="success",
+                started_at=t0,
+                completed_at=now_utc,
+                entities_extracted={
+                    "lob_id": lob.id,
+                    "account_id": lob.account_id,
+                    "updated_fields": list(updated_fields.keys()),
+                    "is_manually_verified": True,
+                    "manually_verified_at": lob.manually_verified_at.isoformat(),
+                },
+            )
+            return {"status": "success", "lob": _serialize_lob_full(lob, [])}
+        except HTTPException:
+            session.rollback()
+            raise
+        except Exception as e:
+            session.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to update LOB: {str(e)}")
+        finally:
+            session.close()
+
+    @lobs_router.get("/sub/{sub_lob_id}")
+    @app.get("/api/sub-lobs/{sub_lob_id}", tags=["2. LOB & Sub-LOB Level"])
+    def get_sub_lob_record(sub_lob_id: int):
+        """Retrieves a single Sub-LOB by ID with all 19 enterprise columns."""
+        session = get_session()
+        try:
+            sub = session.query(SubLob).filter_by(id=sub_lob_id).first()
+            if not sub:
+                raise HTTPException(status_code=404, detail=f"Sub-LOB with ID {sub_lob_id} not found.")
+            return {"status": "success", "sub_lob": _serialize_sublob_obj(sub)}
+        finally:
+            session.close()
+
+    @lobs_router.patch("/sub/{sub_lob_id}")
+    @app.patch("/api/sub-lobs/{sub_lob_id}", tags=["2. LOB & Sub-LOB Level"])
+    def update_sub_lob(sub_lob_id: int, payload: Dict[str, Any] = Body(...)):
+        """
+        [Sub-LOB Universal & Inline Edit]: Updates Sub-LOB fields directly in PostgreSQL.
+        Automatically sets is_manually_verified = True, updates manually_verified_at to now,
+        logs audit event to pipeline_runs, and returns the updated Sub-LOB.
+        """
+        session = get_session()
+        t0 = datetime.now(timezone.utc)
+        try:
+            sub = session.query(SubLob).filter_by(id=sub_lob_id).first()
+            if not sub:
+                raise HTTPException(status_code=404, detail=f"Sub-LOB with ID {sub_lob_id} not found.")
+
+            allowed_cols = {
+                "name", "legal_name", "lei_code", "jurisdiction", "country", "city",
+                "relationship_type", "status", "entity_level", "parent_lob_lei",
+                "parent_lob_name", "domain", "website_url", "is_manually_verified",
+                "metadata", "metadata_"
+            }
+            updated_fields = {}
+            for k, v in payload.items():
+                target_col = "metadata_" if k == "metadata" else k
+                if (k in allowed_cols or target_col in allowed_cols) and hasattr(sub, target_col):
+                    setattr(sub, target_col, v)
+                    updated_fields[k] = v
+
+            now_utc = datetime.now(timezone.utc)
+            if "is_manually_verified" in payload:
+                sub.is_manually_verified = bool(payload["is_manually_verified"])
+            else:
+                sub.is_manually_verified = True
+            sub.manually_verified_at = now_utc
+
+            session.commit()
+            session.refresh(sub)
+
+            PipelineRunLogger.log_event(
+                company_name=sub.parent_lob_name or "Sub-LOB",
+                level="lob",
+                action="manual_edit_sublob",
+                status="success",
+                started_at=t0,
+                completed_at=now_utc,
+                entities_extracted={
+                    "sub_lob_id": sub.id,
+                    "lob_id": sub.lob_id,
+                    "updated_fields": list(updated_fields.keys()),
+                    "is_manually_verified": sub.is_manually_verified,
+                    "manually_verified_at": sub.manually_verified_at.isoformat() if sub.manually_verified_at else None,
+                },
+            )
+            return {
+                "status": "success",
+                "sub_lob": {
+                    "id": sub.id,
+                    "lob_id": sub.lob_id,
+                    "name": sub.name,
+                    "legal_name": sub.legal_name,
+                    "lei_code": sub.lei_code,
+                    "jurisdiction": sub.jurisdiction,
+                    "country": sub.country,
+                    "city": sub.city,
+                    "relationship_type": sub.relationship_type,
+                    "status": sub.status,
+                    "entity_level": sub.entity_level,
+                    "parent_lob_lei": sub.parent_lob_lei,
+                    "parent_lob_name": sub.parent_lob_name,
+                    "domain": sub.domain,
+                    "website_url": sub.website_url,
+                    "is_manually_verified": sub.is_manually_verified,
+                    "manually_verified_at": sub.manually_verified_at.isoformat() if sub.manually_verified_at else None,
+                    "metadata": sub.metadata_ or {},
+                }
+            }
+        except HTTPException:
+            session.rollback()
+            raise
+        except Exception as e:
+            session.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to update Sub-LOB: {str(e)}")
         finally:
             session.close()
 
@@ -1781,12 +2303,13 @@ if FASTAPI_AVAILABLE:
         Accepts the incoming person card payload from frontend, dynamically resolves identity,
         generates all 18 official scraping URLs, and synthesizes neural AI dossier.
         """
+        t0 = datetime.now(timezone.utc)
+        parsed_name = card.name
+        parsed_title = card.title
+        parsed_company = card.company_name
         try:
             # 1. Dynamically parse name, title, and company from incoming payload
             raw_display = card.display_name or ""
-            parsed_name = card.name
-            parsed_title = card.title
-            parsed_company = card.company_name
 
             # Dynamic extraction from display_name if explicit fields are omitted
             # (e.g. "Jane Doe (CEO, Example Co)")
@@ -1837,6 +2360,27 @@ if FASTAPI_AVAILABLE:
             )
             MasterSerializer.save_json(person_entry, person_file)
 
+            PipelineRunLogger.log_event(
+                company_name=parsed_company or "Company",
+                target_url=card.linkedin_url,
+                level="persona",
+                action="pull",
+                status="staged",
+                quality_score=90.0,
+                quality_grade="A",
+                started_at=t0,
+                completed_at=datetime.now(timezone.utc),
+                raw_storage_dir=str(person_file),
+                entities_extracted={
+                    "full_name": parsed_name,
+                    "title": parsed_title,
+                    "email": person_entry.get("email"),
+                    "account_id": card.account_id,
+                    "osint_sources_count": len(person_entry.get("osint_feed_manifest") or {}),
+                    "saved_file": str(person_file),
+                },
+            )
+
             return {
                 "status": "staged",
                 "message": f"Successfully fetched and enriched persona for '{parsed_name}'.",
@@ -1844,6 +2388,15 @@ if FASTAPI_AVAILABLE:
                 "person": person_entry,
             }
         except Exception as e:
+            PipelineRunLogger.log_event(
+                company_name=parsed_company or "Company",
+                level="persona",
+                action="pull",
+                status="failed",
+                started_at=t0,
+                completed_at=datetime.now(timezone.utc),
+                error_message=str(e),
+            )
             raise HTTPException(status_code=500, detail=f"Persona fetch failed: {str(e)}")
 
     @personas_router.post("/validate-single")
@@ -1852,6 +2405,14 @@ if FASTAPI_AVAILABLE:
         [Tab 4 - Individual Validate Button]:
         Validates a single person's contact data, scraping URLs, and AI dossier.
         """
+        t0 = datetime.now(timezone.utc)
+        comp_name = person_data.get("company_name") or person_data.get("company") or "Company"
+        p_name = (
+            person_data.get("display_name")
+            or person_data.get("name")
+            or person_data.get("full_name")
+            or "Executive"
+        )
         try:
             audit = PersonaValidator.validate_persona(person_data)
 
@@ -1863,13 +2424,35 @@ if FASTAPI_AVAILABLE:
             if not person_data.get("value_proposition"):
                 warnings.append("AI Persona Dossier has not been synthesized.")
 
+            score = float(audit.get("score", 90))
+            grade = audit.get("grade", "A")
+
+            PipelineRunLogger.log_event(
+                company_name=comp_name,
+                target_url=person_data.get("linkedin_url"),
+                level="persona",
+                action="validate",
+                status="validated",
+                quality_score=score,
+                quality_grade=grade,
+                started_at=t0,
+                completed_at=datetime.now(timezone.utc),
+                entities_extracted={
+                    "person_name": p_name,
+                    "title": person_data.get("title"),
+                    "has_verified_linkedin": bool(person_data.get("linkedin_url")),
+                    "has_verified_email": bool(person_data.get("email")),
+                    "has_ai_dossier": bool(person_data.get("value_proposition")),
+                    "ready_for_db": audit.get("ready_for_db", True),
+                    "warnings": warnings,
+                },
+            )
+
             return {
                 "status": "validated",
                 "score": audit.get("score", 90),
                 "grade": audit.get("grade", "A"),
-                "person_name": person_data.get("display_name")
-                or person_data.get("name")
-                or person_data.get("full_name"),
+                "person_name": p_name,
                 "has_verified_linkedin": bool(person_data.get("linkedin_url")),
                 "has_verified_email": bool(person_data.get("email")),
                 "has_ai_dossier": bool(person_data.get("value_proposition")),
@@ -1879,6 +2462,15 @@ if FASTAPI_AVAILABLE:
                 "ready_for_db": audit.get("ready_for_db", True),
             }
         except Exception as e:
+            PipelineRunLogger.log_event(
+                company_name=comp_name,
+                level="persona",
+                action="validate",
+                status="failed",
+                started_at=t0,
+                completed_at=datetime.now(timezone.utc),
+                error_message=str(e),
+            )
             raise HTTPException(status_code=500, detail=f"Persona validation failed: {str(e)}")
 
     @personas_router.post("/dump-single-db")
@@ -1886,6 +2478,7 @@ if FASTAPI_AVAILABLE:
         """
         [Tab 4 - Individual Dump DB Button]: Commits a single validated persona into PostgreSQL `personas` table.
         """
+        t0 = datetime.now(timezone.utc)
         session = get_session()
         try:
             acct = session.query(Account).filter_by(id=req.account_id).first()
@@ -1936,6 +2529,24 @@ if FASTAPI_AVAILABLE:
 
             persona.account_id = acct.id
             session.commit()
+
+            PipelineRunLogger.log_event(
+                company_name=acct.legal_name or acct.display_name or acct.key,
+                target_url=persona.linkedin_url,
+                level="persona",
+                action="dump",
+                status="success",
+                started_at=t0,
+                completed_at=datetime.now(timezone.utc),
+                entities_extracted={
+                    "persona_id": persona.id,
+                    "full_name": persona.full_name,
+                    "title": persona.title,
+                    "tier": persona.tier,
+                    "account_id": acct.id,
+                },
+            )
+
             return {
                 "status": "success",
                 "persona_id": persona.id,
@@ -1946,6 +2557,15 @@ if FASTAPI_AVAILABLE:
             }
         except Exception as e:
             session.rollback()
+            PipelineRunLogger.log_event(
+                company_name="Company",
+                level="persona",
+                action="dump",
+                status="failed",
+                started_at=t0,
+                completed_at=datetime.now(timezone.utc),
+                error_message=str(e),
+            )
             raise HTTPException(status_code=500, detail=f"Persona DB dump failed: {str(e)}")
         finally:
             session.close()
@@ -1953,6 +2573,8 @@ if FASTAPI_AVAILABLE:
     @personas_router.post("/fetch-hierarchy")
     def fetch_full_hierarchy(req: HierarchyFetchRequest):
         """[Tab 4 - Full Org Hierarchy Fetch Button]: Pulls live 4-tier organization hierarchy."""
+        t0 = datetime.now(timezone.utc)
+        comp_name = req.company_name or req.company_domain or "Company"
         try:
             hierarchy = scrape_hierarchy(
                 company_domain=req.company_domain,
@@ -1973,23 +2595,69 @@ if FASTAPI_AVAILABLE:
             total = sum(
                 len(hierarchy.get(k, [])) for k in ["c_suite", "vp_level", "director_level", "manager_level"]
             )
+            tier_counts = {
+                k: len(hierarchy.get(k, []))
+                for k in ["c_suite", "vp_level", "director_level", "manager_level"]
+            }
+
+            PipelineRunLogger.log_event(
+                company_name=comp_name,
+                target_url=req.company_domain,
+                level="persona",
+                action="pull",
+                status="staged",
+                started_at=t0,
+                completed_at=datetime.now(timezone.utc),
+                entities_extracted={
+                    "total_contacts": total,
+                    "tier_counts": tier_counts,
+                },
+            )
+
             return {
                 "status": "staged",
                 "total_contacts": total,
-                "tier_counts": {
-                    k: len(hierarchy.get(k, []))
-                    for k in ["c_suite", "vp_level", "director_level", "manager_level"]
-                },
+                "tier_counts": tier_counts,
                 "hierarchy": hierarchy,
             }
         except Exception as e:
+            PipelineRunLogger.log_event(
+                company_name=comp_name,
+                target_url=req.company_domain,
+                level="persona",
+                action="pull",
+                status="failed",
+                started_at=t0,
+                completed_at=datetime.now(timezone.utc),
+                error_message=str(e),
+            )
             raise HTTPException(status_code=500, detail=f"Hierarchy fetch failed: {str(e)}")
 
     @personas_router.post("/validate")
     def validate_personas(hierarchy: Dict[str, List[Dict[str, Any]]] = Body(...)):
         """[Tab 4 - Hierarchy Validate Button]: Validates 4-tier hierarchy."""
+        t0 = datetime.now(timezone.utc)
         try:
             report = DataQualityValidator.validate_hierarchy_and_personas(hierarchy)
+            score = float(report.get("score", 0.0))
+            grade = "A" if score >= 90 else ("B" if score >= 75 else ("C" if score >= 60 else "D"))
+
+            PipelineRunLogger.log_event(
+                company_name="Organization Hierarchy",
+                level="persona",
+                action="validate",
+                status="validated",
+                quality_score=score,
+                quality_grade=grade,
+                started_at=t0,
+                completed_at=datetime.now(timezone.utc),
+                entities_extracted={
+                    "total_contacts": report.get("total_contacts"),
+                    "tier_breakdown": report.get("tier_breakdown"),
+                    "warnings": report.get("warnings", []),
+                },
+            )
+
             return {
                 "status": "validated",
                 "score": report["score"],
@@ -1999,11 +2667,21 @@ if FASTAPI_AVAILABLE:
                 "warnings": report["warnings"],
             }
         except Exception as e:
+            PipelineRunLogger.log_event(
+                company_name="Organization Hierarchy",
+                level="persona",
+                action="validate",
+                status="failed",
+                started_at=t0,
+                completed_at=datetime.now(timezone.utc),
+                error_message=str(e),
+            )
             raise HTTPException(status_code=500, detail=f"Personas validation failed: {str(e)}")
 
     @personas_router.post("/dump-hierarchy-db")
     def dump_hierarchy_to_db(req: HierarchyDumpRequest):
         """[Tab 4 - Batch Hierarchy Dump DB Button]: Commits full 4-tier hierarchy to PostgreSQL."""
+        t0 = datetime.now(timezone.utc)
         session = get_session()
         try:
             acct = session.query(Account).filter_by(id=req.account_id).first()
@@ -2013,6 +2691,20 @@ if FASTAPI_AVAILABLE:
             repo = PersonaRepository(session)
             count = repo.upsert_all(acct, req.hierarchy)
             session.commit()
+
+            PipelineRunLogger.log_event(
+                company_name=acct.legal_name or acct.display_name or acct.key,
+                level="persona",
+                action="dump",
+                status="success",
+                started_at=t0,
+                completed_at=datetime.now(timezone.utc),
+                entities_extracted={
+                    "total_personas_saved": count,
+                    "account_id": acct.id,
+                },
+            )
+
             return {
                 "status": "success",
                 "account_id": acct.id,
@@ -2021,6 +2713,15 @@ if FASTAPI_AVAILABLE:
             }
         except Exception as e:
             session.rollback()
+            PipelineRunLogger.log_event(
+                company_name="Company",
+                level="persona",
+                action="dump",
+                status="failed",
+                started_at=t0,
+                completed_at=datetime.now(timezone.utc),
+                error_message=str(e),
+            )
             raise HTTPException(status_code=500, detail=f"Hierarchy DB dump failed: {str(e)}")
         finally:
             session.close()
@@ -2034,33 +2735,149 @@ if FASTAPI_AVAILABLE:
             if tier:
                 query = query.filter_by(tier=tier)
             personas = query.order_by(Persona.id).all()
-            return [
-                {
-                    "id": p.id,
+            return [_serialize_persona_full(p) for p in personas]
+        finally:
+            session.close()
+
+    @personas_router.patch("/{persona_id}")
+    @app.patch("/api/persona/{persona_id}", tags=["3. Personas Level"])
+    @app.patch("/api/personas/{persona_id}", tags=["3. Personas Level"])
+    def update_persona(persona_id: int, payload: Dict[str, Any] = Body(...)):
+        """
+        [Universal & Inline Edit]: Updates persona fields directly in PostgreSQL.
+        Automatically sets is_manually_verified = True, updates manually_verified_at to now,
+        logs audit event to pipeline_runs, and returns the full serialized persona.
+        """
+        session = get_session()
+        t0 = datetime.now(timezone.utc)
+        try:
+            p = session.query(Persona).options(
+                selectinload(Persona.account)
+            ).filter_by(id=persona_id).first()
+            if not p:
+                raise HTTPException(status_code=404, detail="Persona not found.")
+
+            immutable = {"id", "created_at"}
+            updated_fields = {}
+            for k, v in payload.items():
+                if k in immutable or not hasattr(Persona, k):
+                    continue
+                setattr(p, k, v)
+                updated_fields[k] = v
+
+            now_utc = datetime.now(timezone.utc)
+            p.is_manually_verified = True
+            p.manually_verified_at = now_utc
+
+            session.commit()
+            session.refresh(p)
+
+            company_name = p.account.display_name if p.account else "Company"
+            PipelineRunLogger.log_event(
+                company_name=company_name,
+                target_url=p.linkedin_url or p.email,
+                level="persona",
+                action="manual_edit",
+                status="success",
+                started_at=t0,
+                completed_at=now_utc,
+                entities_extracted={
+                    "persona_id": p.id,
                     "account_id": p.account_id,
-                    "full_name": p.full_name,
-                    "title": p.title,
-                    "tier": p.tier,
-                    "email": p.email,
-                    "phone": p.phone,
-                    "linkedin_url": p.linkedin_url,
-                    "degree": p.degree,
-                    "institution": p.institution,
-                    "prior_company": p.prior_company,
-                    "communication_style": p.communication_style,
-                    "skills": p.skills,
-                    "target_kpis": p.target_kpis,
-                    "operational_pain_points": p.operational_pain_points,
-                    "key_objections": p.key_objections,
-                    "twitter_live_url": p.twitter_live_url,
-                    "sec_insider_trades_url": p.sec_insider_trades_url,
-                    "rss_url": p.rss_url,
-                    "google_scholar_url": p.google_scholar_url,
-                    "youtube_interviews_url": p.youtube_interviews_url,
-                    "podcast_search_url": p.podcast_search_url,
-                }
-                for p in personas
-            ]
+                    "updated_fields": list(updated_fields.keys()),
+                    "is_manually_verified": True,
+                    "manually_verified_at": p.manually_verified_at.isoformat(),
+                },
+            )
+            return {"status": "success", "persona": _serialize_persona_full(p)}
+        except HTTPException:
+            session.rollback()
+            raise
+        except Exception as e:
+            session.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to update persona: {str(e)}")
+        finally:
+            session.close()
+
+    @app.post("/api/verify/{entity_type}/{entity_id}", tags=["0. Verification Engine"])
+    def toggle_manual_verification(entity_type: str, entity_id: int, payload: Optional[Dict[str, Any]] = Body(default=None)):
+        """
+        [Manual Verification Toggle]: Sets or toggles is_manually_verified flag on Account, LOB, or Persona in PostgreSQL.
+        Every time it is marked verified, manually_verified_at is stamped with current UTC time.
+        Audit logged to pipeline_runs and output audit logs.
+        """
+        entity_type_lower = entity_type.lower().rstrip("s")
+        session = get_session()
+        t0 = datetime.now(timezone.utc)
+        try:
+            if entity_type_lower == "account":
+                model_cls = Account
+                level = "account"
+            elif entity_type_lower == "lob":
+                model_cls = Lob
+                level = "lob"
+            elif entity_type_lower == "persona":
+                model_cls = Persona
+                level = "persona"
+            else:
+                raise HTTPException(status_code=400, detail=f"Unsupported entity type: '{entity_type}'. Must be 'account', 'lob', or 'persona'.")
+
+            entity = session.query(model_cls).filter_by(id=entity_id).first()
+            if not entity:
+                raise HTTPException(status_code=404, detail=f"{entity_type.capitalize()} with id {entity_id} not found.")
+
+            now_utc = datetime.now(timezone.utc)
+            if payload and "verified" in payload:
+                new_state = bool(payload["verified"])
+            else:
+                new_state = not bool(getattr(entity, "is_manually_verified", False))
+
+            entity.is_manually_verified = new_state
+            if new_state:
+                entity.manually_verified_at = now_utc
+            else:
+                entity.manually_verified_at = None
+
+            session.commit()
+            session.refresh(entity)
+
+            company_name = "Company"
+            if hasattr(entity, "display_name") and entity.display_name:
+                company_name = entity.display_name
+            elif hasattr(entity, "legal_name") and entity.legal_name:
+                company_name = entity.legal_name
+            elif hasattr(entity, "account") and entity.account:
+                company_name = entity.account.display_name or entity.account.legal_name or "Company"
+
+            PipelineRunLogger.log_event(
+                company_name=company_name,
+                target_url=getattr(entity, "domain", None) or getattr(entity, "linkedin_url", None) or getattr(entity, "website_url", None),
+                level=level,
+                action="verify_toggle",
+                status="success",
+                started_at=t0,
+                completed_at=now_utc,
+                entities_extracted={
+                    "entity_type": entity_type_lower,
+                    "entity_id": entity_id,
+                    "is_manually_verified": entity.is_manually_verified,
+                    "manually_verified_at": entity.manually_verified_at.isoformat() if entity.manually_verified_at else None,
+                },
+            )
+
+            return {
+                "status": "success",
+                "entity_type": entity_type_lower,
+                "id": entity_id,
+                "is_manually_verified": entity.is_manually_verified,
+                "manually_verified_at": entity.manually_verified_at.isoformat() if entity.manually_verified_at else None,
+            }
+        except HTTPException:
+            session.rollback()
+            raise
+        except Exception as e:
+            session.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to toggle verification: {str(e)}")
         finally:
             session.close()
 
@@ -2072,21 +2889,55 @@ if FASTAPI_AVAILABLE:
     @pipeline_router.post("/run")
     def trigger_full_pipeline(req: PipelineRunRequest):
         """Triggers complete live pipeline. Staged, NO DB write."""
+        t0 = datetime.now(timezone.utc)
         try:
             res = run_pipeline(company_name=req.company_name, target_url=req.target_url)
+            val_meta = res.get("validation_report", {}).get("audit_metadata", {})
+            q_score = float(val_meta.get("overall_quality_score", 0.0))
+            q_grade = val_meta.get("overall_quality_grade", "N/A")
+
+            raw_d = res.get("run_dirs", {}).get("raw_dir")
+            enr_d = res.get("run_dirs", {}).get("enriched_dir")
+
+            PipelineRunLogger.log_event(
+                company_name=req.company_name,
+                target_url=req.target_url,
+                level="composite",
+                action="run",
+                status="staged",
+                quality_score=q_score,
+                quality_grade=q_grade,
+                started_at=t0,
+                completed_at=datetime.now(timezone.utc),
+                raw_storage_dir=str(raw_d) if raw_d else None,
+                enriched_storage_dir=str(enr_d) if enr_d else None,
+                entities_extracted={"run_dirs": {k: str(v) for k, v in res.get("run_dirs", {}).items()}},
+            )
+
             return {
                 "status": "staged",
                 "company_name": req.company_name,
                 "run_dirs": {k: str(v) for k, v in res["run_dirs"].items()},
-                "validation_score": res["validation_report"]["audit_metadata"]["overall_quality_score"],
-                "ready_for_db_dump": res["validation_report"]["audit_metadata"]["ready_for_db_dump"],
+                "validation_score": q_score,
+                "ready_for_db_dump": val_meta.get("ready_for_db_dump", False),
             }
         except Exception as e:
+            PipelineRunLogger.log_event(
+                company_name=req.company_name,
+                target_url=req.target_url,
+                level="composite",
+                action="run",
+                status="failed",
+                started_at=t0,
+                completed_at=datetime.now(timezone.utc),
+                error_message=str(e),
+            )
             raise HTTPException(status_code=500, detail=f"Pipeline execution failed: {str(e)}")
 
     @pipeline_router.post("/validate")
     def validate_composite_run(req: PipelineDumpDbRequest):
         """Audits an entire staged run directory or file."""
+        t0 = datetime.now(timezone.utc)
         target_path = Path(req.run_dir or req.file or "")
         if not target_path.exists():
             raise HTTPException(status_code=404, detail=f"Path not found: {target_path}")
@@ -2104,22 +2955,55 @@ if FASTAPI_AVAILABLE:
         try:
             with open(target_path, "r", encoding="utf-8") as f:
                 doc = json.load(f)
-            return DataQualityValidator.audit_run(doc)
+            audit_result = DataQualityValidator.audit_run(doc)
+            val_meta = audit_result.get("audit_metadata", {})
+            q_score = float(val_meta.get("overall_quality_score", 0.0))
+            q_grade = val_meta.get("overall_quality_grade", "N/A")
+
+            PipelineRunLogger.log_event(
+                company_name=doc.get("company_name") or "Composite Run",
+                level="composite",
+                action="validate",
+                status="validated",
+                quality_score=q_score,
+                quality_grade=q_grade,
+                started_at=t0,
+                completed_at=datetime.now(timezone.utc),
+                raw_storage_dir=str(target_path),
+                entities_extracted={"audit_path": str(target_path)},
+            )
+
+            return audit_result
         except Exception as e:
+            PipelineRunLogger.log_event(
+                company_name="Composite Run",
+                level="composite",
+                action="validate",
+                status="failed",
+                started_at=t0,
+                completed_at=datetime.now(timezone.utc),
+                error_message=str(e),
+            )
             raise HTTPException(status_code=500, detail=f"Validation failed: {str(e)}")
 
     @pipeline_router.get("/runs")
-    def list_pipeline_runs(limit: int = 50):
+    def list_pipeline_runs(limit: int = 50, company_name: Optional[str] = Query(None)):
         """Lists recent execution runs from PostgreSQL pipeline_runs table."""
+        from db.models import PipelineRun
         session = get_session()
         try:
-            repo = PipelineRunRepository(session)
-            runs = repo.list_recent_runs(limit=limit)
-            return [
+            query = session.query(PipelineRun)
+            if company_name:
+                query = query.filter(PipelineRun.company_name.ilike(f"%{company_name}%"))
+            runs = query.order_by(PipelineRun.started_at.desc()).limit(limit).all()
+            run_list = [
                 {
                     "id": r.id,
                     "run_id": r.run_id,
                     "company_name": r.company_name,
+                    "pipeline_level": getattr(r, "pipeline_level", "pipeline"),
+                    "action": getattr(r, "action", "run"),
+                    "target_url": r.target_url,
                     "status": r.status,
                     "quality_score": float(r.quality_score or 0.0),
                     "quality_grade": r.quality_grade,
@@ -2128,25 +3012,32 @@ if FASTAPI_AVAILABLE:
                     "duration_seconds": float(r.duration_seconds or 0.0),
                     "total_credits_used": r.total_credits_used,
                     "entities_extracted": r.entities_extracted,
+                    "raw_storage_dir": r.raw_storage_dir,
+                    "enriched_storage_dir": r.enriched_storage_dir,
+                    "execution_logs": r.execution_logs,
+                    "error_message": r.error_message,
                 }
                 for r in runs
             ]
+            return {"status": "success", "runs": run_list}
         finally:
             session.close()
 
     @pipeline_router.get("/runs/{run_id}")
     def get_pipeline_run_detail(run_id: str):
         """Retrieves full execution details, credit breakdown, and logs for a specific run."""
+        from db.models import PipelineRun
         session = get_session()
         try:
-            repo = PipelineRunRepository(session)
-            r = repo.get_by_run_id(run_id)
+            r = session.query(PipelineRun).filter(PipelineRun.run_id == run_id).first()
             if not r:
                 raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found.")
             return {
                 "id": r.id,
                 "run_id": r.run_id,
                 "company_name": r.company_name,
+                "pipeline_level": getattr(r, "pipeline_level", "pipeline"),
+                "action": getattr(r, "action", "run"),
                 "target_url": r.target_url,
                 "status": r.status,
                 "quality_score": float(r.quality_score or 0.0),
@@ -2227,9 +3118,52 @@ if FASTAPI_AVAILABLE:
                         "reddit_rss_url": lob_item.reddit_rss_url,
                         "google_patents_url": lob_item.google_patents_url,
                         "google_trends_url": lob_item.google_trends_url,
-                        "youtube_search_url": lob_item.youtube_search_url,
-                        "sub_lobs": [{"id": s.id, "name": s.name, "metadata": s.metadata_} for s in sublobs],
-                        "subLobs": [{"id": s.id, "name": s.name, "metadata": s.metadata_} for s in sublobs],
+                        "sub_lobs": [
+                            {
+                                "id": s.id,
+                                "lob_id": s.lob_id,
+                                "name": s.name,
+                                "legal_name": getattr(s, "legal_name", None) or s.name,
+                                "lei_code": getattr(s, "lei_code", None),
+                                "jurisdiction": getattr(s, "jurisdiction", None),
+                                "country": getattr(s, "country", None),
+                                "city": getattr(s, "city", None),
+                                "relationship_type": getattr(s, "relationship_type", None) or "Level 3: Operating Sub-LOB / Grandchild",
+                                "status": getattr(s, "status", None) or "ACTIVE",
+                                "entity_level": getattr(s, "entity_level", None) or "Level 3 (Operating Sub-LOB)",
+                                "parent_lob_lei": getattr(s, "parent_lob_lei", None),
+                                "parent_lob_name": getattr(s, "parent_lob_name", None) or lob_item.lob_name,
+                                "domain": getattr(s, "domain", None),
+                                "website_url": getattr(s, "website_url", None),
+                                "is_manually_verified": bool(getattr(s, "is_manually_verified", False)),
+                                "manually_verified_at": s.manually_verified_at.isoformat() if getattr(s, "manually_verified_at", None) else None,
+                                "metadata": getattr(s, "metadata_", {}) or {},
+                            }
+                            for s in sublobs
+                        ],
+                        "subLobs": [
+                            {
+                                "id": s.id,
+                                "lob_id": s.lob_id,
+                                "name": s.name,
+                                "legal_name": getattr(s, "legal_name", None) or s.name,
+                                "lei_code": getattr(s, "lei_code", None),
+                                "jurisdiction": getattr(s, "jurisdiction", None),
+                                "country": getattr(s, "country", None),
+                                "city": getattr(s, "city", None),
+                                "relationship_type": getattr(s, "relationship_type", None) or "Level 3: Operating Sub-LOB / Grandchild",
+                                "status": getattr(s, "status", None) or "ACTIVE",
+                                "entity_level": getattr(s, "entity_level", None) or "Level 3 (Operating Sub-LOB)",
+                                "parent_lob_lei": getattr(s, "parent_lob_lei", None),
+                                "parent_lob_name": getattr(s, "parent_lob_name", None) or lob_item.lob_name,
+                                "domain": getattr(s, "domain", None),
+                                "website_url": getattr(s, "website_url", None),
+                                "is_manually_verified": bool(getattr(s, "is_manually_verified", False)),
+                                "manually_verified_at": s.manually_verified_at.isoformat() if getattr(s, "manually_verified_at", None) else None,
+                                "metadata": getattr(s, "metadata_", {}) or {},
+                            }
+                            for s in sublobs
+                        ],
                     }
                 )
             return {"account_id": account_id, "total_lobs": len(result), "lobs": result}
@@ -2268,8 +3202,52 @@ if FASTAPI_AVAILABLE:
                 "google_patents_url": lob_item.google_patents_url,
                 "google_trends_url": lob_item.google_trends_url,
                 "youtube_search_url": lob_item.youtube_search_url,
-                "sub_lobs": [{"id": s.id, "name": s.name, "metadata": s.metadata_} for s in sublobs],
-                "subLobs": [{"id": s.id, "name": s.name, "metadata": s.metadata_} for s in sublobs],
+                "sub_lobs": [
+                    {
+                        "id": s.id,
+                        "lob_id": s.lob_id,
+                        "name": s.name,
+                        "legal_name": getattr(s, "legal_name", None) or s.name,
+                        "lei_code": getattr(s, "lei_code", None),
+                        "jurisdiction": getattr(s, "jurisdiction", None),
+                        "country": getattr(s, "country", None),
+                        "city": getattr(s, "city", None),
+                        "relationship_type": getattr(s, "relationship_type", None) or "Level 3: Operating Sub-LOB / Grandchild",
+                        "status": getattr(s, "status", None) or "ACTIVE",
+                        "entity_level": getattr(s, "entity_level", None) or "Level 3 (Operating Sub-LOB)",
+                        "parent_lob_lei": getattr(s, "parent_lob_lei", None),
+                        "parent_lob_name": getattr(s, "parent_lob_name", None) or lob_item.lob_name,
+                        "domain": getattr(s, "domain", None),
+                        "website_url": getattr(s, "website_url", None),
+                        "is_manually_verified": bool(getattr(s, "is_manually_verified", False)),
+                        "manually_verified_at": s.manually_verified_at.isoformat() if getattr(s, "manually_verified_at", None) else None,
+                        "metadata": getattr(s, "metadata_", {}) or {},
+                    }
+                    for s in sublobs
+                ],
+                "subLobs": [
+                    {
+                        "id": s.id,
+                        "lob_id": s.lob_id,
+                        "name": s.name,
+                        "legal_name": getattr(s, "legal_name", None) or s.name,
+                        "lei_code": getattr(s, "lei_code", None),
+                        "jurisdiction": getattr(s, "jurisdiction", None),
+                        "country": getattr(s, "country", None),
+                        "city": getattr(s, "city", None),
+                        "relationship_type": getattr(s, "relationship_type", None) or "Level 3: Operating Sub-LOB / Grandchild",
+                        "status": getattr(s, "status", None) or "ACTIVE",
+                        "entity_level": getattr(s, "entity_level", None) or "Level 3 (Operating Sub-LOB)",
+                        "parent_lob_lei": getattr(s, "parent_lob_lei", None),
+                        "parent_lob_name": getattr(s, "parent_lob_name", None) or lob_item.lob_name,
+                        "domain": getattr(s, "domain", None),
+                        "website_url": getattr(s, "website_url", None),
+                        "is_manually_verified": bool(getattr(s, "is_manually_verified", False)),
+                        "manually_verified_at": s.manually_verified_at.isoformat() if getattr(s, "manually_verified_at", None) else None,
+                        "metadata": getattr(s, "metadata_", {}) or {},
+                    }
+                    for s in sublobs
+                ],
             }
         finally:
             session.close()
@@ -2360,6 +3338,237 @@ if FASTAPI_AVAILABLE:
                 "target_kpis": p.target_kpis or [],
                 "raw_data": p.raw_data,
             }
+        finally:
+            session.close()
+
+    # ── Enterprise Record Updating & Verification Endpoints ────────────────────
+
+    @app.patch("/api/accounts/{account_id}", tags=["1. Accounts"])
+    def update_account_record(account_id: int, updates: Dict[str, Any]):
+        """Directly updates Account fields in PostgreSQL, sets is_manually_verified=True, and logs audit run."""
+        session = get_session()
+        try:
+            acct = session.query(Account).filter_by(id=account_id).first()
+            if not acct:
+                raise HTTPException(status_code=404, detail=f"Account {account_id} not found.")
+
+            disallowed = {"id", "created_at"}
+            applied = {}
+            for k, v in updates.items():
+                if k in disallowed:
+                    continue
+                if k in ["name", "display_name"] and hasattr(acct, "display_name"):
+                    acct.display_name = v
+                    applied["display_name"] = v
+                elif hasattr(acct, k):
+                    setattr(acct, k, v)
+                    applied[k] = v
+
+            now_utc = datetime.now(timezone.utc)
+            acct.updated_at = now_utc
+            acct.is_manually_verified = updates.get("is_manually_verified", True)
+            acct.manually_verified_at = now_utc
+            session.commit()
+            session.refresh(acct)
+
+            from services.pipeline_run_logger import PipelineRunLogger
+            PipelineRunLogger.log_event(
+                company_name=acct.display_name or acct.name or "Account",
+                pipeline_level="account",
+                action="manual_edit",
+                status="completed",
+                quality_score=100.0,
+                quality_grade="A",
+                target_url=acct.domain or acct.primary_domain or None,
+                entities_extracted={"updated_fields": list(applied.keys()), "values": applied, "is_manually_verified": acct.is_manually_verified},
+            )
+
+            return {"status": "success", "account": _serialize_account_summary(acct)}
+        except HTTPException:
+            raise
+        except Exception as e:
+            session.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to update account: {str(e)}")
+        finally:
+            session.close()
+
+    @app.patch("/api/lobs/{lob_id}", tags=["2. Lines of Business"])
+    def update_lob_record(lob_id: int, updates: Dict[str, Any]):
+        """Directly updates LOB fields in PostgreSQL, sets is_manually_verified=True, and logs audit run."""
+        session = get_session()
+        try:
+            lob = session.query(Lob).filter_by(id=lob_id).first()
+            if not lob:
+                raise HTTPException(status_code=404, detail=f"LOB {lob_id} not found.")
+
+            disallowed = {"id", "account_id"}
+            applied = {}
+            for k, v in updates.items():
+                if k in disallowed:
+                    continue
+                if k in ["name", "lob_name"] and hasattr(lob, "lob_name"):
+                    lob.lob_name = v
+                    applied["lob_name"] = v
+                elif k in ["desc", "overview"] and hasattr(lob, "overview"):
+                    lob.overview = v
+                    applied["overview"] = v
+                elif k in ["revenue", "audited_segment_revenue"] and hasattr(lob, "audited_segment_revenue"):
+                    lob.audited_segment_revenue = v
+                    applied["audited_segment_revenue"] = v
+                elif k in ["head", "operating_head"] and hasattr(lob, "operating_head"):
+                    lob.operating_head = v
+                    applied["operating_head"] = v
+                elif k in ["headcount", "segment_headcount"] and hasattr(lob, "segment_headcount"):
+                    lob.segment_headcount = v
+                    applied["segment_headcount"] = v
+                elif hasattr(lob, k):
+                    setattr(lob, k, v)
+                    applied[k] = v
+
+            now_utc = datetime.now(timezone.utc)
+            lob.is_manually_verified = updates.get("is_manually_verified", True)
+            lob.manually_verified_at = now_utc
+            session.commit()
+            session.refresh(lob)
+
+            co_name = "Enterprise"
+            if lob.account:
+                co_name = lob.account.display_name or lob.account.name or "Enterprise"
+
+            from services.pipeline_run_logger import PipelineRunLogger
+            PipelineRunLogger.log_event(
+                company_name=co_name,
+                pipeline_level="lob",
+                action="manual_edit",
+                status="completed",
+                quality_score=100.0,
+                quality_grade="A",
+                target_url=lob.domain or None,
+                entities_extracted={"lob_id": lob.id, "updated_fields": list(applied.keys()), "values": applied, "is_manually_verified": lob.is_manually_verified},
+            )
+
+            return {"status": "success", "lob": _serialize_lob_full(lob, [])}
+        except HTTPException:
+            raise
+        except Exception as e:
+            session.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to update LOB: {str(e)}")
+        finally:
+            session.close()
+
+    @app.patch("/api/personas/{persona_id}", tags=["3. Personas & Buying Committee"])
+    def update_persona_record(persona_id: int, updates: Dict[str, Any]):
+        """Directly updates Persona fields in PostgreSQL, sets is_manually_verified=True, and logs audit run."""
+        session = get_session()
+        try:
+            p = session.query(Persona).filter_by(id=persona_id).first()
+            if not p:
+                raise HTTPException(status_code=404, detail=f"Persona {persona_id} not found.")
+
+            disallowed = {"id", "account_id"}
+            applied = {}
+            for k, v in updates.items():
+                if k in disallowed:
+                    continue
+                if k in ["name", "full_name"] and hasattr(p, "full_name"):
+                    p.full_name = v
+                    p.display_name = v
+                    applied["full_name"] = v
+                elif hasattr(p, k):
+                    setattr(p, k, v)
+                    applied[k] = v
+
+            now_utc = datetime.now(timezone.utc)
+            p.is_manually_verified = updates.get("is_manually_verified", True)
+            p.manually_verified_at = now_utc
+            session.commit()
+            session.refresh(p)
+
+            co_name = "Enterprise"
+            if p.account:
+                co_name = p.account.display_name or p.account.name or "Enterprise"
+
+            from services.pipeline_run_logger import PipelineRunLogger
+            PipelineRunLogger.log_event(
+                company_name=co_name,
+                pipeline_level="persona",
+                action="manual_edit",
+                status="completed",
+                quality_score=100.0,
+                quality_grade="A",
+                target_url=p.linkedin_url or None,
+                entities_extracted={"persona_id": p.id, "updated_fields": list(applied.keys()), "values": applied, "is_manually_verified": p.is_manually_verified},
+            )
+
+            return {"status": "success", "persona": _serialize_persona_full(p)}
+        except HTTPException:
+            raise
+        except Exception as e:
+            session.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to update persona: {str(e)}")
+        finally:
+            session.close()
+
+    @app.post("/api/verify/{entity_type}/{entity_id}", tags=["0. Verification"])
+    def toggle_entity_verification(entity_type: str, entity_id: int):
+        """Toggles manual verification flag directly in DB and appends audit trail."""
+        session = get_session()
+        try:
+            now_utc = datetime.now(timezone.utc)
+            entity_type = entity_type.lower()
+            co_name = "Enterprise"
+            target_url = None
+            if entity_type == "account":
+                obj = session.query(Account).filter_by(id=entity_id).first()
+                if not obj: raise HTTPException(404, "Account not found")
+                co_name = obj.display_name or obj.name or "Account"
+                target_url = obj.domain or obj.primary_domain
+            elif entity_type == "lob":
+                obj = session.query(Lob).filter_by(id=entity_id).first()
+                if not obj: raise HTTPException(404, "LOB not found")
+                co_name = obj.account.display_name if obj.account else "LOB"
+                target_url = obj.domain
+            elif entity_type in ["persona", "person"]:
+                obj = session.query(Persona).filter_by(id=entity_id).first()
+                if not obj: raise HTTPException(404, "Persona not found")
+                co_name = obj.account.display_name if obj.account else "Persona"
+                target_url = obj.linkedin_url
+            elif entity_type in ["sub_lob", "sublob"]:
+                obj = session.query(SubLob).filter_by(id=entity_id).first()
+                if not obj: raise HTTPException(404, "Sub-LOB not found")
+                co_name = obj.parent_lob_name or "Sub-LOB"
+                target_url = obj.domain or obj.website_url
+            else:
+                raise HTTPException(400, f"Unsupported entity type: {entity_type}")
+
+            new_status = not bool(getattr(obj, "is_manually_verified", False))
+            obj.is_manually_verified = new_status
+            obj.manually_verified_at = now_utc if new_status else None
+            session.commit()
+            session.refresh(obj)
+
+            from services.pipeline_run_logger import PipelineRunLogger
+            PipelineRunLogger.log_event(
+                company_name=co_name,
+                pipeline_level=entity_type if entity_type != "person" else "persona",
+                action="manual_verify" if new_status else "manual_unverify",
+                status="completed",
+                quality_score=100.0 if new_status else 75.0,
+                quality_grade="A" if new_status else "C",
+                target_url=target_url,
+                entities_extracted={"entity_type": entity_type, "entity_id": entity_id, "is_manually_verified": new_status, "verified_at": now_utc.isoformat() if new_status else None},
+            )
+
+            return {
+                "status": "success",
+                "is_manually_verified": new_status,
+                "manually_verified_at": now_utc.isoformat() if new_status else None
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            session.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to toggle verification: {str(e)}")
         finally:
             session.close()
 
