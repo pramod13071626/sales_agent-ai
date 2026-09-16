@@ -13,6 +13,9 @@ import { initAccountsNav } from './accounts-nav.js';
 import { renderDueSoon } from './due-soon.js';
 import { renderHiringSignals, renderStrategicInvestmentTracks } from './hiring-signals.js';
 import { renderCapitalEvents, renderCoverageGaps, renderCompetitorMentions, renderTechSignals } from './account-signals.js';
+import { renderObjections } from './objections.js';
+import { renderDecisionMakers } from './decision-makers.js';
+import { renderNewsFeed } from './news.js';
 import { initWidgetGuides } from './widget-guide.js';
 import { kpiBase } from './data.js';
 
@@ -47,6 +50,9 @@ function renderAll() {
   renderCoverageGaps();
   renderCompetitorMentions();
   renderTechSignals();
+  renderObjections();
+  renderDecisionMakers();
+  renderNewsFeed();
 }
 
 function checkDashboardAccessNotice() {

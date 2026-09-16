@@ -4,6 +4,7 @@
 // leaving Command Center for the full Tasks page.
 import { esc } from './utils.js';
 import { showToast } from '../toast.js';
+import { renderSkeleton } from '../skeleton.js';
 
 function dueLabel(iso) {
   const days = Math.round((new Date(iso).getTime() - Date.now()) / 86400000);
@@ -45,7 +46,7 @@ function rowHtml(item) {
 export async function renderDueSoon() {
   const list = document.getElementById('ccDueSoonList');
   if (!list) return;
-  list.innerHTML = '<li class="cc-drawer-empty">Loading…</li>';
+  list.innerHTML = renderSkeleton('feed-rows');
   let items;
   try {
     items = await loadDueSoon();

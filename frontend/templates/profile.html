@@ -16,6 +16,7 @@
   <link rel="stylesheet" href="css/responsive.css?v=3.0">
   <link rel="stylesheet" href="css/profile-page.css?v=3.0">
   <link rel="stylesheet" href="css/action-items.css?v=1.0">
+  <link rel="stylesheet" href="css/skeleton.css?v=3.0">
 </head>
 <body class="profile-page-body">
 
@@ -29,7 +30,18 @@
 </div>
 
 <main class="profile-page-main" id="profilePageMain">
-  <div class="profile-page-loading"><div class="profile-page-spinner"></div> Loading profile…</div>
+  <div class="skeleton-block" style="padding:16px;">
+    <div class="skeleton-nav-card" style="flex-direction:row; align-items:center; gap:16px;">
+      <div class="skeleton skeleton-avatar-lg"></div>
+      <div style="flex:1; display:flex; flex-direction:column; gap:8px;">
+        <div class="skeleton skeleton-line skeleton-line--60"></div>
+        <div class="skeleton skeleton-line skeleton-line--80"></div>
+      </div>
+    </div>
+    <div class="skeleton skeleton-list-row"></div>
+    <div class="skeleton skeleton-list-row"></div>
+    <div class="skeleton skeleton-list-row"></div>
+  </div>
 </main>
 
 <div class="toast" id="toast"></div>

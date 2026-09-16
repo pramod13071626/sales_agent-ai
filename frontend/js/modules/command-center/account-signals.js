@@ -7,6 +7,7 @@
 import { loadRealAccounts, loadMatrixAccounts } from './real-accounts.js';
 import { openDossier } from './drawer.js';
 import { esc, formatMoney } from './utils.js';
+import { renderSkeleton } from '../skeleton.js';
 
 async function loadEnrichedAccounts() {
   const [raw, matrix] = await Promise.all([loadRealAccounts(), loadMatrixAccounts()]);
@@ -26,7 +27,7 @@ function bindClickThrough(list, accountsById) {
 async function renderWidget(listId, emptyMessage, computeEntries, rowHtml) {
   const list = document.getElementById(listId);
   if (!list) return;
-  list.innerHTML = '<li class="cc-drawer-empty">Loading…</li>';
+  list.innerHTML = renderSkeleton('feed-rows');
   let accounts;
   try {
     accounts = await loadEnrichedAccounts();

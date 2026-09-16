@@ -1,6 +1,7 @@
 import { esc } from './utils.js';
 import { logTouch } from './actions.js';
 import { loadRecentMovements, markMovementActioned } from './exec-movements.js';
+import { renderSkeleton } from '../skeleton.js';
 
 function itemHtml(e) {
   const aging = !e.actioned && (Date.now() - e.date.getTime()) / 86400000 >= 5;
@@ -24,7 +25,7 @@ function itemHtml(e) {
 export async function renderTimeline() {
   const list = document.getElementById('ccTimelineList');
   if (!list) return;
-  list.innerHTML = '<li class="cc-drawer-empty">Loading exec movements…</li>';
+  list.innerHTML = renderSkeleton('feed-rows');
   let movements;
   try {
     movements = await loadRecentMovements();

@@ -2,12 +2,29 @@
 // Renders concise, high-impact executive hiring signals across all database organizations on the Command Center.
 // Detailed deep-dives (Requisitions browser, staff-aug lists, etc.) are hosted in the Account Level "Hiring Trend Radar".
 
-import { loadRealAccounts } from './real-accounts.js';
+import { loadRealAccounts, resolveRealAccount } from './real-accounts.js';
 import { esc } from './utils.js';
+import { renderSkeleton } from '../skeleton.js';
 
 // Cache for lightweight summaries
 const summaryCache = new Map();
 const personasCache = new Map();
+
+let bnyAccountIdPromise = null;
+
+// renderStrategicInvestmentTracks() below is BNY-specific by design (its
+// sponsor personas/pitch copy name actual BNY executives), unlike
+// renderHiringSignals() which now spans every account. BNY's accounts.id
+// isn't stable across environments/seeds — hardcoding it (as this used to)
+// 404s as soon as a database seeds BNY under a different id. Resolve it the
+// same way the rest of Command Center maps a display name to a real
+// accounts.id, instead of hardcoding a number that can silently go stale.
+function getBnyAccountId() {
+  if (!bnyAccountIdPromise) {
+    bnyAccountIdPromise = resolveRealAccount('Bank of New York Mellon').then(acct => acct ? acct.id : null);
+  }
+  return bnyAccountIdPromise;
+}
 
 async function loadHiringSummary(accountId) {
   if (summaryCache.has(accountId)) {
@@ -25,7 +42,7 @@ async function loadHiringSummary(accountId) {
   }
 }
 
-async function loadPersonas(accountId = 11) {
+async function loadPersonas(accountId) {
   if (personasCache.has(accountId)) {
     return personasCache.get(accountId);
   }
@@ -123,7 +140,7 @@ export async function renderHiringSignals() {
   const list = document.getElementById('ccHiringList');
   if (!list) return;
 
-  list.innerHTML = '<li class="cc-drawer-empty">Loading executive hiring signals bulletin…</li>';
+  list.innerHTML = renderSkeleton('feed-rows');
 
   try {
     // 1. Load all real accounts
@@ -225,15 +242,21 @@ export async function renderStrategicInvestmentTracks() {
   const container = document.getElementById('ccTracksList') || document.getElementById('ccInvestmentTracksList');
   if (!container) return;
 
-  container.innerHTML = '<div class="cc-drawer-empty">Loading strategic investment tracks &amp; decision makers…</div>';
+  container.innerHTML = renderSkeleton('cards');
+
+  const accountId = await getBnyAccountId();
+  if (!accountId) {
+    container.innerHTML = '<div class="cc-drawer-empty">BNY account not found or not accessible to your login.</div>';
+    return;
+  }
 
   let summary = null;
   let personas = [];
 
   try {
     const [summaryData, allPersonas] = await Promise.all([
-      loadHiringSummary(11),
-      loadPersonas(11),
+      loadHiringSummary(accountId),
+      loadPersonas(accountId),
     ]);
     summary = summaryData;
     personas = allPersonas;

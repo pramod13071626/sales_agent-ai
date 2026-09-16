@@ -2,6 +2,7 @@ import { formatMoney } from './utils.js';
 import { ccState } from './state.js';
 import { openDossier } from './drawer.js';
 import { loadMatrixAccounts } from './real-accounts.js';
+import { renderSkeleton } from '../skeleton.js';
 
 const RADIUS_MIN = 12, RADIUS_MAX = 38;
 
@@ -121,6 +122,8 @@ export async function renderMatrix() {
   const wrap = canvas ? canvas.closest('.cc-matrix-canvas-wrap') : null;
   if (!canvas || typeof Chart === 'undefined') return;
 
+  if (wrap) wrap.innerHTML = renderSkeleton('chart');
+
   let accounts;
   try {
     accounts = await loadMatrixAccounts();
@@ -135,6 +138,12 @@ export async function renderMatrix() {
     return;
   }
 
+  // The skeleton above replaced <canvas id="ccMatrixCanvas"> inside `wrap`
+  // with a placeholder div — put a fresh canvas back before drawing into it,
+  // since the original `canvas` reference is now a detached (invisible) node.
+  if (wrap) wrap.innerHTML = '<canvas id="ccMatrixCanvas"></canvas>';
+  const liveCanvas = wrap ? document.getElementById('ccMatrixCanvas') : canvas;
+
   const dealMin = Math.min(...accounts.map(a => a.dealPotential));
   const dealMax = Math.max(...accounts.map(a => a.dealPotential));
   const data = accounts.map(a => ({
@@ -148,7 +157,7 @@ export async function renderMatrix() {
     ccState.matrixChart.destroy();
   }
 
-  ccState.matrixChart = new Chart(canvas.getContext('2d'), {
+  ccState.matrixChart = new Chart(liveCanvas.getContext('2d'), {
     type: 'bubble',
     data: {
       datasets: [{
