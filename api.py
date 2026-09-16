@@ -1456,6 +1456,7 @@ if FASTAPI_AVAILABLE:
             "updated_at": acct.updated_at.isoformat() if getattr(acct, "updated_at", None) else None,
             "is_manually_verified": bool(getattr(acct, "is_manually_verified", False)),
             "manually_verified_at": acct.manually_verified_at.isoformat() if getattr(acct, "manually_verified_at", None) else None,
+            "osint_feed_manifest": getattr(acct, "osint_feed_manifest", None) or {},
         }
 
     def _compute_signals_count(
@@ -1550,18 +1551,17 @@ if FASTAPI_AVAILABLE:
         }
 
     @account_router.get("")
-    def list_all_accounts_with_hierarchy(response: Response, user: User = Depends(auth.get_current_user)):
+    def list_all_accounts_with_hierarchy(
+        response: Response,
+        full: bool = Query(False),
+        user: User = Depends(auth.get_current_user),
+    ):
         """
         [Page Initialization (loadData())]:
-        Queries PostgreSQL (accounts, lobs, sub_lobs, personas) and returns a
-        trimmed summary dossier per account — enough for the nav tree, digest,
-        and topbar ticker's cross-account rollups. Full per-account detail
-        (persona dossiers, LOB financials/patents, org chart) is fetched
-        on-demand via GET /api/accounts/{account_id} once that account is opened.
-
-        A super_admin sees every account; anyone else sees only accounts a
-        super_admin has explicitly granted them (see user_account_access) —
-        a user with zero grants sees an empty list, not an error.
+        Queries PostgreSQL (accounts, lobs, sub_lobs, personas) and returns either:
+        - full=False (default): a trimmed summary dossier per account for the dashboard nav tree/rollups.
+        - full=True: full serialization including all 69 persona columns, 27 LOB attributes,
+          OSINT feed manifests, and deep enrichment URLs (used by Pipeline Explorer).
         """
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"
@@ -1576,15 +1576,20 @@ if FASTAPI_AVAILABLE:
                 accessible_ids = auth.get_accessible_account_ids(session, user.id)
                 query = query.filter(Account.id.in_(accessible_ids)) if accessible_ids else query.filter(False)
             accounts = query.order_by(Account.id.desc()).all()
-            return {"accounts": [_serialize_account_summary(acct) for acct in accounts]}
+            serializer = _serialize_account_full if full else _serialize_account_summary
+            return {"accounts": [serializer(acct) for acct in accounts]}
 
         finally:
             session.close()
 
     @app.get("/api/accounts", tags=["1. Account Level"])
-    def list_all_accounts_alias(response: Response, user: User = Depends(auth.get_current_user)):
+    def list_all_accounts_alias(
+        response: Response,
+        full: bool = Query(False),
+        user: User = Depends(auth.get_current_user),
+    ):
         """Plural alias for /api/account list endpoint."""
-        return list_all_accounts_with_hierarchy(response, user)
+        return list_all_accounts_with_hierarchy(response, full, user)
 
     @account_router.get("/{account_id}")
     def get_account_from_db(account_id: int, user: User = Depends(auth.require_account_access)):
@@ -3095,86 +3100,8 @@ if FASTAPI_AVAILABLE:
         """Retrieve all Lines of Business (LOBs) and nested sub-divisions for an account."""
         session = get_session()
         try:
-            lobs = session.query(Lob).filter_by(account_id=account_id).all()
-            result = []
-            for lob_item in lobs:
-                sublobs = session.query(SubLob).filter_by(lob_id=lob_item.id).all()
-                result.append(
-                    {
-                        "id": lob_item.id,
-                        "account_id": lob_item.account_id,
-                        "name": lob_item.lob_name,
-                        "lob_name": lob_item.lob_name,
-                        "key": lob_item.key,
-                        "domain": lob_item.domain,
-                        "website_url": lob_item.website_url,
-                        "desc": lob_item.overview,
-                        "overview": lob_item.overview,
-                        "revenue": lob_item.audited_segment_revenue,
-                        "audited_segment_revenue": lob_item.audited_segment_revenue,
-                        "head": lob_item.operating_head,
-                        "operating_head": lob_item.operating_head,
-                        "headcount": lob_item.segment_headcount,
-                        "segment_headcount": lob_item.segment_headcount,
-                        "lei_code": lob_item.lei_code,
-                        "jurisdiction": lob_item.jurisdiction,
-                        "technologies": lob_item.technologies or [],
-                        "competitors": lob_item.competitors or [],
-                        "financial_snippets": lob_item.financial_snippets or [],
-                        "patents": lob_item.patents or [],
-                        "logo_url": lob_item.logo_url,
-                        "google_news_rss_url": lob_item.google_news_rss_url,
-                        "reddit_rss_url": lob_item.reddit_rss_url,
-                        "google_patents_url": lob_item.google_patents_url,
-                        "google_trends_url": lob_item.google_trends_url,
-                        "sub_lobs": [
-                            {
-                                "id": s.id,
-                                "lob_id": s.lob_id,
-                                "name": s.name,
-                                "legal_name": getattr(s, "legal_name", None) or s.name,
-                                "lei_code": getattr(s, "lei_code", None),
-                                "jurisdiction": getattr(s, "jurisdiction", None),
-                                "country": getattr(s, "country", None),
-                                "city": getattr(s, "city", None),
-                                "relationship_type": getattr(s, "relationship_type", None) or "Level 3: Operating Sub-LOB / Grandchild",
-                                "status": getattr(s, "status", None) or "ACTIVE",
-                                "entity_level": getattr(s, "entity_level", None) or "Level 3 (Operating Sub-LOB)",
-                                "parent_lob_lei": getattr(s, "parent_lob_lei", None),
-                                "parent_lob_name": getattr(s, "parent_lob_name", None) or lob_item.lob_name,
-                                "domain": getattr(s, "domain", None),
-                                "website_url": getattr(s, "website_url", None),
-                                "is_manually_verified": bool(getattr(s, "is_manually_verified", False)),
-                                "manually_verified_at": s.manually_verified_at.isoformat() if getattr(s, "manually_verified_at", None) else None,
-                                "metadata": getattr(s, "metadata_", {}) or {},
-                            }
-                            for s in sublobs
-                        ],
-                        "subLobs": [
-                            {
-                                "id": s.id,
-                                "lob_id": s.lob_id,
-                                "name": s.name,
-                                "legal_name": getattr(s, "legal_name", None) or s.name,
-                                "lei_code": getattr(s, "lei_code", None),
-                                "jurisdiction": getattr(s, "jurisdiction", None),
-                                "country": getattr(s, "country", None),
-                                "city": getattr(s, "city", None),
-                                "relationship_type": getattr(s, "relationship_type", None) or "Level 3: Operating Sub-LOB / Grandchild",
-                                "status": getattr(s, "status", None) or "ACTIVE",
-                                "entity_level": getattr(s, "entity_level", None) or "Level 3 (Operating Sub-LOB)",
-                                "parent_lob_lei": getattr(s, "parent_lob_lei", None),
-                                "parent_lob_name": getattr(s, "parent_lob_name", None) or lob_item.lob_name,
-                                "domain": getattr(s, "domain", None),
-                                "website_url": getattr(s, "website_url", None),
-                                "is_manually_verified": bool(getattr(s, "is_manually_verified", False)),
-                                "manually_verified_at": s.manually_verified_at.isoformat() if getattr(s, "manually_verified_at", None) else None,
-                                "metadata": getattr(s, "metadata_", {}) or {},
-                            }
-                            for s in sublobs
-                        ],
-                    }
-                )
+            lobs = session.query(Lob).options(selectinload(Lob.sub_lobs)).filter_by(account_id=account_id).all()
+            result = [_serialize_lob_full(lob_item, []) for lob_item in lobs]
             return {"account_id": account_id, "total_lobs": len(result), "lobs": result}
         finally:
             session.close()
@@ -3184,80 +3111,10 @@ if FASTAPI_AVAILABLE:
         """Retrieve details for a single Line of Business by its ID."""
         session = get_session()
         try:
-            lob_item = session.query(Lob).filter_by(id=lob_id).first()
+            lob_item = session.query(Lob).options(selectinload(Lob.sub_lobs)).filter_by(id=lob_id).first()
             if not lob_item:
                 raise HTTPException(status_code=404, detail="Line of Business not found.")
-            sublobs = session.query(SubLob).filter_by(lob_id=lob_item.id).all()
-            return {
-                "id": lob_item.id,
-                "account_id": lob_item.account_id,
-                "name": lob_item.lob_name,
-                "lob_name": lob_item.lob_name,
-                "key": lob_item.key,
-                "domain": lob_item.domain,
-                "website_url": lob_item.website_url,
-                "overview": lob_item.overview,
-                "audited_segment_revenue": lob_item.audited_segment_revenue,
-                "operating_head": lob_item.operating_head,
-                "segment_headcount": lob_item.segment_headcount,
-                "lei_code": lob_item.lei_code,
-                "jurisdiction": lob_item.jurisdiction,
-                "technologies": lob_item.technologies or [],
-                "competitors": lob_item.competitors or [],
-                "financial_snippets": lob_item.financial_snippets or [],
-                "patents": lob_item.patents or [],
-                "google_news_rss_url": lob_item.google_news_rss_url,
-                "reddit_rss_url": lob_item.reddit_rss_url,
-                "google_patents_url": lob_item.google_patents_url,
-                "google_trends_url": lob_item.google_trends_url,
-                "youtube_search_url": lob_item.youtube_search_url,
-                "sub_lobs": [
-                    {
-                        "id": s.id,
-                        "lob_id": s.lob_id,
-                        "name": s.name,
-                        "legal_name": getattr(s, "legal_name", None) or s.name,
-                        "lei_code": getattr(s, "lei_code", None),
-                        "jurisdiction": getattr(s, "jurisdiction", None),
-                        "country": getattr(s, "country", None),
-                        "city": getattr(s, "city", None),
-                        "relationship_type": getattr(s, "relationship_type", None) or "Level 3: Operating Sub-LOB / Grandchild",
-                        "status": getattr(s, "status", None) or "ACTIVE",
-                        "entity_level": getattr(s, "entity_level", None) or "Level 3 (Operating Sub-LOB)",
-                        "parent_lob_lei": getattr(s, "parent_lob_lei", None),
-                        "parent_lob_name": getattr(s, "parent_lob_name", None) or lob_item.lob_name,
-                        "domain": getattr(s, "domain", None),
-                        "website_url": getattr(s, "website_url", None),
-                        "is_manually_verified": bool(getattr(s, "is_manually_verified", False)),
-                        "manually_verified_at": s.manually_verified_at.isoformat() if getattr(s, "manually_verified_at", None) else None,
-                        "metadata": getattr(s, "metadata_", {}) or {},
-                    }
-                    for s in sublobs
-                ],
-                "subLobs": [
-                    {
-                        "id": s.id,
-                        "lob_id": s.lob_id,
-                        "name": s.name,
-                        "legal_name": getattr(s, "legal_name", None) or s.name,
-                        "lei_code": getattr(s, "lei_code", None),
-                        "jurisdiction": getattr(s, "jurisdiction", None),
-                        "country": getattr(s, "country", None),
-                        "city": getattr(s, "city", None),
-                        "relationship_type": getattr(s, "relationship_type", None) or "Level 3: Operating Sub-LOB / Grandchild",
-                        "status": getattr(s, "status", None) or "ACTIVE",
-                        "entity_level": getattr(s, "entity_level", None) or "Level 3 (Operating Sub-LOB)",
-                        "parent_lob_lei": getattr(s, "parent_lob_lei", None),
-                        "parent_lob_name": getattr(s, "parent_lob_name", None) or lob_item.lob_name,
-                        "domain": getattr(s, "domain", None),
-                        "website_url": getattr(s, "website_url", None),
-                        "is_manually_verified": bool(getattr(s, "is_manually_verified", False)),
-                        "manually_verified_at": s.manually_verified_at.isoformat() if getattr(s, "manually_verified_at", None) else None,
-                        "metadata": getattr(s, "metadata_", {}) or {},
-                    }
-                    for s in sublobs
-                ],
-            }
+            return _serialize_lob_full(lob_item, [])
         finally:
             session.close()
 
@@ -3267,51 +3124,7 @@ if FASTAPI_AVAILABLE:
         session = get_session()
         try:
             personas = session.query(Persona).filter_by(account_id=account_id).all()
-            result = []
-            for p in personas:
-                result.append(
-                    {
-                        "id": p.id,
-                        "account_id": p.account_id,
-                        "lob_id": p.lob_id,
-                        "key": p.key,
-                        "name": p.full_name or p.display_name or "Executive",
-                        "full_name": p.full_name or p.display_name or "Executive",
-                        "first_name": p.first_name,
-                        "last_name": p.last_name,
-                        "title": p.title,
-                        "job_title": p.title,
-                        "tier": p.tier,
-                        "seniority_tier": p.tier,
-                        "seniority_raw": p.seniority_raw,
-                        "email": p.email,
-                        "phone": p.phone,
-                        "city": p.city,
-                        "state": p.state,
-                        "country": p.country,
-                        "decision_authority": p.decision_authority,
-                        "budget_authority": p.budget_authority,
-                        "departments": p.departments or ["Executive"],
-                        "linkedin_url": p.linkedin_url,
-                        "twitter_url": p.twitter_live_url
-                        or (f"https://twitter.com/{p.twitter_handle}" if p.twitter_handle else None),
-                        "skills": p.skills or [],
-                        "target_kpis": p.target_kpis or [],
-                        "operational_pain_points": p.operational_pain_points or [],
-                        "key_objections": p.key_objections or [],
-                        "degree": p.degree,
-                        "institution": p.institution,
-                        "prior_company": p.prior_company,
-                        "communication_style": p.communication_style,
-                        "engagement_rate": p.engagement_rate,
-                        "value_proposition": p.value_proposition,
-                        "personalized_icebreaker": p.personalized_icebreaker,
-                        "social_platform": p.social_platform,
-                        "social_profile_url": p.social_profile_url,
-                        "social_presence_level": p.social_presence_level,
-                        "raw_data": p.raw_data,
-                    }
-                )
+            result = [_serialize_persona_full(p) for p in personas]
             return {"account_id": account_id, "total_personas": len(result), "personas": result}
         finally:
             session.close()
@@ -3324,29 +3137,7 @@ if FASTAPI_AVAILABLE:
             p = session.query(Persona).filter_by(id=persona_id).first()
             if not p:
                 raise HTTPException(status_code=404, detail="Persona not found.")
-            return {
-                "id": p.id,
-                "account_id": p.account_id,
-                "lob_id": p.lob_id,
-                "name": p.full_name or p.display_name or "Executive",
-                "title": p.title,
-                "tier": p.tier,
-                "email": p.email,
-                "phone": p.phone,
-                "location": f"{p.city or ''}, {p.country or ''}".strip(", "),
-                "decision_authority": p.decision_authority,
-                "budget_authority": p.budget_authority,
-                "linkedin_url": p.linkedin_url,
-                "degree": p.degree,
-                "institution": p.institution,
-                "prior_company": p.prior_company,
-                "communication_style": p.communication_style,
-                "personalized_icebreaker": p.personalized_icebreaker,
-                "value_proposition": p.value_proposition,
-                "operational_pain_points": p.operational_pain_points or [],
-                "target_kpis": p.target_kpis or [],
-                "raw_data": p.raw_data,
-            }
+            return _serialize_persona_full(p)
         finally:
             session.close()
 
