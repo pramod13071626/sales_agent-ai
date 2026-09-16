@@ -3261,6 +3261,57 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
+    @app.get("/api/objections", tags=["3. Personas & Buying Committee"])
+    def get_common_objections_and_pain_points(
+        response: Response,
+        user: User = Depends(auth.get_current_user),
+        limit: int = Query(10, ge=1, le=50),
+    ):
+        """Ranks operational_pain_points and key_objections (both real
+        AI-dossier fields on Persona, not fabricated) by how many personas
+        across the caller's accessible accounts mention them — a Command
+        Center widget surfacing the objections/pain points reps are actually
+        going to hear, aggregated server-side rather than shipping every
+        persona's raw fields to the client just to count them there."""
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        session = get_session()
+        try:
+            query = session.query(Persona).join(Account, Persona.account_id == Account.id)
+            if user.role != "super_admin":
+                accessible_ids = auth.get_accessible_account_ids(session, user.id)
+                query = query.filter(Account.id.in_(accessible_ids)) if accessible_ids else query.filter(False)
+            personas = query.all()
+
+            pain_points: Dict[str, Dict[str, Any]] = {}
+            objections: Dict[str, Dict[str, Any]] = {}
+
+            def _tally(bucket: Dict[str, Dict[str, Any]], text: Optional[str], acct_name: Optional[str]):
+                text = (text or "").strip()
+                if not text:
+                    return
+                entry = bucket.setdefault(text, {"count": 0, "accounts": set()})
+                entry["count"] += 1
+                if acct_name:
+                    entry["accounts"].add(acct_name)
+
+            for p in personas:
+                acct_name = (p.account.display_name or p.account.legal_name) if p.account else None
+                for text in (p.operational_pain_points or []):
+                    _tally(pain_points, text, acct_name)
+                for text in (p.key_objections or []):
+                    _tally(objections, text, acct_name)
+
+            def _top(bucket: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+                ranked = sorted(bucket.items(), key=lambda kv: kv[1]["count"], reverse=True)[:limit]
+                return [
+                    {"text": text, "count": v["count"], "accounts": sorted(v["accounts"])}
+                    for text, v in ranked
+                ]
+
+            return {"pain_points": _top(pain_points), "objections": _top(objections)}
+        finally:
+            session.close()
+
     @app.get("/api/accounts/{account_id}/personas", tags=["3. Personas & Buying Committee"])
     def get_account_buying_committee(account_id: int, user: User = Depends(auth.require_account_access)):
         """Retrieve all executive personas and decision makers mapped to an account."""
@@ -4965,6 +5016,55 @@ if FASTAPI_AVAILABLE:
                 "total": len(movements),
                 "movements": [_serialize_cxo_movement(m, acct) for m in movements],
             }
+        finally:
+            session.close()
+
+    @app.get("/api/news", tags=["4. Content Intelligence"])
+    def get_cross_account_news(
+        response: Response,
+        user: User = Depends(auth.get_current_user),
+        limit: int = Query(30, ge=1, le=100),
+    ):
+        """Recent Google News articles (Post.channel == "news") captured across
+        every account the caller can see — the cross-account counterpart to
+        /api/accounts/{id}/content's per-account news slice, for a single feed
+        on Command Center instead of one fetch per account."""
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        session = get_session()
+        try:
+            target_map = _build_target_key_to_account_map(session)
+            if user.role != "super_admin":
+                accessible_ids = auth.get_accessible_account_ids(session, user.id)
+                target_map = {k: a for k, a in target_map.items() if a.id in accessible_ids}
+            if not target_map:
+                return {"articles": []}
+
+            posts = (
+                session.query(Post)
+                .filter(Post.channel == "news", Post.target_key.in_(list(target_map.keys())))
+                .order_by(Post.first_seen.desc().nullslast())
+                .limit(limit)
+                .all()
+            )
+            articles = []
+            for p in posts:
+                raw = p.raw or {}
+                body_stripped = (p.body or "").strip()
+                title = raw.get("title") or (body_stripped.splitlines()[0][:200] if body_stripped else None)
+                if not title:
+                    continue
+                acct = target_map.get(p.target_key)
+                articles.append({
+                    "id": p.id,
+                    "account_id": acct.id if acct else None,
+                    "account_name": (acct.display_name or acct.legal_name) if acct else p.target_key,
+                    "title": title,
+                    "source": p.author or raw.get("source"),
+                    "url": p.post_url,
+                    "published_at": p.published_at,
+                    "first_seen": p.first_seen.isoformat() if p.first_seen else None,
+                })
+            return {"articles": articles}
         finally:
             session.close()
 

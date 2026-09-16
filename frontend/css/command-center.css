@@ -178,6 +178,22 @@
 .cc-clickable-row { cursor: pointer; }
 .cc-feed-count { flex-shrink: 0; font-size: .72rem; font-weight: 500; color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
+/* Objections & Pain Points widget — two stacked ranked sub-lists in one panel. */
+.cc-objections-group + .cc-objections-group { margin-top: 14px; }
+.cc-subhead {
+  font-size: .68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--text-muted);
+  padding: 0 0 6px;
+}
+.cc-objections-list { max-height: 180px; }
+
+/* Google News widget — headline doubles as the outbound link. */
+.cc-news-link { text-decoration: none; color: inherit; }
+.cc-news-link:hover { color: var(--brand); text-decoration: underline; }
+
 /* ── Buttons ─────────────────────────────────────────────────── */
 .cc-btn {
   font-family: inherit; font-weight: 500; border-radius: 6px; cursor: pointer;

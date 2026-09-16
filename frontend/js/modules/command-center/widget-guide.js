@@ -92,6 +92,30 @@ export const WIDGET_GUIDES = {
     actionTip: 'Cite specific technologies and architectural initiatives in your outreach to build immediate technical credibility with engineering leaders.',
     signals: 'Patent databases, tech stack disclosures, GitHub/open-source repos',
   },
+  objections: {
+    title: 'Objections & Pain Points',
+    icon: 'bi-chat-square-quote-fill',
+    badge: 'Pitch Preparation',
+    summary: 'Ranks the operational pain points and sales objections captured across every persona in your accounts, by how many personas mention each one.',
+    actionTip: 'Pre-empt the top objection before the prospect raises it — lead your pitch with the pain point that shows up most across your book.',
+    signals: 'AI-dossier operational_pain_points and key_objections fields per persona',
+  },
+  decision_makers: {
+    title: 'New & Changed Decision-Makers',
+    icon: 'bi-person-lines-fill',
+    badge: 'Buying Committee Changes',
+    summary: 'Executives who joined or were promoted in the last 30 days at accounts you track, cross-checked against your own persona directory.',
+    actionTip: '"Not yet mapped" means a real gap — add them to the buying committee. "Role change" means someone you already have a relationship with just gained influence — re-engage them.',
+    signals: 'CXO movement feed cross-referenced against mapped personas per account',
+  },
+  news: {
+    title: 'Google News',
+    icon: 'bi-newspaper',
+    badge: 'Public Coverage',
+    summary: 'Recent Google News coverage already captured in the database for your accounts — earnings, leadership, market moves, and general press.',
+    actionTip: 'Reference a specific, recent headline in outreach — it signals you\'re paying attention to their business, not sending a generic template.',
+    signals: 'Google News RSS, captured per-account during the intelligence pipeline run',
+  },
 };
 
 /**
