@@ -1930,20 +1930,96 @@ def fetch_diffbot_organization_intel(
         ]
         founders = [f.get("name") for f in entity.get("founders", []) if isinstance(f, dict)]
 
+        # Location details
+        loc = entity.get("location", {}) if isinstance(entity.get("location"), dict) else {}
+        city = loc.get("city", {}).get("name") if isinstance(loc.get("city"), dict) else loc.get("city")
+        state = loc.get("region", {}).get("name") if isinstance(loc.get("region"), dict) else loc.get("region")
+        country = loc.get("country", {}).get("name") if isinstance(loc.get("country"), dict) else loc.get("country")
+        street = loc.get("street") or loc.get("address")
+        postal_code = loc.get("postalCode")
+        hq_loc = loc.get("address") or ", ".join(filter(None, [city, state, country]))
+
+        # Contact details
+        phone_numbers = entity.get("phoneNumbers", [])
+        phone_num = None
+        sanitized_phone = None
+        if phone_numbers and isinstance(phone_numbers, list):
+            first_p = phone_numbers[0]
+            if isinstance(first_p, dict):
+                phone_num = first_p.get("string") or first_p.get("digits")
+                sanitized_phone = first_p.get("digits")
+            elif isinstance(first_p, str):
+                phone_num = first_p
+                sanitized_phone = re.sub(r"\D", "", first_p)
+
+        email_addresses = entity.get("emailAddresses", [])
+        contact_email = None
+        if email_addresses and isinstance(email_addresses, list):
+            first_e = email_addresses[0]
+            if isinstance(first_e, dict):
+                contact_email = first_e.get("contactString")
+            elif isinstance(first_e, str):
+                contact_email = first_e
+
+        # Social & External profiles
+        def _fmt_url(uri, prefix="https://"):
+            if not uri:
+                return None
+            uri_str = str(uri).strip()
+            return uri_str if uri_str.startswith("http") else f"{prefix}{uri_str}"
+
+        linkedin_url = _fmt_url(entity.get("linkedInUri") or entity.get("linkedinUri"))
+        twitter_uri = entity.get("twitterUri")
+        twitter_url = _fmt_url(twitter_uri)
+        twitter_handle = None
+        if twitter_uri:
+            t_clean = str(twitter_uri).split("/")[-1].split("?")[0].strip()
+            twitter_handle = f"@{t_clean}" if not t_clean.startswith("@") else t_clean
+        crunchbase_url = _fmt_url(entity.get("crunchbaseUri"))
+        wikipedia_url = _fmt_url(entity.get("wikipediaUri"))
+        homepage_url = entity.get("homepageUri")
+        blog_url = f"{homepage_url.rstrip('/')}/newsroom" if homepage_url else None
+
+        # Revenue resolution from authentic reported data
+        rev_obj = entity.get("revenue") or entity.get("yearlyRevenue")
+        rev_num = None
+        if isinstance(rev_obj, dict):
+            rev_num = rev_obj.get("value")
+        elif isinstance(rev_obj, (int, float)):
+            rev_num = float(rev_obj)
+
+        formatted_revenue = None
+        if rev_num and isinstance(rev_num, (int, float)) and rev_num > 0:
+            if rev_num >= 1e9:
+                formatted_revenue = f"${rev_num / 1e9:.2f}B"
+            elif rev_num >= 1e6:
+                formatted_revenue = f"${rev_num / 1e6:.2f}M"
+            else:
+                formatted_revenue = f"${rev_num:,.0f}"
+
+        # Industries & Descriptors
+        industries_list = entity.get("industries", []) or []
+        categories_list = [c.get("name") for c in entity.get("categories", []) if isinstance(c, dict) and c.get("name")]
+        all_industries = list(dict.fromkeys(industries_list + categories_list))
+        keywords_list = entity.get("descriptors", []) or []
+
         return {
             "status": "success",
             "name": entity.get("name"),
-            "legal_name": entity.get("legalName"),
+            "legal_name": entity.get("legalName") or entity.get("fullName"),
             "description": entity.get("description"),
             "logo_url": entity.get("logo"),
-            "homepage_url": entity.get("homepageUri"),
+            "homepage_url": homepage_url,
+            "website_url": homepage_url,
             "diffbot_id": entity.get("id"),
             "employees_count": entity.get("nbEmployees"),
-            "yearly_revenue": (
-                entity.get("yearlyRevenue", {}).get("value")
-                if isinstance(entity.get("yearlyRevenue"), dict)
-                else entity.get("yearlyRevenue")
+            "employee_count_range": (
+                f"{entity.get('nbEmployeesMin', '')}-{entity.get('nbEmployeesMax', '')}"
+                if entity.get("nbEmployeesMin")
+                else (str(entity.get("nbEmployees")) if entity.get("nbEmployees") else None)
             ),
+            "yearly_revenue": rev_num,
+            "estimated_revenue_range": est_revenue_range,
             "stock_symbol": entity.get("stockSymbol"),
             "parent_organization": (
                 entity.get("parentOrganization", {}).get("name")
@@ -1953,9 +2029,28 @@ def fetch_diffbot_organization_intel(
             "technologies": technologies,
             "competitors": competitors,
             "subsidiaries": subsidiaries,
+            "num_suborganizations": len(subsidiaries),
             "board_members": board_members,
             "founders": founders,
+            "phone_number": phone_num,
+            "sanitized_phone": sanitized_phone,
+            "contact_email": contact_email,
+            "headquarters_location": hq_loc,
+            "street_address": street,
+            "city": city,
+            "state": state,
+            "country": country,
+            "postal_code": postal_code,
+            "linkedin_url": linkedin_url,
+            "twitter_url": twitter_url,
+            "twitter_handle": twitter_handle,
+            "crunchbase_url": crunchbase_url,
+            "wikipedia_url": wikipedia_url,
+            "blog_url": blog_url,
+            "industries": all_industries,
+            "keywords": keywords_list,
             "diffbot_confidence": items[0].get("score"),
+            "_raw_entity": entity,
         }
 
     except Exception as e:

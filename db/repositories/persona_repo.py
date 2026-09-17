@@ -1,6 +1,6 @@
 """Persona Repository — UPSERT operations for the personas table."""
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from sqlalchemy.orm import Session
 from db.models.persona import Persona
 from db.models.account import Account
@@ -49,21 +49,187 @@ class PersonaRepository:
         self.session.flush()
         return count
 
+    def resolve_existing_persona(
+        self,
+        account_id: int,
+        external_id: Optional[str] = None,
+        key: Optional[str] = None,
+        email: Optional[str] = None,
+        full_name: Optional[str] = None,
+        first_name: Optional[str] = None,
+        last_name: Optional[str] = None,
+        title: Optional[str] = None,
+    ) -> Optional[Persona]:
+        """
+        Enterprise Deduplication Mapping Layer:
+        Resolves an incoming persona to an existing record using a prioritized multi-strategy hierarchy:
+        1. Exact external_id match (Apollo/DKG global UID)
+        2. Direct verified email match
+        3. Key match (including base key if key has subsidiary suffix)
+        4. Full name match (unmasked)
+        5. First name + prefix/initial last name match with title correlation
+        """
+        if not account_id:
+            return None
+
+        # 1. External ID match (Highest fidelity)
+        if external_id and str(external_id).strip():
+            ext = str(external_id).strip()
+            match = self.session.query(Persona).filter(
+                Persona.account_id == account_id,
+                Persona.external_id == ext
+            ).first()
+            if match:
+                return match
+
+        # 2. Email match (Unique per executive)
+        if email and "@" in email and not email.startswith(".@"):
+            em = email.strip().lower()
+            match = self.session.query(Persona).filter(
+                Persona.account_id == account_id,
+                Persona.email.ilike(em)
+            ).first()
+            if match:
+                return match
+
+        # 3. Key match (including base key without subsidiary suffix)
+        if key and str(key).strip():
+            k = str(key).strip()
+            match = self.session.query(Persona).filter(
+                Persona.account_id == account_id,
+                Persona.key == k
+            ).first()
+            if match:
+                return match
+            
+            # Check if key contains a subsidiary slug (e.g. "_harborwalk", "_talf", etc.)
+            for delim in ["_harborwalk", "_talf", "_limited", "_fund", "_llc", "_inc", "_corp", "_owns_"]:
+                if delim in k:
+                    base_k = k.split(delim)[0]
+                    if base_k:
+                        match = self.session.query(Persona).filter(
+                            Persona.account_id == account_id,
+                            Persona.key == base_k
+                        ).first()
+                        if match:
+                            return match
+
+        # 4. Full Name match (if unmasked)
+        if full_name and len(full_name.strip()) > 3 and "***" not in full_name:
+            fn = full_name.strip()
+            match = self.session.query(Persona).filter(
+                Persona.account_id == account_id,
+                Persona.full_name.ilike(fn)
+            ).first()
+            if match:
+                return match
+
+        # 5. First + Last name fuzzy/initial correlation
+        if first_name and last_name:
+            fn = first_name.strip().lower()
+            ln = last_name.strip().replace(".", "").lower()
+            candidates = self.session.query(Persona).filter(
+                Persona.account_id == account_id,
+                Persona.first_name.ilike(fn)
+            ).all()
+            for cand in candidates:
+                cand_last = (cand.last_name or "").strip().replace(".", "").lower()
+                if not cand_last:
+                    continue
+                # Initial or prefix match
+                is_initial = (
+                    (len(ln) <= 2 and cand_last.startswith(ln)) or
+                    (len(cand_last) <= 2 and ln.startswith(cand_last)) or
+                    (cand_last == ln)
+                )
+                is_title_match = bool(
+                    title and cand.title and cand.title[:12].lower() == title[:12].lower()
+                )
+                if is_initial and (is_title_match or len(cand_last) > 2 or len(ln) > 2):
+                    return cand
+
+        return None
+
+    def coalesce_into_master(
+        self, master: Persona, incoming_data: Dict[str, Any], lob_id: Optional[int] = None
+    ) -> Persona:
+        """
+        Lossless Non-Destructive Merger:
+        Enriches the master persona with any non-null, non-empty data from the incoming record.
+        Never overwrites valid existing values with nulls, empty values, or masked placeholders.
+        """
+        for field, val in incoming_data.items():
+            if field in ("id", "account_id", "account", "lob"):
+                continue
+            if val is None or val == "" or val == [] or val == {}:
+                continue
+
+            current_val = getattr(master, field, None)
+            
+            # If master is missing this field, populate it
+            if current_val is None or current_val == "" or current_val == [] or current_val == {}:
+                if hasattr(master, field):
+                    setattr(master, field, val)
+                continue
+
+            # Special field rules
+            if field == "is_manually_verified":
+                if val is True:
+                    master.is_manually_verified = True
+                continue
+
+            if field == "full_name":
+                # Prefer unmasked full names over initials/asterisks
+                if "***" in str(current_val) and "***" not in str(val):
+                    master.full_name = val
+                elif len(str(val)) > len(str(current_val)) and not str(val).endswith("."):
+                    master.full_name = val
+                continue
+
+            if field == "linkedin_url":
+                # Prefer direct personal profiles (/in/) over generic search URLs
+                if "/in/" in str(val) and "/in/" not in str(current_val):
+                    master.linkedin_url = val
+                continue
+
+            if field == "title":
+                # Prefer more detailed title if current is very short
+                if len(str(val)) > len(str(current_val)) and "associate" not in str(val).lower():
+                    master.title = val
+                continue
+
+        if lob_id and not master.lob_id:
+            master.lob_id = lob_id
+
+        return master
+
     def upsert_lob_personas(
         self, account: Account, lob_id: int, hierarchy: Dict[str, List[dict]]
     ) -> int:
-        """Appends personas belonging to a specific LOB with foreign key lob_id."""
+        """Appends personas belonging to a specific LOB with foreign key lob_id, resolving duplicates to master."""
         count = 0
-        seen_keys = {
-            p.key
-            for p in self.session.query(Persona.key).filter_by(account_id=account.id).all()
-        }
-
         for tier_name in ["c_suite", "vp_level", "director_level", "manager_level"]:
             for person_data in (hierarchy.get(tier_name) or []):
                 schema = PersonaSchema.from_enriched_json(person_data)
-                persona = Persona(account_id=account.id, lob_id=lob_id)
                 data = schema.model_dump()
+                
+                # Check Deduplication Mapping Layer
+                existing = self.resolve_existing_persona(
+                    account_id=account.id,
+                    external_id=schema.external_id or person_data.get("external_id") or person_data.get("id"),
+                    key=schema.key or person_data.get("key"),
+                    email=schema.email or person_data.get("email"),
+                    full_name=schema.full_name or person_data.get("full_name") or person_data.get("name"),
+                    first_name=schema.first_name or person_data.get("first_name"),
+                    last_name=schema.last_name or person_data.get("last_name"),
+                    title=schema.title or person_data.get("title"),
+                )
+                
+                if existing:
+                    self.coalesce_into_master(existing, data, lob_id=lob_id)
+                    continue
+
+                persona = Persona(account_id=account.id, lob_id=lob_id)
                 for field, value in data.items():
                     if field in ("id", "account_id", "lob_id", "account", "lob") and value is None:
                         continue
@@ -72,65 +238,46 @@ class PersonaRepository:
                 persona.account_id = account.id
                 persona.lob_id = lob_id
 
-                if persona.key and persona.key in seen_keys:
-                    existing = (
-                        self.session.query(Persona)
-                        .filter_by(account_id=account.id, key=persona.key)
-                        .first()
-                    )
-                    if existing and not existing.lob_id:
-                        existing.lob_id = lob_id
-                    continue
-
                 self.session.add(persona)
-                if persona.key:
-                    seen_keys.add(persona.key)
                 count += 1
 
         self.session.flush()
         return count
 
     def upsert(self, schema: PersonaSchema) -> Persona:
-        """Upsert a single Persona from PersonaSchema with multi-strategy disambiguation."""
+        """Upsert a single Persona from PersonaSchema using Deduplication Mapping Layer."""
         existing = None
         if schema.id:
             existing = self.session.query(Persona).filter_by(id=schema.id).first()
-        if not existing and schema.account_id and schema.external_id:
-            existing = self.session.query(Persona).filter_by(account_id=schema.account_id, external_id=schema.external_id).first()
-        if not existing and schema.account_id and schema.key:
-            existing = self.session.query(Persona).filter_by(account_id=schema.account_id, key=schema.key).first()
-        if not existing and schema.account_id and schema.full_name:
-            existing = self.session.query(Persona).filter_by(account_id=schema.account_id, full_name=schema.full_name).first()
-        if not existing and schema.account_id and schema.first_name:
-            candidates = self.session.query(Persona).filter_by(account_id=schema.account_id, first_name=schema.first_name).all()
-            for cand in candidates:
-                cand_last = (cand.last_name or "").strip().replace(".", "").lower()
-                schema_last = (schema.last_name or "").strip().replace(".", "").lower()
-                if (
-                    (len(cand_last) <= 2 and schema_last.startswith(cand_last))
-                    or (len(schema_last) <= 2 and cand_last.startswith(schema_last))
-                    or (cand.title and schema.title and cand.title[:15].lower() == schema.title[:15].lower())
-                ):
-                    existing = cand
-                    break
-
-        persona = existing or Persona(account_id=schema.account_id)
         if not existing:
-            self.session.add(persona)
+            existing = self.resolve_existing_persona(
+                account_id=schema.account_id,
+                external_id=schema.external_id,
+                key=schema.key,
+                email=schema.email,
+                full_name=schema.full_name,
+                first_name=schema.first_name,
+                last_name=schema.last_name,
+                title=schema.title,
+            )
 
         data = schema.model_dump()
-        for field, value in data.items():
-            if field == "id" and value is None:
-                continue
-            if field in ("account", "lob", "account_id", "lob_id"):
-                continue
-            if hasattr(persona, field):
-                setattr(persona, field, value)
-
-        if schema.account_id:
-            persona.account_id = schema.account_id
-        if schema.lob_id:
-            persona.lob_id = schema.lob_id
+        if existing:
+            persona = self.coalesce_into_master(existing, data, lob_id=schema.lob_id)
+        else:
+            persona = Persona(account_id=schema.account_id)
+            self.session.add(persona)
+            for field, value in data.items():
+                if field == "id" and value is None:
+                    continue
+                if field in ("account", "lob", "account_id", "lob_id"):
+                    continue
+                if hasattr(persona, field):
+                    setattr(persona, field, value)
+            if schema.account_id:
+                persona.account_id = schema.account_id
+            if schema.lob_id:
+                persona.lob_id = schema.lob_id
 
         self.session.flush()
         return persona

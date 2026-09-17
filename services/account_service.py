@@ -463,9 +463,30 @@ class AccountCoalesceEngine:
         hq_country = cls._extract_nested_location(
             all_location_sources, ["country", "country_name", "jurisdiction"]
         )
-        hq_location = ", ".join(filter(None, [hq_city, hq_state, hq_country])) or None
-        phone_number = cls.clean_text(diff.get("phone") or cb.get("phone") or opencorp.get("phone"))
-        contact_email = cls.clean_text(diff.get("contact_email") or cb.get("email"))
+        hq_street = cls._extract_nested_location(
+            all_location_sources, ["street", "street_address", "address"]
+        ) or cls.clean_text(diff.get("street") or diff.get("street_address"))
+        postal_code = cls.clean_text(
+            cb.get("postal_code")
+            or diff.get("postal_code")
+            or gleif.get("postal_code")
+            or sec.get("zip")
+            or cls._extract_nested_location(all_location_sources, ["postalCode", "postal_code", "zip", "zip_code"])
+        )
+        hq_location = cls.clean_text(diff.get("headquarters_location")) or (
+            ", ".join(filter(None, [hq_city, hq_state, hq_country])) or None
+        )
+        phone_number = cls.clean_text(
+            diff.get("phone_number")
+            or diff.get("phone")
+            or cb.get("phone")
+            or opencorp.get("phone")
+        )
+        contact_email = cls.clean_text(
+            diff.get("contact_email")
+            or diff.get("email")
+            or cb.get("email")
+        )
 
         # 4. Social & External URLs
         website_url = cls.clean_text(
@@ -473,7 +494,9 @@ class AccountCoalesceEngine:
             if target_domain
             else cb.get("website_url") or diff.get("website_url")
         )
-        crunchbase_url = cls.clean_text(cb.get("crunchbase_url") or serp.get("crunchbase_url"))
+        crunchbase_url = cls.clean_text(
+            cb.get("crunchbase_url") or diff.get("crunchbase_url") or serp.get("crunchbase_url")
+        )
         linkedin_url = cls.clean_text(
             cb.get("linkedin_url") or diff.get("linkedin_url") or serp.get("linkedin_url")
         )
@@ -483,10 +506,19 @@ class AccountCoalesceEngine:
             or diff.get("twitter_url")
             or serp.get("twitter_url")
         )
-        twitter_handle = cls.clean_text(tw.get("handle") or cb.get("twitter_handle"))
+        twitter_handle = cls.clean_text(
+            tw.get("handle")
+            or cb.get("twitter_handle")
+            or diff.get("twitter_handle")
+        )
         github_url = cls.clean_text(cb.get("github_url") or diff.get("github_url"))
         glassdoor_url = cls.clean_text(
             gd.get("glassdoor_url") or cb.get("glassdoor_url") or serp.get("glassdoor_url")
+        )
+        blog_url = cls.clean_text(
+            diff.get("blog_url")
+            or cb.get("blog_url")
+            or (f"{website_url.rstrip('/')}/newsroom" if website_url else None)
         )
 
         # 5. SEC EDGAR URLs
@@ -557,27 +589,43 @@ class AccountCoalesceEngine:
             "openfec": fec,
         }
 
-        # Private company algorithmic revenue fallback model
+        # Authentic Revenue Resolution (SEC EDGAR, FMP, Crunchbase, or Diffbot Knowledge Graph)
         if not revenue:
-            emp_range = cb.get("employee_count_range") or diff.get("employee_count_range")
-            if emp_range:
-                emp_str = str(emp_range).lower()
-                if "10001+" in emp_str or "10,001+" in emp_str or "10000+" in emp_str:
-                    revenue = "$1B+"
-                elif "5001" in emp_str or "5,001" in emp_str:
-                    revenue = "$500M - $1B"
-                elif "1001" in emp_str or "1,001" in emp_str:
-                    revenue = "$100M - $500M"
-                elif "501" in emp_str:
-                    revenue = "$50M - $100M"
-                elif "251" in emp_str:
-                    revenue = "$25M - $50M"
-                elif "51" in emp_str:
-                    revenue = "$10M - $25M"
-                elif "11" in emp_str:
-                    revenue = "$1M - $10M"
-                elif "1" in emp_str:
-                    revenue = "< $1M"
+            diff_rev = diff.get("yearly_revenue") or diff.get("revenue")
+            if isinstance(diff_rev, dict):
+                diff_rev = diff_rev.get("value")
+            if diff_rev and isinstance(diff_rev, (int, float)) and diff_rev > 0:
+                if diff_rev >= 1e9:
+                    revenue = f"${diff_rev / 1e9:.2f}B"
+                elif diff_rev >= 1e6:
+                    revenue = f"${diff_rev / 1e6:.2f}M"
+                else:
+                    revenue = f"${diff_rev:,.0f}"
+
+        # Industries & Keywords list synthesis (deduplicated)
+        ind_cb = cb.get("industries") or []
+        ind_diff = diff.get("industries") or []
+        industries_merged = list(dict.fromkeys(ind_cb + ind_diff))
+
+        kw_cb = cb.get("keywords") or []
+        kw_diff = diff.get("keywords") or diff.get("descriptors") or []
+        keywords_merged = list(dict.fromkeys(kw_cb + kw_diff))
+
+        # Dynamic suborganizations count from authentic child entities / subsidiaries
+        num_suborgs = (
+            diff.get("num_suborganizations")
+            or (len(diff.get("subsidiaries")) if isinstance(diff.get("subsidiaries"), list) else None)
+            or gleif.get("total_children_gleif")
+            or gleif.get("total_child_entities_found")
+            or cb.get("num_suborganizations")
+            or None
+        )
+
+        # Authentic IT Spend (direct from collector, or None if not collected)
+        it_spend = cls.clean_text(diff.get("it_spend") or cb.get("it_spend"))
+
+        # Authentic Heat Score (direct from collector, or None if not collected)
+        heat_score = diff.get("heat_score") or cb.get("heat_score")
 
         # OSINT feed manifest dictionary
         feed_manifest = {
@@ -609,7 +657,7 @@ class AccountCoalesceEngine:
                 "linkedin_url": linkedin_url,
                 "github_url": github_url,
                 "glassdoor_url": glassdoor_url,
-                "blog_url": cls.clean_text(diff.get("blog_url")),
+                "blog_url": blog_url,
                 "sec_edgar_url": sec_edgar_url,
                 "sec_filings_rss": sec_filings_rss,
                 "sec_submissions_url": sec_submissions_url,
@@ -629,7 +677,7 @@ class AccountCoalesceEngine:
             "twitter_handle": twitter_handle,
             "github_url": github_url,
             "glassdoor_url": glassdoor_url,
-            "blog_url": cls.clean_text(diff.get("blog_url")),
+            "blog_url": blog_url,
             "operating_status": operating_status,
             "company_type": company_type,
             "founded_year": int(founded_year) if founded_year else None,
@@ -637,10 +685,11 @@ class AccountCoalesceEngine:
                 cb.get("employee_count_range") or diff.get("employee_count_range")
             ),
             "headquarters_location": hq_location,
+            "street_address": hq_street,
             "city": hq_city,
             "state": hq_state,
             "country": hq_country,
-            "postal_code": cls.clean_text(cb.get("postal_code") or sec.get("zip")),
+            "postal_code": postal_code,
             "phone_number": phone_number,
             "sanitized_phone": cls.clean_phone(phone_number),
             "contact_email": contact_email,
@@ -664,12 +713,13 @@ class AccountCoalesceEngine:
             "bounce_rate": bounce_rate,
             "visit_duration": visit_duration,
             "page_views_per_visit": page_views_per_visit,
-            "heat_score": int(diff.get("heat_score")) if diff.get("heat_score") else None,
+            "heat_score": int(heat_score) if heat_score else None,
             "trend_score_90d": (
                 int(diff.get("trend_score_90d")) if diff.get("trend_score_90d") else None
             ),
             "active_tech_count": int(active_tech_count) if active_tech_count else None,
             "it_spend": it_spend,
+            "num_suborganizations": int(num_suborgs) if num_suborgs else None,
             "patents_granted": int(patents_granted) if patents_granted else None,
             "trademarks_registered": (
                 int(serp.get("trademarks_count")) if serp.get("trademarks_count") else None
@@ -692,8 +742,8 @@ class AccountCoalesceEngine:
             "youtube_search_url": youtube_search_url,
             "openalex_institution_url": openalex_institution_url,
             "wikidata_entity_url": wikidata_entity_url,
-            "industries": cb.get("industries") or diff.get("industries") or [],
-            "keywords": cb.get("keywords") or diff.get("keywords") or [],
+            "industries": industries_merged,
+            "keywords": keywords_merged,
             "overview_description": cls.clean_text(
                 diff.get("description") or cb.get("short_description") or wiki.get("summary")
             ),
@@ -1328,18 +1378,79 @@ class AccountService:
                 data = res.json().get("data", [])
                 if data:
                     entity = data[0].get("entity", {})
-                    loc = entity.get("location", {})
+                    loc = entity.get("location", {}) if isinstance(entity.get("location"), dict) else {}
                     social = {
                         p.get("type"): p.get("url")
                         for p in entity.get("socialProfiles", [])
                         if isinstance(p, dict)
                     }
+
+                    # Phone
+                    phone_val = None
+                    phone_numbers = entity.get("phoneNumbers", [])
+                    if phone_numbers and isinstance(phone_numbers, list):
+                        fp = phone_numbers[0]
+                        phone_val = fp.get("string") or fp.get("digits") if isinstance(fp, dict) else str(fp)
+                    if not phone_val:
+                        phone_val = entity.get("phone")
+
+                    # Email
+                    email_val = None
+                    email_addresses = entity.get("emailAddresses", [])
+                    if email_addresses and isinstance(email_addresses, list):
+                        fe = email_addresses[0]
+                        email_val = fe.get("contactString") if isinstance(fe, dict) else str(fe)
+                    if not email_val:
+                        email_val = entity.get("contact_email") or entity.get("email")
+
+                    # URLs
+                    def _mk_url(u, pfx="https://"):
+                        if not u:
+                            return None
+                        us = str(u).strip()
+                        return us if us.startswith("http") else f"{pfx}{us}"
+
+                    linkedin_val = _mk_url(social.get("linkedin") or entity.get("linkedInUri") or entity.get("linkedinUri"))
+                    tw_uri = entity.get("twitterUri")
+                    tw_url = _mk_url(social.get("twitter") or tw_uri)
+                    tw_handle = None
+                    if tw_uri:
+                        handle_part = str(tw_uri).split("/")[-1].split("?")[0].strip()
+                        tw_handle = f"@{handle_part}" if not handle_part.startswith("@") else handle_part
+                    cb_url = _mk_url(social.get("crunchbase") or entity.get("crunchbaseUri"))
+                    hp_url = entity.get("homepageUri")
+                    blog_val = f"{hp_url.rstrip('/')}/newsroom" if hp_url else None
+
+                    # Revenue
+                    rev_obj = entity.get("revenue") or entity.get("yearlyRevenue")
+                    rev_val = None
+                    if isinstance(rev_obj, dict):
+                        rev_val = rev_obj.get("value")
+                    elif isinstance(rev_obj, (int, float)):
+                        rev_val = float(rev_obj)
+                    elif entity.get("yearlyRevenues"):
+                        yrev = entity.get("yearlyRevenues", [{}])[0]
+                        rev_val = yrev.get("revenue") or yrev.get("value")
+
+                    # Industries & Keywords
+                    ind_list = entity.get("industries", []) or []
+                    cat_list = [c.get("name") for c in entity.get("categories", []) if isinstance(c, dict) and c.get("name")]
+                    all_ind = list(dict.fromkeys(ind_list + cat_list))
+                    desc_list = entity.get("descriptors", []) or []
+
+                    subs = [s.get("name") for s in entity.get("subsidiaries", []) if isinstance(s, dict) and s.get("name")]
+
                     return {
                         "name": entity.get("name"),
-                        "domain": entity.get("homepageUri"),
+                        "legal_name": entity.get("legalName") or entity.get("fullName"),
+                        "domain": hp_url,
+                        "website_url": hp_url,
                         "description": entity.get("description"),
-                        "phone": entity.get("phone"),
-                        "street": loc.get("street"),
+                        "phone": phone_val,
+                        "phone_number": phone_val,
+                        "contact_email": email_val,
+                        "street": loc.get("street") or loc.get("address"),
+                        "street_address": loc.get("street") or loc.get("address"),
                         "city": (
                             loc.get("city", {}).get("name")
                             if isinstance(loc.get("city"), dict)
@@ -1362,20 +1473,27 @@ class AccountService:
                             if entity.get('nbEmployeesMin')
                             else str(entity.get('nbEmployees', ''))
                         ),
-                        "revenue": (
-                            entity.get("yearlyRevenues", [{}])[0].get("revenue")
-                            if entity.get("yearlyRevenues")
-                            else None
-                        ),
+                        "revenue": rev_val,
+                        "yearly_revenue": rev_val,
                         "technologies": [
-                            t.get("name") for t in entity.get("technologies", []) if isinstance(t, dict)
+                            t.get("name") for t in entity.get("technologies", []) if isinstance(t, dict) and t.get("name")
                         ],
+                        "competitors": [
+                            c.get("name") for c in entity.get("competitors", []) if isinstance(c, dict) and c.get("name")
+                        ],
+                        "subsidiaries": subs,
+                        "num_suborganizations": len(subs),
                         "patents_count": len(entity.get("patents", [])),
-                        "linkedin_url": social.get("linkedin") or entity.get("linkedinUri"),
-                        "twitter_url": social.get("twitter") or entity.get("twitterUri"),
+                        "linkedin_url": linkedin_val,
+                        "twitter_url": tw_url,
+                        "twitter_handle": tw_handle,
+                        "crunchbase_url": cb_url,
                         "facebook_url": social.get("facebook") or entity.get("facebookUri"),
                         "github_url": social.get("github") or entity.get("githubUri"),
                         "glassdoor_url": social.get("glassdoor") or entity.get("glassdoorUri"),
+                        "blog_url": blog_val,
+                        "industries": all_ind,
+                        "keywords": desc_list,
                         "_raw_diffbot": entity,
                     }
         except Exception as e:

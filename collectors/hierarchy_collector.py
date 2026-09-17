@@ -183,8 +183,10 @@ def build_required_person_data(
     linkedin_url: Optional[str] = None,
     twitter_handle: Optional[str] = None,
     sec_cik: Optional[str] = None,
+    tier: Optional[str] = None,
+    verified_urls: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Builds compulsory required_person_data block with all official scraping target URLs."""
+    """Builds required_person_data block with authentic, verified OSINT URLs."""
     name_info = clean_person_name(name)
     clean_name = name_info["clean_name"]
     slug_key = name_info["slug_key"]
@@ -192,52 +194,64 @@ def build_required_person_data(
     display_title = f"{title}, {company_name}" if company_name else title
     display_name = f"{clean_name} ({display_title})".strip()
 
-    encoded_name = urllib.parse.quote_plus(f'"{clean_name}"')
-    encoded_news_query = urllib.parse.quote_plus(f'"{clean_name}" {company_name}')
-    encoded_patent_inventor = urllib.parse.quote_plus(clean_name)
-    encoded_search = urllib.parse.quote_plus(f"{clean_name} {company_name}")
-    trends_query = urllib.parse.quote_plus(clean_name)
+    verified_urls = verified_urls or {}
 
-    sec_insider_url = (
-        f"https://www.sec.gov/edgar/searchedgar/companysearch?CIK={sec_cik}&type=4"
-        if sec_cik
-        else None
-    )
-    enc_kw = urllib.parse.quote_plus(f"{clean_name} {company_name}")
-    enc_yt = urllib.parse.quote_plus(f"{clean_name} {company_name} interview keynote")
-    enc_pod = urllib.parse.quote_plus(f"{clean_name} {company_name} podcast interview")
-
+    # 1. LinkedIn: Only keep authentic direct profile URLs (e.g. linkedin.com/in/)
     resolved_li = (
         linkedin_url
-        or f"https://www.linkedin.com/search/results/people/?keywords={enc_kw}"
+        if (linkedin_url and "linkedin.com" in linkedin_url and "/search/" not in linkedin_url)
+        else verified_urls.get("linkedin_url")
     )
-    resolved_tw = twitter_handle or f"@{slug_key}"
+
+    # 2. Twitter: Only keep authentic handles (avoid synthetic @slug)
+    resolved_tw = None
+    if twitter_handle and not twitter_handle.startswith(f"@{slug_key}") and not twitter_handle.startswith("@slug"):
+        resolved_tw = twitter_handle
+    elif verified_urls.get("twitter_handle"):
+        resolved_tw = verified_urls.get("twitter_handle")
+
+    twitter_live_url = (
+        f"https://x.com/{resolved_tw.lstrip('@')}"
+        if resolved_tw
+        else verified_urls.get("twitter_live_url")
+    )
+
+    # 3. SEC Insider Trades: Only for verified C-Suite / Executive Committee officers with a valid CIK
+    eff_tier = (tier or classify_title(title) or "").lower()
+    title_lower = (title or "").lower()
+    is_c_level = (
+        eff_tier == "c_suite"
+        or any(k in title_lower for k in ["chief executive", "chief financial", "chief operating", "chief commercial", "chief legal", "chairman", "vice chair", "executive committee"])
+        or (title_lower.startswith("president") and "vice" not in title_lower)
+    )
+    sec_insider_url = (
+        f"https://www.sec.gov/edgar/searchedgar/companysearch?CIK={sec_cik}&type=4"
+        if (sec_cik and is_c_level)
+        else verified_urls.get("sec_insider_trades_url")
+    )
 
     return {
         "key": slug_key,
         "display_name": display_name,
         "linkedin_url": resolved_li,
         "twitter_handle": resolved_tw,
-        "twitter_live_url": f"https://x.com/search?q={encoded_name}&f=live",
-        "reddit_query": f'"{clean_name}"',
-        "reddit_rss_url": f"https://www.reddit.com/search.rss?q={encoded_name}&sort=new",
-        "sec_cik": sec_cik,
+        "twitter_live_url": twitter_live_url,
+        "reddit_query": verified_urls.get("reddit_query"),
+        "reddit_rss_url": verified_urls.get("reddit_rss_url"),
+        "sec_cik": str(sec_cik).zfill(10) if (sec_cik and is_c_level) else None,
         "sec_insider_trades_url": sec_insider_url,
-        "news_query": f'"{clean_name}"',
-        "rss_url": f"https://news.google.com/rss/search?q={encoded_news_query}&hl=en-US&gl=US&ceid=US:en",
-        "patents_query": clean_name,
-        "google_patents_url": f"https://patents.google.com/?inventor={encoded_patent_inventor}&sort=new",
-        "google_scholar_url": f"https://scholar.google.com/scholar?q={encoded_search}",
-        "openalex_author_url": f"https://api.openalex.org/authors?search={encoded_patent_inventor}",
-        "orcid_search_url": f"https://pub.orcid.org/v3.0/search/?q={encoded_patent_inventor}",
-        "wikidata_person_url": (
-            f"https://www.wikidata.org/w/api.php?action=wbsearchentities"
-            f"&search={encoded_patent_inventor}&language=en&format=json"
-        ),
-        "youtube_interviews_url": f"https://www.youtube.com/results?search_query={enc_yt}",
-        "podcast_search_url": f"https://www.google.com/search?q={enc_pod}",
-        "google_trends_url": f"https://trends.google.com/trends/explore?q={trends_query}",
-        "youtube_channel_id": None,
+        "news_query": verified_urls.get("news_query"),
+        "rss_url": verified_urls.get("rss_url"),
+        "patents_query": verified_urls.get("patents_query"),
+        "google_patents_url": verified_urls.get("google_patents_url"),
+        "google_scholar_url": verified_urls.get("google_scholar_url"),
+        "openalex_author_url": verified_urls.get("openalex_author_url"),
+        "orcid_search_url": verified_urls.get("orcid_search_url"),
+        "wikidata_person_url": verified_urls.get("wikidata_person_url"),
+        "youtube_interviews_url": verified_urls.get("youtube_interviews_url"),
+        "podcast_search_url": verified_urls.get("podcast_search_url"),
+        "google_trends_url": verified_urls.get("google_trends_url"),
+        "youtube_channel_id": verified_urls.get("youtube_channel_id"),
     }
 
 
