@@ -147,7 +147,8 @@ if FASTAPI_AVAILABLE:
             from db.create_tables import ensure_schema_compatibility
             ensure_schema_compatibility()
         except Exception as e:
-            print(f"[!] Startup schema check notice: {e}")
+            print(f"[WARN] Schema compatibility check failed on startup: {e}")
+
 
     # ══════════════════════════════════════════════════════
     # AUTHENTICATION (see AUTH_JWT_IMPLEMENTATION_PLAN.md)
@@ -1198,12 +1199,14 @@ if FASTAPI_AVAILABLE:
             "osint_feed_manifest": p.osint_feed_manifest or {},
             "is_manually_verified": bool(getattr(p, "is_manually_verified", False)),
             "manually_verified_at": p.manually_verified_at.isoformat() if getattr(p, "manually_verified_at", None) else None,
+            "extended_profile": getattr(p, "extended_profile", None) or {},
             "raw_data": p.raw_data,
         }
 
     def _serialize_persona_summary(p: Persona) -> Dict[str, Any]:
-        # Return full persona data so all 58 columns are available throughout the app
+        # Return full persona data so all columns and rich intelligence are available throughout the app
         return _serialize_persona_full(p)
+
 
     def _distribute_personas_across_lobs(raw_lobs, personas_list):
         """Synthetic C-suite + VP-cohort split across LOBs for display grouping —
@@ -1292,9 +1295,26 @@ if FASTAPI_AVAILABLE:
             "personas_count": len(assigned_personas),
         }
 
-    def _serialize_lob_summary(lob_item: Lob, assigned_personas_count: int, assigned_personas: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
-        # Return full LOB data with all 27 attributes so no detail is stripped
-        return _serialize_lob_full(lob_item, assigned_personas or [])
+    def _serialize_lob_summary(lob_item: Lob, assigned_personas_count: int) -> Dict[str, Any]:
+        # Trimmed: keeps technologies/competitors (read by computeSignals()/
+        # _compute_signals_count and the competitors-card-grid feature for
+        # EVERY account on every nav-tree/topbar/command-center render — entries
+        # may be plain strings or {name,...} objects, both pass through as-is,
+        # the frontend already normalizes either shape) and subLobs (nav-tree
+        # renders sub-LOB names in the expanded row), drops financial_snippets/
+        # patents/deep URLs/the sub-LOB's own 18-attribute entity data, which
+        # are only read once an account is opened.
+        sub_lobs_formatted = [{"id": s.id, "name": s.name} for s in (lob_item.sub_lobs or [])]
+        return {
+            "id": lob_item.id,
+            "name": lob_item.lob_name,
+            "lob_name": lob_item.lob_name,
+            "technologies": lob_item.technologies or [],
+            "competitors": lob_item.competitors or [],
+            "subLobs": sub_lobs_formatted,
+            "sub_lobs": sub_lobs_formatted,
+            "personas_count": assigned_personas_count,
+        }
 
     def _serialize_account_full(acct: Account) -> Dict[str, Any]:
         personas_list = [_serialize_persona_full(p) for p in (acct.personas or [])]
@@ -1484,7 +1504,7 @@ if FASTAPI_AVAILABLE:
         personas_list = [_serialize_persona_full(p) for p in (acct.personas or [])]
         raw_lobs = acct.lobs or []
         lobs_list = [
-            _serialize_lob_full(lob_item, assigned)
+            _serialize_lob_summary(lob_item, len(assigned))
             for lob_item, assigned in _distribute_personas_across_lobs(raw_lobs, personas_list)
         ]
 
@@ -1552,8 +1572,6 @@ if FASTAPI_AVAILABLE:
             "multi_source_intelligence": acct.multi_source_intelligence,
             "organisational_hierarchy_tree": acct.organisational_hierarchy_tree,
             "extracted_at": acct.extracted_at.isoformat() if acct.extracted_at else None,
-            "created_at": acct.created_at.isoformat() if acct.created_at else None,
-            "updated_at": acct.updated_at.isoformat() if acct.updated_at else None,
             "heat_score": acct.heat_score,
             "trend_score_90d": acct.trend_score_90d,
             "signals_count": _compute_signals_count(acct, lobs_list, personas_list),
@@ -3305,6 +3323,57 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
+    @app.get("/api/objections", tags=["3. Personas & Buying Committee"])
+    def get_common_objections_and_pain_points(
+        response: Response,
+        user: User = Depends(auth.get_current_user),
+        limit: int = Query(10, ge=1, le=50),
+    ):
+        """Ranks operational_pain_points and key_objections (both real
+        AI-dossier fields on Persona, not fabricated) by how many personas
+        across the caller's accessible accounts mention them — a Command
+        Center widget surfacing the objections/pain points reps are actually
+        going to hear, aggregated server-side rather than shipping every
+        persona's raw fields to the client just to count them there."""
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        session = get_session()
+        try:
+            query = session.query(Persona).join(Account, Persona.account_id == Account.id)
+            if user.role != "super_admin":
+                accessible_ids = auth.get_accessible_account_ids(session, user.id)
+                query = query.filter(Account.id.in_(accessible_ids)) if accessible_ids else query.filter(False)
+            personas = query.all()
+
+            pain_points: Dict[str, Dict[str, Any]] = {}
+            objections: Dict[str, Dict[str, Any]] = {}
+
+            def _tally(bucket: Dict[str, Dict[str, Any]], text: Optional[str], acct_name: Optional[str]):
+                text = (text or "").strip()
+                if not text:
+                    return
+                entry = bucket.setdefault(text, {"count": 0, "accounts": set()})
+                entry["count"] += 1
+                if acct_name:
+                    entry["accounts"].add(acct_name)
+
+            for p in personas:
+                acct_name = (p.account.display_name or p.account.legal_name) if p.account else None
+                for text in (p.operational_pain_points or []):
+                    _tally(pain_points, text, acct_name)
+                for text in (p.key_objections or []):
+                    _tally(objections, text, acct_name)
+
+            def _top(bucket: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+                ranked = sorted(bucket.items(), key=lambda kv: kv[1]["count"], reverse=True)[:limit]
+                return [
+                    {"text": text, "count": v["count"], "accounts": sorted(v["accounts"])}
+                    for text, v in ranked
+                ]
+
+            return {"pain_points": _top(pain_points), "objections": _top(objections)}
+        finally:
+            session.close()
+
     @app.get("/api/accounts/{account_id}/personas", tags=["3. Personas & Buying Committee"])
     def get_account_buying_committee(account_id: int, user: User = Depends(auth.require_account_access)):
         """Retrieve all executive personas and decision makers mapped to an account."""
@@ -4827,7 +4896,7 @@ if FASTAPI_AVAILABLE:
             return {
                 "account_id": account.id,
                 "account_name": account.legal_name or account.display_name,
-                "ticker": account.stock_symbol or account.ticker or "BK",
+                "ticker": account.stock_symbol,
                 "total_roles": total_roles,
                 "leadership_count": leadership_count,
                 "contract_count": len(contract_roles),
@@ -5009,6 +5078,55 @@ if FASTAPI_AVAILABLE:
                 "total": len(movements),
                 "movements": [_serialize_cxo_movement(m, acct) for m in movements],
             }
+        finally:
+            session.close()
+
+    @app.get("/api/news", tags=["4. Content Intelligence"])
+    def get_cross_account_news(
+        response: Response,
+        user: User = Depends(auth.get_current_user),
+        limit: int = Query(30, ge=1, le=100),
+    ):
+        """Recent Google News articles (Post.channel == "news") captured across
+        every account the caller can see — the cross-account counterpart to
+        /api/accounts/{id}/content's per-account news slice, for a single feed
+        on Command Center instead of one fetch per account."""
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        session = get_session()
+        try:
+            target_map = _build_target_key_to_account_map(session)
+            if user.role != "super_admin":
+                accessible_ids = auth.get_accessible_account_ids(session, user.id)
+                target_map = {k: a for k, a in target_map.items() if a.id in accessible_ids}
+            if not target_map:
+                return {"articles": []}
+
+            posts = (
+                session.query(Post)
+                .filter(Post.channel == "news", Post.target_key.in_(list(target_map.keys())))
+                .order_by(Post.first_seen.desc().nullslast())
+                .limit(limit)
+                .all()
+            )
+            articles = []
+            for p in posts:
+                raw = p.raw or {}
+                body_stripped = (p.body or "").strip()
+                title = raw.get("title") or (body_stripped.splitlines()[0][:200] if body_stripped else None)
+                if not title:
+                    continue
+                acct = target_map.get(p.target_key)
+                articles.append({
+                    "id": p.id,
+                    "account_id": acct.id if acct else None,
+                    "account_name": (acct.display_name or acct.legal_name) if acct else p.target_key,
+                    "title": title,
+                    "source": p.author or raw.get("source"),
+                    "url": p.post_url,
+                    "published_at": p.published_at,
+                    "first_seen": p.first_seen.isoformat() if p.first_seen else None,
+                })
+            return {"articles": articles}
         finally:
             session.close()
 
@@ -5216,15 +5334,34 @@ if FASTAPI_AVAILABLE:
             deliberately deferred v2 (no endpoint for it exists yet)."""
             return templates.TemplateResponse(request, "tasks.html")
 
+        class NoCacheStaticFiles(StaticFiles):
+            """Forces browsers to revalidate every CSS/JS fetch against the
+            server (via the ETag/Last-Modified this already returns) instead
+            of silently reusing a cached copy. Without this, a plain reload
+            can keep serving an old version of a file indefinitely — these
+            are ES modules pulled in via bare `import`s (only the page's own
+            entry script has a `?v=` cache-busting query string; anything it
+            imports does not inherit that), and during active development
+            files here can change several times an hour. A stale cached copy
+            of one earlier today produced a genuinely confusing
+            "Unexpected token" browser error even though the file on disk
+            (and every version in git history) was valid JS the whole time.
+            Still cheap: an unchanged file gets a 304 Not Modified, not a
+            full re-download."""
+            def file_response(self, *args, **kwargs):
+                response = super().file_response(*args, **kwargs)
+                response.headers["Cache-Control"] = "no-cache"
+                return response
+
         css_dir = frontend_dir / "css"
         js_dir = frontend_dir / "js"
         pipline_dir = frontend_dir / "pipline"
         if css_dir.exists():
-            app.mount("/css", StaticFiles(directory=str(css_dir)), name="frontend-css")
+            app.mount("/css", NoCacheStaticFiles(directory=str(css_dir)), name="frontend-css")
         if js_dir.exists():
-            app.mount("/js", StaticFiles(directory=str(js_dir)), name="frontend-js")
+            app.mount("/js", NoCacheStaticFiles(directory=str(js_dir)), name="frontend-js")
         if pipline_dir.exists():
-            app.mount("/pipline", StaticFiles(directory=str(pipline_dir), html=True), name="frontend-pipline")
+            app.mount("/pipline", NoCacheStaticFiles(directory=str(pipline_dir), html=True), name="frontend-pipline")
 
 
 if __name__ == "__main__":

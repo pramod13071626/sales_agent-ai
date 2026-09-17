@@ -363,7 +363,42 @@ export function renderHiringTrendRadar(account, jobs) {
         </div>
       </div>
 
-      <!-- 2. Strategic Sales Takeaways & Pitch Angles -->
+      <!-- 2. Staff Augmentation & Contractor Demand Callout (If Present) -->
+      ${(() => {
+        const contractRoles = (jobs || []).filter(j => 
+          (j.employment_type || '').toLowerCase() === 'contract' || 
+          /\(contract\)/i.test(j.title || '')
+        );
+        if (!contractRoles.length) return '';
+        return `
+          <div class="radar-section" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(6, 95, 70, 0.04)); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: var(--radius, 10px); padding: 16px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+              <div style="font-size: 0.85rem; font-weight: 700; color: #059669; display: flex; align-items: center; gap: 6px;">
+                <i class="bi bi-briefcase-fill"></i> Immediate Staff Augmentation Opportunities (${contractRoles.length} Roles)
+              </div>
+              <span class="pill pill-success" style="font-size: 0.68rem;">External Sourcing Trigger</span>
+            </div>
+            <p style="font-size: 0.78rem; color: var(--text-secondary); margin: 0 0 10px 0;">
+              <strong>${esc(account.name)}</strong> is actively engaging external contractors for specialized delivery:
+            </p>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 8px;">
+              ${contractRoles.slice(0, 6).map(j => `
+                <div style="background: var(--surface-bg, #ffffff); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 6px; padding: 8px 12px; display: flex; flex-direction: column; gap: 4px;">
+                  <a href="${j.job_url ? esc(j.job_url) : '#'}" target="_blank" rel="noopener" style="font-size: 0.78rem; font-weight: 600; color: var(--brand); text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
+                    ${esc(j.title)} <i class="bi bi-box-arrow-up-right" style="font-size: 0.65rem;"></i>
+                  </a>
+                  <div style="font-size: 0.7rem; color: var(--text-muted); display: flex; justify-content: space-between;">
+                    <span><i class="bi bi-geo-alt"></i> ${esc(j.location || 'US')}</span>
+                    <span>${j.applicants ? `${j.applicants} applicants` : 'Active'}</span>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      })()}
+
+      <!-- 3. Strategic Sales Takeaways & Pitch Angles -->
       <div class="radar-section">
         <div class="radar-section-title">
           <i class="bi bi-lightbulb-fill" style="color:#eab308;"></i> Strategic Sales Takeaways &amp; Pitch Angles
@@ -387,6 +422,44 @@ export function renderHiringTrendRadar(account, jobs) {
               </div>
             </div>
           `).join('')}
+        </div>
+      </div>
+
+      <!-- 4. Live Paginated Requisitions Browser -->
+      <div class="radar-section">
+        <div class="radar-section-title" style="display: flex; align-items: center; justify-content: space-between;">
+          <span><i class="bi bi-folder2-open" style="color:var(--brand);"></i> Live LinkedIn Requisitions Browser (${total} Monitored Roles)</span>
+          <span style="font-size: 0.7rem; font-weight: 500; color: var(--text-muted);">Verified PostgreSQL Database Records</span>
+        </div>
+        <div style="max-height: 480px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 8px; background: var(--card-bg, #ffffff);">
+          ${jobs.slice(0, 50).map(j => {
+            const isContract = (j.employment_type || '').toLowerCase() === 'contract' || /\(contract\)/i.test(j.title || '');
+            const isLead = /director|\bvp\b|vice president|\bsvp\b|head of|chief|lead/i.test(j.title || '');
+            return `
+              <div style="padding: 10px 14px; border-bottom: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 4px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                  <a href="${j.job_url ? esc(j.job_url) : '#'}" target="_blank" rel="noopener" style="font-size: 0.8rem; font-weight: 600; color: var(--brand); text-decoration: none; display: inline-flex; align-items: center; gap: 5px;">
+                    ${esc(j.title)} <i class="bi bi-box-arrow-up-right" style="font-size: 0.65rem;"></i>
+                  </a>
+                  <div style="display: flex; gap: 4px; flex-shrink: 0;">
+                    ${isContract ? '<span class="pill pill-success" style="font-size: 0.6rem; padding: 1px 5px;">CONTRACT</span>' : ''}
+                    ${isLead ? '<span class="pill pill-brand" style="font-size: 0.6rem; padding: 1px 5px;">LEADERSHIP</span>' : ''}
+                    ${j.workplace_type ? `<span class="pill" style="font-size: 0.6rem; padding: 1px 5px; background: var(--input-bg); color: var(--text-secondary); text-transform: capitalize;">${esc(j.workplace_type).replace('_', ' ')}</span>` : ''}
+                  </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 14px; font-size: 0.72rem; color: var(--text-muted);">
+                  <span><i class="bi bi-geo-alt"></i> ${esc(j.location || 'US')}</span>
+                  ${j.applicants ? `<span><i class="bi bi-people"></i> ${j.applicants} applicants</span>` : ''}
+                  ${j.posted_date ? `<span><i class="bi bi-clock"></i> ${esc(j.posted_date)}</span>` : ''}
+                </div>
+              </div>
+            `;
+          }).join('')}
+          ${jobs.length > 50 ? `
+            <div style="padding: 12px; text-align: center; font-size: 0.75rem; color: var(--text-muted); background: var(--input-bg);">
+              Showing first 50 of ${total} requisitions
+            </div>
+          ` : ''}
         </div>
       </div>
 

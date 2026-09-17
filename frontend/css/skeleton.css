@@ -50,3 +50,54 @@
   height: 88px;
   border-radius: var(--radius-sm);
 }
+
+/* Nav sidebar account-card placeholder — matches .nav-account-card's
+   avatar + name/badge row + subtitle line (see partials/nav.html). */
+.skeleton-nav-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-sm);
+}
+.skeleton-nav-card-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.skeleton-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-xs);
+  flex-shrink: 0;
+}
+/* Larger avatar for a full profile-page header (see profile.html). */
+.skeleton-avatar-lg {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.skeleton-nav-card-top .skeleton-line {
+  flex: 1;
+}
+
+/* Single feed/list row for <ul>-based panels (Command Center's cc-feed-row /
+   cc-drawer-empty lists) — an <li> itself so it stays valid inside a <ul>,
+   unlike .skeleton-block's <div> wrapper. */
+.skeleton-feed-row {
+  list-style: none;
+  padding: 10px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Chart/canvas placeholder — matches the Account Priority Matrix bubble
+   chart area while its data is still loading. */
+.skeleton-chart {
+  height: 260px;
+  width: 100%;
+  border-radius: var(--radius-sm);
+}
