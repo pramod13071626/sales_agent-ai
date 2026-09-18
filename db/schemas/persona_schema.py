@@ -31,24 +31,19 @@ class PersonaSchema(BaseModel):
     decision_authority: Optional[str] = None
     budget_authority: Optional[str] = None
     raw_data: Optional[Dict[str, Any]] = None
-    twitter_handle: Optional[str] = None
-    twitter_live_url: Optional[str] = None
-    reddit_query: Optional[str] = None
-    reddit_rss_url: Optional[str] = None
+    corporate_bio_url: Optional[str] = None
+    crunchbase_url: Optional[str] = None
     sec_cik: Optional[str] = None
     sec_insider_trades_url: Optional[str] = None
-    news_query: Optional[str] = None
+    fec_contributions_url: Optional[str] = None
+    quiver_insider_url: Optional[str] = None
+    bloomberg_url: Optional[str] = None
+    wsj_article_url: Optional[str] = None
+    media_interview_url: Optional[str] = None
+    annual_report_url: Optional[str] = None
+    zoominfo_url: Optional[str] = None
     rss_url: Optional[str] = None
-    patents_query: Optional[str] = None
-    google_patents_url: Optional[str] = None
-    google_scholar_url: Optional[str] = None
-    openalex_author_url: Optional[str] = None
-    orcid_search_url: Optional[str] = None
-    wikidata_person_url: Optional[str] = None
-    youtube_interviews_url: Optional[str] = None
-    podcast_search_url: Optional[str] = None
-    google_trends_url: Optional[str] = None
-    youtube_channel_id: Optional[str] = None
+    twitter_handle: Optional[str] = None
     degree: Optional[str] = None
     institution: Optional[str] = None
     prior_company: Optional[str] = None
@@ -161,12 +156,10 @@ class PersonaSchema(BaseModel):
                     "twitter_live_url": (
                         person.get("twitter_live_url")
                         or rpd.get("twitter_live_url")
-                        or f"https://x.com/search?q=%22{qname}%22&f=live"
                     ),
                     "reddit_rss_url": (
                         person.get("reddit_rss_url")
                         or rpd.get("reddit_rss_url")
-                        or f"https://www.reddit.com/search.rss?q=%22{qname}%22&sort=new"
                     ),
                     "sec_insider_trades_url": (
                         person.get("sec_insider_trades_url")
@@ -176,7 +169,6 @@ class PersonaSchema(BaseModel):
                     "google_patents_url": (
                         person.get("google_patents_url")
                         or rpd.get("google_patents_url")
-                        or f"https://patents.google.com/?inventor={qname}&sort=new"
                     ),
                     "google_scholar_url": (
                         person.get("google_scholar_url")
@@ -291,24 +283,19 @@ class PersonaSchema(BaseModel):
             decision_authority=dec_auth,
             budget_authority=bud_auth,
             raw_data=person.get("raw_data") or person,
-            twitter_handle=person.get("twitter_handle") or rpd.get("twitter_handle"),
-            twitter_live_url=person.get("twitter_live_url") or rpd.get("twitter_live_url"),
-            reddit_query=person.get("reddit_query") or rpd.get("reddit_query"),
-            reddit_rss_url=person.get("reddit_rss_url") or rpd.get("reddit_rss_url"),
+            corporate_bio_url=person.get("corporate_bio_url") or rpd.get("corporate_bio_url"),
+            crunchbase_url=person.get("crunchbase_url") or rpd.get("crunchbase_url"),
             sec_cik=person.get("sec_cik") or rpd.get("sec_cik"),
             sec_insider_trades_url=person.get("sec_insider_trades_url") or rpd.get("sec_insider_trades_url"),
-            news_query=person.get("news_query") or rpd.get("news_query"),
+            fec_contributions_url=person.get("fec_contributions_url") or rpd.get("fec_contributions_url"),
+            quiver_insider_url=person.get("quiver_insider_url") or rpd.get("quiver_insider_url"),
+            bloomberg_url=person.get("bloomberg_url") or rpd.get("bloomberg_url"),
+            wsj_article_url=person.get("wsj_article_url") or rpd.get("wsj_article_url"),
+            media_interview_url=person.get("media_interview_url") or rpd.get("media_interview_url"),
+            annual_report_url=person.get("annual_report_url") or rpd.get("annual_report_url"),
+            zoominfo_url=person.get("zoominfo_url") or rpd.get("zoominfo_url"),
             rss_url=person.get("rss_url") or rpd.get("rss_url"),
-            patents_query=person.get("patents_query") or rpd.get("patents_query"),
-            google_patents_url=person.get("google_patents_url") or rpd.get("google_patents_url"),
-            google_scholar_url=person.get("google_scholar_url") or rpd.get("google_scholar_url"),
-            openalex_author_url=person.get("openalex_author_url") or rpd.get("openalex_author_url"),
-            orcid_search_url=person.get("orcid_search_url") or rpd.get("orcid_search_url"),
-            wikidata_person_url=person.get("wikidata_person_url") or rpd.get("wikidata_person_url"),
-            youtube_interviews_url=person.get("youtube_interviews_url") or rpd.get("youtube_interviews_url"),
-            podcast_search_url=person.get("podcast_search_url") or rpd.get("podcast_search_url"),
-            google_trends_url=person.get("google_trends_url") or rpd.get("google_trends_url"),
-            youtube_channel_id=person.get("youtube_channel_id") or rpd.get("youtube_channel_id"),
+            twitter_handle=person.get("twitter_handle") or rpd.get("twitter_handle"),
             degree=person.get("degree") or l1.get("degree") or raw.get("degree"),
             institution=person.get("institution") or l1.get("institution") or raw.get("institution"),
             prior_company=person.get("prior_company") or l1.get("prior_company"),

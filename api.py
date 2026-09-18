@@ -137,6 +137,10 @@ if FASTAPI_AVAILABLE:
         allow_headers=["*"],
     )
 
+    @app.get("/favicon.ico", include_in_schema=False)
+    def favicon():
+        return Response(status_code=204)
+
     @app.on_event("startup")
     def on_startup():
         try:
@@ -144,6 +148,7 @@ if FASTAPI_AVAILABLE:
             ensure_schema_compatibility()
         except Exception as e:
             print(f"[WARN] Schema compatibility check failed on startup: {e}")
+
 
     # ══════════════════════════════════════════════════════
     # AUTHENTICATION (see AUTH_JWT_IMPLEMENTATION_PLAN.md)
@@ -1148,24 +1153,27 @@ if FASTAPI_AVAILABLE:
             "decision_authority": p.decision_authority,
             "budget_authority": p.budget_authority,
             "reports_to": p_raw.get("reports_to") or p_raw.get("reportsTo") or None,
-            "twitter_handle": p.twitter_handle,
-            "twitter_live_url": p.twitter_live_url,
-            "reddit_query": p.reddit_query,
-            "reddit_rss_url": p.reddit_rss_url,
-            "sec_cik": p.sec_cik,
-            "sec_insider_trades_url": p.sec_insider_trades_url,
-            "news_query": p.news_query,
-            "rss_url": p.rss_url,
-            "patents_query": p.patents_query,
-            "google_patents_url": p.google_patents_url,
-            "google_scholar_url": p.google_scholar_url,
-            "openalex_author_url": p.openalex_author_url,
-            "orcid_search_url": p.orcid_search_url,
-            "wikidata_person_url": p.wikidata_person_url,
-            "youtube_interviews_url": p.youtube_interviews_url,
-            "podcast_search_url": p.podcast_search_url,
-            "google_trends_url": p.google_trends_url,
-            "youtube_channel_id": p.youtube_channel_id,
+            "twitter_handle": getattr(p, "twitter_handle", None),
+            "corporate_bio_url": getattr(p, "corporate_bio_url", None),
+            "crunchbase_url": getattr(p, "crunchbase_url", None),
+            "sec_cik": getattr(p, "sec_cik", None),
+            "sec_insider_trades_url": getattr(p, "sec_insider_trades_url", None),
+            "fec_contributions_url": getattr(p, "fec_contributions_url", None),
+            "quiver_insider_url": getattr(p, "quiver_insider_url", None),
+            "bloomberg_url": getattr(p, "bloomberg_url", None),
+            "wsj_article_url": getattr(p, "wsj_article_url", None),
+            "media_interview_url": getattr(p, "media_interview_url", None),
+            "annual_report_url": getattr(p, "annual_report_url", None),
+            "zoominfo_url": getattr(p, "zoominfo_url", None),
+            "rss_url": getattr(p, "rss_url", None),
+            "youtube_url": getattr(p, "youtube_url", None),
+            "podcast_url": getattr(p, "podcast_url", None),
+            "openinsider_url": getattr(p, "openinsider_url", None),
+            "secform4_url": getattr(p, "secform4_url", None),
+            "wayback_url": getattr(p, "wayback_url", None),
+            "theorg_url": getattr(p, "theorg_url", None),
+            "seeking_alpha_url": getattr(p, "seeking_alpha_url", None),
+            "external_board_url": getattr(p, "external_board_url", None),
             "skills": p.skills or [],
             "target_kpis": p.target_kpis or [],
             "operational_pain_points": p.operational_pain_points or [],
@@ -1191,24 +1199,14 @@ if FASTAPI_AVAILABLE:
             "osint_feed_manifest": p.osint_feed_manifest or {},
             "is_manually_verified": bool(getattr(p, "is_manually_verified", False)),
             "manually_verified_at": p.manually_verified_at.isoformat() if getattr(p, "manually_verified_at", None) else None,
+            "extended_profile": getattr(p, "extended_profile", None) or {},
             "raw_data": p.raw_data,
         }
 
     def _serialize_persona_summary(p: Persona) -> Dict[str, Any]:
-        # Trimmed for the account-list view: only what nav-tree/digest/topbar's
-        # cross-account rollups (target-key resolution, tier labeling, C-suite
-        # detection) actually read. Full dossier fields (raw_data, icebreakers,
-        # KPIs, every enrichment URL, ...) are only fetched once an account is
-        # opened, via _serialize_persona_full.
-        return {
-            "id": p.id,
-            "key": p.key,
-            "name": p.full_name,
-            "full_name": p.full_name,
-            "title": p.title,
-            "tier": p.tier,
-            "hierarchy_level": p.hierarchy_level,
-        }
+        # Return full persona data so all columns and rich intelligence are available throughout the app
+        return _serialize_persona_full(p)
+
 
     def _distribute_personas_across_lobs(raw_lobs, personas_list):
         """Synthetic C-suite + VP-cohort split across LOBs for display grouping —
@@ -1503,22 +1501,8 @@ if FASTAPI_AVAILABLE:
         return count
 
     def _serialize_account_summary(acct: Account) -> Dict[str, Any]:
-        # Trimmed for the account-LIST view (nav tree, digest, topbar ticker,
-        # command-center sidebar, admin account switcher). Keeps only the fields
-        # those cross-account rollups actually read — traced via signals_count
-        # (replaces computeSignals() from signals.js — see _compute_signals_count),
-        # computeDomainExpansionOpportunities() (opportunities.js),
-        # resolveAccountTargetKey()/resolvePersonaTargetKey() (utils.js), and
-        # nav-tree.js/topbar.js/digest.js/admin-page.js/accounts-nav.js directly.
-        # Drops everything else — descriptive text, contact/social/enrichment
-        # URLs, org chart tree, multi_source_intelligence, funding/IPO/traffic
-        # fields, buying-committee tier counts (none of those are read by any
-        # list-wide consumer; unused ones like c_suite_count/vp_count/
-        # director_count/manager_count aren't read by the frontend at all) — all
-        # of it is only needed once a specific account is opened, via
-        # _serialize_account_full / GET /api/accounts/{id}, which selection.js's
-        # ensureAccountDetail() fetches and merges in on demand at that point.
-        personas_list = [_serialize_persona_summary(p) for p in (acct.personas or [])]
+        # Full serialization for Account, LOBs, and Personas ensures the UI receives 100% of data attributes
+        personas_list = [_serialize_persona_full(p) for p in (acct.personas or [])]
         raw_lobs = acct.lobs or []
         lobs_list = [
             _serialize_lob_summary(lob_item, len(assigned))
@@ -1527,6 +1511,7 @@ if FASTAPI_AVAILABLE:
 
         acct_name = acct.legal_name or acct.display_name or acct.key
         acct_loc = acct.headquarters_location or (f"{acct.city}, {acct.country}" if acct.city else None)
+        acct_desc = acct.short_description or acct.full_description
 
         return {
             "id": acct.id,
@@ -1536,18 +1521,123 @@ if FASTAPI_AVAILABLE:
             "legal_name": acct.legal_name or acct_name,
             "ticker": acct.stock_symbol,
             "stock_symbol": acct.stock_symbol,
+            "revenue": acct.estimated_revenue_range or "Revenue N/A",
+            "estimated_revenue_range": acct.estimated_revenue_range,
             "location": acct_loc,
+            "headquarters_location": acct_loc,
+            "desc": acct_desc,
+            "short_description": acct_desc,
+            "full_description": acct.full_description or acct_desc,
+            "domain": acct.domain,
+            "primary_domain": acct.primary_domain or acct.domain,
+            "website_url": acct.website_url,
+            "crunchbase_url": acct.crunchbase_url,
+            "operating_status": acct.operating_status,
+            "city": acct.city,
+            "state": acct.state,
+            "country": acct.country,
+            "postal_code": acct.postal_code,
+            "phone_number": acct.phone_number,
+            "sanitized_phone": acct.sanitized_phone,
+            "contact_email": acct.contact_email,
             "company_type": acct.company_type,
+            "founded_year": acct.founded_year,
             "employee_count_range": acct.employee_count_range,
+            "linkedin_url": acct.linkedin_url,
+            "twitter_url": acct.twitter_url,
+            "twitter_handle": acct.twitter_handle,
+            "stock_exchange": acct.stock_exchange,
+            "sec_cik": acct.sec_cik,
+            "sec_edgar_url": acct.sec_edgar_url,
+            "sec_filings_rss": acct.sec_filings_rss,
+            "sec_submissions_url": acct.sec_submissions_url,
+            "twitter_live_url": acct.twitter_live_url,
+            "reddit_query": acct.reddit_query,
+            "reddit_rss_url": acct.reddit_rss_url,
+            "news_query": acct.news_query,
+            "rss_url": acct.rss_url,
+            "google_patents_url": acct.google_patents_url,
+            "google_trends_url": acct.google_trends_url,
+            "youtube_search_url": acct.youtube_search_url,
+            "openalex_institution_url": acct.openalex_institution_url,
+            "wikidata_entity_url": acct.wikidata_entity_url,
+            "github_url": acct.github_url,
+            "glassdoor_url": acct.glassdoor_url,
+            "blog_url": acct.blog_url,
             "industries": acct.industries or [],
+            "keywords": acct.keywords or [],
             "lobs_count": len(lobs_list),
             "total_contacts_captured": len(personas_list),
             "lobs": lobs_list,
             "personas": personas_list,
+            "multi_source_intelligence": acct.multi_source_intelligence,
+            "organisational_hierarchy_tree": acct.organisational_hierarchy_tree,
             "extracted_at": acct.extracted_at.isoformat() if acct.extracted_at else None,
             "heat_score": acct.heat_score,
             "trend_score_90d": acct.trend_score_90d,
             "signals_count": _compute_signals_count(acct, lobs_list, personas_list),
+            "active_tech_count": acct.active_tech_count,
+            "it_spend": acct.it_spend,
+            "patents_granted": acct.patents_granted,
+            "trademarks_registered": acct.trademarks_registered,
+            "total_funding_amount_usd": acct.total_funding_amount_usd,
+            "total_funding_currency": acct.total_funding_currency,
+            "last_funding_type": acct.last_funding_type,
+            "last_funding_date": acct.last_funding_date.isoformat() if acct.last_funding_date else None,
+            "num_funding_rounds": acct.num_funding_rounds,
+            "funding_status": acct.funding_status,
+            "ipo_status": acct.ipo_status,
+            "ipo_date": acct.ipo_date.isoformat() if acct.ipo_date else None,
+            "num_suborganizations": acct.num_suborganizations,
+            "num_acquisitions": acct.num_acquisitions,
+            "global_traffic_rank": acct.global_traffic_rank,
+            "monthly_visits": acct.monthly_visits,
+            "bounce_rate": acct.bounce_rate,
+            "visit_duration": acct.visit_duration,
+            "page_views_per_visit": acct.page_views_per_visit,
+            "c_suite_count": acct.c_suite_count
+            or len(
+                [
+                    p
+                    for p in personas_list
+                    if (p.get("tier") or "").lower() in ["c-suite", "c_suite", "c"]
+                    or any(
+                        w in (p.get("title") or "").lower()
+                        for w in ["chief", "president", "ceo", "chairman", "board"]
+                    )
+                ]
+            ),
+            "vp_count": acct.vp_count
+            or len(
+                [
+                    p
+                    for p in personas_list
+                    if "vp" in (p.get("tier") or "").lower()
+                    or "vice president" in (p.get("title") or "").lower()
+                ]
+            ),
+            "director_count": acct.director_count
+            or len(
+                [
+                    p
+                    for p in personas_list
+                    if "director" in (p.get("tier") or "").lower()
+                    or "director" in (p.get("title") or "").lower()
+                ]
+            ),
+            "manager_count": acct.manager_count
+            or len(
+                [
+                    p
+                    for p in personas_list
+                    if "manager" in (p.get("tier") or "").lower()
+                    or "manager" in (p.get("title") or "").lower()
+                ]
+            ),
+            "created_at": acct.created_at.isoformat() if getattr(acct, "created_at", None) else None,
+            "updated_at": acct.updated_at.isoformat() if getattr(acct, "updated_at", None) else None,
+            "is_manually_verified": bool(getattr(acct, "is_manually_verified", False)),
+            "manually_verified_at": acct.manually_verified_at.isoformat() if getattr(acct, "manually_verified_at", None) else None,
         }
 
     @account_router.get("")
@@ -2503,45 +2593,9 @@ if FASTAPI_AVAILABLE:
             p_data["account_id"] = acct.id
             schema = PersonaSchema.from_enriched_json(p_data)
 
-            # Intelligent Multi-Strategy Match: External ID -> Exact Key -> Exact Full Name -> Fuzzy Obfuscated Name
-            existing = None
-            if schema.external_id:
-                existing = session.query(Persona).filter_by(account_id=acct.id, external_id=schema.external_id).first()
-            if not existing and schema.key:
-                existing = session.query(Persona).filter_by(account_id=acct.id, key=schema.key).first()
-            if not existing and schema.full_name:
-                existing = session.query(Persona).filter_by(account_id=acct.id, full_name=schema.full_name).first()
-            if not existing and schema.first_name:
-                candidates = session.query(Persona).filter_by(account_id=acct.id, first_name=schema.first_name).all()
-                for cand in candidates:
-                    cand_last = (cand.last_name or "").strip().replace(".", "").lower()
-                    schema_last = (schema.last_name or "").strip().replace(".", "").lower()
-                    # Check if one is an initial or prefix of the other (e.g. "S" / "S." vs "La Salla")
-                    is_initial_match = (
-                        (len(cand_last) <= 2 and schema_last.startswith(cand_last))
-                        or (len(schema_last) <= 2 and cand_last.startswith(schema_last))
-                    )
-                    is_title_match = bool(
-                        cand.title and schema.title and cand.title[:15].lower() == schema.title[:15].lower()
-                    )
-                    if is_initial_match or is_title_match:
-                        existing = cand
-                        break
-
-            if existing:
-                persona = existing
-            else:
-                persona = Persona(account_id=acct.id)
-                session.add(persona)
-
-            data = schema.model_dump()
-            for field, value in data.items():
-                if field in ("id", "account_id", "lob_id", "account", "lob") and value is None:
-                    continue
-                if hasattr(persona, field):
-                    setattr(persona, field, value)
-
-            persona.account_id = acct.id
+            # Enterprise Deduplication Mapping Layer: resolve and coalesce into master
+            repo = PersonaRepository(session)
+            persona = repo.upsert(schema)
             session.commit()
 
             PipelineRunLogger.log_event(
@@ -2905,13 +2959,20 @@ if FASTAPI_AVAILABLE:
         """Triggers complete live pipeline. Staged, NO DB write."""
         t0 = datetime.now(timezone.utc)
         try:
-            res = run_pipeline(company_name=req.company_name, target_url=req.target_url)
+            res = run_pipeline(company_name=req.company_name, target_url=req.target_url) or {}
             val_meta = res.get("validation_report", {}).get("audit_metadata", {})
             q_score = float(val_meta.get("overall_quality_score", 0.0))
             q_grade = val_meta.get("overall_quality_grade", "N/A")
 
-            raw_d = res.get("run_dirs", {}).get("raw_dir")
-            enr_d = res.get("run_dirs", {}).get("enriched_dir")
+            run_dirs = res.get("run_dirs") or {}
+            raw_d = run_dirs.get("raw_dir")
+            enr_d = run_dirs.get("enriched_dir")
+
+            extracted_summary = val_meta.get("entities_extracted") or {
+                "accounts_count": 1,
+                "lobs_count": len(res.get("lobs") or []),
+                "personas_count": len(res.get("personas") or []),
+            }
 
             PipelineRunLogger.log_event(
                 company_name=req.company_name,
@@ -2925,13 +2986,13 @@ if FASTAPI_AVAILABLE:
                 completed_at=datetime.now(timezone.utc),
                 raw_storage_dir=str(raw_d) if raw_d else None,
                 enriched_storage_dir=str(enr_d) if enr_d else None,
-                entities_extracted={"run_dirs": {k: str(v) for k, v in res.get("run_dirs", {}).items()}},
+                entities_extracted=extracted_summary,
             )
 
             return {
                 "status": "staged",
                 "company_name": req.company_name,
-                "run_dirs": {k: str(v) for k, v in res["run_dirs"].items()},
+                "run_dirs": {k: str(v) for k, v in run_dirs.items()},
                 "validation_score": q_score,
                 "ready_for_db_dump": val_meta.get("ready_for_db_dump", False),
             }
@@ -2947,6 +3008,7 @@ if FASTAPI_AVAILABLE:
                 error_message=str(e),
             )
             raise HTTPException(status_code=500, detail=f"Pipeline execution failed: {str(e)}")
+
 
     @pipeline_router.post("/validate")
     def validate_composite_run(req: PipelineDumpDbRequest):

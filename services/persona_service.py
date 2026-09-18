@@ -408,29 +408,62 @@ class PersonaCoalesceEngine:
         twitter_live_url = (
             f"https://x.com/{twitter_handle.lstrip('@')}"
             if twitter_handle
-            else f"https://x.com/search?q={urllib.parse.quote_plus(display_name)}"
+            else None
         )
         social_presence_level = (
             "High" if (linkedin_url and twitter_handle) else ("Medium" if linkedin_url else "Standard")
         )
 
-        # 10. Dynamic 18 OSINT Launchpad URLs (Zero-Cost Live Tracking)
-        enc_name = urllib.parse.quote_plus(f"{display_name} {company_name}")
-        enc_person_only = urllib.parse.quote_plus(display_name)
+        # 10. Authentic OSINT URLs (Strictly verified data only)
+        reddit_rss_url = meta.get("reddit_rss_url")
 
-        reddit_rss_url = f"https://www.reddit.com/search.rss?q={enc_name}&sort=new"
-        sec_insider_trades_url = (
-            f"https://www.sec.gov/edgar/searchedgar/companysearch?companyName={enc_person_only}"
+        # SEC Insider Trades: Only for C-Suite / Executive Leadership if CIK exists
+        sec_insider_trades_url = None
+        title_lower = clean_title.lower()
+        is_c_level = (
+            hierarchy_level <= 2
+            or tier == "c_suite"
+            or any(k in title_lower for k in ["chief", "ceo", "cfo", "coo", "cto", "cio", "cro", "cmo", "ciso", "president", "vice chair", "executive committee"])
         )
-        google_patents_url = f"https://patents.google.com/?inventor={enc_person_only}"
-        google_scholar_url = f"https://scholar.google.com/scholar?q={enc_name}"
-        openalex_author_url = f"https://openalex.org/authors?search={enc_person_only}"
-        orcid_search_url = f"https://orcid.org/orcid-search/search?searchQuery={enc_person_only}"
-        wikidata_person_url = f"https://www.wikidata.org/w/index.php?search={enc_person_only}"
-        youtube_interviews_url = f"https://www.youtube.com/results?search_query={enc_name}+interview"
-        podcast_search_url = f"https://www.listennotes.com/search/?q={enc_name}"
-        google_trends_url = f"https://trends.google.com/trends/explore?q={enc_person_only}"
-        rss_url = f"https://news.google.com/rss/search?q={enc_name}&hl=en-US&gl=US&ceid=US:en"
+        if is_c_level:
+            cik = meta.get("sec_cik") or (sec_ins.get("cik") if isinstance(sec_ins, dict) else None)
+            if cik:
+                sec_insider_trades_url = f"https://www.sec.gov/edgar/searchedgar/companysearch?CIK={cik}&type=4"
+            elif sec_ins and isinstance(sec_ins, dict) and sec_ins.get("filing_url"):
+                sec_insider_trades_url = sec_ins.get("filing_url")
+            elif meta.get("sec_insider_trades_url"):
+                sec_insider_trades_url = meta.get("sec_insider_trades_url")
+
+        # Patents: only if actual patent record exists
+        google_patents_url = None
+        if meta.get("google_patents_url") and "/patent/" in str(meta.get("google_patents_url")):
+            google_patents_url = meta.get("google_patents_url")
+        elif isinstance(meta.get("patents"), list) and meta.get("patents"):
+            google_patents_url = meta["patents"][0].get("patent_url") or meta["patents"][0].get("url")
+
+        # Academic / Research profiles: only if authentic entity verified
+        google_scholar_url = meta.get("google_scholar_url") if (meta.get("google_scholar_url") and "user=" in str(meta.get("google_scholar_url"))) else None
+
+        openalex_author_url = None
+        if alex and isinstance(alex, dict) and alex.get("id"):
+            openalex_author_url = alex.get("id") if str(alex.get("id")).startswith("http") else f"https://openalex.org/{alex.get('id')}"
+        elif meta.get("openalex_author_url") and "search=" not in str(meta.get("openalex_author_url")):
+            openalex_author_url = meta.get("openalex_author_url")
+
+        orcid_search_url = None
+        if orc and isinstance(orc, dict) and orc.get("orcid_id"):
+            orcid_search_url = f"https://orcid.org/{orc.get('orcid_id')}"
+        elif meta.get("orcid_search_url") and "orcid.org/00" in str(meta.get("orcid_search_url")):
+            orcid_search_url = meta.get("orcid_search_url")
+
+        wikidata_person_url = None
+        if meta.get("wikidata_person_url") and "/wiki/Q" in str(meta.get("wikidata_person_url")):
+            wikidata_person_url = meta.get("wikidata_person_url")
+
+        youtube_interviews_url = meta.get("youtube_interviews_url") if (meta.get("youtube_interviews_url") and "watch?v=" in str(meta.get("youtube_interviews_url"))) else None
+        podcast_search_url = meta.get("podcast_search_url") if (meta.get("podcast_search_url") and "/episode/" in str(meta.get("podcast_search_url"))) else None
+        google_trends_url = meta.get("google_trends_url")
+        rss_url = meta.get("rss_url")
 
         # 11. Complete OSINT Feed Manifest (Dynamic aggregation)
         osint_feed_manifest = {
@@ -535,10 +568,10 @@ class PersonaCoalesceEngine:
             "podcast_search_url": podcast_search_url,
             "google_trends_url": google_trends_url,
             "twitter_handle": twitter_handle,
-            "reddit_query": f'"{display_name}"',
-            "news_query": f'"{display_name}" {company_name}',
+            "reddit_query": meta.get("reddit_query"),
+            "news_query": meta.get("news_query"),
             "rss_url": rss_url,
-            "patents_query": f'"{display_name}"',
+            "patents_query": meta.get("patents_query"),
             "osint_feed_manifest": osint_feed_manifest,
             "raw_data": raw_payload,
         }
