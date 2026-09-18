@@ -181,6 +181,13 @@ if FASTAPI_AVAILABLE:
         has_tasks_access: Optional[bool] = None
         has_pipeline_access: Optional[bool] = None
 
+    class UpdateApiConfigRequest(BaseModel):
+        configs: Dict[str, Any]
+
+    class TestApiConfigRequest(BaseModel):
+        provider: str
+        credentials: Optional[Dict[str, Any]] = None
+
     def _user_public(u: User) -> Dict[str, Any]:
         is_sa = u.role == "super_admin"
         return {
@@ -678,6 +685,38 @@ if FASTAPI_AVAILABLE:
                     for e in logs
                 ]
             }
+        finally:
+            session.close()
+
+    @app.get("/api/admin/api-config", tags=["0. Authentication"])
+    def get_api_configs(current: User = Depends(auth.require_role("super_admin"))):
+        """Returns all system API credentials and runtime settings with masked secrets."""
+        from services.config_service import get_all_configs_dto
+        session = get_session()
+        try:
+            return {"configs": get_all_configs_dto(session)}
+        finally:
+            session.close()
+
+    @app.post("/api/admin/api-config", tags=["0. Authentication"])
+    def update_api_configs(body: UpdateApiConfigRequest, current: User = Depends(auth.require_role("super_admin"))):
+        """Updates and encrypts API configuration keys and triggers in-memory runtime hot reload."""
+        from services.config_service import update_configs
+        session = get_session()
+        try:
+            success, msg = update_configs(body.configs, current.id, session)
+            return {"ok": success, "message": msg}
+        finally:
+            session.close()
+
+    @app.post("/api/admin/api-config/test", tags=["0. Authentication"])
+    def test_api_connection(body: TestApiConfigRequest, current: User = Depends(auth.require_role("super_admin"))):
+        """Tests live connectivity to a third-party API provider with uncommitted or configured credentials."""
+        from services.config_service import test_provider_connection
+        session = get_session()
+        try:
+            res = test_provider_connection(body.provider, body.credentials, session)
+            return res
         finally:
             session.close()
 
