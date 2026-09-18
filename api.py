@@ -51,7 +51,7 @@ from collectors.validator import DataQualityValidator
 from serializer import MasterSerializer
 from serializers.account_serializer import slugify
 
-from sqlalchemy import or_
+from sqlalchemy import or_, and_
 from sqlalchemy.orm import selectinload
 from db.connection import get_session
 from db.models import (
@@ -4564,7 +4564,10 @@ if FASTAPI_AVAILABLE:
             session.close()
 
     @app.get("/api/accounts/{account_id}/hiring-summary", tags=["5. LinkedIn Jobs"])
-    def get_account_hiring_summary(account_id: int):
+    def get_account_hiring_summary(
+        account_id: int,
+        days: Optional[int] = Query(None, description="Filter jobs posted within the last N days (e.g. 15, 30)")
+    ):
         """Retrieve aggregated lightweight hiring metrics & strategic track stats for an account.
         Designed for instant page-load performance across millions of rows."""
         session = get_session()
@@ -4580,7 +4583,18 @@ if FASTAPI_AVAILABLE:
                 slugify(account.legal_name) if account.legal_name else None,
             ]))
 
-            jobs = session.query(LinkedInJob).filter(LinkedInJob.target_key.in_(candidate_keys)).all()
+            jobs_query = session.query(LinkedInJob).filter(LinkedInJob.target_key.in_(candidate_keys))
+            if days is not None and days > 0:
+                cutoff_dt = datetime.now(timezone.utc) - timedelta(days=days)
+                cutoff_iso = cutoff_dt.strftime("%Y-%m-%dT%H:%M:%S")
+                jobs_query = jobs_query.filter(
+                    or_(
+                        LinkedInJob.posted_date >= cutoff_iso,
+                        and_(LinkedInJob.posted_date.is_(None), LinkedInJob.first_seen >= cutoff_dt)
+                    )
+                )
+
+            jobs = jobs_query.all()
 
             total_roles = len(jobs)
             leadership_rx = re.compile(r"director|\bvp\b|vice president|\bsvp\b|senior vice president|head of|chief|lead", re.I)
@@ -4626,6 +4640,7 @@ if FASTAPI_AVAILABLE:
                 "account_id": account.id,
                 "account_name": account.legal_name or account.display_name,
                 "ticker": account.stock_symbol,
+                "days_filter": days,
                 "total_roles": total_roles,
                 "leadership_count": leadership_count,
                 "contract_count": len(contract_roles),
@@ -4645,6 +4660,7 @@ if FASTAPI_AVAILABLE:
         sort: str = "newest",
         page: int = 1,
         page_size: int = 25,
+        days: Optional[int] = Query(None, description="Filter jobs posted within the last N days"),
     ):
         """Retrieve paginated live LinkedIn job postings for a specific account.
         Used for on-demand lazy loading when expanding the Requisitions Browser."""
@@ -4665,6 +4681,16 @@ if FASTAPI_AVAILABLE:
             page_size = max(1, min(page_size, 100))
 
             base_query = session.query(LinkedInJob).filter(LinkedInJob.target_key.in_(candidate_keys))
+            if days is not None and days > 0:
+                cutoff_dt = datetime.now(timezone.utc) - timedelta(days=days)
+                cutoff_iso = cutoff_dt.strftime("%Y-%m-%dT%H:%M:%S")
+                base_query = base_query.filter(
+                    or_(
+                        LinkedInJob.posted_date >= cutoff_iso,
+                        and_(LinkedInJob.posted_date.is_(None), LinkedInJob.first_seen >= cutoff_dt)
+                    )
+                )
+
             total = base_query.count()
 
             if sort == "applicants":
@@ -4697,6 +4723,7 @@ if FASTAPI_AVAILABLE:
             return {
                 "account_id": account.id,
                 "account_name": account.legal_name or account.display_name,
+                "days_filter": days,
                 "total": total,
                 "page": page,
                 "page_size": page_size,

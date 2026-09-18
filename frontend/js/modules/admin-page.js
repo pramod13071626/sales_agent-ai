@@ -2,14 +2,11 @@
 import './fetch-instrumentation.js';
 import { getCurrentUser, logout, refreshAccessToken } from './auth-client.js';
 import { initThemeToggle } from './theme.js';
+import { initTopbarAuth } from './topbar-auth.js';
 import { showToast } from './toast.js';
 
 initThemeToggle();
-
-document.getElementById('adminLogoutBtn').addEventListener('click', async () => {
-  await logout();
-  window.location.href = '/login';
-});
+initTopbarAuth();
 
 const esc = (s) => {
   const d = document.createElement('div');
