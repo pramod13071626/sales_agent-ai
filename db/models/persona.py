@@ -40,25 +40,28 @@ class Persona(Base):
     raw_data = Column(JSONB)
     osint_feed_manifest = Column(JSONB)
 
-    # ── Person Scraping URLs ──
-    twitter_handle = Column(String(100))
-    twitter_live_url = Column(Text)
-    reddit_query = Column(Text)
-    reddit_rss_url = Column(Text)
+    # ── Verified Executive Intelligence & OSINT URLs ──
+    corporate_bio_url = Column(Text)
+    crunchbase_url = Column(Text)
     sec_cik = Column(String(20))
     sec_insider_trades_url = Column(Text)
-    news_query = Column(Text)
+    fec_contributions_url = Column(Text)
+    quiver_insider_url = Column(Text)
+    bloomberg_url = Column(Text)
+    wsj_article_url = Column(Text)
+    media_interview_url = Column(Text)
+    annual_report_url = Column(Text)
+    zoominfo_url = Column(Text)
     rss_url = Column(Text)
-    patents_query = Column(Text)
-    google_patents_url = Column(Text)
-    google_scholar_url = Column(Text)
-    openalex_author_url = Column(Text)
-    orcid_search_url = Column(Text)
-    wikidata_person_url = Column(Text)
-    youtube_interviews_url = Column(Text)
-    podcast_search_url = Column(Text)
-    google_trends_url = Column(Text)
-    youtube_channel_id = Column(String(100))
+    youtube_url = Column(Text)
+    podcast_url = Column(Text)
+    openinsider_url = Column(Text)
+    secform4_url = Column(Text)
+    wayback_url = Column(Text)
+    theorg_url = Column(Text)
+    seeking_alpha_url = Column(Text)
+    external_board_url = Column(Text)
+    twitter_handle = Column(String(100))
 
     # ── Persona Dossier ──
     degree = Column(String(100))
@@ -93,6 +96,12 @@ class Persona(Base):
     # ── Manual Verification Flag ──
     is_manually_verified = Column(Boolean, default=False)
     manually_verified_at = Column(DateTime(timezone=True))
+
+    # ── Extended Profile — enrichment data with no dedicated column ──
+    # Stores: legal_name, middle_name, age, political_affiliation, home_address,
+    # lob_mapped_name, data_corrections, additional_urls, enrichment_meta
+    extended_profile = Column(JSONB)
+
 
     # ── Relationships ──
     account = relationship("Account", back_populates="personas")

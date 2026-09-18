@@ -33,18 +33,13 @@ SERPER_API_KEY = os.getenv("SERPER_API_KEY", "")
 DATA_GOV_API_KEY = os.getenv("DATA_GOV_API_KEY", "")
 DIFFBOT_TOKEN = os.getenv("DIFFBOT_TOKEN", "")
 
-# LLM Gateway (Experiential Labs & OpenAI fallback)
-EXPLABS_API_KEY = os.getenv("EXPLABS_API_KEY", "")
-EXPLABS_BASE_URL = os.getenv("EXPLABS_BASE_URL", "https://api.experientiallabs.ai/v1")
-EXPLABS_DEFAULT_MODEL = os.getenv("EXPLABS_DEFAULT_MODEL", "gpt-4o-mini")
-
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+# LLM Gateway (Google Gemini AI Gateway - OpenAI-compatible)
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai")
+LLM_MODEL = os.getenv("LLM_DEFAULT_MODEL", "gemini-3.6-flash")
 
 # Unified LLM provider selection
-LLM_API_KEY = EXPLABS_API_KEY or OPENAI_API_KEY
-LLM_BASE_URL = EXPLABS_BASE_URL if EXPLABS_API_KEY else "https://api.openai.com/v1"
-LLM_MODEL = EXPLABS_DEFAULT_MODEL if EXPLABS_API_KEY else OPENAI_MODEL
+LLM_API_KEY = GEMINI_API_KEY or os.getenv("OPENAI_API_KEY", "")
 
 DEFAULT_HIERARCHY_LIMIT = int(os.getenv("DEFAULT_HIERARCHY_LIMIT", "50"))
 OUTPUT_DIR = BASE_DIR / os.getenv("OUTPUT_DIR", "output")

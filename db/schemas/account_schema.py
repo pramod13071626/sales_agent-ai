@@ -170,6 +170,11 @@ class AccountSchema(BaseModel):
             acct.get("web_traffic_and_growth", {}) if isinstance(acct.get("web_traffic_and_growth"), dict) else {},
             acct.get("tech_and_patents", {}) if isinstance(acct.get("tech_and_patents"), dict) else {},
             acct.get("key_people", {}) if isinstance(acct.get("key_people"), dict) else {},
+            acct.get("diffbot_intel", {}) if isinstance(acct.get("diffbot_intel"), dict) else {},
+            acct.get("gleif_intel", {}) if isinstance(acct.get("gleif_intel"), dict) else {},
+            doc.get("diffbot_intel", {}) if isinstance(doc.get("diffbot_intel"), dict) else {},
+            doc.get("gleif_intel", {}) if isinstance(doc.get("gleif_intel"), dict) else {},
+            (doc.get("raw_data", {}).get("diffbot", {}) if isinstance(doc.get("raw_data"), dict) else {}),
         ]
 
         # summary_meta for pipeline tier breakdown (from full composite pipeline runs)

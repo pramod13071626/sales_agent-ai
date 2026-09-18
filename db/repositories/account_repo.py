@@ -46,6 +46,13 @@ class AccountRepository:
             if field in ("lobs", "personas", "action_items", "user_access", "signals"):
                 continue
             if hasattr(acct, field):
+                if existing:
+                    existing_val = getattr(acct, field, None)
+                    # Prevent partial/empty runs from wiping out existing rich data
+                    if (value is None or value == "" or value == [] or value == {}) and (
+                        existing_val is not None and existing_val != "" and existing_val != [] and existing_val != {}
+                    ):
+                        continue
                 setattr(acct, field, value)
 
         acct.extracted_at = datetime.now(timezone.utc)

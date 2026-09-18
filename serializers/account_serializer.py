@@ -23,13 +23,17 @@ class AccountSerializer:
     @classmethod
     def build_required_account(cls, raw_acc: Dict[str, Any]) -> Dict[str, Any]:
         """Builds compulsory required_account block with all official scraping target URLs."""
-        name = raw_acc.get("name") or "Company"
+        name = raw_acc.get("name") or raw_acc.get("display_name") or "Company"
         ticker = raw_acc.get("stock_symbol") or raw_acc.get("ticker")
-        web_url = raw_acc.get("website_url") or raw_acc.get("domain")
-        if web_url and not web_url.startswith("http"):
+        web_url = raw_acc.get("website_url") or raw_acc.get("domain") or raw_acc.get("primary_domain")
+        if web_url and not str(web_url).startswith("http"):
             web_url = f"https://{web_url}"
         sec_cik = raw_acc.get("sec_cik")
         legal_name = raw_acc.get("legal_name") or name
+
+        diff = raw_acc.get("diffbot_intel") or (raw_acc.get("raw_data", {}).get("diffbot") if isinstance(raw_acc.get("raw_data"), dict) else {})
+        if not isinstance(diff, dict):
+            diff = {}
 
         encoded_name = urllib.parse.quote_plus(f'"{name}"')
         encoded_legal = urllib.parse.quote_plus(legal_name)
@@ -46,6 +50,10 @@ class AccountSerializer:
         )
 
         yt_query = urllib.parse.quote_plus(f"{name} official keynote")
+        linkedin_val = raw_acc.get("linkedin_url") or diff.get("linkedin_url")
+        tw_handle = raw_acc.get("twitter_handle") or diff.get("twitter_handle")
+        blog_val = raw_acc.get("blog_url") or diff.get("blog_url") or (f"{web_url.rstrip('/')}/newsroom" if web_url else None)
+
         return {
             "key": raw_acc.get("key") or slugify(name),
             "display_name": legal_name,
@@ -54,8 +62,8 @@ class AccountSerializer:
             "sec_edgar_url": sec_edgar_url,
             "sec_filings_rss": sec_filings_rss,
             "sec_submissions_url": sec_submissions_url,
-            "linkedin_url": raw_acc.get("linkedin_url"),
-            "twitter_handle": raw_acc.get("twitter_handle"),
+            "linkedin_url": linkedin_val,
+            "twitter_handle": tw_handle,
             "twitter_live_url": f"https://x.com/search?q={encoded_name}&f=live",
             "reddit_query": f'"{name}"',
             "reddit_rss_url": f"https://www.reddit.com/search.rss?q={encoded_name}&sort=new",
@@ -69,12 +77,13 @@ class AccountSerializer:
                 "https://www.wikidata.org/w/api.php?action=wbsearchentities"
                 f"&search={encoded_name}&language=en&format=json"
             ),
-            "github_url": raw_acc.get("github_url") or f"https://github.com/{slugify(name).replace('_', '')}",
+            "github_url": raw_acc.get("github_url") or diff.get("github_url") or f"https://github.com/{slugify(name).replace('_', '')}",
             "glassdoor_url": (
                 raw_acc.get("glassdoor_url")
+                or diff.get("glassdoor_url")
                 or f"https://www.glassdoor.com/Search/results.htm?keyword={encoded_name}"
             ),
-            "blog_url": f"{web_url.rstrip('/')}/newsroom" if web_url else None,
+            "blog_url": blog_val,
             "youtube_channel_id": None
         }
 
@@ -86,7 +95,7 @@ class AccountSerializer:
         tree_root: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Serializes the complete corporate account structure across all 93 fields dynamically."""
-        name = account_data.get("name") or account_data.get("legal_name") or "Corporate Account"
+        name = account_data.get("name") or account_data.get("legal_name") or account_data.get("display_name") or "Corporate Account"
         legal_name = account_data.get("legal_name") or name
         domain = account_data.get("primary_domain") or account_data.get("domain")
         website_url = account_data.get("website_url") or (f"https://{domain}" if domain else None)
@@ -104,11 +113,18 @@ class AccountSerializer:
                     "financials_and_funding", "market_and_ipo",
                     "acquisitions_and_suborgs", "web_traffic_and_growth",
                     "tech_and_patents", "key_people",
+                    "diffbot_intel", "gleif_intel", "multi_source_intelligence",
                 ]
                 for sub_k in nested_subkeys:
                     sub_dict = account_data.get(sub_k)
                     if isinstance(sub_dict, dict) and k in sub_dict and sub_dict[k] is not None:
                         return sub_dict[k]
+                # Check within raw_data
+                raw_d = account_data.get("raw_data")
+                if isinstance(raw_d, dict):
+                    diff_raw = raw_d.get("diffbot")
+                    if isinstance(diff_raw, dict) and k in diff_raw and diff_raw[k] is not None:
+                        return diff_raw[k]
             return default
 
         # Multi-source intelligence preservation
