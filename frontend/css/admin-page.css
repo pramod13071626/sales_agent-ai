@@ -1204,3 +1204,366 @@ body.admin-page-body {
     align-items: stretch;
   }
 }
+
+/* ── Admin Navigation Tabs ───────────────────────────────────── */
+.admin-tabs-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 20px 0 24px;
+  border-bottom: 1px solid var(--panel-border, #e2e8f0);
+  padding-bottom: 12px;
+}
+
+.admin-tab-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-secondary, #64748b);
+  padding: 8px 18px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  border-radius: var(--radius-md, 8px);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.15s ease;
+}
+
+.admin-tab-btn:hover {
+  color: var(--text-primary, #0f172a);
+  background: var(--hover-bg, rgba(0, 97, 255, 0.05));
+}
+
+.admin-tab-btn.active {
+  color: #fff;
+  background: var(--brand, #0061ff);
+  box-shadow: 0 2px 8px rgba(0, 97, 255, 0.25);
+}
+
+.admin-tab-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.admin-tab-btn:not(.active) .admin-tab-badge {
+  background: var(--bg-subtle, #f1f5f9);
+  color: var(--text-muted, #64748b);
+}
+
+/* ── API Config Layout (Enterprise Compact Density) ───────────── */
+.api-config-container {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding-bottom: 70px;
+}
+
+.api-config-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+
+.api-config-section-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text-primary, #0f172a);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  letter-spacing: -0.01em;
+}
+
+.api-config-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+  gap: 12px;
+}
+
+.api-config-card {
+  background: var(--panel-bg, #ffffff);
+  border: 1px solid var(--panel-border, #e2e8f0);
+  border-radius: var(--radius-sm, 8px);
+  padding: 13px 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.api-config-card:hover {
+  border-color: rgba(0, 97, 255, 0.4);
+  box-shadow: 0 3px 10px rgba(0,0,0,0.05);
+}
+
+.api-config-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.api-config-card-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.api-config-card-icon {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+}
+
+.api-config-card-icon.blue { background: rgba(0, 97, 255, 0.1); color: #0061ff; }
+.api-config-card-icon.purple { background: rgba(147, 51, 234, 0.1); color: #9333ea; }
+.api-config-card-icon.green { background: rgba(16, 185, 129, 0.1); color: #10b981; }
+.api-config-card-icon.amber { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
+.api-config-card-icon.cyan { background: rgba(6, 182, 212, 0.1); color: #06b6d4; }
+
+.api-config-card-title {
+  font-size: 0.84rem;
+  font-weight: 650;
+  color: var(--text-primary, #0f172a);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.api-config-card-desc {
+  font-size: 0.71rem;
+  color: var(--text-muted, #64748b);
+  margin-top: 1px;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.api-status-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.api-status-badge.configured {
+  background: rgba(16, 185, 129, 0.12);
+  color: #059669;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
+.api-status-badge.not-configured {
+  background: rgba(100, 116, 139, 0.1);
+  color: #64748b;
+  border: 1px solid rgba(100, 116, 139, 0.2);
+}
+
+/* ── Field Row & Inputs ──────────────────────────────────────── */
+.api-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.api-field-label {
+  font-size: 0.70rem;
+  font-weight: 600;
+  color: var(--text-secondary, #475569);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.api-input-wrap {
+  display: flex;
+  align-items: center;
+  position: relative;
+}
+
+.api-input {
+  width: 100%;
+  height: 32px;
+  padding: 4px 30px 4px 10px;
+  font-size: 0.78rem;
+  font-family: inherit;
+  background: var(--input-bg, #f8fafc);
+  border: 1px solid var(--border-color, #cbd5e1);
+  border-radius: var(--radius-sm, 5px);
+  color: var(--text-primary, #0f172a);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.api-input:focus {
+  outline: none;
+  border-color: var(--brand, #0061ff);
+  box-shadow: 0 0 0 2px rgba(0, 97, 255, 0.15);
+  background: #fff;
+}
+
+.api-input-toggle-btn {
+  position: absolute;
+  right: 6px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted, #94a3b8);
+  cursor: pointer;
+  padding: 3px;
+  font-size: 0.78rem;
+}
+
+.api-input-toggle-btn:hover {
+  color: var(--text-primary, #0f172a);
+}
+
+.api-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 2px;
+  padding-top: 8px;
+  border-top: 1px solid var(--panel-border, #f1f5f9);
+}
+
+.api-test-btn {
+  background: var(--bg-subtle, #f1f5f9);
+  border: 1px solid var(--border-color, #cbd5e1);
+  color: var(--text-secondary, #334155);
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 5px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.15s ease;
+}
+
+.api-test-btn:hover:not(:disabled) {
+  background: var(--brand, #0061ff);
+  border-color: var(--brand, #0061ff);
+  color: #fff;
+}
+
+.api-test-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.api-test-result {
+  font-size: 0.70rem;
+  padding: 4px 8px;
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  animation: fadeIn 0.2s ease;
+}
+
+.api-test-result.success {
+  background: rgba(16, 185, 129, 0.1);
+  color: #059669;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.api-test-result.error {
+  background: rgba(239, 68, 68, 0.1);
+  color: #dc2626;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+/* ── Sticky Save Bar ─────────────────────────────────────────── */
+.api-sticky-save-bar {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(100px);
+  background: #0f172a;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  padding: 12px 24px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+  z-index: 1000;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.api-sticky-save-bar.visible {
+  transform: translateX(-50%) translateY(0);
+}
+
+.api-sticky-text {
+  font-size: 0.84rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.api-sticky-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.api-btn-discard {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #cbd5e1;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.api-btn-discard:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+.api-btn-save {
+  background: var(--brand, #0061ff);
+  border: 1px solid var(--brand, #0061ff);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 6px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 2px 8px rgba(0, 97, 255, 0.4);
+  transition: all 0.15s ease;
+}
+
+.api-btn-save:hover {
+  background: #0052db;
+  border-color: #0052db;
+}

@@ -178,17 +178,8 @@
 .cc-clickable-row { cursor: pointer; }
 .cc-feed-count { flex-shrink: 0; font-size: .72rem; font-weight: 500; color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
-/* Objections & Pain Points widget — two stacked ranked sub-lists in one panel. */
-.cc-objections-group + .cc-objections-group { margin-top: 14px; }
-.cc-subhead {
-  font-size: .68rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .04em;
-  color: var(--text-muted);
-  padding: 0 0 6px;
-}
-.cc-objections-list { max-height: 180px; }
+/* Operational Pain Points & Common Objections widgets */
+.cc-objections-list { max-height: 380px; }
 
 /* Google News widget — headline doubles as the outbound link. */
 .cc-news-link { text-decoration: none; color: inherit; }
@@ -1050,7 +1041,54 @@
 .cc-panel-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+}
+.cc-filter-pill-group {
+  display: inline-flex;
+  align-items: center;
+  background: var(--input-bg, #f1f5f9);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 7px;
+  padding: 2px;
+  gap: 2px;
+  user-select: none;
+}
+.cc-filter-pill {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary, #64748b);
+  font-size: 0.68rem;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  line-height: 1.35;
+  font-family: inherit;
+}
+.cc-filter-pill:hover {
+  color: var(--text-primary, #0f172a);
+}
+.cc-filter-pill.active {
+  background: var(--card-bg, #ffffff);
+  color: var(--brand, #6366f1);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+[data-theme="dark"] .cc-filter-pill-group {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+[data-theme="dark"] .cc-filter-pill {
+  color: #94a3b8;
+}
+[data-theme="dark"] .cc-filter-pill:hover {
+  color: #f1f5f9;
+}
+[data-theme="dark"] .cc-filter-pill.active {
+  background: rgba(99, 102, 241, 0.22);
+  color: #a5b4fc;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
 }
 .cc-help-btn {
   display: inline-flex;

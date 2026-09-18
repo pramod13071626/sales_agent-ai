@@ -11,6 +11,8 @@ const summaryCache = new Map();
 const personasCache = new Map();
 
 let bnyAccountIdPromise = null;
+let currentHiringDays = null;
+let hiringFilterInitialized = false;
 
 // renderStrategicInvestmentTracks() below is BNY-specific by design (its
 // sponsor personas/pitch copy name actual BNY executives), unlike
@@ -26,18 +28,20 @@ function getBnyAccountId() {
   return bnyAccountIdPromise;
 }
 
-async function loadHiringSummary(accountId) {
-  if (summaryCache.has(accountId)) {
-    return summaryCache.get(accountId);
+async function loadHiringSummary(accountId, days = null) {
+  const cacheKey = `${accountId}_${days || 'all'}`;
+  if (summaryCache.has(cacheKey)) {
+    return summaryCache.get(cacheKey);
   }
   try {
-    const res = await fetch(`/api/accounts/${accountId}/hiring-summary`);
+    const url = days ? `/api/accounts/${accountId}/hiring-summary?days=${days}` : `/api/accounts/${accountId}/hiring-summary`;
+    const res = await fetch(url);
     if (!res.ok) throw new Error(`Failed to load hiring summary (${res.status})`);
     const data = await res.json();
-    summaryCache.set(accountId, data);
+    summaryCache.set(cacheKey, data);
     return data;
   } catch (err) {
-    console.error(`Error fetching hiring summary for account ${accountId}:`, err);
+    console.error(`Error fetching hiring summary for account ${accountId} (days: ${days}):`, err);
     return null;
   }
 }
@@ -56,6 +60,26 @@ async function loadPersonas(accountId) {
   } catch {
     return [];
   }
+}
+
+function initHiringFilter() {
+  if (hiringFilterInitialized) return;
+  const group = document.getElementById('ccHiringFilterGroup');
+  if (!group) return;
+
+  group.querySelectorAll('.cc-filter-pill').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const daysVal = btn.dataset.days;
+      group.querySelectorAll('.cc-filter-pill').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      currentHiringDays = (daysVal === 'all' || !daysVal) ? null : parseInt(daysVal, 10);
+      renderHiringSignals(currentHiringDays);
+    });
+  });
+
+  hiringFilterInitialized = true;
 }
 
 function getOrgShortName(account) {
@@ -136,11 +160,14 @@ function generateNewsBulletin(summary, account) {
   };
 }
 
-export async function renderHiringSignals() {
+export async function renderHiringSignals(days = currentHiringDays) {
+  initHiringFilter();
   const list = document.getElementById('ccHiringList');
   if (!list) return;
 
   list.innerHTML = renderSkeleton('feed-rows');
+
+  const timeframeText = days ? ` (Last ${days} days)` : '';
 
   try {
     // 1. Load all real accounts
@@ -150,31 +177,31 @@ export async function renderHiringSignals() {
       return;
     }
 
-    // 2. Concurrently fetch lightweight hiring summaries
+    // 2. Concurrently fetch lightweight hiring summaries for selected time filter
     const summaryPromises = allAccounts.map(async (acc) => {
-      const s = await loadHiringSummary(acc.id);
+      const s = await loadHiringSummary(acc.id, days);
       return { account: acc, summary: s };
     });
 
     const results = await Promise.all(summaryPromises);
 
-    // Filter accounts with monitored roles
+    // Filter accounts with monitored roles in this timeframe
     const activeOrgs = results.filter(r => r.summary && r.summary.total_roles > 0);
-
-    if (!activeOrgs.length) {
-      list.innerHTML = '<li class="cc-drawer-empty">No active hiring signals recorded in the database.</li>';
-      return;
-    }
-
-    // Sort by role count (highest hiring volume first)
-    activeOrgs.sort((a, b) => (b.summary?.total_roles || 0) - (a.summary?.total_roles || 0));
 
     // Update panel note with total aggregated jobs
     const totalJobsAll = activeOrgs.reduce((sum, a) => sum + (a.summary?.total_roles || 0), 0);
     const panelNote = document.getElementById('ccHiringPanelNote');
     if (panelNote) {
-      panelNote.textContent = `Multi-Organization Executive Flash Intel · ${totalJobsAll.toLocaleString()} live roles across ${activeOrgs.length} accounts`;
+      panelNote.textContent = `Multi-Organization Executive Flash Intel · ${totalJobsAll.toLocaleString()} live roles across ${activeOrgs.length} accounts${timeframeText}`;
     }
+
+    if (!activeOrgs.length) {
+      list.innerHTML = `<li class="cc-drawer-empty">No active hiring signals recorded ${days ? `in the last ${days} days` : 'in the database'}.</li>`;
+      return;
+    }
+
+    // Sort by role count (highest hiring volume first)
+    activeOrgs.sort((a, b) => (b.summary?.total_roles || 0) - (a.summary?.total_roles || 0));
 
     // 3. Render Executive News Bulletin Flash Rows
     list.innerHTML = activeOrgs.map(({ account, summary }) => {
@@ -227,7 +254,8 @@ export async function renderHiringSignals() {
       row.addEventListener('click', () => {
         const accountId = row.dataset.accountId;
         if (accountId) {
-          window.location.href = `/?account=${accountId}&tab=jobs`;
+          const daysQuery = days ? `&days=${days}` : '';
+          window.location.href = `/?account=${accountId}&tab=jobs${daysQuery}`;
         }
       });
     });

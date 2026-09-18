@@ -29,6 +29,21 @@ document.getElementById('myTasksDrawerClose')?.addEventListener('click', closeMy
 document.getElementById('myTasksDrawerBackdrop')?.addEventListener('click', closeMyTasksDrawer);
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMyTasksDrawer(); });
 
+function getUserInitials(user) {
+  if (!user) return 'U';
+  if (user.full_name) {
+    const parts = user.full_name.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+    return parts[0].substring(0, 2).toUpperCase();
+  }
+  if (user.email) {
+    return user.email.substring(0, 2).toUpperCase();
+  }
+  return 'U';
+}
+
 function render() {
   const el = document.getElementById('topbarAuthWidget');
   if (!el) return;
@@ -39,18 +54,91 @@ function render() {
     return;
   }
 
-  const showTasks = user.role === 'super_admin' || user.has_tasks_access !== false;
+  const isOnAdminPage = window.location.pathname.startsWith('/admin');
+  const showTasks = !isOnAdminPage && (user.role === 'super_admin' || user.has_tasks_access !== false);
+  const displayName = user.full_name || (user.email ? user.email.split('@')[0] : 'User');
+  const initials = getUserInitials(user);
+  const isSuperAdmin = user.role === 'super_admin';
 
   el.innerHTML = `
-    ${user.role === 'super_admin' ? '<a href="/admin" class="topbar-link"><i class="bi bi-people"></i> Admin</a>' : ''}
-    ${showTasks ? '<button type="button" id="topbarMyTasksBtn" class="topbar-link topbar-link-btn"><i class="bi bi-list-check"></i> My Tasks <span class="tab-badge" id="topbarMyTasksBadge">…</span></button>' : ''}
-    <span class="topbar-auth-user" title="${esc(user.email)}"><i class="bi bi-person-circle"></i> ${esc(user.full_name || user.email)}</span>
-    <button type="button" id="topbarLogoutBtn" class="topbar-link topbar-link-btn"><i class="bi bi-box-arrow-right"></i> Logout</button>
+    ${showTasks ? '<button type="button" id="topbarMyTasksBtn" class="topbar-link topbar-link-btn" title="View assigned action items"><i class="bi bi-list-check"></i> My Tasks <span class="tab-badge" id="topbarMyTasksBadge">…</span></button>' : ''}
+    
+    <div class="topbar-profile-container" id="topbarProfileContainer">
+      <button type="button" class="topbar-profile-btn" id="topbarProfileBtn" aria-expanded="false" aria-haspopup="true" title="User profile for ${esc(displayName)}">
+        <div class="topbar-profile-avatar">${esc(initials)}</div>
+        <span class="topbar-profile-label">${esc(displayName)}</span>
+        <i class="bi bi-chevron-down topbar-profile-arrow"></i>
+      </button>
+
+      <div class="topbar-profile-dropdown" id="topbarProfileDropdown" role="menu">
+        <div class="profile-dropdown-header">
+          <div class="profile-dropdown-avatar">${esc(initials)}</div>
+          <div class="profile-dropdown-info">
+            <div class="profile-dropdown-name" title="${esc(displayName)}">${esc(displayName)}</div>
+            <div class="profile-dropdown-email" title="${esc(user.email || '')}">${esc(user.email || '')}</div>
+          </div>
+        </div>
+
+        <div class="profile-dropdown-role-row">
+          <span class="profile-role-tag ${isSuperAdmin ? 'role-super-admin' : 'role-user'}">
+            <i class="bi ${isSuperAdmin ? 'bi-shield-check' : 'bi-person-badge'}"></i>
+            ${isSuperAdmin ? 'Super Admin' : 'User'}
+          </span>
+        </div>
+
+        <div class="profile-dropdown-divider"></div>
+
+        <button type="button" class="profile-dropdown-item profile-dropdown-logout" id="topbarLogoutBtn" role="menuitem">
+          <i class="bi bi-box-arrow-right"></i>
+          <span>Logout</span>
+        </button>
+      </div>
+    </div>
   `;
-  document.getElementById('topbarLogoutBtn').addEventListener('click', async () => {
-    await logout();
-    window.location.href = '/login';
-  });
+
+  const profileBtn = document.getElementById('topbarProfileBtn');
+  const profileDropdown = document.getElementById('topbarProfileDropdown');
+  const profileContainer = document.getElementById('topbarProfileContainer');
+
+  if (profileBtn && profileDropdown) {
+    profileBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = profileDropdown.classList.contains('show');
+      if (isOpen) {
+        profileDropdown.classList.remove('show');
+        profileBtn.classList.remove('active');
+        profileBtn.setAttribute('aria-expanded', 'false');
+      } else {
+        profileDropdown.classList.add('show');
+        profileBtn.classList.add('active');
+        profileBtn.setAttribute('aria-expanded', 'true');
+      }
+    });
+
+    document.addEventListener('click', (e) => {
+      if (profileContainer && !profileContainer.contains(e.target)) {
+        profileDropdown.classList.remove('show');
+        profileBtn.classList.remove('active');
+        profileBtn.setAttribute('aria-expanded', 'false');
+      }
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        profileDropdown.classList.remove('show');
+        profileBtn.classList.remove('active');
+        profileBtn.setAttribute('aria-expanded', 'false');
+      }
+    });
+  }
+
+  const logoutBtn = document.getElementById('topbarLogoutBtn');
+  if (logoutBtn) {
+    logoutBtn.addEventListener('click', async () => {
+      await logout();
+      window.location.href = '/login';
+    });
+  }
   if (showTasks) {
     const tasksBtn = document.getElementById('topbarMyTasksBtn');
     if (tasksBtn) {
