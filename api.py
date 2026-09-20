@@ -3406,8 +3406,7 @@ if FASTAPI_AVAILABLE:
                         "budget_authority": p.budget_authority,
                         "departments": p.departments or ["Executive"],
                         "linkedin_url": p.linkedin_url,
-                        "twitter_url": p.twitter_live_url
-                        or (f"https://twitter.com/{p.twitter_handle}" if p.twitter_handle else None),
+                        "twitter_url": f"https://twitter.com/{p.twitter_handle}" if p.twitter_handle else None,
                         "skills": p.skills or [],
                         "target_kpis": p.target_kpis or [],
                         "operational_pain_points": p.operational_pain_points or [],
