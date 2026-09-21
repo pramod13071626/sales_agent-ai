@@ -129,7 +129,8 @@ async function loadAccounts(user) {
 // Unauthenticated users are redirected to login.
 initTopbarAuth().then((user) => {
   if (!user) {
-    window.location.href = `/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+    document.body.style.display = 'none';
+    window.location.replace(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`);
     return;
   }
   // Hide quick-jump nav links for dashboards the user has had revoked

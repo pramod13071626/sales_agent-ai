@@ -162,7 +162,8 @@ function init() {
 
 initTopbarAuth().then((user) => {
   if (!user) {
-    window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
+    document.body.style.display = 'none';
+    window.location.replace(`/login?next=${encodeURIComponent(window.location.pathname)}`);
     return;
   }
   if (user.role !== 'super_admin' && user.has_tasks_access === false) {

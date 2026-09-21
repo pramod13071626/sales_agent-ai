@@ -8,7 +8,7 @@ initThemeToggle();
 
 document.getElementById('adminLogoutBtn').addEventListener('click', async () => {
   await logout();
-  window.location.href = '/login';
+  window.location.replace('/login');
 });
 
 const esc = (s) => {
@@ -1128,7 +1128,8 @@ async function init() {
   await refreshAccessToken();
   const user = getCurrentUser();
   if (!user) {
-    window.location.href = '/login?next=/admin';
+    document.body.style.display = 'none';
+    window.location.replace('/login?next=/admin');
     return;
   }
   if (user.role !== 'super_admin') {
@@ -1144,7 +1145,7 @@ async function init() {
     if (rBtn) {
       rBtn.addEventListener('click', async () => {
         await logout();
-        window.location.href = '/login';
+        window.location.replace('/login');
       });
     }
     return;
@@ -1156,5 +1157,15 @@ async function init() {
     main.innerHTML = `<div class="admin-page-error">Could not load the admin dashboard — ${esc(err.message)}</div>`;
   }
 }
+
+// Ensure pages restored via browser Back/Forward (bfcache) revalidate session
+window.addEventListener('pageshow', async (event) => {
+  if (event.persisted) {
+    const user = await refreshAccessToken();
+    if (!user || user.role !== 'super_admin') {
+      window.location.replace('/login?next=/admin');
+    }
+  }
+});
 
 init();

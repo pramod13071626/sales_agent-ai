@@ -250,7 +250,13 @@ if FASTAPI_AVAILABLE:
                 auth.revoke_refresh_token(session, raw_refresh)
             finally:
                 session.close()
-        response.delete_cookie("refresh_token", path="/api/auth")
+        response.delete_cookie(
+            "refresh_token",
+            path="/api/auth",
+            httponly=True,
+            samesite="lax",
+            secure=_COOKIE_SECURE,
+        )
         return {"ok": True}
 
     @app.get("/api/auth/me", tags=["0. Authentication"])
@@ -5401,17 +5407,23 @@ if FASTAPI_AVAILABLE:
     if frontend_dir.exists():
         templates = Jinja2Templates(directory=str(frontend_dir / "templates"))
 
+        _NO_CACHE_HEADERS = {
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        }
+
         @app.get("/", response_class=HTMLResponse, include_in_schema=False)
         async def dashboard_home(request: Request):
-            return templates.TemplateResponse(request, "index.html")
+            return templates.TemplateResponse(request, "index.html", headers=_NO_CACHE_HEADERS)
 
         @app.get("/login", response_class=HTMLResponse, include_in_schema=False)
         async def login_page(request: Request):
-            return templates.TemplateResponse(request, "login.html")
+            return templates.TemplateResponse(request, "login.html", headers=_NO_CACHE_HEADERS)
 
         @app.get("/reset-password", response_class=HTMLResponse, include_in_schema=False)
         async def reset_password_page(request: Request):
-            return templates.TemplateResponse(request, "reset-password.html")
+            return templates.TemplateResponse(request, "reset-password.html", headers=_NO_CACHE_HEADERS)
 
         @app.get("/admin", response_class=HTMLResponse, include_in_schema=False)
         async def admin_page(request: Request):
@@ -5419,7 +5431,7 @@ if FASTAPI_AVAILABLE:
             anyone (no server-side session to gate on), but every
             /api/admin/* call it makes is independently protected by
             Depends(auth.require_role("super_admin"))."""
-            return templates.TemplateResponse(request, "admin.html")
+            return templates.TemplateResponse(request, "admin.html", headers=_NO_CACHE_HEADERS)
 
         @app.get("/profile", response_class=HTMLResponse, include_in_schema=False)
         async def contact_profile_page(request: Request):
@@ -5427,7 +5439,7 @@ if FASTAPI_AVAILABLE:
             drawer's "View Profile" button (?account=<id>&persona_id=<id>).
             Reuses the same drawer markup/rendering as the dashboard's
             sliding drawer; see frontend/js/modules/profile-page.js."""
-            return templates.TemplateResponse(request, "profile.html")
+            return templates.TemplateResponse(request, "profile.html", headers=_NO_CACHE_HEADERS)
 
         @app.get("/command-center", response_class=HTMLResponse, include_in_schema=False)
         async def sales_command_center_page(request: Request):
@@ -5435,7 +5447,7 @@ if FASTAPI_AVAILABLE:
             priority matrix, priority signal feed, playbook and exec
             movements timeline. Currently runs on mock seed data; see
             frontend/js/modules/command-center/data.js."""
-            return templates.TemplateResponse(request, "command-center.html")
+            return templates.TemplateResponse(request, "command-center.html", headers=_NO_CACHE_HEADERS)
 
         @app.get("/tasks", response_class=HTMLResponse, include_in_schema=False)
         async def tasks_page(request: Request):
@@ -5444,7 +5456,7 @@ if FASTAPI_AVAILABLE:
             status/priority/account filtering and sorting. See
             TASK_MANAGEMENT_README.md. A team/manager-wide view is a
             deliberately deferred v2 (no endpoint for it exists yet)."""
-            return templates.TemplateResponse(request, "tasks.html")
+            return templates.TemplateResponse(request, "tasks.html", headers=_NO_CACHE_HEADERS)
 
         class NoCacheStaticFiles(StaticFiles):
             """Forces browsers to revalidate every CSS/JS fetch against the

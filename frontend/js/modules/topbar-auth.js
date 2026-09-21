@@ -49,7 +49,7 @@ function render() {
   `;
   document.getElementById('topbarLogoutBtn').addEventListener('click', async () => {
     await logout();
-    window.location.href = '/login';
+    window.location.replace('/login');
   });
   if (showTasks) {
     const tasksBtn = document.getElementById('topbarMyTasksBtn');
@@ -79,6 +79,19 @@ async function refreshMyTasksBadge() {
     console.error('Failed to load My Tasks count', err);
   }
 }
+
+// Ensure pages restored via browser Back/Forward (bfcache) revalidate session
+window.addEventListener('pageshow', async (event) => {
+  if (event.persisted) {
+    const user = await refreshAccessToken();
+    if (!user) {
+      document.body.style.display = 'none';
+      window.location.replace(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+    } else {
+      render();
+    }
+  }
+});
 
 export async function initTopbarAuth() {
   await refreshAccessToken(); // silent — restores a session from the refresh cookie on page load

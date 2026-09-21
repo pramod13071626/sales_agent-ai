@@ -183,7 +183,7 @@ async function init() {
       fetch(`/api/accounts/${accountId}/content`).catch(() => null)
     ]);
     if (acctRes.status === 401) {
-      window.location.href = `/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+      window.location.replace(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`);
       return;
     }
     if (acctRes.status === 403) {

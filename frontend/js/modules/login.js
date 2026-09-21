@@ -1,5 +1,15 @@
 import { login, forgotPassword } from './auth-client.js';
 
+// Prevent browser back button from navigating back to cached dashboard after logout
+try {
+  window.history.pushState(null, '', window.location.href);
+  window.addEventListener('popstate', () => {
+    window.history.pushState(null, '', window.location.href);
+  });
+} catch (e) {
+  /* ignore */
+}
+
 const loginFormWrap = document.getElementById('authFormLogin');
 const forgotFormWrap = document.getElementById('authFormForgot');
 const loginForm = document.getElementById('loginForm');
@@ -42,10 +52,10 @@ loginForm.addEventListener('submit', async (e) => {
     // Accounts Dashboard — see main.js's matching redirect for anyone who
     // reaches "/" directly while already signed in as one.
     if (user && user.role === 'super_admin') {
-      window.location.href = '/admin';
+      window.location.replace('/admin');
     } else {
       const params = new URLSearchParams(window.location.search);
-      window.location.href = params.get('next') || '/';
+      window.location.replace(params.get('next') || '/');
     }
   } catch (err) {
     showError(loginError, err.message || 'Sign in failed.');
