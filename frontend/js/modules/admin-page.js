@@ -2,14 +2,11 @@
 import './fetch-instrumentation.js';
 import { getCurrentUser, logout, refreshAccessToken } from './auth-client.js';
 import { initThemeToggle } from './theme.js';
+import { initTopbarAuth } from './topbar-auth.js';
 import { showToast } from './toast.js';
 
 initThemeToggle();
-
-document.getElementById('adminLogoutBtn').addEventListener('click', async () => {
-  await logout();
-  window.location.href = '/login';
-});
+initTopbarAuth();
 
 const esc = (s) => {
   const d = document.createElement('div');
@@ -22,6 +19,9 @@ let usersCache = [];
 let statsCache = null;
 let currentFilter = 'all';
 let searchQuery = '';
+let activeAdminTab = 'users';
+let apiConfigsCache = [];
+let dirtyConfigs = {};
 
 let auditLogs = [];
 let auditOffset = 0;
@@ -450,10 +450,539 @@ function renderModalShell() {
   `;
 }
 
+function renderAdminTabsNav() {
+  return `
+    <div class="admin-tabs-nav">
+      <button type="button" class="admin-tab-btn ${activeAdminTab === 'users' ? 'active' : ''}" data-admin-tab="users">
+        <i class="bi bi-people-fill"></i> User Directory & Access Control
+        <span class="admin-tab-badge">${usersCache.length}</span>
+      </button>
+      <button type="button" class="admin-tab-btn ${activeAdminTab === 'api-config' ? 'active' : ''}" data-admin-tab="api-config">
+        <i class="bi bi-sliders"></i> API & Model Configuration
+      </button>
+      <button type="button" class="admin-tab-btn ${activeAdminTab === 'audit' ? 'active' : ''}" data-admin-tab="audit">
+        <i class="bi bi-shield-check"></i> Security & Audit Trail
+      </button>
+    </div>
+  `;
+}
+
+function findConfig(key) {
+  return apiConfigsCache.find(c => c.config_key === key) || { config_key: key, value: '', is_configured: false, is_secret: false };
+}
+
+function renderFieldInput(c) {
+  const meta = c.extra_metadata || {};
+  const currentVal = dirtyConfigs[c.config_key] !== undefined ? dirtyConfigs[c.config_key] : (c.is_secret ? '' : (c.value || ''));
+  
+  if (meta.options && Array.isArray(meta.options)) {
+    return `
+      <select class="api-input" data-config-key="${c.config_key}">
+        ${meta.options.map(opt => `<option value="${esc(opt)}" ${currentVal === opt ? 'selected' : ''}>${esc(opt)}</option>`).join('')}
+      </select>
+    `;
+  }
+  
+  if (c.is_secret) {
+    let cleanPlaceholder = meta.placeholder || (c.is_configured ? 'Key configured — paste new key to replace...' : 'Enter API key...');
+    cleanPlaceholder = cleanPlaceholder.replace(/[•*]+/g, '').trim() || 'Enter API key...';
+
+    return `
+      <div class="api-input-wrap">
+        <input type="password" class="api-input" data-config-key="${c.config_key}" value="${esc(currentVal)}" placeholder="${esc(cleanPlaceholder)}" autocomplete="off">
+        <button type="button" class="api-input-toggle-btn" title="Toggle visibility" onclick="
+          const input = this.previousElementSibling;
+          if (input.type === 'password') { input.type = 'text'; this.innerHTML = '<i class=\\'bi bi-eye-slash\\'></i>'; }
+          else { input.type = 'password'; this.innerHTML = '<i class=\\'bi bi-eye\\'></i>'; }
+        "><i class="bi bi-eye"></i></button>
+      </div>
+    `;
+  }
+  
+  return `
+    <input type="${meta.type === 'number' ? 'number' : 'text'}" class="api-input" data-config-key="${c.config_key}" value="${esc(currentVal)}" placeholder="${esc(meta.placeholder || '')}">
+  `;
+}
+
+function renderApiConfigPanel() {
+  const llmProvider = findConfig('PRIMARY_LLM_PROVIDER');
+  const openaiKey = findConfig('OPENAI_API_KEY');
+  const openaiModel = findConfig('OPENAI_MODEL');
+  const geminiKey = findConfig('GEMINI_API_KEY');
+  const monidKey = findConfig('MONID_API_KEY');
+  const monidUrl = findConfig('MONID_BASE_URL');
+
+  const tavily = findConfig('TAVILY_API_KEY');
+  const apify = findConfig('APIFY_TOKEN');
+  const serper = findConfig('SERPER_API_KEY');
+  const exa = findConfig('EXA_API_KEY');
+  const firecrawl = findConfig('FIRECRAWL_API_KEY');
+  const diffbot = findConfig('DIFFBOT_TOKEN');
+  const fullenrich = findConfig('FULLENRICH_API_KEY');
+  const dataGov = findConfig('DATA_GOV_API_KEY');
+
+  const smtpHost = findConfig('SMTP_HOST');
+  const smtpPort = findConfig('SMTP_PORT');
+  const smtpUser = findConfig('SMTP_USERNAME');
+  const smtpPass = findConfig('SMTP_PASSWORD');
+  const smtpFrom = findConfig('SMTP_FROM');
+
+  const jwtSecret = findConfig('JWT_SECRET_KEY');
+  const timeoutSec = findConfig('HTTP_TIMEOUT_SECONDS');
+  const retries = findConfig('MAX_API_RETRIES');
+
+  const dirtyCount = Object.keys(dirtyConfigs).length;
+
+  return `
+    <div class="api-config-container">
+      
+      <!-- 1. AI & LLM Models -->
+      <div class="api-config-section">
+        <div class="api-config-section-header">
+          <div class="api-config-section-title">
+            <i class="bi bi-cpu-fill" style="color:var(--brand);"></i> AI &amp; LLM Intelligence Engines
+          </div>
+        </div>
+        <div class="api-config-grid">
+          
+          <!-- OpenAI Direct / Primary LLM Card -->
+          <div class="api-config-card">
+            <div class="api-config-card-header">
+              <div class="api-config-card-title-wrap">
+                <div class="api-config-card-icon purple"><i class="bi bi-stars"></i></div>
+                <div>
+                  <div class="api-config-card-title">OpenAI LLM Engine</div>
+                  <div class="api-config-card-desc">Direct OpenAI API integration for standalone completions and intelligence pipelines.</div>
+                </div>
+              </div>
+              <span class="api-status-badge ${openaiKey.is_configured ? 'configured' : 'not-configured'}">
+                <i class="bi bi-circle-fill" style="font-size:0.45rem;"></i> ${openaiKey.is_configured ? 'Active' : 'Unset'}
+              </span>
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">OpenAI API Key</label>
+              ${renderFieldInput(openaiKey)}
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">OpenAI Model</label>
+              ${renderFieldInput(openaiModel)}
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">Active Engine Routing</label>
+              ${renderFieldInput(llmProvider)}
+            </div>
+            <div class="api-card-actions">
+              <span style="font-size:0.72rem; color:var(--text-muted);"><i class="bi bi-info-circle"></i> Direct connection to api.openai.com</span>
+              <button type="button" class="api-test-btn" data-test-provider="openai">
+                <i class="bi bi-lightning-charge"></i> Test OpenAI
+              </button>
+            </div>
+            <div class="api-test-result d-none" id="testResult-openai"></div>
+          </div>
+
+          <!-- Google Gemini AI Card -->
+          <div class="api-config-card">
+            <div class="api-config-card-header">
+              <div class="api-config-card-title-wrap">
+                <div class="api-config-card-icon cyan"><i class="bi bi-gem"></i></div>
+                <div>
+                  <div class="api-config-card-title">Google Gemini AI</div>
+                  <div class="api-config-card-desc">Google AI Studio API key for Gemini 1.5 Pro and Flash extraction.</div>
+                </div>
+              </div>
+              <span class="api-status-badge ${geminiKey.is_configured ? 'configured' : 'not-configured'}">
+                <i class="bi bi-circle-fill" style="font-size:0.45rem;"></i> ${geminiKey.is_configured ? 'Active' : 'Unset'}
+              </span>
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">Gemini API Key</label>
+              ${renderFieldInput(geminiKey)}
+            </div>
+            <div class="api-card-actions">
+              <span style="font-size:0.72rem; color:var(--text-muted);">aistudio.google.com</span>
+              <button type="button" class="api-test-btn" data-test-provider="gemini">
+                <i class="bi bi-lightning-charge"></i> Test Gemini
+              </button>
+            </div>
+            <div class="api-test-result d-none" id="testResult-gemini"></div>
+          </div>
+
+          <!-- Monid.ai Gateway Card -->
+          <div class="api-config-card">
+            <div class="api-config-card-header">
+              <div class="api-config-card-title-wrap">
+                <div class="api-config-card-icon green"><i class="bi bi-hdd-network"></i></div>
+                <div>
+                  <div class="api-config-card-title">Monid.ai Gateway</div>
+                  <div class="api-config-card-desc">Monid enterprise data &amp; telemetry gateway.</div>
+                </div>
+              </div>
+              <span class="api-status-badge ${monidKey.is_configured ? 'configured' : 'not-configured'}">
+                <i class="bi bi-circle-fill" style="font-size:0.45rem;"></i> ${monidKey.is_configured ? 'Active' : 'Unset'}
+              </span>
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">Monid API Key</label>
+              ${renderFieldInput(monidKey)}
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">Monid Base URL</label>
+              ${renderFieldInput(monidUrl)}
+            </div>
+            <div class="api-card-actions">
+              <span style="font-size:0.72rem; color:var(--text-muted);">api.monid.ai</span>
+              <button type="button" class="api-test-btn" data-test-provider="monid">
+                <i class="bi bi-lightning-charge"></i> Ping Monid
+              </button>
+            </div>
+            <div class="api-test-result d-none" id="testResult-monid"></div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- 2. Web Search, Scraping & Entity Intelligence -->
+      <div class="api-config-section">
+        <div class="api-config-section-header">
+          <div class="api-config-section-title">
+            <i class="bi bi-search" style="color:#10b981;"></i> Web Search, Scraping &amp; Entity Intelligence
+          </div>
+        </div>
+        <div class="api-config-grid">
+
+          <!-- Tavily Search Card -->
+          <div class="api-config-card">
+            <div class="api-config-card-header">
+              <div class="api-config-card-title-wrap">
+                <div class="api-config-card-icon green"><i class="bi bi-globe"></i></div>
+                <div>
+                  <div class="api-config-card-title">Tavily Search API</div>
+                  <div class="api-config-card-desc">AI web research &amp; contextual signal discovery.</div>
+                </div>
+              </div>
+              <span class="api-status-badge ${tavily.is_configured ? 'configured' : 'not-configured'}">
+                <i class="bi bi-circle-fill" style="font-size:0.45rem;"></i> ${tavily.is_configured ? 'Active' : 'Unset'}
+              </span>
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">API Key</label>
+              ${renderFieldInput(tavily)}
+            </div>
+            <div class="api-card-actions">
+              <span style="font-size:0.72rem; color:var(--text-muted);">tavily.com</span>
+              <button type="button" class="api-test-btn" data-test-provider="tavily">
+                <i class="bi bi-lightning-charge"></i> Ping Search
+              </button>
+            </div>
+            <div class="api-test-result d-none" id="testResult-tavily"></div>
+          </div>
+
+          <!-- Apify Scraping Card -->
+          <div class="api-config-card">
+            <div class="api-config-card-header">
+              <div class="api-config-card-title-wrap">
+                <div class="api-config-card-icon amber"><i class="bi bi-robot"></i></div>
+                <div>
+                  <div class="api-config-card-title">Apify Web Scraping</div>
+                  <div class="api-config-card-desc">Cloud actors for LinkedIn &amp; corporate portal extraction.</div>
+                </div>
+              </div>
+              <span class="api-status-badge ${apify.is_configured ? 'configured' : 'not-configured'}">
+                <i class="bi bi-circle-fill" style="font-size:0.45rem;"></i> ${apify.is_configured ? 'Active' : 'Unset'}
+              </span>
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">API Token</label>
+              ${renderFieldInput(apify)}
+            </div>
+            <div class="api-card-actions">
+              <span style="font-size:0.72rem; color:var(--text-muted);">apify.com</span>
+              <button type="button" class="api-test-btn" data-test-provider="apify">
+                <i class="bi bi-lightning-charge"></i> Test Token
+              </button>
+            </div>
+            <div class="api-test-result d-none" id="testResult-apify"></div>
+          </div>
+
+          <!-- Serper Google Search Card -->
+          <div class="api-config-card">
+            <div class="api-config-card-header">
+              <div class="api-config-card-title-wrap">
+                <div class="api-config-card-icon cyan"><i class="bi bi-google"></i></div>
+                <div>
+                  <div class="api-config-card-title">Serper Google Search</div>
+                  <div class="api-config-card-desc">Google News and organic search indexing for CXO moves.</div>
+                </div>
+              </div>
+              <span class="api-status-badge ${serper.is_configured ? 'configured' : 'not-configured'}">
+                <i class="bi bi-circle-fill" style="font-size:0.45rem;"></i> ${serper.is_configured ? 'Active' : 'Unset'}
+              </span>
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">API Key</label>
+              ${renderFieldInput(serper)}
+            </div>
+            <div class="api-card-actions">
+              <span style="font-size:0.72rem; color:var(--text-muted);">serper.dev</span>
+              <button type="button" class="api-test-btn" data-test-provider="serper">
+                <i class="bi bi-lightning-charge"></i> Test Serper
+              </button>
+            </div>
+            <div class="api-test-result d-none" id="testResult-serper"></div>
+          </div>
+
+          <!-- Firecrawl Card -->
+          <div class="api-config-card">
+            <div class="api-config-card-header">
+              <div class="api-config-card-title-wrap">
+                <div class="api-config-card-icon purple"><i class="bi bi-fire"></i></div>
+                <div>
+                  <div class="api-config-card-title">Firecrawl Web Extraction</div>
+                  <div class="api-config-card-desc">Deep web markdown extraction &amp; dynamic JS rendering.</div>
+                </div>
+              </div>
+              <span class="api-status-badge ${firecrawl.is_configured ? 'configured' : 'not-configured'}">
+                <i class="bi bi-circle-fill" style="font-size:0.45rem;"></i> ${firecrawl.is_configured ? 'Active' : 'Unset'}
+              </span>
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">Firecrawl API Key</label>
+              ${renderFieldInput(firecrawl)}
+            </div>
+            <div class="api-card-actions">
+              <span style="font-size:0.72rem; color:var(--text-muted);">firecrawl.dev</span>
+              <button type="button" class="api-test-btn" data-test-provider="firecrawl">
+                <i class="bi bi-lightning-charge"></i> Test Firecrawl
+              </button>
+            </div>
+            <div class="api-test-result d-none" id="testResult-firecrawl"></div>
+          </div>
+
+          <!-- Exa Neural Search Card -->
+          <div class="api-config-card">
+            <div class="api-config-card-header">
+              <div class="api-config-card-title-wrap">
+                <div class="api-config-card-icon cyan"><i class="bi bi-compass"></i></div>
+                <div>
+                  <div class="api-config-card-title">Exa Neural Search</div>
+                  <div class="api-config-card-desc">Embeddings-based semantic search &amp; company research.</div>
+                </div>
+              </div>
+              <span class="api-status-badge ${exa.is_configured ? 'configured' : 'not-configured'}">
+                <i class="bi bi-circle-fill" style="font-size:0.45rem;"></i> ${exa.is_configured ? 'Active' : 'Unset'}
+              </span>
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">Exa Search API Key</label>
+              ${renderFieldInput(exa)}
+            </div>
+            <div class="api-card-actions">
+              <span style="font-size:0.72rem; color:var(--text-muted);">exa.ai</span>
+              <button type="button" class="api-test-btn" data-test-provider="exa">
+                <i class="bi bi-lightning-charge"></i> Test Exa
+              </button>
+            </div>
+            <div class="api-test-result d-none" id="testResult-exa"></div>
+          </div>
+
+          <!-- FullEnrich Card -->
+          <div class="api-config-card">
+            <div class="api-config-card-header">
+              <div class="api-config-card-title-wrap">
+                <div class="api-config-card-icon purple"><i class="bi bi-person-badge-fill"></i></div>
+                <div>
+                  <div class="api-config-card-title">FullEnrich Persona Enrichment</div>
+                  <div class="api-config-card-desc">Waterfall email &amp; phone enrichment for executive contacts.</div>
+                </div>
+              </div>
+              <span class="api-status-badge ${fullenrich.is_configured ? 'configured' : 'not-configured'}">
+                <i class="bi bi-circle-fill" style="font-size:0.45rem;"></i> ${fullenrich.is_configured ? 'Active' : 'Unset'}
+              </span>
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">FullEnrich API Key</label>
+              ${renderFieldInput(fullenrich)}
+            </div>
+            <div class="api-card-actions">
+              <span style="font-size:0.72rem; color:var(--text-muted);">fullenrich.com</span>
+              <button type="button" class="api-test-btn" data-test-provider="fullenrich">
+                <i class="bi bi-lightning-charge"></i> Test FullEnrich
+              </button>
+            </div>
+            <div class="api-test-result d-none" id="testResult-fullenrich"></div>
+          </div>
+
+          <!-- Diffbot Knowledge Graph Card -->
+          <div class="api-config-card">
+            <div class="api-config-card-header">
+              <div class="api-config-card-title-wrap">
+                <div class="api-config-card-icon blue"><i class="bi bi-diagram-3-fill"></i></div>
+                <div>
+                  <div class="api-config-card-title">Diffbot Knowledge Graph</div>
+                  <div class="api-config-card-desc">Autonomous AI entity extraction &amp; corporate org structure mapping.</div>
+                </div>
+              </div>
+              <span class="api-status-badge ${diffbot.is_configured ? 'configured' : 'not-configured'}">
+                <i class="bi bi-circle-fill" style="font-size:0.45rem;"></i> ${diffbot.is_configured ? 'Active' : 'Unset'}
+              </span>
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">Diffbot Knowledge Graph Token</label>
+              ${renderFieldInput(diffbot)}
+            </div>
+            <div class="api-card-actions">
+              <span style="font-size:0.72rem; color:var(--text-muted);">diffbot.com</span>
+              <button type="button" class="api-test-btn" data-test-provider="diffbot">
+                <i class="bi bi-lightning-charge"></i> Test Diffbot
+              </button>
+            </div>
+            <div class="api-test-result d-none" id="testResult-diffbot"></div>
+          </div>
+
+          <!-- Data.gov / SEC EDGAR Card -->
+          <div class="api-config-card">
+            <div class="api-config-card-header">
+              <div class="api-config-card-title-wrap">
+                <div class="api-config-card-icon green"><i class="bi bi-bank2"></i></div>
+                <div>
+                  <div class="api-config-card-title">Data.gov &amp; SEC EDGAR</div>
+                  <div class="api-config-card-desc">Federal open data registry &amp; regulatory filings intelligence.</div>
+                </div>
+              </div>
+              <span class="api-status-badge ${dataGov.is_configured ? 'configured' : 'not-configured'}">
+                <i class="bi bi-circle-fill" style="font-size:0.45rem;"></i> ${dataGov.is_configured ? 'Active' : 'Unset'}
+              </span>
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">Data.gov / SEC EDGAR API Key</label>
+              ${renderFieldInput(dataGov)}
+            </div>
+            <div class="api-card-actions">
+              <span style="font-size:0.72rem; color:var(--text-muted);">data.gov</span>
+              <button type="button" class="api-test-btn" data-test-provider="data_gov">
+                <i class="bi bi-lightning-charge"></i> Test Data.gov
+              </button>
+            </div>
+            <div class="api-test-result d-none" id="testResult-data_gov"></div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- 3. Email & Alert Delivery (SMTP) -->
+      <div class="api-config-section">
+        <div class="api-config-section-header">
+          <div class="api-config-section-title">
+            <i class="bi bi-envelope-check-fill" style="color:#0061ff;"></i> Email &amp; Daily News Digest Delivery
+          </div>
+        </div>
+        <div class="api-config-card">
+          <div class="api-config-card-header">
+            <div class="api-config-card-title-wrap">
+              <div class="api-config-card-icon blue"><i class="bi bi-send-fill"></i></div>
+              <div>
+                <div class="api-config-card-title">SMTP Mailer Configuration</div>
+                <div class="api-config-card-desc">Transactional mailer used for user onboarding, password resets, and automated daily intelligence alerts.</div>
+              </div>
+            </div>
+            <span class="api-status-badge ${smtpHost.is_configured ? 'configured' : 'not-configured'}">
+              <i class="bi bi-circle-fill" style="font-size:0.45rem;"></i> ${smtpHost.is_configured ? 'Configured' : 'Unset'}
+            </span>
+          </div>
+          
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:10px;">
+            <div class="api-field-group">
+              <label class="api-field-label">SMTP Host</label>
+              ${renderFieldInput(smtpHost)}
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">SMTP Port</label>
+              ${renderFieldInput(smtpPort)}
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">SMTP Username</label>
+              ${renderFieldInput(smtpUser)}
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">SMTP Password</label>
+              ${renderFieldInput(smtpPass)}
+            </div>
+            <div class="api-field-group" style="grid-column:1 / -1;">
+              <label class="api-field-label">Sender 'From' Address</label>
+              ${renderFieldInput(smtpFrom)}
+            </div>
+          </div>
+
+          <div class="api-card-actions">
+            <span style="font-size:0.70rem; color:var(--text-muted);"><i class="bi bi-lock-fill"></i> TLS 587 / SSL 465 supported</span>
+            <button type="button" class="api-test-btn" data-test-provider="smtp">
+              <i class="bi bi-send-check"></i> Test SMTP Handshake
+            </button>
+          </div>
+          <div class="api-test-result d-none" id="testResult-smtp"></div>
+        </div>
+      </div>
+
+      <!-- 4. Security & System Parameters -->
+      <div class="api-config-section">
+        <div class="api-config-section-header">
+          <div class="api-config-section-title">
+            <i class="bi bi-shield-lock-fill" style="color:#64748b;"></i> Security &amp; Operational Controls
+          </div>
+        </div>
+        <div class="api-config-card">
+          <div class="api-field-group" style="margin-bottom:8px;">
+            <label class="api-field-label">JWT Master Secret Key <span style="font-weight:normal; color:var(--text-muted);">(Used to cryptographically sign tokens)</span></label>
+            ${renderFieldInput(jwtSecret)}
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:10px;">
+            <div class="api-field-group">
+              <label class="api-field-label">HTTP Timeout Threshold (Seconds)</label>
+              ${renderFieldInput(timeoutSec)}
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">Max Network Retries on Failure</label>
+              ${renderFieldInput(retries)}
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Sticky Floating Action Bar -->
+    <div class="api-sticky-save-bar ${dirtyCount > 0 ? 'visible' : ''}" id="apiStickySaveBar">
+      <div class="api-sticky-text">
+        <i class="bi bi-exclamation-circle-fill" style="color:#f59e0b; font-size:1.1rem;"></i>
+        <span id="apiDirtyCountText">${dirtyCount} unsaved configuration change${dirtyCount === 1 ? '' : 's'}</span>
+      </div>
+      <div class="api-sticky-actions">
+        <button type="button" class="api-btn-discard" id="apiDiscardBtn">Discard</button>
+        <button type="button" class="api-btn-save" id="apiSaveBtn">
+          <i class="bi bi-check2-circle"></i> Save All Changes
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+async function loadApiConfigs() {
+  try {
+    const res = await fetch('/api/admin/api-config');
+    if (res.ok) {
+      const data = await res.json();
+      apiConfigsCache = data.configs || [];
+    }
+  } catch (err) {
+    console.error('Failed to load API configs', err);
+  }
+}
+
 async function loadAndRender() {
   const [statsRes, usersRes] = await Promise.all([
     fetch('/api/admin/stats'),
     fetch('/api/admin/users'),
+    loadApiConfigs()
   ]);
   if (!statsRes.ok || !usersRes.ok) throw new Error('Failed to load admin data');
   statsCache = await statsRes.json();
@@ -465,27 +994,171 @@ async function loadAndRender() {
     renderTopBarUser(me);
   }
 
+  let tabContentHtml = '';
+  if (activeAdminTab === 'users') {
+    tabContentHtml = `
+      ${renderCreateForm()}
+      <div class="admin-grid">
+        <div class="admin-col-main">
+          ${renderUsersTable(me ? me.id : null)}
+        </div>
+        <div class="admin-col-side">
+          ${renderActivity()}
+        </div>
+      </div>
+    `;
+  } else if (activeAdminTab === 'api-config') {
+    tabContentHtml = renderApiConfigPanel();
+  } else if (activeAdminTab === 'audit') {
+    tabContentHtml = `
+      <div class="admin-grid" style="grid-template-columns: 1fr;">
+        <div class="admin-col-main">
+          ${renderActivity()}
+        </div>
+      </div>
+    `;
+  }
+
   main.innerHTML = `
     ${renderHero()}
     ${renderKPIBanner(statsCache)}
-    ${renderCreateForm()}
-    <div class="admin-grid">
-      <div class="admin-col-main">
-        ${renderUsersTable(me ? me.id : null)}
-      </div>
-      <div class="admin-col-side">
-        ${renderActivity()}
-      </div>
+    ${renderAdminTabsNav()}
+    <div id="adminTabContent">
+      ${tabContentHtml}
     </div>
     ${renderModalShell()}
   `;
   wireEvents();
-  loadAuditLogs(true);
+  if (activeAdminTab === 'users' || activeAdminTab === 'audit') {
+    loadAuditLogs(true);
+  }
 }
 
 function wireEvents() {
   const me = getCurrentUser();
   const currentUserId = me ? me.id : null;
+
+  // Admin Tabs Navigation
+  main.querySelectorAll('[data-admin-tab]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const targetTab = btn.dataset.adminTab;
+      if (targetTab === activeAdminTab) return;
+
+      if (Object.keys(dirtyConfigs).length > 0) {
+        if (!confirm('You have unsaved API configuration changes. Discard and switch tabs?')) {
+          return;
+        }
+        dirtyConfigs = {};
+      }
+
+      activeAdminTab = targetTab;
+      await loadAndRender();
+    });
+  });
+
+  // API Config inputs & dirty tracking
+  main.querySelectorAll('.api-input').forEach(input => {
+    const handleInput = () => {
+      const key = input.dataset.configKey;
+      dirtyConfigs[key] = input.value;
+      const bar = document.getElementById('apiStickySaveBar');
+      const text = document.getElementById('apiDirtyCountText');
+      const dirtyCount = Object.keys(dirtyConfigs).length;
+      if (bar) {
+        if (dirtyCount > 0) {
+          bar.classList.add('visible');
+          if (text) text.textContent = `${dirtyCount} unsaved configuration change${dirtyCount === 1 ? '' : 's'}`;
+        } else {
+          bar.classList.remove('visible');
+        }
+      }
+    };
+    input.addEventListener('input', handleInput);
+    input.addEventListener('change', handleInput);
+  });
+
+  // API Config Test Buttons
+  main.querySelectorAll('[data-test-provider]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const provider = btn.dataset.testProvider;
+      const resultEl = document.getElementById(`testResult-${provider}`);
+      btn.disabled = true;
+      const originalText = btn.innerHTML;
+      btn.innerHTML = '<div class="spinner-sm"></div> Testing…';
+      if (resultEl) {
+        resultEl.classList.remove('d-none', 'success', 'error');
+        resultEl.innerHTML = 'Connecting to provider…';
+      }
+
+      try {
+        const credentials = {};
+        main.querySelectorAll('.api-config-card .api-input').forEach(inp => {
+          if (inp.dataset.configKey) {
+            credentials[inp.dataset.configKey] = inp.value;
+          }
+        });
+
+        const res = await fetch('/api/admin/api-config/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ provider, credentials }),
+        });
+        const data = await res.json();
+        if (resultEl) {
+          if (data.success) {
+            resultEl.className = 'api-test-result success';
+            resultEl.innerHTML = `<i class="bi bi-check-circle-fill"></i> ${esc(data.message)} (${data.latency_ms || 0}ms)`;
+          } else {
+            resultEl.className = 'api-test-result error';
+            resultEl.innerHTML = `<i class="bi bi-exclamation-triangle-fill"></i> ${esc(data.error || 'Connection failed')}`;
+          }
+        }
+      } catch (err) {
+        if (resultEl) {
+          resultEl.className = 'api-test-result error';
+          resultEl.innerHTML = `<i class="bi bi-exclamation-triangle-fill"></i> Network error: ${esc(err.message)}`;
+        }
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+      }
+    });
+  });
+
+  // Discard Changes
+  const discardBtn = document.getElementById('apiDiscardBtn');
+  if (discardBtn) {
+    discardBtn.addEventListener('click', () => {
+      dirtyConfigs = {};
+      loadAndRender();
+    });
+  }
+
+  // Save Changes
+  const saveBtn = document.getElementById('apiSaveBtn');
+  if (saveBtn) {
+    saveBtn.addEventListener('click', async () => {
+      saveBtn.disabled = true;
+      saveBtn.innerHTML = '<div class="spinner-sm"></div> Saving…';
+      try {
+        const res = await fetch('/api/admin/api-config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ configs: dirtyConfigs }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Failed to save configuration');
+        dirtyConfigs = {};
+        showToast(data.message || 'API configurations saved successfully');
+        await loadAndRender();
+      } catch (err) {
+        alert(err.message);
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '<i class="bi bi-check2-circle"></i> Save All Changes';
+      }
+    });
+  }
 
   // Search input
   const searchInput = document.getElementById('adminUserSearch');

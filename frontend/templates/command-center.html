@@ -126,9 +126,16 @@
               <h2>Hiring signals</h2>
               <span class="cc-panel-note" id="ccHiringPanelNote">Multi-Organization Executive Flash Intel · 1,141 live roles monitored</span>
             </div>
-            <button type="button" class="cc-help-btn" data-widget-info="hiring" title="About Hiring Signals" aria-label="About Hiring Signals">
-              <i class="bi bi-question-circle"></i>
-            </button>
+            <div class="cc-panel-actions">
+              <div class="cc-filter-pill-group" id="ccHiringFilterGroup" role="group" aria-label="Filter Hiring Signals by Date">
+                <button type="button" class="cc-filter-pill" data-days="15">15d</button>
+                <button type="button" class="cc-filter-pill" data-days="30">30d</button>
+                <button type="button" class="cc-filter-pill active" data-days="all">All</button>
+              </div>
+              <button type="button" class="cc-help-btn" data-widget-info="hiring" title="About Hiring Signals" aria-label="About Hiring Signals">
+                <i class="bi bi-question-circle"></i>
+              </button>
+            </div>
           </div>
           <ul class="cc-feed-list" id="ccHiringList"></ul>
         </div>
@@ -200,27 +207,27 @@
         <div class="cc-panel">
           <div class="cc-panel-head">
             <div class="cc-panel-head-left">
-              <h2>Objections &amp; pain points</h2>
+              <h2>Operational pain points</h2>
               <span class="cc-panel-note">Ranked by how many personas mention them</span>
             </div>
-            <button type="button" class="cc-help-btn" data-widget-info="objections" title="About Objections & Pain Points" aria-label="About Objections & Pain Points">
+            <button type="button" class="cc-help-btn" data-widget-info="pain_points" title="About Operational Pain Points" aria-label="About Operational Pain Points">
               <i class="bi bi-question-circle"></i>
             </button>
           </div>
-          <div id="ccObjectionsBody"></div>
+          <div id="ccPainPointsBody"></div>
         </div>
 
         <div class="cc-panel">
           <div class="cc-panel-head">
             <div class="cc-panel-head-left">
-              <h2>New &amp; changed decision-makers</h2>
-              <span class="cc-panel-note">Last 30 days, cross-checked against your buying committee</span>
+              <h2>Common objections</h2>
+              <span class="cc-panel-note">Ranked by how many personas mention them</span>
             </div>
-            <button type="button" class="cc-help-btn" data-widget-info="decision_makers" title="About New & Changed Decision-Makers" aria-label="About New & Changed Decision-Makers">
+            <button type="button" class="cc-help-btn" data-widget-info="objections" title="About Common Objections" aria-label="About Common Objections">
               <i class="bi bi-question-circle"></i>
             </button>
           </div>
-          <ul class="cc-feed-list" id="ccDecisionMakersList"></ul>
+          <div id="ccObjectionsBody"></div>
         </div>
       </section>
 
