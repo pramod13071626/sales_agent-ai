@@ -179,7 +179,7 @@ $(function () {
       $('#lobCountBadge').text(`(${lobs.length} Division${lobs.length > 1 ? 's' : ''})`);
       lobs.forEach(lob => {
         const logoUrl = lob.logo_url || (lob.domain ? `https://logo.clearbit.com/${lob.domain}` : null);
-        const subtitle = lob.revenue ? `Rev: ${lob.revenue}` : (lob.desc || 'Business Division');
+        const subtitle = lob.relationship_type || (lob.revenue ? `Rev: ${lob.revenue}` : (lob.desc || 'Legal Subsidiary'));
         $lobCards.append(`
           <div class="compact-card lob-card fade-in" data-lob-id="${lob.id}" title="Click to explore ${esc(lob.name)} division and personas">
             <div class="compact-card-avatar" style="position:relative;overflow:hidden;background:#fff;border:1px solid #e2e8f0;display:flex;align-items:center;justify-content:center;">
@@ -619,7 +619,7 @@ $(function () {
         <!-- Categorized Section 4: Online Footprint & Scraping Feeds -->
         <div class="detail-section">
           <div class="detail-section-heading"><i class="bi bi-broadcast-pin"></i> Executive Online Footprint &amp; Discourse</div>
-          <p class="section-desc">Click any platform card to inspect the executive's real posts, interview quotes, and public commentary.</p>
+          <p class="section-desc">Click any platform card to inspect the executive's real posts, interview quotes, and public commentary, or click the external icon to open directly.</p>
           <div class="detail-grid">
             <div class="feed-btn-card">
               <button type="button" class="feed-title-btn" data-platform="linkedin" data-title="LinkedIn Executive Intelligence" data-entity="${esc(p.name)}" data-url="${p.linkedin_url ? esc(p.linkedin_url) : `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(p.name + ' ' + activeAccount.name)}`}" title="Click to view executive LinkedIn activity and recent posts">
@@ -630,6 +630,36 @@ $(function () {
               </a>
             </div>
 
+            ${p.theorg_url ? `
+            <div class="feed-btn-card">
+              <button type="button" class="feed-title-btn" data-platform="google_news" data-title="TheOrg Organization Chart" data-entity="${esc(p.name)}" data-url="${esc(p.theorg_url)}" title="View executive team & reporting structure">
+                <span class="feed-title"><i class="bi bi-diagram-3-fill" style="color:#0284c7;"></i> TheOrg Org Chart <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+              </button>
+              <a href="${esc(p.theorg_url)}" target="_blank" class="feed-right-icon-link" title="Open TheOrg Org Chart in new tab">
+                <i class="bi bi-box-arrow-up-right" style="font-size:1.1rem;color:#0284c7;"></i>
+              </a>
+            </div>` : ''}
+
+            ${p.wayback_url ? `
+            <div class="feed-btn-card">
+              <button type="button" class="feed-title-btn" data-platform="google_news" data-title="Wayback Machine Career Archive" data-entity="${esc(p.name)}" data-url="${esc(p.wayback_url)}" title="View historical career timeline & changes">
+                <span class="feed-title"><i class="bi bi-clock-history" style="color:#64748b;"></i> Wayback Career Archive <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+              </button>
+              <a href="${esc(p.wayback_url)}" target="_blank" class="feed-right-icon-link" title="Open Wayback Machine in new tab">
+                <i class="bi bi-box-arrow-up-right" style="font-size:1.1rem;color:#64748b;"></i>
+              </a>
+            </div>` : ''}
+
+            ${p.zoominfo_url ? `
+            <div class="feed-btn-card">
+              <button type="button" class="feed-title-btn" data-platform="google_news" data-title="ZoomInfo Contact Directory" data-entity="${esc(p.name)}" data-url="${esc(p.zoominfo_url)}" title="View verified business contacts & org chart">
+                <span class="feed-title"><i class="bi bi-person-lines-fill" style="color:#2563eb;"></i> ZoomInfo Profile <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+              </button>
+              <a href="${esc(p.zoominfo_url)}" target="_blank" class="feed-right-icon-link" title="Open ZoomInfo Profile in new tab">
+                <i class="bi bi-box-arrow-up-right" style="font-size:1.1rem;color:#2563eb;"></i>
+              </a>
+            </div>` : ''}
+
             <div class="feed-btn-card">
               <button type="button" class="feed-title-btn" data-platform="x_twitter" data-title="Twitter / X Executive Intelligence" data-entity="${esc(p.name)}" data-url="${p.twitter_live_url ? esc(p.twitter_live_url) : `https://x.com/search?q=${encodeURIComponent(p.name)}&f=live`}" title="Click to view executive Twitter/X timeline and discourse">
                 <span class="feed-title"><i class="bi bi-twitter-x"></i> Twitter / X Feed <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
@@ -638,6 +668,96 @@ $(function () {
                 ${BRAND_ICONS.x_twitter}
               </a>
             </div>
+
+            ${(p.sec_insider_trades_url || p.secform4_url) ? `
+            <div class="feed-btn-card">
+              <button type="button" class="feed-title-btn" data-platform="google_news" data-title="SEC Form 4 &amp; Insider Trading" data-entity="${esc(p.name)}" data-url="${esc(p.sec_insider_trades_url || p.secform4_url)}" title="View Form 4 disclosures and insider equity filings">
+                <span class="feed-title"><i class="bi bi-file-earmark-lock-fill" style="color:#059669;"></i> SEC Insider Trades <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+              </button>
+              <a href="${esc(p.sec_insider_trades_url || p.secform4_url)}" target="_blank" class="feed-right-icon-link" title="Open SEC EDGAR in new tab">
+                <i class="bi bi-box-arrow-up-right" style="font-size:1.1rem;color:#059669;"></i>
+              </a>
+            </div>` : ''}
+
+            ${p.openinsider_url ? `
+            <div class="feed-btn-card">
+              <button type="button" class="feed-title-btn" data-platform="google_news" data-title="OpenInsider Trades" data-entity="${esc(p.name)}" data-url="${esc(p.openinsider_url)}" title="View open insider stock purchases & sales">
+                <span class="feed-title"><i class="bi bi-graph-up-arrow" style="color:#10b981;"></i> OpenInsider Trades <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+              </button>
+              <a href="${esc(p.openinsider_url)}" target="_blank" class="feed-right-icon-link" title="Open OpenInsider in new tab">
+                <i class="bi bi-box-arrow-up-right" style="font-size:1.1rem;color:#10b981;"></i>
+              </a>
+            </div>` : ''}
+
+            ${p.quiver_insider_url ? `
+            <div class="feed-btn-card">
+              <button type="button" class="feed-title-btn" data-platform="google_news" data-title="Quiver Quantitative Insider Tracker" data-entity="${esc(p.name)}" data-url="${esc(p.quiver_insider_url)}" title="View institutional executive trading tracking">
+                <span class="feed-title"><i class="bi bi-cpu-fill" style="color:#8b5cf6;"></i> Quiver Quant <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+              </button>
+              <a href="${esc(p.quiver_insider_url)}" target="_blank" class="feed-right-icon-link" title="Open Quiver Quantitative in new tab">
+                <i class="bi bi-box-arrow-up-right" style="font-size:1.1rem;color:#8b5cf6;"></i>
+              </a>
+            </div>` : ''}
+
+            ${p.bloomberg_url ? `
+            <div class="feed-btn-card">
+              <button type="button" class="feed-title-btn" data-platform="google_news" data-title="Bloomberg Financial Media" data-entity="${esc(p.name)}" data-url="${esc(p.bloomberg_url)}" title="View Bloomberg articles & executive video appearances">
+                <span class="feed-title"><i class="bi bi-newspaper" style="color:#000000;"></i> Bloomberg News <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+              </button>
+              <a href="${esc(p.bloomberg_url)}" target="_blank" class="feed-right-icon-link" title="Open Bloomberg in new tab">
+                <i class="bi bi-box-arrow-up-right" style="font-size:1.1rem;color:#000000;"></i>
+              </a>
+            </div>` : ''}
+
+            ${p.wsj_article_url ? `
+            <div class="feed-btn-card">
+              <button type="button" class="feed-title-btn" data-platform="google_news" data-title="Wall Street Journal Coverage" data-entity="${esc(p.name)}" data-url="${esc(p.wsj_article_url)}" title="View WSJ executive profile & market articles">
+                <span class="feed-title"><i class="bi bi-journal-text" style="color:#1e293b;"></i> Wall Street Journal <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+              </button>
+              <a href="${esc(p.wsj_article_url)}" target="_blank" class="feed-right-icon-link" title="Open Wall Street Journal in new tab">
+                <i class="bi bi-box-arrow-up-right" style="font-size:1.1rem;color:#1e293b;"></i>
+              </a>
+            </div>` : ''}
+
+            ${p.seeking_alpha_url ? `
+            <div class="feed-btn-card">
+              <button type="button" class="feed-title-btn" data-platform="google_news" data-title="Seeking Alpha Earnings Transcripts" data-entity="${esc(p.name)}" data-url="${esc(p.seeking_alpha_url)}" title="View conference call transcripts and executive quotes">
+                <span class="feed-title"><i class="bi bi-chat-left-quote-fill" style="color:#ea580c;"></i> Seeking Alpha <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+              </button>
+              <a href="${esc(p.seeking_alpha_url)}" target="_blank" class="feed-right-icon-link" title="Open Seeking Alpha in new tab">
+                <i class="bi bi-box-arrow-up-right" style="font-size:1.1rem;color:#ea580c;"></i>
+              </a>
+            </div>` : ''}
+
+            ${p.corporate_bio_url ? `
+            <div class="feed-btn-card">
+              <button type="button" class="feed-title-btn" data-platform="google_news" data-title="Corporate Leadership Bio" data-entity="${esc(p.name)}" data-url="${esc(p.corporate_bio_url)}" title="View official corporate executive leadership bio">
+                <span class="feed-title"><i class="bi bi-building" style="color:#0284c7;"></i> Corporate Bio <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+              </button>
+              <a href="${esc(p.corporate_bio_url)}" target="_blank" class="feed-right-icon-link" title="Open Corporate Bio in new tab">
+                <i class="bi bi-box-arrow-up-right" style="font-size:1.1rem;color:#0284c7;"></i>
+              </a>
+            </div>` : ''}
+
+            ${p.annual_report_url ? `
+            <div class="feed-btn-card">
+              <button type="button" class="feed-title-btn" data-platform="google_news" data-title="Annual Report &amp; 10-K Filings" data-entity="${esc(p.name)}" data-url="${esc(p.annual_report_url)}" title="View investor relations annual reports and SEC proxy statements">
+                <span class="feed-title"><i class="bi bi-file-earmark-ruled" style="color:#d97706;"></i> Annual Report / 10-K <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+              </button>
+              <a href="${esc(p.annual_report_url)}" target="_blank" class="feed-right-icon-link" title="Open Annual Report in new tab">
+                <i class="bi bi-box-arrow-up-right" style="font-size:1.1rem;color:#d97706;"></i>
+              </a>
+            </div>` : ''}
+
+            ${p.fec_contributions_url ? `
+            <div class="feed-btn-card">
+              <button type="button" class="feed-title-btn" data-platform="google_news" data-title="FEC Political Contributions" data-entity="${esc(p.name)}" data-url="${esc(p.fec_contributions_url)}" title="View public campaign finance and donor integrity records">
+                <span class="feed-title"><i class="bi bi-shield-shaded" style="color:#4f46e5;"></i> FEC Contributions <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+              </button>
+              <a href="${esc(p.fec_contributions_url)}" target="_blank" class="feed-right-icon-link" title="Open FEC Donor Search in new tab">
+                <i class="bi bi-box-arrow-up-right" style="font-size:1.1rem;color:#4f46e5;"></i>
+              </a>
+            </div>` : ''}
 
             <div class="feed-btn-card">
               <button type="button" class="feed-title-btn" data-platform="reddit" data-title="Reddit Community Discussions" data-entity="${esc(p.name)}" data-url="${p.reddit_rss_url ? esc(p.reddit_rss_url) : `https://www.reddit.com/search/?q=${encodeURIComponent(p.name)}`}" title="Click to view Reddit discussions and industry mentions">
@@ -649,10 +769,10 @@ $(function () {
             </div>
 
             <div class="feed-btn-card">
-              <button type="button" class="feed-title-btn" data-platform="youtube" data-title="YouTube Media & Keynotes" data-entity="${esc(p.name)}" data-url="${p.youtube_interviews_url ? esc(p.youtube_interviews_url) : `https://www.youtube.com/results?search_query=${encodeURIComponent(p.name + ' interview')}`}" title="Click to view executive interviews, keynote videos, and media appearances">
+              <button type="button" class="feed-title-btn" data-platform="youtube" data-title="YouTube Media & Keynotes" data-entity="${esc(p.name)}" data-url="${(p.youtube_url || p.youtube_interviews_url) ? esc(p.youtube_url || p.youtube_interviews_url) : `https://www.youtube.com/results?search_query=${encodeURIComponent(p.name + ' ' + activeAccount.name)}`}" title="Click to view executive interviews, keynote videos, and media appearances">
                 <span class="feed-title"><i class="bi bi-youtube" style="color:#ff0000;"></i> YouTube Keynotes <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
-              <a href="${p.youtube_interviews_url ? esc(p.youtube_interviews_url) : `https://www.youtube.com/results?search_query=${encodeURIComponent(p.name + ' interview')}`}" target="_blank" class="feed-right-icon-link" title="Open YouTube in new tab">
+              <a href="${(p.youtube_url || p.youtube_interviews_url) ? esc(p.youtube_url || p.youtube_interviews_url) : `https://www.youtube.com/results?search_query=${encodeURIComponent(p.name + ' ' + activeAccount.name)}`}" target="_blank" class="feed-right-icon-link" title="Open YouTube in new tab">
                 ${BRAND_ICONS.youtube}
               </a>
             </div>
@@ -676,13 +796,43 @@ $(function () {
             </div>
 
             <div class="feed-btn-card">
-              <button type="button" class="feed-title-btn" data-platform="podcast" data-title="Podcasts & Media Intelligence" data-entity="${esc(p.name)}" data-url="${p.podcast_search_url ? esc(p.podcast_search_url) : `https://www.google.com/search?q=${encodeURIComponent(p.name + ' podcast')}`}" title="Click to view podcast episodes and audio interviews">
+              <button type="button" class="feed-title-btn" data-platform="podcast" data-title="Podcasts & Media Intelligence" data-entity="${esc(p.name)}" data-url="${(p.podcast_url || p.podcast_search_url) ? esc(p.podcast_url || p.podcast_search_url) : `https://podcasts.apple.com/us/search?term=${encodeURIComponent(p.name + ' ' + activeAccount.name)}`}" title="Click to view podcast episodes and audio interviews">
                 <span class="feed-title"><i class="bi bi-mic" style="color:#8743d6;"></i> Podcasts &amp; Media <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
-              <a href="${p.podcast_search_url ? esc(p.podcast_search_url) : `https://www.google.com/search?q=${encodeURIComponent(p.name + ' podcast')}`}" target="_blank" class="feed-right-icon-link" title="Open Podcasts in new tab">
+              <a href="${(p.podcast_url || p.podcast_search_url) ? esc(p.podcast_url || p.podcast_search_url) : `https://podcasts.apple.com/us/search?term=${encodeURIComponent(p.name + ' ' + activeAccount.name)}`}" target="_blank" class="feed-right-icon-link" title="Open Podcasts in new tab">
                 ${BRAND_ICONS.podcast}
               </a>
             </div>
+
+            ${p.google_scholar_url ? `
+            <div class="feed-btn-card">
+              <button type="button" class="feed-title-btn" data-platform="google_news" data-title="Google Scholar Citations" data-entity="${esc(p.name)}" data-url="${esc(p.google_scholar_url)}" title="View academic publications & research citations">
+                <span class="feed-title"><i class="bi bi-mortarboard-fill" style="color:#0284c7;"></i> Google Scholar <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+              </button>
+              <a href="${esc(p.google_scholar_url)}" target="_blank" class="feed-right-icon-link" title="Open Google Scholar in new tab">
+                <i class="bi bi-box-arrow-up-right" style="font-size:1.1rem;color:#0284c7;"></i>
+              </a>
+            </div>` : ''}
+
+            ${p.openalex_author_url ? `
+            <div class="feed-btn-card">
+              <button type="button" class="feed-title-btn" data-platform="google_news" data-title="OpenAlex Research Profile" data-entity="${esc(p.name)}" data-url="${esc(p.openalex_author_url)}" title="View scholarly research entity profile">
+                <span class="feed-title"><i class="bi bi-journal-bookmark-fill" style="color:#0d9488;"></i> OpenAlex Profile <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+              </button>
+              <a href="${esc(p.openalex_author_url)}" target="_blank" class="feed-right-icon-link" title="Open OpenAlex in new tab">
+                <i class="bi bi-box-arrow-up-right" style="font-size:1.1rem;color:#0d9488;"></i>
+              </a>
+            </div>` : ''}
+
+            ${p.google_trends_url ? `
+            <div class="feed-btn-card">
+              <button type="button" class="feed-title-btn" data-platform="google_trends" data-title="Google Trends Search Momentum" data-entity="${esc(p.name)}" data-url="${esc(p.google_trends_url)}" title="View public search volume momentum">
+                <span class="feed-title"><i class="bi bi-graph-up" style="color:#ea4335;"></i> Google Trends <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+              </button>
+              <a href="${esc(p.google_trends_url)}" target="_blank" class="feed-right-icon-link" title="Open Google Trends in new tab">
+                ${BRAND_ICONS.google_trends}
+              </a>
+            </div>` : ''}
           </div>
         </div>
       </div>

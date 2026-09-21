@@ -198,6 +198,25 @@ class PersonaRepository:
                     master.title = val
                 continue
 
+            if field == "osint_feed_manifest":
+                if val and isinstance(val, dict) and val.get("feeds"):
+                    master.osint_feed_manifest = val
+                    from sqlalchemy.orm.attributes import flag_modified
+                    flag_modified(master, "osint_feed_manifest")
+                continue
+
+            if field == "raw_data":
+                if val and isinstance(val, dict):
+                    master.raw_data = val
+                    from sqlalchemy.orm.attributes import flag_modified
+                    flag_modified(master, "raw_data")
+                continue
+
+            if field.endswith("_url"):
+                if val and (current_val is None or "/search" in str(current_val) or "query=" in str(current_val)):
+                    setattr(master, field, val)
+                continue
+
         if lob_id and not master.lob_id:
             master.lob_id = lob_id
 

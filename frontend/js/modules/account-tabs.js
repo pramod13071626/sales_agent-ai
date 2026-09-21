@@ -347,7 +347,7 @@ export function renderCenter(account, lob) {
           <h2 class="acct-name">${esc(account.name)}${lob ? ' · ' + esc(lob.name) : ''}</h2>
           <div class="acct-pills">
             <span class="pill pill-brand" title="Public / Private stock ticker classification"><i class="bi bi-tag"></i> ${esc(account.ticker || 'Private')}</span>
-            <span class="pill" title="Annual reported revenue"><i class="bi bi-currency-dollar"></i> ${esc(account.revenue || 'Revenue N/A')}</span>
+            <span class="pill" title="Annual reported revenue"><i class="bi bi-currency-dollar"></i> ${esc((account.revenue || 'Revenue N/A').replace(/^\$/, ''))}</span>
             <span class="pill pill-success" title="Corporate headquarters location"><i class="bi bi-geo-alt"></i> ${esc(account.location || 'Location N/A')}</span>
             ${account.operating_status ? `<span class="pill" title="Current operational status"><i class="bi bi-activity"></i> ${esc(account.operating_status)}</span>` : ''}
           </div>

@@ -351,105 +351,451 @@
 <script src="js/app.js?v=3.18.0"></script>
 <script src="js/chatbot.js?v=2.3.6"></script>
 
-<!-- ── Add New Account Modal ──────────────────────────── -->
+<!-- ── Enhanced Add New Account Modal ──────────────────────── -->
 <div class="modal fade" id="addAccountModal" tabindex="-1"
      aria-labelledby="addAccountModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content"
-         style="border-radius:16px;border:none;box-shadow:0 24px 60px rgba(0,0,0,.18);">
-      <div class="modal-header"
-           style="border-bottom:1px solid var(--border,#e2e8f0);padding:20px 24px 16px;">
-        <div style="display:flex;align-items:center;gap:10px;">
-          <div style="width:36px;height:36px;border-radius:10px;
-                      background:linear-gradient(135deg,#0ea5e9,#6366f1);
+  <div class="modal-dialog modal-dialog-centered add-account-dialog">
+    <div class="modal-content add-account-card">
+      <div class="modal-header add-account-header">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div style="width:40px;height:40px;border-radius:12px;
+                      background:rgba(255,255,255,0.2);backdrop-filter:blur(4px);
                       display:flex;align-items:center;justify-content:center;
-                      color:#fff;font-size:1.1rem;">
-            <i class="bi bi-plus-circle"></i>
+                      color:#fff;font-size:1.25rem;">
+            <i class="bi bi-building-add"></i>
           </div>
           <div>
             <h5 class="modal-title" id="addAccountModalLabel"
-                style="margin:0;font-size:.95rem;font-weight:700;">Add New Account</h5>
-            <p style="margin:0;font-size:.72rem;color:var(--text-muted,#64748b);">
-              Enter company details to begin 11-source intelligence collection
+                style="margin:0;font-size:1.05rem;font-weight:700;color:#fff;">Add New Account</h5>
+            <p style="margin:0;font-size:.74rem;color:rgba(255,255,255,0.85);">
+              Initialize corporate entity for automated multi-source intelligence harvesting
             </p>
           </div>
         </div>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <div class="modal-body" style="padding:24px;">
+      <div class="modal-body" style="padding:24px 28px;">
         <form id="addAccountForm" autocomplete="off">
-          <div style="margin-bottom:18px;">
-            <label for="newAccountName"
-                   style="display:block;font-size:.78rem;font-weight:600;
-                          margin-bottom:6px;color:var(--text,#1e293b);">
-              <i class="bi bi-building"></i> Company Name <span style="color:#ef4444;">*</span>
-            </label>
-            <input type="text" id="newAccountName" class="form-control"
-                   placeholder="e.g. BlackRock, JPMorgan Chase, Goldman Sachs" required
-                   style="border-radius:10px;font-size:.85rem;padding:10px 14px;"
-                   autocomplete="off" data-lpignore="true">
-            <div style="font-size:.7rem;color:var(--text-muted,#64748b);margin-top:4px;">
-              Enter the official company name as it appears publicly
+          <div style="display:flex;flex-direction:column;gap:16px;">
+            <div class="add-field-group">
+              <label for="newAccountName" class="add-field-label">
+                <i class="bi bi-building"></i> Company Name <span style="color:#ef4444;">*</span>
+              </label>
+              <input type="text" id="newAccountName" class="add-field-input"
+                     placeholder="e.g. BlackRock, JPMorgan Chase, Goldman Sachs" required
+                     autocomplete="off" data-lpignore="true">
+              <div style="font-size:.68rem;color:#64748b;">Official corporate identity as recognized by market regulators</div>
             </div>
-          </div>
-          <div style="margin-bottom:8px;">
-            <label for="newAccountDomain"
-                   style="display:block;font-size:.78rem;font-weight:600;
-                          margin-bottom:6px;color:var(--text,#1e293b);">
-              <i class="bi bi-globe"></i> Domain / Website
-              <span style="color:var(--text-muted,#64748b);font-weight:400;">(optional but recommended)</span>
-            </label>
-            <input type="text" id="newAccountDomain" class="form-control"
-                   placeholder="e.g. blackrock.com or https://www.blackrock.com"
-                   style="border-radius:10px;font-size:.85rem;padding:10px 14px;"
-                   autocomplete="off" data-lpignore="true">
-            <div style="font-size:.7rem;color:var(--text-muted,#64748b);margin-top:4px;">
-              Used to anchor Crunchbase, Diffbot, and LinkedIn lookups
+
+            <div class="add-field-group">
+              <label for="newAccountDomain" class="add-field-label">
+                <i class="bi bi-globe"></i> Primary Corporate Domain
+                <span style="font-size:0.7rem;font-weight:400;color:#94a3b8;">(recommended)</span>
+              </label>
+              <input type="text" id="newAccountDomain" class="add-field-input"
+                     placeholder="e.g. blackrock.com"
+                     autocomplete="off" data-lpignore="true">
+              <div style="font-size:.68rem;color:#64748b;">Used to automatically discover ticker, SEC filings, executive directory &amp; news</div>
             </div>
           </div>
         </form>
 
-        <!-- What happens next info box -->
-        <div style="margin-top:18px;padding:14px 16px;background:var(--surface,#f8fafc);
-                    border-radius:12px;border:1px solid var(--border,#e2e8f0);">
-          <div style="font-size:.72rem;font-weight:600;color:var(--text-muted,#64748b);
-                      text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">
-            <i class="bi bi-info-circle"></i> What happens after you click Start
+        <!-- Automated Ingestion Lifecycle Preview -->
+        <div class="pipeline-step-preview">
+          <div style="font-size:0.72rem;font-weight:700;color:#0ea5e9;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:10px;">
+            <i class="bi bi-cpu"></i> Automated Pipeline Enrichment Lifecycle
           </div>
-          <div style="display:flex;flex-direction:column;gap:6px;">
-            <div style="font-size:.75rem;color:var(--text,#1e293b);">
-              <span style="background:#0ea5e9;color:#fff;border-radius:50%;width:18px;
-                           height:18px;display:inline-flex;align-items:center;
-                           justify-content:center;font-size:.65rem;margin-right:6px;">1</span>
-              Account pipeline panel opens — click <strong>Pull</strong> to run 11-source enrichment
-            </div>
-            <div style="font-size:.75rem;color:var(--text,#1e293b);">
-              <span style="background:#6366f1;color:#fff;border-radius:50%;width:18px;
-                           height:18px;display:inline-flex;align-items:center;
-                           justify-content:center;font-size:.65rem;margin-right:6px;">2</span>
-              Click <strong>Validate</strong> to review quality score across all 89 columns
-            </div>
-            <div style="font-size:.75rem;color:var(--text,#1e293b);">
-              <span style="background:#10b981;color:#fff;border-radius:50%;width:18px;
-                           height:18px;display:inline-flex;align-items:center;
-                           justify-content:center;font-size:.65rem;margin-right:6px;">3</span>
-              Click <strong>Dump DB</strong> — account saved and appears in sidebar
-            </div>
+          <div class="pipeline-step-item">
+            <span class="pipeline-step-num" style="background:#0ea5e9;">1</span>
+            <div><strong>11-Source Intelligence Harvest</strong>: Discovers SEC CIK, 10-K filings, corporate tree, ticker &amp; leadership bios.</div>
+          </div>
+          <div class="pipeline-step-item">
+            <span class="pipeline-step-num" style="background:#6366f1;">2</span>
+            <div><strong>Hierarchy &amp; Seniority Parsing</strong>: Extracts LOB operating divisions, Sub-LOBs, and maps C-Suite, VPs &amp; Directors.</div>
+          </div>
+          <div class="pipeline-step-item">
+            <span class="pipeline-step-num" style="background:#10b981;">3</span>
+            <div><strong>25-Feed OSINT Stream</strong>: Dynamically generates live feeds for SEC insider trades, podcasts, transcripts &amp; news.</div>
           </div>
         </div>
       </div>
       <div class="modal-footer"
-           style="border-top:1px solid var(--border,#e2e8f0);padding:16px 24px;gap:8px;">
-        <button type="button" class="btn btn-sm" data-bs-dismiss="modal"
-                style="border-radius:8px;font-size:.82rem;padding:8px 16px;
-                       border:1px solid var(--border,#e2e8f0);">Cancel</button>
+           style="border-top:1px solid #e2e8f0;padding:16px 28px;gap:10px;background:#f8fafc;display:flex;justify-content:flex-end;">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal"
+                style="border-radius:8px;padding:8px 18px;font-weight:500;">Cancel</button>
         <button type="button" id="startNewAccountBtn"
-                style="border-radius:8px;font-size:.82rem;padding:8px 20px;
-                       background:linear-gradient(135deg,#0ea5e9,#6366f1);color:#fff;
-                       border:none;font-weight:600;cursor:pointer;">
-          <i class="bi bi-play-fill"></i> Start Pipeline
+                style="border-radius:8px;font-size:.85rem;padding:9px 24px;
+                       background:linear-gradient(135deg,#0ea5e9,#4f46e5);color:#fff;
+                       border:none;font-weight:600;display:inline-flex;align-items:center;gap:8px;cursor:pointer;
+                       box-shadow:0 4px 14px rgba(14,165,233,0.35);">
+          <i class="bi bi-play-fill" style="font-size:1.1rem;"></i> Start Pipeline
         </button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Enterprise Data Management & Granular Purge Console Modal ─────────── -->
+<div class="modal fade" id="dataManageModal" tabindex="-1"
+     aria-labelledby="dataManageModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content purge-console-card">
+      <div class="modal-header purge-console-header">
+        <div class="purge-console-title-area">
+          <div class="purge-header-icon">
+            <i class="bi bi-shield-slash-fill"></i>
+          </div>
+          <div>
+            <h5 class="modal-title" id="dataManageModalLabel"
+                style="margin:0;font-size:1.05rem;font-weight:700;color:#1e293b;">
+              Data Management &amp; Targeted Purge Console
+            </h5>
+            <p style="margin:0;font-size:.75rem;color:#64748b;">
+              Account: <strong id="purgeTargetAccountName" style="color:#0f172a;">Loading...</strong> &bull; Granular removal with zero side-effects
+            </p>
+          </div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+
+      <div class="modal-body purge-console-body">
+        <!-- 1. Full Account Purge (Nuke Option) -->
+        <div class="purge-nuke-card">
+          <div style="display:flex;align-items:flex-start;gap:12px;">
+            <input class="form-check-input" type="checkbox" id="purgeOptionEntireAccount" style="margin-top:3px;cursor:pointer;width:18px;height:18px;">
+            <div style="flex:1;">
+              <label for="purgeOptionEntireAccount" style="font-size:0.88rem;font-weight:700;color:#991b1b;cursor:pointer;display:block;">
+                Delete Account, Lines of Business &amp; Personas (Preserves Scraped News &amp; Jobs)
+              </label>
+              <div style="font-size:0.73rem;color:#b91c1c;margin-top:2px;">
+                Deletes the account record, all LOB operating divisions, and personas. External intelligence (524 news articles, 291 job postings) is preserved and will reconnect when you re-add the account.
+              </div>
+              <div id="purgeConfirmContainer" class="d-none" style="margin-top:12px;padding:12px;background:#ffffff;border:1px solid #fca5a5;border-radius:8px;">
+                <div style="font-size:0.75rem;font-weight:600;color:#991b1b;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">
+                  <span>To confirm permanent deletion, type <code id="purgeExpectedConfirmText" role="button" title="Click to auto-fill" style="background:#fee2e2;color:#991b1b;padding:2px 6px;border-radius:4px;font-weight:700;cursor:pointer;user-select:all;">DELETE COMPANY</code> below:</span>
+                  <button type="button" id="btnAutoFillPurgeConfirm" class="btn btn-xs btn-outline-danger" style="font-size:0.7rem;padding:2px 8px;border-radius:4px;cursor:pointer;">
+                    <i class="bi bi-magic"></i> Auto-fill
+                  </button>
+                </div>
+                <input type="text" id="purgeConfirmInput" class="form-control form-control-sm"
+                       placeholder="Type DELETE BLACKROCK" autocomplete="off" style="font-family:monospace;font-size:0.85rem;">
+                <div id="purgeConfirmFeedback" style="font-size:0.72rem;margin-top:4px;display:none;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. Granular Component Sections -->
+        <div id="purgeGranularSections" style="display:flex;flex-direction:column;gap:14px;transition:opacity 0.2s ease;">
+          
+          <!-- LOBs -->
+          <div class="purge-section-card">
+            <div class="purge-section-title">
+              <span><i class="bi bi-diagram-3"></i> Operating Divisions &amp; Lines of Business</span>
+            </div>
+            <label class="purge-item-box" for="purgeOptionLobs">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <input class="form-check-input purge-cb" type="checkbox" id="purgeOptionLobs" style="cursor:pointer;">
+                <span style="font-size:0.82rem;font-weight:600;color:#1e293b;">Delete All Lines of Business &amp; Sub-LOBs</span>
+              </div>
+              <span class="purge-badge-cnt" id="cntPurgeLobs">0 LOBs</span>
+            </label>
+          </div>
+
+          <!-- Personas by Seniority Tier -->
+          <div class="purge-section-card">
+            <div class="purge-section-title">
+              <span><i class="bi bi-people"></i> Executive Personas by Seniority Tier</span>
+              <button type="button" id="btnToggleAllPersonaTiers" class="btn btn-link btn-sm" style="padding:0;font-size:0.72rem;color:#0ea5e9;text-decoration:none;">
+                Select All Tiers
+              </button>
+            </div>
+            <div class="purge-grid">
+              <label class="purge-item-box" for="purgeTierCSuite">
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <input class="form-check-input purge-cb purge-tier-cb" type="checkbox" id="purgeTierCSuite" data-tier="c_suite" style="cursor:pointer;">
+                  <span style="font-size:0.8rem;font-weight:600;color:#1e293b;">C-Suite &amp; Officers</span>
+                </div>
+                <span class="purge-badge-cnt" id="cntPurgeCSuite">0</span>
+              </label>
+
+              <label class="purge-item-box" for="purgeTierVp">
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <input class="form-check-input purge-cb purge-tier-cb" type="checkbox" id="purgeTierVp" data-tier="vp_head" style="cursor:pointer;">
+                  <span style="font-size:0.8rem;font-weight:600;color:#1e293b;">Vice Presidents &amp; Heads</span>
+                </div>
+                <span class="purge-badge-cnt" id="cntPurgeVp">0</span>
+              </label>
+
+              <label class="purge-item-box" for="purgeTierDirector">
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <input class="form-check-input purge-cb purge-tier-cb" type="checkbox" id="purgeTierDirector" data-tier="director" style="cursor:pointer;">
+                  <span style="font-size:0.8rem;font-weight:600;color:#1e293b;">Directors &amp; MDs</span>
+                </div>
+                <span class="purge-badge-cnt" id="cntPurgeDirector">0</span>
+              </label>
+
+              <label class="purge-item-box" for="purgeTierManager">
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <input class="form-check-input purge-cb purge-tier-cb" type="checkbox" id="purgeTierManager" data-tier="manager_other" style="cursor:pointer;">
+                  <span style="font-size:0.8rem;font-weight:600;color:#1e293b;">Managers &amp; Operations</span>
+                </div>
+                <span class="purge-badge-cnt" id="cntPurgeManager">0</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Intelligence & Activity Signals -->
+          <div class="purge-section-card">
+            <div class="purge-section-title">
+              <span><i class="bi bi-activity"></i> Intelligence Feeds &amp; Live Activity Signals</span>
+              <button type="button" id="btnToggleAllSignals" class="btn btn-link btn-sm" style="padding:0;font-size:0.72rem;color:#0ea5e9;text-decoration:none;">
+                Select All Signals
+              </button>
+            </div>
+            <div class="purge-grid">
+              <label class="purge-item-box" for="purgeSigNews">
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <input class="form-check-input purge-cb purge-sig-cb" type="checkbox" id="purgeSigNews" data-sig="posts_news" style="cursor:pointer;">
+                  <span style="font-size:0.8rem;font-weight:600;color:#1e293b;">News Articles &amp; Posts</span>
+                </div>
+                <span class="purge-badge-cnt" id="cntPurgeNews">0</span>
+              </label>
+
+              <label class="purge-item-box" for="purgeSigJobs">
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <input class="form-check-input purge-cb purge-sig-cb" type="checkbox" id="purgeSigJobs" data-sig="jobs" style="cursor:pointer;">
+                  <span style="font-size:0.8rem;font-weight:600;color:#1e293b;">Hiring &amp; Job Postings</span>
+                </div>
+                <span class="purge-badge-cnt" id="cntPurgeJobs">0</span>
+              </label>
+
+              <label class="purge-item-box" for="purgeSigOpp">
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <input class="form-check-input purge-cb purge-sig-cb" type="checkbox" id="purgeSigOpp" data-sig="opportunity_signals" style="cursor:pointer;">
+                  <span style="font-size:0.8rem;font-weight:600;color:#1e293b;">Opportunity Signals</span>
+                </div>
+                <span class="purge-badge-cnt" id="cntPurgeOpp">0</span>
+              </label>
+
+              <label class="purge-item-box" for="purgeSigDigests">
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <input class="form-check-input purge-cb purge-sig-cb" type="checkbox" id="purgeSigDigests" data-sig="weekly_digests" style="cursor:pointer;">
+                  <span style="font-size:0.8rem;font-weight:600;color:#1e293b;">Weekly Digests</span>
+                </div>
+                <span class="purge-badge-cnt" id="cntPurgeDigests">0</span>
+              </label>
+
+              <label class="purge-item-box" for="purgeSigCxo">
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <input class="form-check-input purge-cb purge-sig-cb" type="checkbox" id="purgeSigCxo" data-sig="cxo_movements" style="cursor:pointer;">
+                  <span style="font-size:0.8rem;font-weight:600;color:#1e293b;">CXO Movements</span>
+                </div>
+                <span class="purge-badge-cnt" id="cntPurgeCxo">0</span>
+              </label>
+
+              <label class="purge-item-box" for="purgeSigActions">
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <input class="form-check-input purge-cb purge-sig-cb" type="checkbox" id="purgeSigActions" data-sig="action_items" style="cursor:pointer;">
+                  <span style="font-size:0.8rem;font-weight:600;color:#1e293b;">Action Items</span>
+                </div>
+                <span class="purge-badge-cnt" id="cntPurgeActions">0</span>
+              </label>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="modal-footer purge-console-footer">
+        <div>
+          <span id="purgeSelectedSummaryText" style="font-size:0.82rem;font-weight:600;color:#64748b;">
+            No items selected for removal
+          </span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal"
+                  style="border-radius:8px;padding:7px 16px;">Cancel</button>
+          <button type="button" id="btnExecutePurge" class="btn btn-sm btn-danger" disabled
+                  style="border-radius:8px;padding:7px 20px;font-weight:600;display:inline-flex;align-items:center;gap:6px;">
+            <i class="bi bi-trash3"></i> <span id="btnPurgeText">Purge Selected Data</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     RUN CREDITS USAGE BREAKDOWN MODAL (EXACT SPECIFICATION)
+     ══════════════════════════════════════════════════════════════════ -->
+<div class="modal fade" id="creditUsageModal" tabindex="-1" aria-labelledby="creditUsageModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered credit-usage-dialog">
+    <div class="modal-content" style="border-radius:16px;overflow:hidden;border:none;">
+      
+      <!-- Top Header -->
+      <div class="credit-usage-header">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div class="credit-header-badge-icon">
+            <i class="bi bi-gem"></i>
+          </div>
+          <div>
+            <h5 class="modal-title" id="creditUsageModalTitle" style="margin:0;font-size:1.05rem;font-weight:800;color:#0f172a;">
+              Run #10 — Credits Usage Breakdown
+            </h5>
+            <p id="creditUsageModalSubtitle" style="margin:2px 0 0;font-size:0.75rem;color:#64748b;">
+              Pipeline Activity • Started Sep 18, 2026 - 18:04 IST • Status: Completed
+            </p>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span class="badge-completed-green" id="creditUsageStatusBadge">
+            <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#059669;"></span>
+            Completed
+          </span>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" style="font-size:0.75rem;"></button>
+        </div>
+      </div>
+
+      <!-- Modal Body -->
+      <div class="modal-body" style="padding:20px 24px;background:#f8fafc;max-height:calc(85vh - 130px);overflow-y:auto;">
+        
+        <!-- 3 Top Metric Cards -->
+        <div class="credit-kpis-grid">
+          <div class="credit-kpi-card kpi-purple">
+            <div class="credit-kpi-label">TOTAL CREDITS USED</div>
+            <div class="credit-kpi-value" id="kpiTotalCredits">3,047</div>
+            <div class="credit-kpi-sub" id="kpiTotalCreditsSub">+312 vs avg run</div>
+          </div>
+          <div class="credit-kpi-card kpi-green">
+            <div class="credit-kpi-label">RUN DURATION</div>
+            <div class="credit-kpi-value" id="kpiRunDuration">4m 32s</div>
+            <div class="credit-kpi-sub" id="kpiRunStages">12 stages • 9 sources</div>
+          </div>
+          <div class="credit-kpi-card kpi-amber">
+            <div class="credit-kpi-label">EST. COST / CREDIT</div>
+            <div class="credit-kpi-value" id="kpiCostPerCredit">$0.0021</div>
+            <div class="credit-kpi-sub" id="kpiCostTotal">$6.40 this run</div>
+          </div>
+        </div>
+
+        <!-- Tier 1: ACCOUNT (Deep Indigo) -->
+        <div class="credit-section-card section-account">
+          <div class="credit-section-header">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span class="credit-letter-badge badge-a">A</span>
+              <div>
+                <span style="font-size:0.84rem;font-weight:800;color:#1e293b;letter-spacing:0.3px;">ACCOUNT</span>
+                <span style="font-size:0.72rem;color:#64748b;margin-left:6px;" id="accountSectionSubtitle">Source 1 • 4 resources • masked API keys</span>
+              </div>
+            </div>
+            <span style="font-size:0.8rem;font-weight:800;color:#4f46e5;" id="accountSubtotalHeader">Subtotal: 2,250 cr</span>
+          </div>
+          
+          <div id="accountResourcesList">
+            <!-- Populated dynamically by JS -->
+          </div>
+
+          <div class="credit-section-footer">
+            <span style="font-size:0.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.4px;">COMBINED SECTION USAGE</span>
+            <div style="text-align:right;">
+              <span style="font-size:1.05rem;font-weight:800;color:#4f46e5;" id="accountCombinedCredits">2,250 credits</span>
+              <div style="font-size:0.68rem;color:#64748b;" id="accountCombinedPct">73.8% of total run</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tier 2: LOB (Emerald Green) -->
+        <div class="credit-section-card section-lob">
+          <div class="credit-section-header">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span class="credit-letter-badge badge-l">L</span>
+              <div>
+                <span style="font-size:0.84rem;font-weight:800;color:#1e293b;letter-spacing:0.3px;">LOB (LINE OF BUSINESS)</span>
+                <span style="font-size:0.72rem;color:#64748b;margin-left:6px;" id="lobSectionSubtitle">Source 2 • 3 resources • masked API keys</span>
+              </div>
+            </div>
+            <span style="font-size:0.8rem;font-weight:800;color:#059669;" id="lobSubtotalHeader">Subtotal: 572 cr</span>
+          </div>
+          
+          <div id="lobResourcesList">
+            <!-- Populated dynamically by JS -->
+          </div>
+
+          <div class="credit-section-footer">
+            <span style="font-size:0.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.4px;">COMBINED SECTION USAGE</span>
+            <div style="text-align:right;">
+              <span style="font-size:1.05rem;font-weight:800;color:#059669;" id="lobCombinedCredits">572 credits</span>
+              <div style="font-size:0.68rem;color:#64748b;" id="lobCombinedPct">18.8% of total run</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tier 3: PERSONA (Violet Purple) -->
+        <div class="credit-section-card section-persona">
+          <div class="credit-section-header">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span class="credit-letter-badge badge-p">P</span>
+              <div>
+                <span style="font-size:0.84rem;font-weight:800;color:#1e293b;letter-spacing:0.3px;">PERSONA</span>
+                <span style="font-size:0.72rem;color:#64748b;margin-left:6px;" id="personaSectionSubtitle">Source 3 • 2 resources • masked API keys</span>
+              </div>
+            </div>
+            <span style="font-size:0.8rem;font-weight:800;color:#9333ea;" id="personaSubtotalHeader">Subtotal: 225 cr</span>
+          </div>
+          
+          <div id="personaResourcesList">
+            <!-- Populated dynamically by JS -->
+          </div>
+
+          <div class="credit-section-footer">
+            <span style="font-size:0.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.4px;">COMBINED SECTION USAGE</span>
+            <div style="text-align:right;">
+              <span style="font-size:1.05rem;font-weight:800;color:#9333ea;" id="personaCombinedCredits">225 credits</span>
+              <div style="font-size:0.68rem;color:#64748b;" id="personaCombinedPct">7.4% of total run</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Grand Total Navy Dark Card -->
+        <div class="credit-grand-total-card">
+          <div style="min-width:180px;">
+            <div style="font-size:0.68rem;font-weight:700;letter-spacing:0.6px;color:#94a3b8;text-transform:uppercase;">GRAND TOTAL &mdash; THIS RUN</div>
+            <div style="font-size:1.5rem;font-weight:800;color:#ffffff;line-height:1.2;margin:2px 0;" id="grandTotalCredits">3,047 credits</div>
+            <div style="font-size:0.7rem;color:#94a3b8;" id="grandTotalCostNote">~$6.40 at $0.0021/cr &bull; billed to workspace</div>
+          </div>
+          <div style="flex:1;">
+            <div class="credit-segmented-bar" id="creditSegmentedBar">
+              <div style="width:74%;background:#4f46e5;" title="Account (74%)"></div>
+              <div style="width:19%;background:#10b981;" title="LOB (19%)"></div>
+              <div style="width:7%;background:#a855f7;" title="Persona (7%)"></div>
+            </div>
+            <div class="credit-legend-row" id="creditLegendRow">
+              <span style="display:inline-flex;align-items:center;gap:5px;">
+                <span style="width:8px;height:8px;border-radius:2px;background:#4f46e5;"></span> Account &bull; 2,250 cr (74%)
+              </span>
+              <span style="display:inline-flex;align-items:center;gap:5px;">
+                <span style="width:8px;height:8px;border-radius:2px;background:#10b981;"></span> Lob &bull; 572 cr (19%)
+              </span>
+              <span style="display:inline-flex;align-items:center;gap:5px;">
+                <span style="width:8px;height:8px;border-radius:2px;background:#a855f7;"></span> Persona &bull; 225 cr (7%)
+              </span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Footer Buttons -->
+      <div class="modal-footer" style="background:#ffffff;border-top:1px solid #f1f5f9;padding:12px 24px;display:flex;align-items:center;justify-content:flex-end;gap:10px;">
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="btnExportCreditUsageCsv" style="border-radius:8px;padding:6px 16px;font-size:0.8rem;font-weight:600;">
+          <i class="bi bi-file-earmark-spreadsheet"></i> Export CSV
+        </button>
+        <button type="button" class="btn btn-sm btn-primary" data-bs-dismiss="modal" style="background:#4f46e5;border-color:#4f46e5;border-radius:8px;padding:6px 20px;font-size:0.8rem;font-weight:600;">
+          Close
+        </button>
+      </div>
+
     </div>
   </div>
 </div>

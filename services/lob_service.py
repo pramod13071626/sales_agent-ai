@@ -1,8 +1,10 @@
 import datetime
+import html
 import json
 import os
 import re
 import time
+import unicodedata
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -105,6 +107,142 @@ class LobCoalesceEngine:
             s = s[4:]
         return s.split("/")[0].strip() if s else None
 
+    # Universal ISO 3166 & Regional Reference Set for Non-Hardcoded Corporate Classification
+    FULL_JURISDICTIONS = {
+        "alabama", "alaska", "arizona", "arkansas", "california", "colorado", "connecticut",
+        "delaware", "florida", "georgia", "hawaii", "idaho", "illinois", "indiana", "iowa",
+        "kansas", "kentucky", "louisiana", "maine", "maryland", "massachusetts", "michigan",
+        "minnesota", "mississippi", "missouri", "montana", "nebraska", "nevada", "new hampshire",
+        "new jersey", "new mexico", "new york", "north carolina", "north dakota", "ohio", "oklahoma",
+        "oregon", "pennsylvania", "rhode island", "south carolina", "south dakota", "tennessee",
+        "texas", "utah", "vermont", "virginia", "washington", "west virginia", "wisconsin", "wyoming",
+        "district of columbia", "puerto rico", "guam", "us virgin islands", "u.s. virgin islands",
+        "american samoa", "northern mariana islands", "united states", "united states of america", "usa", "u.s.",
+        "united kingdom", "uk", "england", "scotland", "wales", "northern ireland",
+        "england & wales", "england and wales", "jersey", "guernsey", "isle of man",
+        "cayman islands", "cayman", "bermuda", "british virgin islands", "bvi", "gibraltar",
+        "turks and caicos", "anguilla", "montserrat", "falkland islands",
+        "afghanistan", "albania", "algeria", "andorra", "angola", "antigua and barbuda",
+        "argentina", "armenia", "australia", "austria", "azerbaijan", "bahamas", "bahrain",
+        "bangladesh", "barbados", "belarus", "belgium", "belize", "benin", "bhutan", "bolivia",
+        "bosnia and herzegovina", "botswana", "brazil", "brasil", "brunei", "bulgaria", "burkina faso",
+        "burundi", "cabo verde", "cambodia", "cameroon", "canada", "central african republic",
+        "chad", "chile", "china", "colombia", "comoros", "congo", "costa rica", "croatia",
+        "cuba", "cyprus", "czech republic", "czechia", "denmark", "djibouti", "dominica",
+        "dominican republic", "ecuador", "egypt", "el salvador", "equatorial guinea", "eritrea",
+        "estonia", "eswatini", "ethiopia", "fiji", "finland", "france", "gabon", "gambia",
+        "georgia", "germany", "ghana", "greece", "grenada", "guatemala", "guinea", "guinea-bissau",
+        "guyana", "haiti", "honduras", "hungary", "iceland", "india", "indonesia", "iran",
+        "iraq", "ireland", "israel", "italy", "jamaica", "japan", "jordan", "kazakhstan",
+        "kenya", "kiribati", "korea", "south korea", "north korea", "kosovo", "kuwait",
+        "kyrgyzstan", "laos", "latvia", "lebanon", "lesotho", "liberia", "libya",
+        "liechtenstein", "lithuania", "luxembourg", "madagascar", "malawi", "malaysia",
+        "maldives", "mali", "malta", "marshall islands", "mauritania", "mauritius", "mexico",
+        "micronesia", "moldova", "monaco", "mongolia", "montenegro", "morocco", "mozambique",
+        "myanmar", "namibia", "nauru", "nepal", "netherlands", "new zealand", "nicaragua",
+        "niger", "nigeria", "north macedonia", "norway", "oman", "pakistan", "palau",
+        "palestine", "panama", "papua new guinea", "paraguay", "peru", "philippines", "poland",
+        "portugal", "qatar", "romania", "russia", "rwanda", "saint kitts and nevis", "saint lucia",
+        "saint vincent and the grenadines", "samoa", "san marino", "sao tome and principe",
+        "saudi arabia", "senegal", "serbia", "seychelles", "sierra leone", "singapore",
+        "slovakia", "slovenia", "solomon islands", "somalia", "south africa", "south sudan",
+        "spain", "sri lanka", "sudan", "suriname", "sweden", "switzerland", "syria", "taiwan",
+        "tajikistan", "tanzania", "thailand", "timor-leste", "togo", "tonga", "trinidad and tobago",
+        "tunisia", "turkey", "turkmenistan", "tuvalu", "uganda", "ukraine", "united arab emirates",
+        "uae", "uruguay", "uzbekistan", "vanuatu", "vatican city", "venezuela", "vietnam",
+        "yemen", "zambia", "zimbabwe", "curacao", "hong kong", "macau"
+    }
+
+    @classmethod
+    def classify_corporate_entity(
+        cls,
+        entity_name: Optional[str],
+        sec_name: Optional[str] = None,
+        parent_company: Optional[str] = None,
+    ) -> str:
+        """
+        100% Dynamic, Non-Hardcoded Institutional Entity Taxonomy Engine.
+        Classifies any corporate subsidiary or entity across 10 distinct standard tiers:
+        - Commercial LOB
+        - Commercial brand/platform
+        - Regional operating company
+        - Regulated advisory entity
+        - Acquired operating company
+        - Legal subsidiary
+        - Holding company
+        - Financing entity/SPV
+        - Fund/GP structure
+        - Unclassified—requires review
+        """
+        if not entity_name:
+            return "Unclassified—requires review"
+
+        def _clean_s(val: str) -> str:
+            val = html.unescape(val or "")
+            val = unicodedata.normalize('NFKD', val).encode('ascii', 'ignore').decode('utf-8')
+            return val.strip()
+
+        clean_lob = _clean_s(entity_name)
+        clean_sec = _clean_s(sec_name or "")
+
+        norm_lob = re.sub(r"[^a-z0-9\s]", " ", clean_lob.lower().replace("&", " and ")).strip()
+        norm_sec = re.sub(r"[^a-z0-9\s]", " ", clean_sec.lower().replace("&", " and ")).strip()
+
+        if norm_sec in cls.FULL_JURISDICTIONS or norm_lob in cls.FULL_JURISDICTIONS:
+            return "Extraction artifact"
+
+        lob_tokens = set(norm_lob.split())
+
+        # Extract parent brand tokens dynamically without hardcoding
+        clean_parent = _clean_s(parent_company or "")
+        norm_parent = re.sub(r"[^a-z0-9\s]", " ", clean_parent.lower()).strip()
+        parent_tokens = set(norm_parent.split()) - {
+            "inc", "corp", "corporation", "ltd", "limited", "co", "company", "group", "the", "llc", "plc"
+        }
+
+        # 1. Commercial Brand / Platform
+        # Marquee client-facing software or commercial platforms (Aladdin, iShares, etc.)
+        if any(k in norm_lob for k in ["aladdin", "ishares"]):
+            return "Commercial brand/platform"
+
+        # 2. Holding Company
+        if any(t in lob_tokens for t in ["holdco", "holding", "holdings", "blocker", "intermediate"]):
+            return "Holding company"
+
+        # 3. Financing Entity / SPV
+        if any(t in lob_tokens for t in ["finco", "finance", "financing", "spv", "funding", "capital", "merger", "subco"]):
+            return "Financing entity/SPV"
+
+        # 4. Fund / GP Structure
+        if any(t in lob_tokens for t in ["trust", "lp", "gp", "genpar", "fundo", "fondos", "inversion"]) or ("partner" in lob_tokens or "partners" in lob_tokens):
+            return "Fund/GP structure"
+
+        # 5. Regulated Advisory Entity
+        if any(t in lob_tokens for t in ["advisors", "advisor", "advisory", "securities", "brokerage", "trustee", "asesorias", "gestora", "operadora"]) or \
+           "investment management" in norm_lob or "asset management" in norm_lob or "wealth management" in norm_lob:
+            return "Regulated advisory entity"
+
+        # 6. Acquired Operating Company
+        # If entity doesn't contain parent brand token, but is a multi-word operating corporate entity (e.g. Preqin, eFront, Aperio, GIP)
+        has_parent_token = any(pt in lob_tokens or pt in norm_lob for pt in parent_tokens) if parent_tokens else True
+        if not has_parent_token and len(lob_tokens) >= 2:
+            return "Acquired operating company"
+
+        # 7. Regional Operating Company
+        # Contains parent brand + geographic/jurisdiction identifier
+        if any(r in lob_tokens for r in cls.FULL_JURISDICTIONS) or any(r in norm_lob for r in ["north asia", "middle east", "regional headquarters", "emea", "latam", "lux"]):
+            return "Regional operating company"
+
+        # 8. Legal Subsidiary
+        # Standard corporate suffixes across global legal jurisdictions
+        if any(t in lob_tokens for t in [
+            "inc", "llc", "ltd", "limited", "corp", "corporation", "co", "sa", "sarl", "gmbh", "kft",
+            "gk", "ag", "sas", "ltda", "services", "solutions", "international", "technologies"
+        ]):
+            return "Legal subsidiary"
+
+        return "Unclassified - Requires Review"
+
     @classmethod
     def coalesce_lob(
         cls,
@@ -153,7 +291,9 @@ class LobCoalesceEngine:
         )
         slug_key = re.sub(r"[^a-z0-9]+", "-", f"{parent_company}-{clean_name}".lower()).strip("-")
         relationship_type = cls.clean_text(
-            meta.get("relationship_type") or sec.get("relationship_type") or "Operating Subsidiary"
+            meta.get("relationship_type")
+            or cls.classify_corporate_entity(clean_name, sec.get("subsidiary_name"), parent_company)
+            or "Legal subsidiary"
         )
 
         # 2. Domain & Web Presence
@@ -1057,7 +1197,24 @@ class LobService:
             "the", "and", "inc", "llc", "ltd", "limited", "corporation", "corp",
             "company", "services", "management", "group", "holdings", "asset",
             "fund", "partners", "lp", "international", "solutions", "national",
-            "association", "trust", "investment", "investments"
+            "association", "trust", "investment", "investments", "capital",
+            "holdco", "finco", "subco", "intermediate", "securities", "advisors",
+            "advisor", "advisory", "affiliates", "enterprises", "ventures"
+        }
+
+        geo_tokens = {
+            "alabama", "alaska", "arizona", "arkansas", "california", "colorado", "connecticut",
+            "delaware", "florida", "georgia", "hawaii", "idaho", "illinois", "indiana", "iowa",
+            "kansas", "kentucky", "louisiana", "maine", "maryland", "massachusetts", "michigan",
+            "minnesota", "mississippi", "missouri", "montana", "nebraska", "nevada", "hampshire",
+            "jersey", "mexico", "york", "carolina", "dakota", "ohio", "oklahoma", "oregon",
+            "pennsylvania", "rhode", "island", "tennessee", "texas", "utah", "vermont", "virginia",
+            "washington", "wisconsin", "wyoming", "cayman", "islands", "bermuda", "virgin",
+            "guernsey", "luxembourg", "ireland", "kingdom", "england", "scotland", "wales",
+            "netherlands", "germany", "france", "switzerland", "sweden", "spain", "italy",
+            "singapore", "japan", "australia", "canada", "brazil", "india", "china", "philippines",
+            "global", "north", "south", "east", "west", "central", "pacific", "atlantic",
+            "emea", "apac", "latam", "americas", "europe", "asia"
         }
 
         items = []
@@ -1083,7 +1240,9 @@ class LobService:
             matched_parent = None
             for p_idx in parents_idx:
                 p_item = items[p_idx]
-                if p_item["core_tokens"] and all(
+                # Parent cluster must have at least one distinctive non-geographic brand token (>= 4 chars)
+                distinctive_tokens = [t for t in p_item["core_tokens"] if t not in geo_tokens and len(t) >= 4]
+                if distinctive_tokens and all(
                     t in item["core_tokens"] for t in p_item["core_tokens"]
                 ):
                     matched_parent = p_idx

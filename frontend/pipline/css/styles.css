@@ -2114,6 +2114,25 @@ body {
 .btn-pill-purple:hover {
   background: #6d28d9;
 }
+.btn-pill-red {
+  background: #ffffff;
+  color: #dc2626;
+  border-color: #fca5a5;
+}
+.btn-pill-red:hover {
+  background: #fef2f2;
+  border-color: #ef4444;
+  color: #b91c1c;
+}
+.btn-pill-solid-red {
+  background: #dc2626;
+  color: #ffffff;
+  border-color: #dc2626;
+}
+.btn-pill-solid-red:hover {
+  background: #b91c1c;
+  color: #ffffff;
+}
 .header-meta-timestamp {
   font-size: 0.72rem;
   color: var(--text-muted, #94a3b8);
@@ -4523,4 +4542,507 @@ body {
 .osint-stream-chip:hover .stream-ext-icon {
   opacity: 1;
 }
+
+/* ─── Enterprise Data Management & Granular Purge Console ──────────────── */
+.purge-console-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(8px);
+  z-index: 1050;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.purge-console-card {
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--card-border, #e2e8f0);
+  border-radius: 16px;
+  width: 100%;
+  max-width: 780px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+  animation: modalPop 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.purge-console-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
+  background: linear-gradient(to right, #fff1f2, #ffffff);
+}
+
+.purge-console-title-area {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.purge-header-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: #fee2e2;
+  color: #dc2626;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+}
+
+.purge-console-body {
+  padding: 20px 24px;
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.purge-nuke-card {
+  border: 1.5px solid #fca5a5;
+  background: #fef2f2;
+  border-radius: 12px;
+  padding: 14px 16px;
+  transition: all 0.2s ease;
+}
+
+.purge-nuke-card:hover {
+  background: #fee2e2;
+}
+
+.purge-section-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 14px 16px;
+}
+
+.purge-section-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.purge-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.purge-item-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s ease;
+}
+
+.purge-item-box:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.purge-item-box.selected {
+  background: #fef2f2;
+  border-color: #fca5a5;
+}
+
+.purge-badge-cnt {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 12px;
+  background: #e2e8f0;
+  color: #475569;
+}
+
+.purge-item-box.selected .purge-badge-cnt {
+  background: #dc2626;
+  color: #ffffff;
+}
+
+.purge-console-footer {
+  padding: 16px 24px;
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+/* ─── Enhanced Add Account Modal ────────────────────────────────────────── */
+.add-account-dialog {
+  max-width: 580px !important;
+}
+
+.add-account-card {
+  border-radius: 18px !important;
+  border: none !important;
+  box-shadow: 0 25px 65px rgba(0, 0, 0, 0.2) !important;
+  overflow: hidden;
+}
+
+.add-account-header {
+  background: linear-gradient(135deg, #0ea5e9, #4f46e5);
+  color: #ffffff;
+  padding: 20px 24px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.add-account-header .btn-close {
+  filter: brightness(0) invert(1);
+  opacity: 0.85;
+}
+
+.add-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.add-field-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #334155;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.add-field-label i {
+  color: #0ea5e9;
+}
+
+.add-field-input {
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  padding: 10px 14px;
+  font-size: 0.86rem;
+  transition: all 0.15s ease;
+}
+
+.add-field-input:focus {
+  border-color: #0ea5e9;
+  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.15);
+  outline: none;
+}
+
+.pipeline-step-preview {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-top: 18px;
+}
+
+.pipeline-step-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.75rem;
+  color: #334155;
+  margin-bottom: 8px;
+}
+
+.pipeline-step-item:last-child {
+  margin-bottom: 0;
+}
+
+.pipeline-step-num {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #ffffff;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   ENTERPRISE CREDITS USAGE BREAKDOWN DIALOG STYLING
+   ══════════════════════════════════════════════════════════════════════ */
+.credit-usage-dialog {
+  max-width: 760px;
+  border-radius: 16px;
+  border: none;
+  box-shadow: 0 25px 60px -15px rgba(15, 23, 42, 0.35);
+  overflow: hidden;
+}
+
+.credit-usage-header {
+  padding: 18px 24px;
+  background: #ffffff;
+  border-bottom: 1px solid #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.credit-header-badge-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-size: 1.1rem;
+  box-shadow: 0 4px 10px rgba(99, 102, 241, 0.25);
+  flex-shrink: 0;
+}
+
+.badge-completed-green {
+  background: #ecfdf5;
+  color: #059669;
+  border: 1px solid #a7f3d0;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.credit-kpis-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.credit-kpi-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px 16px;
+  position: relative;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.credit-kpi-card.kpi-purple { border-left: 4px solid #6366f1; }
+.credit-kpi-card.kpi-green { border-left: 4px solid #10b981; }
+.credit-kpi-card.kpi-amber { border-left: 4px solid #f59e0b; }
+
+.credit-kpi-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.credit-kpi-value {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: #0f172a;
+  line-height: 1.2;
+  margin: 4px 0 2px;
+}
+
+.credit-kpi-sub {
+  font-size: 0.72rem;
+  color: #94a3b8;
+}
+
+.credit-section-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 14px 18px;
+  margin-bottom: 14px;
+}
+
+.credit-section-card.section-account {
+  border-color: #e0e7ff;
+  background: #fafbff;
+}
+
+.credit-section-card.section-lob {
+  border-color: #d1fae5;
+  background: #fafffc;
+}
+
+.credit-section-card.section-persona {
+  border-color: #f3e8ff;
+  background: #fdfaff;
+}
+
+.credit-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.credit-letter-badge {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-weight: 800;
+  font-size: 0.72rem;
+  flex-shrink: 0;
+}
+
+.credit-letter-badge.badge-a { background: #6366f1; }
+.credit-letter-badge.badge-l { background: #10b981; }
+.credit-letter-badge.badge-p { background: #a855f7; }
+
+.credit-resource-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.credit-resource-row:last-child {
+  border-bottom: none;
+}
+
+.credit-icon-box {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+
+.credit-icon-box.icon-purple { background: #eef2ff; color: #4f46e5; border: 1px solid #c7d2fe; }
+.credit-icon-box.icon-green { background: #ecfdf5; color: #059669; border: 1px solid #a7f3d0; }
+.credit-icon-box.icon-violet { background: #faf5ff; color: #9333ea; border: 1px solid #e9d5ff; }
+
+.credit-resource-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.credit-resource-name {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.credit-resource-meta {
+  font-size: 0.7rem;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 1px;
+}
+
+.credit-resource-progress-col {
+  width: 170px;
+  flex-shrink: 0;
+}
+
+.credit-progress-track {
+  height: 6px;
+  background: #e2e8f0;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.credit-progress-fill-purple { height: 100%; background: #6366f1; border-radius: 4px; }
+.credit-progress-fill-green { height: 100%; background: #10b981; border-radius: 4px; }
+.credit-progress-fill-violet { height: 100%; background: #a855f7; border-radius: 4px; }
+
+.credit-resource-num {
+  width: 80px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.credit-val-big {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.credit-val-unit {
+  font-size: 0.66rem;
+  color: #64748b;
+  display: block;
+  line-height: 1;
+}
+
+.credit-section-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 10px;
+  border-top: 1px solid #f1f5f9;
+  margin-top: 4px;
+}
+
+.credit-grand-total-card {
+  background: #0f172a;
+  border-radius: 12px;
+  padding: 16px 20px;
+  color: #ffffff;
+  margin-bottom: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.credit-segmented-bar {
+  height: 10px;
+  border-radius: 5px;
+  display: flex;
+  overflow: hidden;
+  background: #1e293b;
+  width: 100%;
+}
+
+.credit-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 8px;
+  font-size: 0.72rem;
+  color: #94a3b8;
+}
+
+
 

@@ -230,7 +230,7 @@ def build_required_person_data(
         else verified_urls.get("sec_insider_trades_url")
     )
 
-    return {
+    ret = {
         "key": slug_key,
         "display_name": display_name,
         "linkedin_url": resolved_li,
@@ -253,6 +253,24 @@ def build_required_person_data(
         "google_trends_url": verified_urls.get("google_trends_url"),
         "youtube_channel_id": verified_urls.get("youtube_channel_id"),
     }
+
+    try:
+        from services.persona_service import ExecutiveOsintUrlEngine
+        osint_res = ExecutiveOsintUrlEngine.generate_manifest_and_urls(
+            full_name=clean_name,
+            company_name=company_name,
+            title=title,
+            sec_cik=sec_cik,
+            linkedin_url=resolved_li,
+            twitter_handle=resolved_tw,
+            tier=tier,
+            raw_intel=verified_urls,
+        )
+        ret.update(osint_res)
+    except Exception as e:
+        print(f"[!] [build_required_person_data] Osint engine notice: {e}")
+
+    return ret
 
 
 def save_raw_apollo_response(

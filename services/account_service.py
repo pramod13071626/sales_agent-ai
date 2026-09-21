@@ -1068,6 +1068,15 @@ class AccountService:
         telemetry["total_latency_ms"] = round((time.time() - start_ts) * 1000, 2)
         telemetry["validation_score"] = audit.get("score")
         telemetry["validation_grade"] = audit.get("grade")
+
+        try:
+            from services.credit_accounting_engine import CreditAccountingEngine
+            account_credit_tally = CreditAccountingEngine.tally_account_telemetry(telemetry.get("sources", {}))
+            telemetry["credit_accounting"] = account_credit_tally
+            account_dossier["_credit_accounting"] = account_credit_tally
+        except Exception as tally_err:
+            print(f"[!] [AccountService] Credit tally notice: {tally_err}")
+
         account_dossier["_telemetry"] = telemetry
 
         RawDataLakeWriter.save_raw(telemetry, "telemetry", effective_name, run_raw_dir)

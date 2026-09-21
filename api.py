@@ -69,6 +69,7 @@ from db.models import (
     AuditLog,
     ActionItem,
     ActionItemReminder,
+    UserAccountAccess,
 )
 
 from db.schemas import AccountSchema, LobSchema, PersonaSchema
@@ -687,6 +688,33 @@ if FASTAPI_AVAILABLE:
     class AccountCreateRequest(BaseModel):
         company_name: str
         domain: Optional[str] = None
+        stock_symbol: Optional[str] = None
+        sec_cik: Optional[str] = None
+        industry: Optional[str] = None
+        headquarters_location: Optional[str] = None
+        company_type: Optional[str] = None
+
+    class PersonaTierPurgeSelection(BaseModel):
+        all: bool = False
+        c_suite: bool = False
+        vp_head: bool = False
+        director: bool = False
+        manager_other: bool = False
+
+    class SignalPurgeSelection(BaseModel):
+        opportunity_signals: bool = False
+        weekly_digests: bool = False
+        posts_news: bool = False
+        cxo_movements: bool = False
+        jobs: bool = False
+        action_items: bool = False
+
+    class AccountPurgeRequest(BaseModel):
+        delete_account_record: bool = False
+        delete_lobs: bool = False
+        personas: Optional[PersonaTierPurgeSelection] = None
+        signals: Optional[SignalPurgeSelection] = None
+        confirmation_text: Optional[str] = None
 
     class AccountFetchRequest(BaseModel):
         company_name: str
@@ -828,10 +856,12 @@ if FASTAPI_AVAILABLE:
             clean_name = req.company_name.strip()
             slug = slugify(clean_name)
             clean_dom = (
-                req.domain.replace("https://", "").replace("http://", "").split("/")[0].strip().lower()
+                req.domain.replace("https://", "").replace("http://", "").split("/")[0].split("?")[0].strip().lower()
                 if req.domain
                 else None
             )
+            if clean_dom and clean_dom.startswith("www."):
+                clean_dom = clean_dom[4:]
 
             # Check if account already exists by key, name, or domain
             filters = [
@@ -848,19 +878,34 @@ if FASTAPI_AVAILABLE:
 
             existing = session.query(Account).filter(or_(*filters)).first()
             if existing:
+                # Update supplementary fields if provided
+                if req.stock_symbol:
+                    existing.stock_symbol = req.stock_symbol.strip().upper()
+                if req.sec_cik:
+                    existing.sec_cik = req.sec_cik.strip()
+                if req.company_type:
+                    existing.company_type = req.company_type.strip()
+                if req.headquarters_location:
+                    existing.headquarters_location = req.headquarters_location.strip()
+                if req.industry:
+                    existing.industries = [req.industry.strip()]
+                session.commit()
+                session.refresh(existing)
                 return {
                     "status": "exists",
                     "account_id": existing.id,
                     "key": existing.key,
                     "name": existing.display_name,
                     "domain": existing.primary_domain or existing.domain,
+                    "stock_symbol": existing.stock_symbol,
+                    "sec_cik": existing.sec_cik,
                     "message": (
                         f"Account '{existing.display_name}' already registered "
                         f"in database (ID: {existing.id})."
                     ),
                 }
 
-            # Create new minimal account row
+            # Create new account row with rich enterprise attributes
             new_account = Account(
                 key=slug,
                 display_name=clean_name,
@@ -868,6 +913,11 @@ if FASTAPI_AVAILABLE:
                 domain=clean_dom,
                 primary_domain=clean_dom,
                 website_url=f"https://{clean_dom}" if clean_dom else None,
+                stock_symbol=req.stock_symbol.strip().upper() if req.stock_symbol else None,
+                sec_cik=req.sec_cik.strip() if req.sec_cik else None,
+                company_type=req.company_type.strip() if req.company_type else "Public",
+                headquarters_location=req.headquarters_location.strip() if req.headquarters_location else None,
+                industries=[req.industry.strip()] if req.industry else [],
             )
             session.add(new_account)
             session.commit()
@@ -879,6 +929,8 @@ if FASTAPI_AVAILABLE:
                 "key": new_account.key,
                 "name": new_account.display_name,
                 "domain": new_account.primary_domain,
+                "stock_symbol": new_account.stock_symbol,
+                "sec_cik": new_account.sec_cik,
                 "message": (
                     f"Account '{new_account.display_name}' created successfully "
                     f"in database (ID: {new_account.id})."
@@ -977,6 +1029,25 @@ if FASTAPI_AVAILABLE:
             audit = account_data.get("_validation_audit") or {}
             raw_dir_val = account_data.get("raw_dir") or account_data.get("raw_storage_dir")
 
+            # Dynamic Metered Credit Breakdown
+            from services.credit_accounting_engine import CreditAccountingEngine
+            acct_credit_tally = account_data.get("_credit_accounting") or CreditAccountingEngine.tally_account_telemetry(
+                (account_data.get("_telemetry") or {}).get("sources", {})
+            )
+            now_completed = datetime.now(timezone.utc)
+            duration_sec = round((now_completed - t0).total_seconds(), 2)
+            credits_breakdown = CreditAccountingEngine.compile_run_breakdown(
+                company_name=req.company_name,
+                run_id=f"run_{slugify(req.company_name)[:20]}_acct",
+                run_number=1,
+                started_at=t0,
+                duration_seconds=duration_sec,
+                status="staged",
+                account_tally=acct_credit_tally,
+                lob_tally={"credits": 0, "resources": []},
+                persona_tally={"credits": 0, "resources": []},
+            )
+
             PipelineRunLogger.log_event(
                 company_name=req.company_name,
                 target_url=req.target_url,
@@ -986,13 +1057,17 @@ if FASTAPI_AVAILABLE:
                 quality_score=float(audit.get("score", 0.0)),
                 quality_grade=audit.get("grade", "N/A"),
                 started_at=t0,
-                completed_at=datetime.now(timezone.utc),
+                completed_at=now_completed,
+                duration_seconds=duration_sec,
                 raw_storage_dir=str(raw_dir_val) if raw_dir_val else None,
+                total_credits_used=acct_credit_tally.get("credits", 0),
+                credits_breakdown=credits_breakdown,
                 entities_extracted={
                     "known_lobs_count": len(account_data.get("known_lobs", [])),
                     "known_personas_count": len(account_data.get("known_personas", [])),
                     "discovered_lobs_count": len(account_data.get("discovered_lob_names", [])),
                     "display_name": account_data.get("display_name"),
+                    "telemetry_sources": (account_data.get("_telemetry") or {}).get("sources", {}),
                 },
             )
 
@@ -1114,6 +1189,26 @@ if FASTAPI_AVAILABLE:
             raise HTTPException(status_code=500, detail=f"Account DB dump failed: {str(e)}")
         finally:
             session.close()
+
+    def _format_compact_revenue(val: Any) -> str:
+        if not val or val == "Revenue N/A":
+            return "Revenue N/A"
+        s = str(val).strip()
+        if s.startswith("$") or any(s.endswith(suffix) for suffix in ["B", "M", "K", "T"]):
+            return s
+        try:
+            num = float(s.replace(",", ""))
+            if num >= 1e12:
+                return f"${num / 1e12:.2f}B" if num < 1e12 else f"${num / 1e12:.2f}T"
+            if num >= 1e9:
+                return f"${num / 1e9:.2f}B"
+            if num >= 1e6:
+                return f"${num / 1e6:.2f}M"
+            if num >= 1e3:
+                return f"${num / 1e3:.2f}K"
+            return f"${num:,.2f}"
+        except (ValueError, TypeError):
+            return s
 
     def _serialize_persona_full(p: Persona) -> Dict[str, Any]:
         p_raw = p.raw_data if isinstance(p.raw_data, dict) else {}
@@ -1309,6 +1404,7 @@ if FASTAPI_AVAILABLE:
             "id": lob_item.id,
             "name": lob_item.lob_name,
             "lob_name": lob_item.lob_name,
+            "relationship_type": lob_item.relationship_type,
             "technologies": lob_item.technologies or [],
             "competitors": lob_item.competitors or [],
             "subLobs": sub_lobs_formatted,
@@ -1336,7 +1432,8 @@ if FASTAPI_AVAILABLE:
             "legal_name": acct.legal_name or acct_name,
             "ticker": acct.stock_symbol,
             "stock_symbol": acct.stock_symbol,
-            "revenue": acct.estimated_revenue_range or "Revenue N/A",
+            "revenue": _format_compact_revenue(acct.estimated_revenue_range),
+            "estimated_revenue_range": _format_compact_revenue(acct.estimated_revenue_range),
             "location": acct_loc,
             "desc": acct_desc,
             "domain": acct.domain,
@@ -1520,8 +1617,8 @@ if FASTAPI_AVAILABLE:
             "legal_name": acct.legal_name or acct_name,
             "ticker": acct.stock_symbol,
             "stock_symbol": acct.stock_symbol,
-            "revenue": acct.estimated_revenue_range or "Revenue N/A",
-            "estimated_revenue_range": acct.estimated_revenue_range,
+            "revenue": _format_compact_revenue(acct.estimated_revenue_range),
+            "estimated_revenue_range": _format_compact_revenue(acct.estimated_revenue_range),
             "location": acct_loc,
             "headquarters_location": acct_loc,
             "desc": acct_desc,
@@ -1857,6 +1954,21 @@ if FASTAPI_AVAILABLE:
                     account_id=req.account_id,
                     lob_domain=req.lob_domain,
                 )
+                from services.credit_accounting_engine import CreditAccountingEngine
+                lob_credit_tally = CreditAccountingEngine.tally_lob_telemetry(1)
+                now_completed = datetime.now(timezone.utc)
+                duration_sec = round((now_completed - t0).total_seconds(), 2)
+                credits_breakdown = CreditAccountingEngine.compile_run_breakdown(
+                    company_name=req.company_name or "Company",
+                    run_id=f"run_{slugify(req.company_name or 'lob')[:20]}_lob_single",
+                    run_number=1,
+                    started_at=t0,
+                    duration_seconds=duration_sec,
+                    status="staged",
+                    account_tally={"credits": 0, "resources": []},
+                    lob_tally=lob_credit_tally,
+                    persona_tally={"credits": 0, "resources": []},
+                )
                 PipelineRunLogger.log_event(
                     company_name=req.company_name or "Company",
                     target_url=req.lob_domain,
@@ -1864,11 +1976,15 @@ if FASTAPI_AVAILABLE:
                     action="pull",
                     status="staged",
                     started_at=t0,
-                    completed_at=datetime.now(timezone.utc),
+                    completed_at=now_completed,
+                    duration_seconds=duration_sec,
+                    total_credits_used=lob_credit_tally.get("credits", 0),
+                    credits_breakdown=credits_breakdown,
                     entities_extracted={
                         "lob_name": req.lob_name,
                         "account_id": req.account_id,
                         "domain": req.lob_domain,
+                        "total_lobs": 1,
                     },
                 )
                 return {
@@ -1955,7 +2071,31 @@ if FASTAPI_AVAILABLE:
                     )
                 else:
                     raw_sublobs = scrape_sublobs(req.company_name)
-                    enriched_lobs = enrich_lob_segments(req.company_name, raw_sublobs)
+                    if raw_sublobs:
+                        enriched_lobs = LobService.enrich_all_lobs(
+                            lobs_list=raw_sublobs,
+                            parent_company=req.company_name,
+                            account_id=req.account_id,
+                            sec_cik=sec_cik_val,
+                        )
+                    else:
+                        enriched_lobs = []
+                # Dynamic Metered Credit Breakdown for LOBs
+                from services.credit_accounting_engine import CreditAccountingEngine
+                lob_credit_tally = CreditAccountingEngine.tally_lob_telemetry(len(enriched_lobs))
+                now_completed = datetime.now(timezone.utc)
+                duration_sec = round((now_completed - t0).total_seconds(), 2)
+                credits_breakdown = CreditAccountingEngine.compile_run_breakdown(
+                    company_name=req.company_name or "Company",
+                    run_id=f"run_{slugify(req.company_name or 'lob')[:20]}_lob",
+                    run_number=1,
+                    started_at=t0,
+                    duration_seconds=duration_sec,
+                    status="staged",
+                    account_tally={"credits": 0, "resources": []},
+                    lob_tally=lob_credit_tally,
+                    persona_tally={"credits": 0, "resources": []},
+                )
 
                 PipelineRunLogger.log_event(
                     company_name=req.company_name or "Company",
@@ -1963,7 +2103,10 @@ if FASTAPI_AVAILABLE:
                     action="pull",
                     status="staged",
                     started_at=t0,
-                    completed_at=datetime.now(timezone.utc),
+                    completed_at=now_completed,
+                    duration_seconds=duration_sec,
+                    total_credits_used=lob_credit_tally.get("credits", 0),
+                    credits_breakdown=credits_breakdown,
                     entities_extracted={
                         "total_lobs": len(enriched_lobs),
                         "account_id": req.account_id,
@@ -2197,6 +2340,7 @@ if FASTAPI_AVAILABLE:
                     "lob_name": lob_item.lob_name,
                     "domain": lob_item.domain,
                     "website_url": lob_item.website_url,
+                    "relationship_type": lob_item.relationship_type,
                     "audited_segment_revenue": lob_item.audited_segment_revenue,
                     "operating_head": lob_item.operating_head,
                     "segment_headcount": lob_item.segment_headcount,
@@ -2430,22 +2574,32 @@ if FASTAPI_AVAILABLE:
             parsed_title = parsed_title or "Leadership"
             parsed_company = parsed_company or ""
 
-            # If company not in payload but account_id provided, look up company from DB
-            if not parsed_company and card.account_id:
+            # If account_id provided, look up company, domain, ticker, and cik from DB
+            acct_domain = None
+            acct_ticker = None
+            acct_cik = None
+            if card.account_id:
                 session = get_session()
                 try:
                     acct = session.query(Account).filter_by(id=card.account_id).first()
                     if acct:
-                        parsed_company = acct.legal_name or acct.display_name or acct.key
+                        if not parsed_company:
+                            parsed_company = acct.legal_name or acct.display_name or acct.key
+                        acct_domain = acct.domain or acct.primary_domain
+                        acct_ticker = acct.stock_symbol
+                        acct_cik = acct.sec_cik
                 finally:
                     session.close()
 
-            # 2. Enrich via Enterprise PersonaService (FullEnrich + Exa + Apollo + Serper + SEC + ORCID + OpenAlex)
+            # 2. Enrich via Enterprise PersonaService (FullEnrich + Exa + Apollo + Serper + SEC + ORCID + OpenAlex + ExecutiveOsintUrlEngine)
             person_entry = PersonaService.enrich_single_persona(
                 full_name=parsed_name,
                 company_name=parsed_company,
                 title=parsed_title,
                 account_id=card.account_id,
+                domain=acct_domain,
+                ticker=acct_ticker,
+                sec_cik=acct_cik,
                 linkedin_url=card.linkedin_url,
             )
 
@@ -2459,6 +2613,22 @@ if FASTAPI_AVAILABLE:
             )
             MasterSerializer.save_json(person_entry, person_file)
 
+            from services.credit_accounting_engine import CreditAccountingEngine
+            persona_credit_tally = CreditAccountingEngine.tally_persona_telemetry(1)
+            now_completed = datetime.now(timezone.utc)
+            duration_sec = round((now_completed - t0).total_seconds(), 2)
+            credits_breakdown = CreditAccountingEngine.compile_run_breakdown(
+                company_name=parsed_company or "Company",
+                run_id=f"run_{slugify(parsed_company or 'persona')[:20]}_persona_single",
+                run_number=1,
+                started_at=t0,
+                duration_seconds=duration_sec,
+                status="staged",
+                account_tally={"credits": 0, "resources": []},
+                lob_tally={"credits": 0, "resources": []},
+                persona_tally=persona_credit_tally,
+            )
+
             PipelineRunLogger.log_event(
                 company_name=parsed_company or "Company",
                 target_url=card.linkedin_url,
@@ -2468,8 +2638,11 @@ if FASTAPI_AVAILABLE:
                 quality_score=90.0,
                 quality_grade="A",
                 started_at=t0,
-                completed_at=datetime.now(timezone.utc),
+                completed_at=now_completed,
+                duration_seconds=duration_sec,
                 raw_storage_dir=str(person_file),
+                total_credits_used=persona_credit_tally.get("credits", 0),
+                credits_breakdown=credits_breakdown,
                 entities_extracted={
                     "full_name": parsed_name,
                     "title": parsed_title,
@@ -2477,6 +2650,7 @@ if FASTAPI_AVAILABLE:
                     "account_id": card.account_id,
                     "osint_sources_count": len(person_entry.get("osint_feed_manifest") or {}),
                     "saved_file": str(person_file),
+                    "total_contacts": 1,
                 },
             )
 
@@ -2663,6 +2837,23 @@ if FASTAPI_AVAILABLE:
                 for k in ["c_suite", "vp_level", "director_level", "manager_level"]
             }
 
+            # Dynamic Metered Credit Breakdown for Personas
+            from services.credit_accounting_engine import CreditAccountingEngine
+            persona_credit_tally = CreditAccountingEngine.tally_persona_telemetry(total)
+            now_completed = datetime.now(timezone.utc)
+            duration_sec = round((now_completed - t0).total_seconds(), 2)
+            credits_breakdown = CreditAccountingEngine.compile_run_breakdown(
+                company_name=comp_name,
+                run_id=f"run_{slugify(comp_name)[:20]}_persona",
+                run_number=1,
+                started_at=t0,
+                duration_seconds=duration_sec,
+                status="staged",
+                account_tally={"credits": 0, "resources": []},
+                lob_tally={"credits": 0, "resources": []},
+                persona_tally=persona_credit_tally,
+            )
+
             PipelineRunLogger.log_event(
                 company_name=comp_name,
                 target_url=req.company_domain,
@@ -2670,7 +2861,10 @@ if FASTAPI_AVAILABLE:
                 action="pull",
                 status="staged",
                 started_at=t0,
-                completed_at=datetime.now(timezone.utc),
+                completed_at=now_completed,
+                duration_seconds=duration_sec,
+                total_credits_used=persona_credit_tally.get("credits", 0),
+                credits_breakdown=credits_breakdown,
                 entities_extracted={
                     "total_contacts": total,
                     "tier_counts": tier_counts,
@@ -2969,6 +3163,29 @@ if FASTAPI_AVAILABLE:
                 "personas_count": len(res.get("personas") or []),
             }
 
+            # Dynamic Metered Credit Breakdown for Composite Run
+            from services.credit_accounting_engine import CreditAccountingEngine
+            acct_tally = CreditAccountingEngine.tally_account_telemetry(
+                (res.get("account") or {}).get("_telemetry", {}).get("sources", {})
+            )
+            lob_tally = CreditAccountingEngine.tally_lob_telemetry(len(res.get("lobs") or []))
+            persona_tally = CreditAccountingEngine.tally_persona_telemetry(len(res.get("personas") or []))
+            now_completed = datetime.now(timezone.utc)
+            duration_sec = round((now_completed - t0).total_seconds(), 2)
+
+            credits_breakdown = CreditAccountingEngine.compile_run_breakdown(
+                company_name=req.company_name,
+                run_id=f"run_{slugify(req.company_name)[:20]}_composite",
+                run_number=1,
+                started_at=t0,
+                duration_seconds=duration_sec,
+                status="staged",
+                account_tally=acct_tally,
+                lob_tally=lob_tally,
+                persona_tally=persona_tally,
+            )
+            total_composite_credits = acct_tally.get("credits", 0) + lob_tally.get("credits", 0) + persona_tally.get("credits", 0)
+
             PipelineRunLogger.log_event(
                 company_name=req.company_name,
                 target_url=req.target_url,
@@ -2978,9 +3195,12 @@ if FASTAPI_AVAILABLE:
                 quality_score=q_score,
                 quality_grade=q_grade,
                 started_at=t0,
-                completed_at=datetime.now(timezone.utc),
+                completed_at=now_completed,
+                duration_seconds=duration_sec,
                 raw_storage_dir=str(raw_d) if raw_d else None,
                 enriched_storage_dir=str(enr_d) if enr_d else None,
+                total_credits_used=total_composite_credits,
+                credits_breakdown=credits_breakdown,
                 entities_extracted=extracted_summary,
             )
 
@@ -3170,6 +3390,7 @@ if FASTAPI_AVAILABLE:
                         "key": lob_item.key,
                         "domain": lob_item.domain,
                         "website_url": lob_item.website_url,
+                        "relationship_type": lob_item.relationship_type,
                         "desc": lob_item.overview,
                         "overview": lob_item.overview,
                         "revenue": lob_item.audited_segment_revenue,
@@ -3514,6 +3735,328 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
+    # ── Enterprise Data Management & Granular Purge Endpoints ─────────────────
+
+    @app.get("/api/accounts/{account_id}/data-summary", tags=["1. Accounts"])
+    def get_account_data_summary(account_id: int):
+        """Returns live counts of all child entities and persona seniority tiers for granular data management."""
+        session = get_session()
+        try:
+            acct = session.query(Account).filter_by(id=account_id).first()
+            if not acct:
+                raise HTTPException(status_code=404, detail=f"Account {account_id} not found.")
+
+            # LOBs & Sub-LOBs
+            lob_ids = [l.id for l in session.query(Lob.id).filter_by(account_id=account_id).all()]
+            lobs_count = len(lob_ids)
+            sub_lobs_count = (
+                session.query(SubLob).filter(SubLob.lob_id.in_(lob_ids)).count()
+                if lob_ids else 0
+            )
+
+            # Personas by Seniority Tier
+            personas = session.query(Persona).filter_by(account_id=account_id).all()
+            total_personas = len(personas)
+            
+            c_suite_cnt = 0
+            vp_cnt = 0
+            director_cnt = 0
+            manager_cnt = 0
+
+            for p in personas:
+                level = p.hierarchy_level or 99
+                t = (p.tier or "").lower()
+                title = (p.title or "").lower()
+                seniority = (p.seniority_raw or "").lower()
+
+                if (
+                    level in (1, 2)
+                    or any(k in t for k in ["c_suite", "c-suite", "executive", "president", "chief", "board"])
+                    or any(k in title for k in ["chief", "ceo", "cfo", "cio", "cto", "cmo", "coo", "cro", "ciso", "president", "chair", "board", "executive vice president", "evp"])
+                    or any(k in seniority for k in ["c_suite", "c-suite", "executive", "tier1"])
+                ):
+                    c_suite_cnt += 1
+                elif (
+                    level == 3
+                    or any(k in t for k in ["vp", "vice president", "head"])
+                    or any(k in title for k in ["vp", "vice president", "head of", "senior vice president", "svp"])
+                    or any(k in seniority for k in ["vp", "head", "tier2"])
+                ):
+                    vp_cnt += 1
+                elif (
+                    level == 4
+                    or any(k in t for k in ["director", "md"])
+                    or any(k in title for k in ["director", "managing director", "senior director"])
+                    or any(k in seniority for k in ["director", "tier3", "tier4"])
+                ):
+                    director_cnt += 1
+                else:
+                    manager_cnt += 1
+
+            # Activity & Intelligence Signals
+            opp_signals = session.query(OpportunitySignal).filter_by(account_id=account_id).count()
+            weekly_digests = session.query(WeeklyDigestSnapshot).filter_by(account_id=account_id).count()
+            action_items = session.query(ActionItem).filter_by(account_id=account_id).count()
+            posts_news = session.query(Post).filter_by(target_key=acct.key).count() if acct.key else 0
+            cxo_mov = session.query(CxoMovement).filter(or_(CxoMovement.target_key == acct.key, CxoMovement.company_name.ilike(acct.display_name))).count() if acct.key else 0
+            jobs = session.query(LinkedInJob).filter(or_(LinkedInJob.target_key == acct.key, LinkedInJob.company_name.ilike(acct.display_name))).count() if acct.key else 0
+
+            return {
+                "account_id": acct.id,
+                "company_name": acct.display_name or acct.name or "Account",
+                "key": acct.key,
+                "domain": acct.primary_domain or acct.domain,
+                "lobs_count": lobs_count,
+                "sub_lobs_count": sub_lobs_count,
+                "personas": {
+                    "total": total_personas,
+                    "c_suite": c_suite_cnt,
+                    "vp_head": vp_cnt,
+                    "director": director_cnt,
+                    "manager_other": manager_cnt,
+                },
+                "signals": {
+                    "opportunity_signals": opp_signals,
+                    "weekly_digests": weekly_digests,
+                    "posts_news": posts_news,
+                    "cxo_movements": cxo_mov,
+                    "jobs": jobs,
+                    "action_items": action_items,
+                }
+            }
+        finally:
+            session.close()
+
+    @app.post("/api/accounts/{account_id}/purge", tags=["1. Accounts"])
+    def purge_account_data(account_id: int, req: AccountPurgeRequest):
+        """Atomically purges selected or all components of an account with enterprise safeguards."""
+        session = get_session()
+        try:
+            acct = session.query(Account).filter_by(id=account_id).first()
+            if not acct:
+                raise HTTPException(status_code=404, detail=f"Account {account_id} not found.")
+
+            acct_name = acct.display_name or acct.name or "Account"
+            acct_key = acct.key
+
+            deleted_summary = {
+                "account_deleted": False,
+                "lobs_deleted": 0,
+                "sub_lobs_deleted": 0,
+                "personas_deleted": 0,
+                "signals_deleted": 0,
+            }
+
+            # 1. Full Account Purge
+            if req.delete_account_record:
+                # Verify type-to-confirm (tolerant to punctuation, whitespace, suffixes, and common typos)
+                raw_provided = (req.confirmation_text or "").strip().upper()
+                # Normalize spaces and fix common typo 'DELLETE' -> 'DELETE'
+                cleaned_provided = re.sub(r'\s+', ' ', raw_provided)
+                cleaned_provided = re.sub(r'^DEL+E+T+E*', 'DELETE', cleaned_provided)
+                # Strip punctuation for flexible matching
+                norm_provided = re.sub(r'[^A-Z0-9\s]', '', cleaned_provided).strip()
+
+                norm_name = re.sub(r'[^A-Z0-9\s]', '', acct_name.upper()).strip()
+                norm_name_clean = re.sub(r'\s+', ' ', norm_name)
+                norm_key = re.sub(r'[^A-Z0-9\s]', '', (acct_key or "").upper()).strip()
+
+                # Base brand name stripped of corporate suffixes (e.g., "BLACKROCK INC" -> "BLACKROCK")
+                core_brand = re.sub(r'\b(INC|CORP|CORPORATION|LLC|LTD|PLC|CO|COMPANY)\b', '', norm_name_clean).strip()
+
+                valid_options = {
+                    f"DELETE {norm_name_clean}".strip(),
+                    f"DELETE {norm_key}".strip(),
+                    f"DELETE {core_brand}".strip(),
+                    "DELETE",
+                }
+
+                is_valid = (
+                    norm_provided in valid_options
+                    or (norm_provided.startswith("DELETE") and core_brand and core_brand in norm_provided)
+                    or (norm_provided.startswith("DELETE") and norm_key and norm_key in norm_provided)
+                )
+
+                if not is_valid:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Confirmation mismatch. Expected 'DELETE {core_brand or acct_name}', received '{req.confirmation_text}'."
+                    )
+
+                # Cascade delete sub_lobs
+                lob_ids = [l.id for l in session.query(Lob.id).filter_by(account_id=account_id).all()]
+                if lob_ids:
+                    sub_cnt = session.query(SubLob).filter(SubLob.lob_id.in_(lob_ids)).delete(synchronize_session=False)
+                    deleted_summary["sub_lobs_deleted"] = sub_cnt
+
+                # Delete personas
+                per_cnt = session.query(Persona).filter_by(account_id=account_id).delete(synchronize_session=False)
+                deleted_summary["personas_deleted"] = per_cnt
+
+                # Delete signals
+                sig_cnt = 0
+                sig_cnt += session.query(OpportunitySignal).filter_by(account_id=account_id).delete(synchronize_session=False)
+                sig_cnt += session.query(WeeklyDigestSnapshot).filter_by(account_id=account_id).delete(synchronize_session=False)
+                sig_cnt += session.query(ActionItem).filter_by(account_id=account_id).delete(synchronize_session=False)
+                sig_cnt += session.query(UserAccountAccess).filter_by(account_id=account_id).delete(synchronize_session=False)
+                # Note: External scraped news (Post), job listings (LinkedInJob), and CXO movements
+                # are preserved so they instantly reconnect when the account is re-ingested.
+                deleted_summary["signals_deleted"] = sig_cnt
+
+                # Delete LOBs
+                lob_cnt = session.query(Lob).filter_by(account_id=account_id).delete(synchronize_session=False)
+                deleted_summary["lobs_deleted"] = lob_cnt
+
+                # Delete Account
+                session.delete(acct)
+                deleted_summary["account_deleted"] = True
+
+                session.commit()
+
+                # Audit log
+                from services.pipeline_run_logger import PipelineRunLogger
+                PipelineRunLogger.log_event(
+                    company_name=acct_name,
+                    pipeline_level="account",
+                    action="purge_account",
+                    status="completed",
+                    target_url=acct.domain or acct.primary_domain or None,
+                    entities_extracted={"deleted": deleted_summary},
+                )
+
+                return {
+                    "status": "success",
+                    "account_id": account_id,
+                    "company_name": acct_name,
+                    "deleted": deleted_summary,
+                    "message": f"Account '{acct_name}' and all associated entities purged successfully."
+                }
+
+            # 2. Granular / Selective Purge
+            # A. LOBs
+            if req.delete_lobs:
+                lob_ids = [l.id for l in session.query(Lob.id).filter_by(account_id=account_id).all()]
+                if lob_ids:
+                    sub_cnt = session.query(SubLob).filter(SubLob.lob_id.in_(lob_ids)).delete(synchronize_session=False)
+                    deleted_summary["sub_lobs_deleted"] = sub_cnt
+                    session.query(Persona).filter_by(account_id=account_id).update({"lob_id": None}, synchronize_session=False)
+                    lob_cnt = session.query(Lob).filter_by(account_id=account_id).delete(synchronize_session=False)
+                    deleted_summary["lobs_deleted"] = lob_cnt
+
+            # B. Personas by Category / Seniority Tier
+            if req.personas:
+                if req.personas.all:
+                    per_cnt = session.query(Persona).filter_by(account_id=account_id).delete(synchronize_session=False)
+                    deleted_summary["personas_deleted"] = per_cnt
+                else:
+                    all_pers = session.query(Persona).filter_by(account_id=account_id).all()
+                    ids_to_del = []
+                    for p in all_pers:
+                        level = p.hierarchy_level or 99
+                        t = (p.tier or "").lower()
+                        title = (p.title or "").lower()
+                        seniority = (p.seniority_raw or "").lower()
+
+                        is_c = (
+                            level in (1, 2)
+                            or any(k in t for k in ["c_suite", "c-suite", "executive", "president", "chief", "board"])
+                            or any(k in title for k in ["chief", "ceo", "cfo", "cio", "cto", "cmo", "coo", "cro", "ciso", "president", "chair", "board", "executive vice president", "evp"])
+                            or any(k in seniority for k in ["c_suite", "c-suite", "executive", "tier1"])
+                        )
+                        is_vp = (
+                            not is_c and (
+                                level == 3
+                                or any(k in t for k in ["vp", "vice president", "head"])
+                                or any(k in title for k in ["vp", "vice president", "head of", "senior vice president", "svp"])
+                                or any(k in seniority for k in ["vp", "head", "tier2"])
+                            )
+                        )
+                        is_dir = (
+                            not is_c and not is_vp and (
+                                level == 4
+                                or any(k in t for k in ["director", "md"])
+                                or any(k in title for k in ["director", "managing director", "senior director"])
+                                or any(k in seniority for k in ["director", "tier3", "tier4"])
+                            )
+                        )
+                        is_mgr = not is_c and not is_vp and not is_dir
+
+                        if is_c and req.personas.c_suite:
+                            ids_to_del.append(p.id)
+                        elif is_vp and req.personas.vp_head:
+                            ids_to_del.append(p.id)
+                        elif is_dir and req.personas.director:
+                            ids_to_del.append(p.id)
+                        elif is_mgr and req.personas.manager_other:
+                            ids_to_del.append(p.id)
+
+                    if ids_to_del:
+                        per_cnt = session.query(Persona).filter(Persona.id.in_(ids_to_del)).delete(synchronize_session=False)
+                        deleted_summary["personas_deleted"] = per_cnt
+
+            # C. Signals
+            if req.signals:
+                sig_cnt = 0
+                if req.signals.opportunity_signals:
+                    sig_cnt += session.query(OpportunitySignal).filter_by(account_id=account_id).delete(synchronize_session=False)
+                if req.signals.weekly_digests:
+                    sig_cnt += session.query(WeeklyDigestSnapshot).filter_by(account_id=account_id).delete(synchronize_session=False)
+                if req.signals.action_items:
+                    sig_cnt += session.query(ActionItem).filter_by(account_id=account_id).delete(synchronize_session=False)
+                if req.signals.posts_news and acct_key:
+                    sig_cnt += session.query(Post).filter_by(target_key=acct_key).delete(synchronize_session=False)
+                if req.signals.cxo_movements and acct_key:
+                    sig_cnt += session.query(CxoMovement).filter(or_(CxoMovement.target_key == acct_key, CxoMovement.company_name.ilike(acct_name))).delete(synchronize_session=False)
+                if req.signals.jobs and acct_key:
+                    sig_cnt += session.query(LinkedInJob).filter(or_(LinkedInJob.target_key == acct_key, LinkedInJob.company_name.ilike(acct_name))).delete(synchronize_session=False)
+                deleted_summary["signals_deleted"] = sig_cnt
+
+            session.commit()
+
+            from services.pipeline_run_logger import PipelineRunLogger
+            PipelineRunLogger.log_event(
+                company_name=acct_name,
+                pipeline_level="account",
+                action="selective_purge",
+                status="completed",
+                target_url=acct.domain or acct.primary_domain or None,
+                entities_extracted={"deleted": deleted_summary},
+            )
+
+            return {
+                "status": "success",
+                "account_id": account_id,
+                "company_name": acct_name,
+                "deleted": deleted_summary,
+                "message": f"Purged selected data for '{acct_name}' successfully."
+            }
+        except HTTPException:
+            session.rollback()
+            raise
+        except Exception as e:
+            session.rollback()
+            raise HTTPException(status_code=500, detail=f"Purge operation failed: {str(e)}")
+        finally:
+            session.close()
+
+    @app.delete("/api/accounts/{account_id}", tags=["1. Accounts"])
+    def delete_account_direct(account_id: int, confirmation: Optional[str] = Query(None)):
+        """REST shortcut to purge an entire account."""
+        req = AccountPurgeRequest(delete_account_record=True, confirmation_text=confirmation)
+        return purge_account_data(account_id, req)
+
+    @app.get("/api/accounts/{account_id}/credit-breakdown", tags=["1. Accounts"])
+    def get_account_credit_breakdown(account_id: int):
+        """Returns enterprise run telemetry & credit usage breakdown for an account."""
+        from services.telemetry_service import TelemetryService
+        return TelemetryService.get_run_credit_breakdown(account_id=account_id)
+
+    @app.get("/api/pipeline/runs/{run_id}/credit-breakdown", tags=["4. Pipeline Orchestration"])
+    def get_run_credit_breakdown_by_id(run_id: str):
+        """Returns enterprise run telemetry & credit usage breakdown for a specific run ID."""
+        from services.telemetry_service import TelemetryService
+        return TelemetryService.get_run_credit_breakdown(run_id=run_id)
+
     @app.patch("/api/lobs/{lob_id}", tags=["2. Lines of Business"])
     def update_lob_record(lob_id: int, updates: Dict[str, Any]):
         """Directly updates LOB fields in PostgreSQL, sets is_manually_verified=True, and logs audit run."""
@@ -3812,6 +4355,38 @@ if FASTAPI_AVAILABLE:
             if row:
                 return row
         return None
+
+    @app.get("/api/explorer/personas/{persona_id}/download-pdf", tags=["3. Personas & Buying Committee"])
+    def download_explorer_persona_dossier_pdf(persona_id: int):
+        """Dedicated Account Explorer executive dossier PDF download.
+        Renders full database intelligence, AI sales playbook, KPIs, objections,
+        and verified OSINT footprint using ExplorerPersonaDossierPDF."""
+        session = get_session()
+        try:
+            p = session.query(Persona).filter_by(id=persona_id).first()
+            if not p:
+                raise HTTPException(status_code=404, detail="Persona not found.")
+            acct = session.query(Account).filter_by(id=p.account_id).first()
+            from services.explorer_persona_dossier_pdf import ExplorerPersonaDossierPDF
+            pdf_bytes = ExplorerPersonaDossierPDF.generate(p, acct)
+            p_name = p.full_name or p.display_name or "executive"
+            filename = f"{slugify(p_name)}-executive-dossier.pdf"
+            return Response(
+                content=pdf_bytes,
+                media_type="application/pdf",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{filename}"',
+                    "Content-Type": "application/pdf"
+                },
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=f"Failed to generate dossier PDF: {str(e)}")
+        finally:
+            session.close()
 
     @app.get("/api/personas/{persona_id}/psychological-profile", tags=["3. Personas & Buying Committee"])
     def get_persona_psychological_profile(persona_id: int, user: User = Depends(auth.require_persona_account_access)):

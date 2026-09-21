@@ -1882,7 +1882,7 @@ $(function () {
     if (val === null || val === undefined) return false;
     if (typeof val === "string") {
       const s = val.trim();
-      return s !== "" && s !== "—" && s !== "-" && s !== "None" && s !== "null" && s !== "Revenue N/A";
+      return s !== "" && s !== "—" && s !== "-" && s !== "None" && s !== "null" && s !== "Revenue N/A" && s !== "NEW" && s !== "Domain not set" && s !== "Not set";
     }
     if (Array.isArray(val)) return val.length > 0;
     if (typeof val === "object") return Object.keys(val).length > 0;
@@ -2203,10 +2203,11 @@ $(function () {
   // VIEW 1: ACCOUNT LEVEL INTELLIGENCE (IMAGE 1)
   // ══════════════════════════════════════════════════════════════════
   
-  // Reusable LOB Compact Cards Renderer (Top 10 with Expandable Toggle)
+  // Reusable LOB Compact Cards Renderer with Multi-Tier Entity Taxonomy & Filter Bar
   function renderLobCardsList($container, lobs) {
     $container.empty();
     $("#lobSection").find(".lob-toggle-footer").remove();
+    $("#lobSection").find(".lob-taxonomy-filter-bar").remove();
 
     if (!lobs || lobs.length === 0) {
       $container.append(
@@ -2214,48 +2215,145 @@ $(function () {
           No Lines of Business discovered for this account.
         </div>`
       );
-      $("#lobCountBadge").text("(0 Divisions)");
+      $("#lobCountBadge").text("(0 Entities)");
       return;
     }
 
-    $("#lobCountBadge").text(`(${lobs.length} Division${lobs.length > 1 ? "s" : ""})`);
-    
-    const limit = 10;
-    const hasMore = lobs.length > limit;
+    $("#lobCountBadge").text(`(${lobs.length} Corporate Entit${lobs.length > 1 ? "ies" : "y"})`);
 
-    lobs.forEach((lob, idx) => {
-      const isExtra = idx >= limit;
-      const subtitle = lob.revenue ? `Rev: ${lob.revenue}` : lob.desc || lob.overview || "Business Division";
-      $container.append(`
-        <div class="compact-card lob-card fade-in ${isExtra ? 'lob-card-extra' : ''}"
-             data-lob-id="${lob.id}"
-             ${isExtra ? 'style="display:none;"' : ''}
-             title="Click to explore ${esc(lob.name)} division and personas">
-          <div class="compact-card-avatar"><i class="bi bi-folder2"></i></div>
-          <div class="compact-card-body">
-            <div class="compact-card-title">${esc(lob.name)}</div>
-            <div class="compact-card-subtitle">${esc(subtitle)}</div>
-          </div>
-        </div>
-      `);
+    // Taxonomy Category Badge Colors & Iconography
+    const TAXONOMY_CONFIG = {
+      "Commercial brand/platform": { color: "#059669", bg: "#ecfdf5", border: "#a7f3d0", label: "Commercial Platform", icon: "bi-stars" },
+      "Acquired operating company": { color: "#2563eb", bg: "#eff6ff", border: "#bfdbfe", label: "Acquired Brand / OpCo", icon: "bi-building-up" },
+      "Regulated advisory entity": { color: "#7c3aed", bg: "#f5f3ff", border: "#ddd6fe", label: "Regulated Advisor", icon: "bi-shield-check" },
+      "Regional operating company": { color: "#0891b2", bg: "#ecfeff", border: "#a5f3fc", label: "Regional OpCo", icon: "bi-globe" },
+      "Holding company": { color: "#d97706", bg: "#fffbeb", border: "#fde68a", label: "Holding Company", icon: "bi-layers" },
+      "Financing entity/SPV": { color: "#ea580c", bg: "#fff7ed", border: "#fed7aa", label: "Financing / SPV", icon: "bi-bank" },
+      "Legal subsidiary": { color: "#475569", bg: "#f8fafc", border: "#e2e8f0", label: "Legal Subsidiary", icon: "bi-briefcase" },
+      "Fund/GP structure": { color: "#4f46e5", bg: "#eef2ff", border: "#c7d2fe", label: "Fund / GP Structure", icon: "bi-diagram-3" },
+      "Unclassified - Requires Review": { color: "#64748b", bg: "#f1f5f9", border: "#cbd5e1", label: "Requires Review", icon: "bi-question-circle" }
+    };
+
+    // Calculate Counts per Taxonomy
+    const categoryCounts = {};
+    lobs.forEach(l => {
+      const cat = l.relationship_type || "Legal subsidiary";
+      categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
     });
 
-    if (hasMore) {
-      const extraCount = lobs.length - limit;
-      $container.after(`
-        <div class="lob-toggle-footer" style="grid-column: 1 / -1; width: 100%; text-align: center; margin-top: 12px; padding-top: 10px; border-top: 1px dashed #e2e8f0;">
-          <button type="button" class="btn-toggle-lobs-expand" data-expanded="false" style="background:#f8fafc;border:1px solid #cbd5e1;color:#0284c7;font-size:0.8rem;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px;padding:6px 16px;border-radius:20px;transition:all .15s ease;">
-            <span>View all ${lobs.length} Lines of Business (+${extraCount} more)</span> <i class="bi bi-chevron-down" style="font-size:0.75rem;"></i>
-          </button>
-        </div>
-      `);
+    // Create Taxonomy Filter Bar
+    const priority = {
+      "Commercial brand/platform": 1,
+      "Acquired operating company": 2,
+      "Regulated advisory entity": 3,
+      "Regional operating company": 4,
+      "Holding company": 5,
+      "Financing entity/SPV": 6,
+      "Legal subsidiary": 7,
+      "Fund/GP structure": 8,
+      "Unclassified - Requires Review": 9
+    };
+    const categoriesPresent = Object.keys(categoryCounts).sort((a, b) => (priority[a] || 99) - (priority[b] || 99));
+
+    let filterHtml = `
+      <div class="lob-taxonomy-filter-bar" style="margin-bottom:14px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+        <span style="font-size:0.75rem;font-weight:700;color:#64748b;margin-right:4px;text-transform:uppercase;letter-spacing:0.5px;">Taxonomy:</span>
+        <button type="button" class="btn-lob-filter active" data-category="ALL" style="background:#0284c7;color:#fff;border:1px solid #0284c7;font-size:0.75rem;font-weight:600;padding:4px 12px;border-radius:14px;cursor:pointer;transition:all .15s ease;">
+          All (${lobs.length})
+        </button>
+    `;
+
+    categoriesPresent.forEach(cat => {
+      const cfg = TAXONOMY_CONFIG[cat] || { label: cat };
+      filterHtml += `
+        <button type="button" class="btn-lob-filter" data-category="${esc(cat)}" style="background:#f8fafc;color:#475569;border:1px solid #cbd5e1;font-size:0.75rem;font-weight:600;padding:4px 12px;border-radius:14px;cursor:pointer;transition:all .15s ease;">
+          ${esc(cfg.label)} (${categoryCounts[cat]})
+        </button>
+      `;
+    });
+    filterHtml += `</div>`;
+    $container.before(filterHtml);
+
+    function renderFilteredCards(filterCat) {
+      $container.empty();
+      $("#lobSection").find(".lob-toggle-footer").remove();
+
+      const filteredLobs = filterCat === "ALL" 
+        ? lobs 
+        : lobs.filter(l => (l.relationship_type || "Legal subsidiary") === filterCat);
+
+      const limit = 12;
+      const hasMore = filteredLobs.length > limit;
+
+      filteredLobs.forEach((lob, idx) => {
+        const isExtra = idx >= limit;
+        const relType = lob.relationship_type || "Legal subsidiary";
+        const cfg = TAXONOMY_CONFIG[relType] || { color: "#475569", bg: "#f8fafc", border: "#e2e8f0", label: relType, icon: "bi-building" };
+
+        $container.append(`
+          <div class="compact-card lob-card fade-in ${isExtra ? 'lob-card-extra' : ''}"
+               data-lob-id="${lob.id}"
+               data-category="${esc(relType)}"
+               ${isExtra ? 'style="display:none;"' : ''}
+               title="Click to explore ${esc(lob.name)} (${esc(relType)})">
+            <div class="compact-card-avatar" style="position:relative;background:${cfg.bg};color:${cfg.color};border:1px solid ${cfg.border};display:flex;align-items:center;justify-content:center;">
+              <i class="bi ${cfg.icon || 'bi-building'}" style="font-size:1rem;"></i>
+            </div>
+            <div class="compact-card-body">
+              <div class="compact-card-title">${esc(lob.name)}</div>
+              <div class="compact-card-subtitle" style="display:flex;align-items:center;gap:5px;margin-top:2px;">
+                <span style="display:inline-block;padding:2px 7px;border-radius:4px;font-size:0.68rem;font-weight:700;background:${cfg.bg};color:${cfg.color};border:1px solid ${cfg.border};line-height:1.2;">
+                  ${esc(cfg.label)}
+                </span>
+                ${lob.revenue ? `<span style="font-size:0.7rem;color:#0284c7;font-weight:600;">${esc(lob.revenue)}</span>` : ''}
+              </div>
+            </div>
+          </div>
+        `);
+      });
+
+      if (hasMore) {
+        const extraCount = filteredLobs.length - limit;
+        $container.after(`
+          <div class="lob-toggle-footer" style="grid-column: 1 / -1; width: 100%; text-align: center; margin-top: 12px; padding-top: 10px; border-top: 1px dashed #e2e8f0;">
+            <button type="button" class="btn-toggle-lobs-expand" data-expanded="false" style="background:#f8fafc;border:1px solid #cbd5e1;color:#0284c7;font-size:0.8rem;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px;padding:6px 16px;border-radius:20px;transition:all .15s ease;">
+              <span>View all ${filteredLobs.length} entities (+${extraCount} more)</span> <i class="bi bi-chevron-down" style="font-size:0.75rem;"></i>
+            </button>
+          </div>
+        `);
+      }
     }
+
+    renderFilteredCards("ALL");
+
+    // Bind Filter Click Events
+    $("#lobSection").off("click", ".btn-lob-filter").on("click", ".btn-lob-filter", function() {
+      const $btn = $(this);
+      const cat = $btn.data("category");
+      $("#lobSection").find(".btn-lob-filter").removeClass("active").css({ background: "#f8fafc", color: "#475569", borderColor: "#cbd5e1" });
+      $btn.addClass("active").css({ background: "#0284c7", color: "#fff", borderColor: "#0284c7" });
+      renderFilteredCards(cat);
+    });
+  }
+
+  function formatCompactRevenue(val) {
+    if (!val || val === "Revenue N/A" || val === "—") return val || "—";
+    const s = String(val).trim();
+    if (/^\$?\d+(\.\d+)?[TMBK]$/i.test(s)) return s.startsWith("$") ? s : `$${s}`;
+    const num = parseFloat(s.replace(/[^0-9.-]/g, ""));
+    if (isNaN(num) || num === 0) return s;
+    if (num >= 1e12) return `$${(num / 1e12).toFixed(2)}T`;
+    if (num >= 1e9) return `$${(num / 1e9).toFixed(2)}B`;
+    if (num >= 1e6) return `$${(num / 1e6).toFixed(2)}M`;
+    if (num >= 1e3) return `$${(num / 1e3).toFixed(2)}K`;
+    return `$${num.toLocaleString()}`;
   }
 
   function renderModernAccountHeader(account) {
     const initials = getInitials(account.name);
     const compType = account.company_type || "—";
-    const revenue = (account.revenue && account.revenue !== "Revenue N/A") ? account.revenue : (account.estimated_revenue_range || "—");
+    const rawRev = (account.revenue && account.revenue !== "Revenue N/A") ? account.revenue : (account.estimated_revenue_range || "—");
+    const revenue = formatCompactRevenue(rawRev);
     const opStatus = account.operating_status || "—";
     const industry = (account.industries || [])[0] || "—";
     const desc = account.desc || account.overview || account.short_description || "—";
@@ -2304,6 +2402,12 @@ $(function () {
             </button>
             <button type="button" class="action-btn-pill btn-pill-purple" id="acctEditBtn">
               Edit
+            </button>
+            <button type="button" class="action-btn-pill btn-pill-red" id="acctDataManageBtn"
+                    data-account-id="${account.id}"
+                    data-account-name="${esc(account.name || account.display_name || 'Account')}"
+                    title="Manage & Purge Account Data">
+              <i class="bi bi-trash3"></i> Delete / Purge
             </button>
           </div>
           <span class="header-meta-timestamp">Last pull: ${pullTimeStr} &bull; ${aHealth.sourcesHit}/11 sources &bull; ${validationStr}</span>
@@ -2558,7 +2662,8 @@ $(function () {
       ? `LEI: ${account.organisational_hierarchy_tree.gleif_lei}` 
       : (account.sec_cik ? `CIK: ${account.sec_cik}` : (account.lei_code ? `LEI: ${account.lei_code}` : "—"));
     const employees = account.employee_count_range || "—";
-    const revenue = (account.revenue && account.revenue !== "Revenue N/A") ? account.revenue : (account.estimated_revenue_range || "—");
+    const rawRev = (account.revenue && account.revenue !== "Revenue N/A") ? account.revenue : (account.estimated_revenue_range || "—");
+    const revenue = formatCompactRevenue(rawRev);
     const compType = account.company_type || "—";
     const opStatus = account.operating_status || "—";
     const founded = account.founded_year || (account.founded_date ? String(account.founded_date).slice(0, 4) : "—");
@@ -2656,7 +2761,12 @@ $(function () {
                 <div class="timeline-title">${esc(ev.title)}</div>
                 <div class="timeline-desc">${esc(ev.desc)}</div>
               </div>
-              <div class="timeline-time">${esc(ev.time)}</div>
+              <div class="timeline-time" style="display:flex;align-items:center;gap:8px;">
+                <span>${esc(ev.time)}</span>
+                <button type="button" class="btn btn-xs btn-outline-primary btn-run-credits" data-action="view-credits" title="View credits & API telemetry for this run" style="font-size:0.68rem;padding:1px 7px;border-radius:4px;color:#4f46e5;border:1px solid #c7d2fe;background:#eef2ff;display:inline-flex;align-items:center;gap:3px;cursor:pointer;">
+                  <i class="bi bi-lightning-charge-fill" style="color:#6366f1;"></i> <span>Credits</span>
+                </button>
+              </div>
             </div>
           `;
         }).join("") + (hasExtraEvents ? `
@@ -2772,7 +2882,7 @@ $(function () {
               <span class="section-title-dot"></span>
               <span>Source Coverage &amp; Verified Connectors</span>
             </div>
-            <span class="badge" style="background:#e0f2fe;color:#0369a1;font-weight:700;padding:2px 8px;font-size:0.72rem;">${coverage.coveragePct}% Coverage &bull; ${coverage.sourcesHit || 8}/${coverage.totalSources || 11} Active</span>
+            <span class="badge" style="background:#e0f2fe;color:#0369a1;font-weight:700;padding:2px 8px;font-size:0.72rem;">${coverage.coveragePct}% Coverage &bull; ${coverage.sourcesHit ?? 0}/${coverage.totalSources || 11} Active</span>
           </div>
 
           <div class="source-coverage-horizontal-wrap">
@@ -2784,7 +2894,7 @@ $(function () {
                 </div>
               </div>
               <div style="font-size:0.75rem;color:#64748b;line-height:1.4;">
-                <div style="font-weight:700;color:#1e293b;">${coverage.sourcesHit || 8} of ${coverage.totalSources || 11}</div>
+                <div style="font-weight:700;color:#1e293b;">${coverage.sourcesHit ?? 0} of ${coverage.totalSources || 11}</div>
                 <div>Connectors active</div>
               </div>
             </div>
@@ -2853,7 +2963,12 @@ $(function () {
               <span>Recent Pipeline Activity</span>
               <span class="badge-solid-gray" id="activityCountBadge" style="font-size:.68rem;padding:2px 7px;margin-left:6px;font-weight:600;">${timelineEvents.length}</span>
             </div>
-            <span class="section-subtitle-hint" id="activityShowingHint">Showing latest 3</span>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <button type="button" class="btn btn-xs btn-outline-primary" id="btnOpenCreditUsageModal" style="display:inline-flex;align-items:center;gap:5px;font-size:0.75rem;padding:3px 10px;border-radius:6px;font-weight:600;background:rgba(99,102,241,0.06);border-color:#6366f1;color:#4f46e5;cursor:pointer;">
+                <i class="bi bi-lightning-charge-fill" style="color:#6366f1;"></i> <span>Credits Usage</span>
+              </button>
+              <span class="section-subtitle-hint" id="activityShowingHint">Showing latest 3</span>
+            </div>
           </div>
 
           <div class="timeline-activity-list" id="recentPipelineActivityList">
@@ -3340,6 +3455,9 @@ $(function () {
               </button>
               <button type="button" class="action-btn-pill btn-pill-purple" id="personaEditToggleBtn">
                 Edit
+              </button>
+              <button type="button" class="action-btn-pill btn-persona-download-pdf" data-persona-id="${p.id}" style="background:#0284c7;color:#fff;border-color:#0284c7;display:inline-flex;align-items:center;gap:5px;font-weight:600;" title="Download full executive dossier as PDF">
+                <i class="bi bi-file-earmark-pdf-fill"></i> Download PDF
               </button>
             </div>
             <span class="header-meta-timestamp">Last scraped: ${pullTimeStr} &bull; ${p.email ? 'Email Verified &check;' : 'Email Pending'}</span>
@@ -4244,6 +4362,57 @@ $(function () {
   });
   $(document).on("click", "#discardPersonaBannerBtn", function () {
     $("#personaEditBanner").addClass("d-none");
+  });
+
+  $(document).on("click", ".btn-persona-download-pdf", async function (e) {
+    e.preventDefault();
+    const personaId = $(this).attr("data-persona-id") || (activePersona ? activePersona.id : null);
+    if (!personaId) {
+      alert("No persona selected to download.");
+      return;
+    }
+    const $btn = $(this);
+    const originalHtml = $btn.html();
+    $btn.html('<i class="bi bi-hourglass-split"></i> Generating Dossier...').prop('disabled', true);
+    
+    try {
+      const response = await fetch(`/api/explorer/personas/${personaId}/download-pdf`, {
+        method: 'GET',
+        headers: { 'Accept': 'application/pdf' },
+        credentials: 'include'
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Server returned HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const blob = await response.blob();
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = `executive-persona-${personaId}-dossier.pdf`;
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename=["']?([^"';]+)["']?/);
+        if (match && match[1]) {
+          filename = match[1];
+        }
+      }
+      
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      console.error("PDF download error:", err);
+      // Fallback to direct navigation
+      window.location.href = `/api/explorer/personas/${personaId}/download-pdf`;
+    } finally {
+      setTimeout(() => {
+        $btn.html(originalHtml).prop('disabled', false);
+      }, 1500);
+    }
   });
 
   $(document).on("click", "#saveUniversalPersonaBtn", function () {
@@ -6739,18 +6908,19 @@ $(function () {
       return;
     }
     $("#newAccountName").removeClass("is-invalid");
-    const domain = $("#newAccountDomain")
-      .val()
+    let rawDomain = ($("#newAccountDomain").val() || "").trim();
+    const domain = rawDomain
+      .replace(/^https?:\/\//i, "")
+      .split("/")[0]
+      .split("?")[0]
+      .replace(/^www\./i, "")
       .trim()
-      .replace(/^https?:\/\//, "")
-      .replace(/\/$/, "");
+      .toLowerCase();
 
     const originalBtnText = $btn.html();
-    $btn.html('<i class="bi bi-hourglass-split"></i> Creating in DB...').prop("disabled", true);
+    $btn.html('<i class="bi bi-hourglass-split"></i> Initializing in DB...').prop("disabled", true);
 
     try {
-      // 1. Persist initial account row in PostgreSQL immediately so it has an official ID and survives
-      // page refresh
       const res = await fetch(`${API_BASE}/api/account/create`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -6767,12 +6937,14 @@ $(function () {
       const realId = data.account_id;
 
       // Close modal
-      bootstrap.Modal.getInstance(document.getElementById("addAccountModal")).hide();
+      const modalEl = document.getElementById("addAccountModal");
+      const bsModal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+      bsModal.hide();
       $btn.html(originalBtnText).prop("disabled", false);
 
       // Show top-right floating success toast
       showNotification(
-        `✅ Account <strong>${esc(companyName)}</strong> created successfully (ID: ${realId})`,
+        `✅ Account <strong>${esc(companyName)}</strong> initialized successfully (ID: ${realId})`,
         "success",
       );
 
@@ -6784,12 +6956,13 @@ $(function () {
         id: realId,
         key: data.key || companyName.toLowerCase().replace(/[^a-z0-9]+/g, "_"),
         name: companyName,
+        display_name: companyName,
         domain: domain || null,
         primary_domain: domain || null,
         website_url: domain ? `https://${domain}` : null,
-        ticker: "NEW",
-        revenue: domain || "Domain not set",
-        location: "—",
+        ticker: null,
+        revenue: null,
+        location: null,
         desc: "Account registered in database. Run Pull → Validate → Dump to enrich with 11 sources.",
         lobs: [],
         personas: [],
@@ -6805,6 +6978,10 @@ $(function () {
         message: "",
       };
 
+      // Clear cache so newly added account is fetched fresh
+      try { sessionStorage.removeItem("pipeline_accounts_cache"); } catch (e) {}
+      refreshAccountsCache();
+
       // Add to MOCK_DATA.accounts (replacing any duplicate if present)
       MOCK_DATA.accounts = (MOCK_DATA.accounts || []).filter((a) => a.id !== realId);
       MOCK_DATA.accounts.unshift(newAccountObj);
@@ -6818,6 +6995,332 @@ $(function () {
       showNotification(`❌ Error creating account: ${esc(err.message)}`, "error");
     }
   });
+
+  // ══════════════════════════════════════════════════════════════════════
+  // ENTERPRISE DATA MANAGEMENT & GRANULAR PURGE CONSOLE INTERACTIVITY
+  // ══════════════════════════════════════════════════════════════════════
+
+  let currentPurgeSummary = null;
+
+  // Helper to recalculate purge selection count and summary label
+  function updatePurgeSelectionSummary() {
+    const isEntire = $("#purgeOptionEntireAccount").is(":checked");
+    const $btn = $("#btnExecutePurge");
+
+    if (isEntire) {
+      $("#purgeConfirmContainer").removeClass("d-none");
+      $("#purgeGranularSections").css("opacity", "0.35").css("pointer-events", "none");
+      $("#purgeSelectedSummaryText").html(
+        '<strong style="color:#dc2626;"><i class="bi bi-exclamation-triangle-fill"></i> Complete Account Destruction Selected</strong> &bull; All LOBs, personas &amp; signals will be purged'
+      );
+      $("#btnPurgeText").text("Permanently Delete Entire Account");
+
+      // Verify confirmation text input (tolerant to typos, suffixes, punctuation, spaces)
+      const enteredRaw = ($("#purgeConfirmInput").val() || "").trim();
+      let enteredNorm = enteredRaw.toUpperCase().replace(/\s+/g, " ");
+      // Fix common typo like 'DELLETE' -> 'DELETE'
+      enteredNorm = enteredNorm.replace(/^DEL+E+T+E*/, "DELETE");
+      const enteredClean = enteredNorm.replace(/[^A-Z0-9\s]/g, "").trim();
+
+      const targetName = (activeAccount ? (activeAccount.name || activeAccount.display_name || "") : "").toUpperCase();
+      const cleanBrand = targetName.replace(/[,.]/g, "").replace(/\b(INC|CORP|CORPORATION|LLC|LTD|PLC|CO|COMPANY)\b/g, "").trim();
+      const targetKey = (activeAccount && activeAccount.key ? activeAccount.key.toUpperCase() : "").replace(/[^A-Z0-9\s]/g, "").trim();
+
+      const validMatches = [
+        `DELETE ${cleanBrand}`,
+        `DELETE ${targetName.replace(/[^A-Z0-9\s]/g, "").replace(/\s+/g, " ").trim()}`,
+        `DELETE ${targetKey}`,
+        "DELETE"
+      ];
+
+      const isMatch = enteredClean.length > 0 && (
+        validMatches.includes(enteredClean) ||
+        (enteredClean.startsWith("DELETE") && cleanBrand && enteredClean.includes(cleanBrand)) ||
+        (enteredClean.startsWith("DELETE") && targetKey && enteredClean.includes(targetKey))
+      );
+
+      const $feedback = $("#purgeConfirmFeedback");
+      if (isMatch) {
+        $feedback.show().html('<span style="color:#16a34a;font-weight:600;"><i class="bi bi-check-circle-fill"></i> Confirmation verified. Safe to proceed.</span>');
+        $("#purgeConfirmInput").css({"border-color": "#16a34a", "background-color": "#f0fdf4"});
+        $btn.prop("disabled", false);
+      } else {
+        if (enteredRaw.length > 0) {
+          $feedback.show().html(`<span style="color:#dc2626;"><i class="bi bi-info-circle"></i> Type <code>DELETE ${cleanBrand || targetName}</code> or click Auto-fill</span>`);
+          $("#purgeConfirmInput").css({"border-color": "#f87171", "background-color": "#ffffff"});
+        } else {
+          $feedback.hide();
+          $("#purgeConfirmInput").css({"border-color": "#fca5a5", "background-color": "#ffffff"});
+        }
+        $btn.prop("disabled", true);
+      }
+      return;
+    }
+
+    $("#purgeConfirmContainer").addClass("d-none");
+    $("#purgeGranularSections").css("opacity", "1").css("pointer-events", "auto");
+    $("#btnPurgeText").text("Purge Selected Data");
+
+    if (!currentPurgeSummary) {
+      $("#purgeSelectedSummaryText").text("Loading account data metrics...");
+      $btn.prop("disabled", true);
+      return;
+    }
+
+    let selectedItemsCount = 0;
+    const parts = [];
+
+    // LOBs
+    if ($("#purgeOptionLobs").is(":checked")) {
+      const lobsCnt = currentPurgeSummary.lobs_count || 0;
+      selectedItemsCount += lobsCnt;
+      parts.push(`${lobsCnt} LOBs`);
+    }
+
+    // Personas by Tier
+    if ($("#purgeTierCSuite").is(":checked")) {
+      const cnt = currentPurgeSummary.personas.c_suite || 0;
+      selectedItemsCount += cnt;
+      parts.push(`${cnt} C-Suite`);
+    }
+    if ($("#purgeTierVp").is(":checked")) {
+      const cnt = currentPurgeSummary.personas.vp_head || 0;
+      selectedItemsCount += cnt;
+      parts.push(`${cnt} VPs`);
+    }
+    if ($("#purgeTierDirector").is(":checked")) {
+      const cnt = currentPurgeSummary.personas.director || 0;
+      selectedItemsCount += cnt;
+      parts.push(`${cnt} Directors`);
+    }
+    if ($("#purgeTierManager").is(":checked")) {
+      const cnt = currentPurgeSummary.personas.manager_other || 0;
+      selectedItemsCount += cnt;
+      parts.push(`${cnt} Managers`);
+    }
+
+    // Signals
+    $(".purge-sig-cb:checked").each(function () {
+      const sigKey = $(this).data("sig");
+      const cnt = currentPurgeSummary.signals[sigKey] || 0;
+      selectedItemsCount += cnt;
+      if (cnt > 0) {
+        parts.push(`${cnt} ${sigKey.replace(/_/g, " ")}`);
+      }
+    });
+
+    if (selectedItemsCount > 0 || parts.length > 0) {
+      $("#purgeSelectedSummaryText").html(
+        `<strong style="color:#b91c1c;">Selected for removal (${selectedItemsCount} records):</strong> ${esc(parts.join(", "))}`
+      );
+      $btn.prop("disabled", false);
+    } else {
+      $("#purgeSelectedSummaryText").text("No items selected for removal");
+      $btn.prop("disabled", true);
+    }
+  }
+
+  // Open Data Management / Purge Modal
+  $(document).on("click", "#acctDataManageBtn", async function () {
+    if (!activeAccount) {
+      showNotification("Please select an active account first.", "warning");
+      return;
+    }
+
+    const acctName = activeAccount.name || activeAccount.display_name || "Account";
+    $("#purgeTargetAccountName").text(acctName);
+    const cleanBrand = acctName.replace(/[,.]/g, "").replace(/\b(Inc|Corp|Corporation|LLC|Ltd|PLC|Co|Company)\b/gi, "").trim();
+    const expectedConfirm = `DELETE ${cleanBrand.toUpperCase()}`;
+    $("#purgeExpectedConfirmText").text(expectedConfirm);
+    $("#purgeConfirmInput").val("").css({"border-color": "#fca5a5", "background-color": "#ffffff"});
+    $("#purgeConfirmFeedback").hide();
+    $("#purgeOptionEntireAccount").prop("checked", false);
+    $(".purge-cb").prop("checked", false);
+    $(".purge-item-box").removeClass("selected");
+    $("#purgeConfirmContainer").addClass("d-none");
+    $("#purgeGranularSections").css("opacity", "1").css("pointer-events", "auto");
+    $("#btnExecutePurge").prop("disabled", true).html('<i class="bi bi-trash3"></i> <span id="btnPurgeText">Purge Selected Data</span>');
+
+    const modalEl = document.getElementById("dataManageModal");
+    const bsModal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    bsModal.show();
+
+    // Fetch live data summary from API
+    try {
+      const res = await fetch(`${API_BASE}/api/accounts/${activeAccount.id}/data-summary`);
+      if (res.ok) {
+        currentPurgeSummary = await res.json();
+        // Update count badges
+        $("#cntPurgeLobs").text(`${currentPurgeSummary.lobs_count} LOBs`);
+        $("#cntPurgeCSuite").text(currentPurgeSummary.personas.c_suite);
+        $("#cntPurgeVp").text(currentPurgeSummary.personas.vp_head);
+        $("#cntPurgeDirector").text(currentPurgeSummary.personas.director);
+        $("#cntPurgeManager").text(currentPurgeSummary.personas.manager_other);
+
+        $("#cntPurgeNews").text(currentPurgeSummary.signals.posts_news);
+        $("#cntPurgeJobs").text(currentPurgeSummary.signals.jobs);
+        $("#cntPurgeOpp").text(currentPurgeSummary.signals.opportunity_signals);
+        $("#cntPurgeDigests").text(currentPurgeSummary.signals.weekly_digests);
+        $("#cntPurgeCxo").text(currentPurgeSummary.signals.cxo_movements);
+        $("#cntPurgeActions").text(currentPurgeSummary.signals.action_items);
+      }
+    } catch (err) {
+      console.warn("Failed to fetch account data summary:", err);
+    }
+    updatePurgeSelectionSummary();
+  });
+
+  // Entire Account toggle handler
+  $("#purgeOptionEntireAccount").on("change", function () {
+    updatePurgeSelectionSummary();
+  });
+
+  // Confirmation text input handler
+  $("#purgeConfirmInput").on("input", function () {
+    updatePurgeSelectionSummary();
+  });
+
+  // Auto-fill confirmation helper button & code pill click handlers
+  $(document).on("click", "#btnAutoFillPurgeConfirm, #purgeExpectedConfirmText", function () {
+    const textToFill = $("#purgeExpectedConfirmText").text().trim();
+    if (textToFill) {
+      $("#purgeConfirmInput").val(textToFill).trigger("input");
+    }
+  });
+
+  // Checkbox change handlers
+  $(document).on("change", ".purge-cb", function () {
+    $(this).closest(".purge-item-box").toggleClass("selected", $(this).is(":checked"));
+    updatePurgeSelectionSummary();
+  });
+
+  // Toggle all persona tiers button
+  $("#btnToggleAllPersonaTiers").on("click", function () {
+    const allChecked = $(".purge-tier-cb:checked").length === $(".purge-tier-cb").length;
+    $(".purge-tier-cb").prop("checked", !allChecked).each(function () {
+      $(this).closest(".purge-item-box").toggleClass("selected", !allChecked);
+    });
+    $(this).text(allChecked ? "Select All Tiers" : "Deselect All Tiers");
+    updatePurgeSelectionSummary();
+  });
+
+  // Toggle all signals button
+  $("#btnToggleAllSignals").on("click", function () {
+    const allChecked = $(".purge-sig-cb:checked").length === $(".purge-sig-cb").length;
+    $(".purge-sig-cb").prop("checked", !allChecked).each(function () {
+      $(this).closest(".purge-item-box").toggleClass("selected", !allChecked);
+    });
+    $(this).text(allChecked ? "Select All Signals" : "Deselect All Signals");
+    updatePurgeSelectionSummary();
+  });
+
+  // Execute Purge button handler
+  $("#btnExecutePurge").on("click", async function () {
+    if (!activeAccount) return;
+
+    const $btn = $(this);
+    const origHtml = $btn.html();
+    $btn.prop("disabled", true).html('<i class="spinner-border spinner-border-sm"></i> Purging Data...');
+
+    const isEntire = $("#purgeOptionEntireAccount").is(":checked");
+    const payload = {
+      delete_account_record: isEntire,
+      delete_lobs: $("#purgeOptionLobs").is(":checked"),
+      personas: {
+        all: false,
+        c_suite: $("#purgeTierCSuite").is(":checked"),
+        vp_head: $("#purgeTierVp").is(":checked"),
+        director: $("#purgeTierDirector").is(":checked"),
+        manager_other: $("#purgeTierManager").is(":checked"),
+      },
+      signals: {
+        opportunity_signals: $("#purgeSigOpp").is(":checked"),
+        weekly_digests: $("#purgeSigDigests").is(":checked"),
+        posts_news: $("#purgeSigNews").is(":checked"),
+        cxo_movements: $("#purgeSigCxo").is(":checked"),
+        jobs: $("#purgeSigJobs").is(":checked"),
+        action_items: $("#purgeSigActions").is(":checked"),
+      },
+      confirmation_text: isEntire ? $("#purgeConfirmInput").val().trim() : null,
+    };
+
+    try {
+      const res = await fetch(`${API_BASE}/api/accounts/${activeAccount.id}/purge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || "Purge request failed.");
+      }
+
+      // Close modal
+      const modalEl = document.getElementById("dataManageModal");
+      bootstrap.Modal.getInstance(modalEl).hide();
+      $btn.html(origHtml).prop("disabled", false);
+
+      const targetId = activeAccount.id;
+      const targetName = activeAccount.name || activeAccount.display_name || "Account";
+
+      if (isEntire) {
+        // Clear caches
+        try { sessionStorage.removeItem("pipeline_accounts_cache"); } catch (e) {}
+        refreshAccountsCache();
+
+        // Remove from local accounts list
+        MOCK_DATA.accounts = (MOCK_DATA.accounts || []).filter((a) => a.id !== targetId);
+
+        // Reset active state
+        activeAccount = null;
+        activeLob = null;
+        activePersona = null;
+
+        // Re-render sidebar
+        renderSidebar();
+
+        // Return view to empty state
+        $("#dashboardContainer").addClass("d-none");
+        $("#emptyState").removeClass("d-none");
+
+        showNotification(
+          `🗑️ Enterprise Account <strong>${esc(targetName)}</strong> and all intelligence records permanently purged from database.`,
+          "success",
+        );
+      } else {
+        // Selective Purge: Refresh the active account data in-place!
+        showNotification(
+          `🧹 Selected intelligence purged for <strong>${esc(targetName)}</strong> (${data.deleted.personas_deleted || 0} personas, ${data.deleted.lobs_deleted || 0} LOBs, ${data.deleted.signals_deleted || 0} signals).`,
+          "success",
+        );
+
+        // Fetch fresh account from API
+        const refreshRes = await fetch(`${API_BASE}/api/accounts/${targetId}`);
+        if (refreshRes.ok) {
+          const freshAccount = await refreshRes.json();
+          // Update in local accounts list
+          const idx = (MOCK_DATA.accounts || []).findIndex((a) => a.id === targetId);
+          if (idx >= 0) {
+            MOCK_DATA.accounts[idx] = freshAccount;
+          }
+          activeAccount = freshAccount;
+
+          // Re-render view in-place
+          $("#accountHeroContainer").html(renderModernAccountHeader(activeAccount));
+          $("#completenessContainer").html(renderModernCompleteness(activeAccount));
+          renderLobCardsList($("#lobCardsContainer"), activeAccount.lobs || []);
+          renderAllPersonasDirectory(activeAccount);
+          renderModernBreadcrumbs();
+        }
+      }
+    } catch (err) {
+      console.error("Purge error:", err);
+      $btn.html(origHtml).prop("disabled", false);
+      showNotification(`❌ Purge operation failed: ${esc(err.message)}`, "error");
+    }
+  });
+
 
   // API Docs Nav Button
   $("#apiDocsNav").on("click", function () {
@@ -7319,6 +7822,226 @@ $(function () {
       $btn.find("span").text(`Show less (top 10 Divisions)`);
       $btn.find("i").removeClass("bi-chevron-down").addClass("bi-chevron-up");
     }
+  });
+
+  // ─── Pipeline Telemetry & Credits Usage Modal ──────────────────────────────
+  let activeCreditUsageData = null;
+
+  function getCreditIcon(name, defaultIcon) {
+    const n = (name || "").toLowerCase();
+    if (n.includes("sec") || n.includes("regulatory") || n.includes("gleif") || n.includes("identity")) return "bi-shield-check";
+    if (n.includes("diffbot") || n.includes("graph") || n.includes("entity")) return "bi-diagram-3";
+    if (n.includes("finnhub") || n.includes("fmp") || n.includes("market") || n.includes("watchlist")) return "bi-graph-up-arrow";
+    if ((n.includes("serp") || n.includes("google")) && !n.includes("patent")) return "bi-search";
+    if (n.includes("linkedin") || n.includes("company") || n.includes("banking")) return "bi-building";
+    if (n.includes("tavily") || n.includes("competitor") || n.includes("ai")) return "bi-cpu";
+    if (n.includes("patent")) return "bi-lightbulb";
+    if (n.includes("profile") || n.includes("persona") || n.includes("leadership") || n.includes("people")) return "bi-people";
+    if (n.includes("gemini") || n.includes("llm") || n.includes("neural") || n.includes("biography")) return "bi-robot";
+    return defaultIcon || "bi-plug";
+  }
+
+  function renderCreditResourceRows(resources, theme) {
+    if (!resources || !resources.length) {
+      return `<div style="padding:10px;text-align:center;color:#94a3b8;font-size:0.75rem;">No resources recorded</div>`;
+    }
+    const colorClass = theme === "account" ? "purple" : theme === "lob" ? "green" : "violet";
+    
+    return resources.map(res => {
+      const icon = getCreditIcon(res.name, theme === "account" ? "bi-shield-check" : theme === "lob" ? "bi-building" : "bi-robot");
+      return `
+        <div class="credit-resource-row">
+          <div class="credit-icon-box icon-${colorClass}">
+            <i class="bi ${icon}"></i>
+          </div>
+          <div class="credit-resource-info">
+            <div class="credit-resource-name" title="${esc(res.name)}">${esc(res.name)}</div>
+            <div class="credit-resource-meta">
+              <span style="display:inline-flex;align-items:center;gap:4px;">
+                <i class="bi bi-key-fill" style="opacity:0.6;font-size:0.72rem;"></i>
+                <code style="font-size:0.7rem;color:#475569;background:#f1f5f9;padding:1px 5px;border-radius:4px;">${esc(res.api_key_masked)}</code>
+              </span>
+            </div>
+          </div>
+          <div class="credit-resource-progress-col">
+            <div style="display:flex;justify-content:space-between;font-size:0.68rem;color:#64748b;margin-bottom:2px;">
+              <span>${esc(res.calls_label)}</span>
+              <span style="font-weight:700;color:#334155;">${res.percentage_of_run}%</span>
+            </div>
+            <div class="credit-progress-track">
+              <div class="credit-progress-fill-${colorClass}" style="width:${Math.min(100, Math.max(2, res.percentage_of_run))}%;"></div>
+            </div>
+          </div>
+          <div class="credit-resource-num">
+            <span class="credit-val-big">${Number(res.credits).toLocaleString()}</span>
+            <span class="credit-val-unit">credits</span>
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  async function openCreditUsageModal(accountId, runId) {
+    const targetAccountId = accountId || (activeAccount ? activeAccount.id : 27);
+    const url = runId 
+      ? `/api/pipeline/runs/${runId}/credit-breakdown`
+      : `/api/accounts/${targetAccountId}/credit-breakdown`;
+
+    try {
+      const modalEl = document.getElementById("creditUsageModal");
+      if (!modalEl) {
+        console.error("creditUsageModal element not found in DOM");
+        return;
+      }
+      const bsModal = bootstrap.Modal.getOrCreateInstance(modalEl);
+      bsModal.show();
+
+      const resp = await fetch(url);
+      if (!resp.ok) {
+        throw new Error(`Server returned ${resp.status}`);
+      }
+      const data = await resp.json();
+      activeCreditUsageData = data;
+
+      // Header
+      if (data.title) $("#creditUsageModalTitle").text(data.title);
+      if (data.subtitle) $("#creditUsageModalSubtitle").text(data.subtitle);
+      if (data.status) {
+        const isCompleted = data.status.toLowerCase() === "completed" || data.status.toLowerCase() === "staged" || data.status.toLowerCase() === "success";
+        const dotColor = isCompleted ? "#059669" : "#94a3b8";
+        const badgeBg = isCompleted ? "#ecfdf5" : "#f1f5f9";
+        const badgeColor = isCompleted ? "#059669" : "#64748b";
+        $("#creditUsageStatusBadge").css({"background": badgeBg, "color": badgeColor, "border-color": isCompleted ? "#a7f3d0" : "#cbd5e1"}).html(`
+          <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${dotColor};"></span>
+          ${esc(data.status)}
+        `);
+      }
+
+      // KPIs
+      if (data.kpis) {
+        $("#kpiTotalCredits").text(data.kpis.total_credits_label || Number(data.kpis.total_credits || 0).toLocaleString());
+        $("#kpiTotalCreditsSub").text(data.kpis.vs_avg_run || "");
+        $("#kpiRunDuration").text(data.kpis.duration || "0s");
+        $("#kpiRunStages").text(data.kpis.stages_sources || "");
+        $("#kpiCostPerCredit").text(data.kpis.est_cost_per_credit || "$0.0021");
+        $("#kpiCostTotal").text(data.kpis.total_cost_this_run || "$0.00");
+      }
+
+      // Section A (Account)
+      if (data.sections && data.sections.account) {
+        const sec = data.sections.account;
+        $("#accountSectionSubtitle").text(sec.subtitle || "");
+        $("#accountSubtotalHeader").text(sec.subtotal_label || "");
+        $("#accountCombinedCredits").text(sec.combined_label || "");
+        $("#accountCombinedPct").text(sec.combined_subtext || "");
+        $("#accountResourcesList").html(renderCreditResourceRows(sec.resources, "account"));
+      }
+
+      // Section L (LOB)
+      if (data.sections && data.sections.lob) {
+        const sec = data.sections.lob;
+        $("#lobSectionSubtitle").text(sec.subtitle || "");
+        $("#lobSubtotalHeader").text(sec.subtotal_label || "");
+        $("#lobCombinedCredits").text(sec.combined_label || "");
+        $("#lobCombinedPct").text(sec.combined_subtext || "");
+        $("#lobResourcesList").html(renderCreditResourceRows(sec.resources, "lob"));
+      }
+
+      // Section P (Persona)
+      if (data.sections && data.sections.persona) {
+        const sec = data.sections.persona;
+        $("#personaSectionSubtitle").text(sec.subtitle || "");
+        $("#personaSubtotalHeader").text(sec.subtotal_label || "");
+        $("#personaCombinedCredits").text(sec.combined_label || "");
+        $("#personaCombinedPct").text(sec.combined_subtext || "");
+        $("#personaResourcesList").html(renderCreditResourceRows(sec.resources, "persona"));
+      }
+
+      // Grand Total Card
+      if (data.grand_total) {
+        const gt = data.grand_total;
+        $("#grandTotalCredits").text(gt.total_credits_label || `${Number(gt.total_credits).toLocaleString()} credits`);
+        $("#grandTotalCostNote").text(gt.cost_note || "");
+        
+        if (gt.shares && gt.shares.length) {
+          const segBars = gt.shares.map(s => 
+            `<div style="width:${s.pct}%;background:${s.color};" title="${esc(s.name)} (${s.pct}%)"></div>`
+          ).join("");
+          $("#creditSegmentedBar").html(segBars);
+
+          const legendItems = gt.shares.map(s => `
+            <span style="display:inline-flex;align-items:center;gap:5px;">
+              <span style="width:8px;height:8px;border-radius:2px;background:${s.color};"></span> ${esc(s.name)} &bull; ${Number(s.credits).toLocaleString()} cr (${s.pct}%)
+            </span>
+          `).join("");
+          $("#creditLegendRow").html(legendItems);
+        }
+      }
+
+    } catch (err) {
+      console.error("Failed to load credit breakdown:", err);
+    }
+  }
+
+  function exportCreditUsageCsv() {
+    if (!activeCreditUsageData) {
+      alert("No credit usage data available to export.");
+      return;
+    }
+    const d = activeCreditUsageData;
+    const rows = [
+      ["Sales AI - Pipeline Run Telemetry Credit Ledger"],
+      ["Run ID", d.run_id || "N/A"],
+      ["Company", d.company_name || "N/A"],
+      ["Started", d.subtitle || "N/A"],
+      ["Total Credits", d.kpis ? d.kpis.total_credits : 0],
+      ["Est Cost", d.kpis ? d.kpis.total_cost_this_run : "$0.00"],
+      [],
+      ["Tier", "Resource Name", "Masked API Key", "Calls / Ops", "Credits", "% of Run"]
+    ];
+
+    const tiers = [
+      { key: "account", label: "ACCOUNT" },
+      { key: "lob", label: "LOB" },
+      { key: "persona", label: "PERSONA" }
+    ];
+
+    tiers.forEach(t => {
+      const sec = d.sections ? d.sections[t.key] : null;
+      if (sec && sec.resources) {
+        sec.resources.forEach(r => {
+          rows.push([
+            t.label,
+            `"${(r.name || '').replace(/"/g, '""')}"`,
+            `"${(r.api_key_masked || '').replace(/"/g, '""')}"`,
+            `"${(r.calls_label || '').replace(/"/g, '""')}"`,
+            r.credits,
+            `${r.percentage_of_run}%`
+          ]);
+        });
+      }
+    });
+
+    const csvContent = "data:text/csv;charset=utf-8," + rows.map(e => e.join(",")).join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    const filename = `credit_usage_${(d.company_name || 'run').toLowerCase().replace(/[^a-z0-9]/g, '_')}_${d.run_id || 'ledger'}.csv`;
+    link.setAttribute("download", filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  // Click handlers
+  $(document).on("click", "#btnOpenCreditUsageModal, [data-action='view-credits']", function (e) {
+    e.preventDefault();
+    openCreditUsageModal();
+  });
+
+  $(document).on("click", "#btnExportCreditUsageCsv", function (e) {
+    e.preventDefault();
+    exportCreditUsageCsv();
   });
 });
 
