@@ -13,23 +13,24 @@ import {
   renderFullPsychologicalProfile
 } from './profile-render.js';
 import { renderPersonaActionItems, ensureAccountActionItems, handleActionItemClick } from './action-items.js';
+import { handleGenerateProfileClick } from './profile-generate.js';
 
 export { hasDossier, renderDossier, renderPostCard, renderPersonalityProfile, renderPlaceholderProfile };
 
 export function renderSocialActivity(p) {
   const handles = [];
-  if (p.linkedin_url) handles.push({ platform: 'LinkedIn', icon: 'bi-linkedin', url: p.linkedin_url });
+  if (p.linkedin_url) handles.push({ platform: 'LinkedIn', icon: 'fa-brands fa-linkedin', url: p.linkedin_url });
   if (p.social_platform && p.social_profile_url && p.social_platform.toLowerCase() !== 'linkedin') {
-    handles.push({ platform: p.social_platform, icon: 'bi-link-45deg', url: p.social_profile_url });
+    handles.push({ platform: p.social_platform, icon: 'fa-solid fa-link', url: p.social_profile_url });
   }
-  if (p.twitter_handle) handles.push({ platform: 'X / Twitter', icon: 'bi-twitter-x', url: `https://twitter.com/${p.twitter_handle}` });
+  if (p.twitter_handle) handles.push({ platform: 'X / Twitter', icon: 'fa-brands fa-x-twitter', url: `https://twitter.com/${p.twitter_handle}` });
 
   const targetKey = resolvePersonaTargetKey(p);
   const posts = targetKey ? (state.contentStore.posts[targetKey] || []) : [];
   const digestEntry = targetKey ? state.contentStore.digests[targetKey] : null;
 
   return `
-    ${handles.length ? `<div class="chip-row" style="margin-bottom:10px;">${handles.map(h => `<a class="social-link" href="${esc(h.url)}" target="_blank"><i class="bi ${h.icon}"></i> ${esc(h.platform)}</a>`).join('')}</div>` : ''}
+    ${handles.length ? `<div class="chip-row" style="margin-bottom:10px;">${handles.map(h => `<a class="social-link" href="${esc(h.url)}" target="_blank"><i class="${h.icon}"></i> ${esc(h.platform)}</a>`).join('')}</div>` : ''}
     ${p.social_presence_level ? `<div class="stat-row"><span class="stat-label">Presence level</span><span class="stat-value">${esc(p.social_presence_level)}</span></div>` : ''}
     ${renderPersonaContentSummary(digestEntry, posts)}
     ${posts.length ? `
@@ -37,7 +38,7 @@ export function renderSocialActivity(p) {
       ${posts.length > 6 ? `<div class="people-empty">+${posts.length - 6} more captured posts</div>` : ''}
     ` : `
       <div class="empty-block" style="padding:16px 4px;">
-        <div class="empty-block-icon"><i class="bi bi-inbox"></i></div>
+        <div class="empty-block-icon"><i class="fa-solid fa-inbox"></i></div>
         <div class="empty-block-text">No recent posts available. Pulling real post content needs a social-listening integration — nothing here is invented.</div>
       </div>`}
   `;
@@ -50,17 +51,17 @@ export function renderDrawerPinned(p) {
     <div class="drawer-contact-header">
       <div class="drawer-avatar">${esc(initials(p.name))}</div>
       <div>
-        <div class="drawer-contact-name">${esc(p.name || 'Unnamed')} ${dossierReady ? '<i class="bi bi-stars" title="AI call-prep dossier available"></i>' : ''}</div>
+        <div class="drawer-contact-name">${esc(p.name || 'Unnamed')} ${dossierReady ? '<i class="fa-solid fa-star" title="AI call-prep dossier available"></i>' : ''}</div>
         <div class="drawer-contact-title">${esc(p.title || 'Title unknown')}</div>
         ${tag ? `<div class="contact-tags" style="margin-top:6px;"><span class="tag">${esc(tag)}</span></div>` : ''}
       </div>
     </div>
 
     <div class="drawer-actions">
-      <a class="drawer-action ${p.email ? '' : 'disabled'}" ${p.email ? `href="mailto:${esc(p.email)}"` : ''}><i class="bi bi-envelope"></i> Email</a>
-      <a class="drawer-action ${p.phone ? '' : 'disabled'}" ${p.phone ? `href="tel:${esc(p.phone)}"` : ''}><i class="bi bi-telephone"></i> Call</a>
-      <a class="drawer-action ${p.linkedin_url ? '' : 'disabled'}" ${p.linkedin_url ? `href="${esc(p.linkedin_url)}" target="_blank"` : ''}><i class="bi bi-linkedin"></i> LinkedIn</a>
-      <button type="button" class="drawer-action ${p.id == null ? 'disabled' : ''}" id="drawerViewProfileBtn"><i class="bi bi-arrow-up-right-square"></i> View Profile</button>
+      <a class="drawer-action ${p.email ? '' : 'disabled'}" ${p.email ? `href="mailto:${esc(p.email)}"` : ''}><i class="fa-solid fa-envelope"></i> Email</a>
+      <a class="drawer-action ${p.phone ? '' : 'disabled'}" ${p.phone ? `href="tel:${esc(p.phone)}"` : ''}><i class="fa-solid fa-phone"></i> Call</a>
+      <a class="drawer-action ${p.linkedin_url ? '' : 'disabled'}" ${p.linkedin_url ? `href="${esc(p.linkedin_url)}" target="_blank"` : ''}><i class="fa-brands fa-linkedin"></i> LinkedIn</a>
+      <button type="button" class="drawer-action ${p.id == null ? 'disabled' : ''}" id="drawerViewProfileBtn"><i class="fa-solid fa-square-up-right"></i> View Profile</button>
     </div>
 
     <div class="drawer-jumpnav">
@@ -86,46 +87,46 @@ export function renderContactDrawer(p) {
     <div id="drawer-sec-overview">
       ${meta.length ? `
         <div class="drawer-section">
-          <div class="drawer-section-title"><i class="bi bi-person-vcard"></i> Contact Info</div>
+          <div class="drawer-section-title"><i class="fa-solid fa-address-card"></i> Contact Info</div>
           ${meta.map(m => `<div class="stat-row"><span class="stat-label">${esc(m)}</span></div>`).join('')}
         </div>` : ''}
 
       ${(p.skills && p.skills.length) ? `
         <div class="drawer-section">
-          <div class="drawer-section-title"><i class="bi bi-lightning-charge"></i> Skills &amp; Focus Areas</div>
+          <div class="drawer-section-title"><i class="fa-solid fa-bolt"></i> Skills &amp; Focus Areas</div>
           <div class="chip-row">${p.skills.map(s => `<span class="chip">${esc(s)}</span>`).join('')}</div>
         </div>` : ''}
 
       ${(!meta.length && !(p.skills && p.skills.length)) ? `
         <div class="drawer-section">
-          <div class="drawer-section-title"><i class="bi bi-person-vcard"></i> Contact Info</div>
+          <div class="drawer-section-title"><i class="fa-solid fa-address-card"></i> Contact Info</div>
           <div class="empty-block" style="padding:6px 0;"><div class="empty-block-text">No additional contact metadata captured yet.</div></div>
         </div>` : ''}
     </div>
 
     <div class="drawer-section" id="drawer-sec-dossier">
-      <div class="drawer-section-title"><i class="bi bi-stars"></i> AI Call-Prep Dossier</div>
+      <div class="drawer-section-title"><i class="fa-solid fa-star"></i> AI Call-Prep Dossier</div>
       ${renderDossier(p)}
     </div>
 
     <div class="drawer-section" id="drawer-sec-social">
-      <div class="drawer-section-title"><i class="bi bi-broadcast"></i> Recent Social Media Activity</div>
+      <div class="drawer-section-title"><i class="fa-solid fa-tower-broadcast"></i> Recent Social Media Activity</div>
       ${renderSocialActivity(p)}
     </div>
 
     <div class="drawer-section" id="drawer-sec-actions">
-      <div class="drawer-section-title"><i class="bi bi-list-check"></i> Action Items</div>
+      <div class="drawer-section-title"><i class="fa-solid fa-list-check"></i> Action Items</div>
       <div id="personaActionItemsWrap">${renderPersonaActionItems(state.accounts.find(a => a.id === p.account_id), p)}</div>
     </div>
 
     <div id="drawer-sec-profiles">
       <div class="drawer-section" id="drawer-sec-psychological">
-        <div class="drawer-section-title"><i class="bi bi-activity"></i> Executive Psychological Profile</div>
-        ${renderFullPsychologicalProfile(targetKey ? state.contentStore.digests[targetKey] : null, p)}
+        <div class="drawer-section-title"><i class="fa-solid fa-heart-pulse"></i> Executive Psychological Profile</div>
+        <div data-profile-widget="psychological">${renderFullPsychologicalProfile(targetKey ? state.contentStore.digests[targetKey] : null, p)}</div>
       </div>
 
       <div class="drawer-section" id="drawer-sec-personality">
-        <div class="drawer-section-title"><i class="bi bi-person-lines-fill"></i> Personality Profile</div>
+        <div class="drawer-section-title"><i class="fa-solid fa-address-card"></i> Personality Profile</div>
         ${renderPersonalityProfile(targetKey ? state.contentStore.digests[targetKey] : null)}
       </div>
     </div>
@@ -179,6 +180,10 @@ contactDrawer.addEventListener('click', async function (e) {
   if (account && await handleActionItemClick(e, account)) {
     const wrap = el('personaActionItemsWrap');
     if (wrap) wrap.innerHTML = renderPersonaActionItems(account, p);
+    return;
+  }
+
+  if (p && await handleGenerateProfileClick(e, drawerBody, p)) {
     return;
   }
 

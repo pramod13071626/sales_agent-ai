@@ -16,16 +16,16 @@ export function renderContactsList(personas) {
         <button type="button" class="contact-main" data-contact-idx="${idx}" title="View full contact details">
           <div class="contact-avatar">${esc(initials(p.name))}</div>
           <div class="contact-body">
-            <div class="contact-name">${esc(p.name || 'Unnamed')} ${dossierReady ? '<i class="bi bi-stars dossier-badge" title="AI call-prep dossier available"></i>' : ''}</div>
+            <div class="contact-name">${esc(p.name || 'Unnamed')} ${dossierReady ? '<i class="fa-solid fa-star dossier-badge" title="AI call-prep dossier available"></i>' : ''}</div>
             <div class="contact-title">${esc(p.title || 'Title unknown')}</div>
             ${tag ? `<div class="contact-tags"><span class="tag">${esc(tag)}</span></div>` : ''}
           </div>
-          <span class="contact-chevron"><i class="bi bi-chevron-right"></i></span>
+          <span class="contact-chevron"><i class="fa-solid fa-chevron-right"></i></span>
         </button>
         <div class="contact-actions">
-          <a class="icon-btn ${p.email ? '' : 'disabled'}" ${p.email ? `href="mailto:${esc(p.email)}"` : ''} title="${p.email ? 'Email ' + esc(p.name) : 'No email on file'}"><i class="bi bi-envelope"></i></a>
-          <a class="icon-btn ${p.phone ? '' : 'disabled'}" ${p.phone ? `href="tel:${esc(p.phone)}"` : ''} title="${p.phone ? 'Call ' + esc(p.name) : 'No phone on file'}"><i class="bi bi-telephone"></i></a>
-          <a class="icon-btn ${p.linkedin_url ? '' : 'disabled'}" ${p.linkedin_url ? `href="${esc(p.linkedin_url)}" target="_blank"` : ''} title="${p.linkedin_url ? 'LinkedIn' : 'No LinkedIn on file'}"><i class="bi bi-linkedin"></i></a>
+          <a class="icon-btn ${p.email ? '' : 'disabled'}" ${p.email ? `href="mailto:${esc(p.email)}"` : ''} title="${p.email ? 'Email ' + esc(p.name) : 'No email on file'}"><i class="fa-solid fa-envelope"></i></a>
+          <a class="icon-btn ${p.phone ? '' : 'disabled'}" ${p.phone ? `href="tel:${esc(p.phone)}"` : ''} title="${p.phone ? 'Call ' + esc(p.name) : 'No phone on file'}"><i class="fa-solid fa-phone"></i></a>
+          <a class="icon-btn ${p.linkedin_url ? '' : 'disabled'}" ${p.linkedin_url ? `href="${esc(p.linkedin_url)}" target="_blank"` : ''} title="${p.linkedin_url ? 'LinkedIn' : 'No LinkedIn on file'}"><i class="fa-brands fa-linkedin"></i></a>
         </div>
       </div>`;
   }).join('') + (personas.length > 12 ? `<div class="people-empty">+${personas.length - 12} more contacts — refine your search to narrow it down</div>` : '');
@@ -43,52 +43,52 @@ export function renderPeople(account, lob) {
   const tech = getTechFor(account, lob);
 
   const socialLinks = [
-    account.linkedin_url ? { label: 'LinkedIn', icon: 'bi-linkedin', url: account.linkedin_url } : null,
-    account.twitter_url ? { label: 'X / Twitter', icon: 'bi-twitter-x', url: account.twitter_url } : (account.twitter_handle ? { label: 'X / Twitter', icon: 'bi-twitter-x', url: `https://twitter.com/${account.twitter_handle}` } : null),
-    account.blog_url ? { label: 'Blog', icon: 'bi-journal-richtext', url: account.blog_url } : null,
-    account.github_url ? { label: 'GitHub', icon: 'bi-github', url: account.github_url } : null,
-    account.glassdoor_url ? { label: 'Glassdoor', icon: 'bi-building', url: account.glassdoor_url } : null,
-    account.website_url ? { label: 'Website', icon: 'bi-globe2', url: account.website_url } : null
+    account.linkedin_url ? { label: 'LinkedIn', icon: 'fa-brands fa-linkedin', url: account.linkedin_url } : null,
+    account.twitter_url ? { label: 'X / Twitter', icon: 'fa-brands fa-x-twitter', url: account.twitter_url } : (account.twitter_handle ? { label: 'X / Twitter', icon: 'fa-brands fa-x-twitter', url: `https://twitter.com/${account.twitter_handle}` } : null),
+    account.blog_url ? { label: 'Blog', icon: 'fa-solid fa-book-open', url: account.blog_url } : null,
+    account.github_url ? { label: 'GitHub', icon: 'fa-brands fa-github', url: account.github_url } : null,
+    account.glassdoor_url ? { label: 'Glassdoor', icon: 'fa-solid fa-building', url: account.glassdoor_url } : null,
+    account.website_url ? { label: 'Website', icon: 'fa-solid fa-earth-americas', url: account.website_url } : null
   ].filter(Boolean);
 
   return `
     <!-- Key Contacts Section -->
     <div class="panel-title" style="margin-top:2px;">
-      <span><i class="bi bi-person-lines-fill"></i> Key Contacts</span>
+      <span><i class="fa-solid fa-address-card"></i> Key Contacts</span>
       <span class="context-badge live">${personas.length} mapped</span>
     </div>
     <p class="section-desc" style="margin-bottom:8px;">Executive stakeholders &amp; decision makers. Click any card to open the AI Call-Prep Dossier.</p>
 
     <div class="contact-search">
-      <i class="bi bi-search"></i>
+      <i class="fa-solid fa-magnifying-glass"></i>
       <input type="text" id="contactSearchInput" placeholder="Filter contacts by name or title..." autocomplete="off">
     </div>
     <div id="contactsListContainer">${renderContactsList(personas)}</div>
 
     <!-- Social & Web Footprint Section -->
     <div class="panel-title" style="margin-top:18px;">
-      <span><i class="bi bi-globe"></i> Social &amp; Web Footprint</span>
+      <span><i class="fa-solid fa-globe"></i> Social &amp; Web Footprint</span>
     </div>
     <p class="section-desc" style="margin-bottom:8px;">Verified corporate web properties and active public discourse channels.</p>
-    ${socialLinks.length ? `<div class="social-links">${socialLinks.map(s => `<a class="social-link" href="${esc(s.url)}" target="_blank" title="Open ${esc(s.label)} profile"><i class="bi ${s.icon}"></i> ${esc(s.label)}</a>`).join('')}</div>`
+    ${socialLinks.length ? `<div class="social-links">${socialLinks.map(s => `<a class="social-link" href="${esc(s.url)}" target="_blank" title="Open ${esc(s.label)} profile"><i class="${s.icon}"></i> ${esc(s.label)}</a>`).join('')}</div>`
       : '<div class="people-empty">No social/web links on file.</div>'}
 
     <!-- Detected Tech Stack Section -->
     <div class="panel-title" style="margin-top:18px;">
-      <span><i class="bi bi-cpu-fill"></i> Detected Tech Stack</span>
+      <span><i class="fa-solid fa-microchip"></i> Detected Tech Stack</span>
       <span class="context-badge ai">${tech.length} items</span>
     </div>
     <p class="section-desc" style="margin-bottom:8px;">Technologies, frameworks, and cloud platforms detected across operating segments.</p>
     <div class="chip-row" style="margin-bottom:12px;">
-      ${tech.length ? tech.map(t => `<span class="chip" title="Active technology in stack"><i class="bi bi-cpu"></i> ${esc(t)}</span>`).join('') : '<span class="chip">No tech stack detected yet</span>'}
+      ${tech.length ? tech.map(t => `<span class="chip" title="Active technology in stack"><i class="fa-solid fa-microchip"></i> ${esc(t)}</span>`).join('') : '<span class="chip">No tech stack detected yet</span>'}
     </div>
 
     <!-- Quick Actions Section -->
     <div class="panel-title" style="margin-top:18px;">
-      <span><i class="bi bi-tools"></i> Account Actions</span>
+      <span><i class="fa-solid fa-screwdriver-wrench"></i> Account Actions</span>
     </div>
     <p class="section-desc" style="margin-bottom:8px;">Enrich tech telemetry and company attributes.</p>
-    <button type="button" class="action-btn" id="fetchDiffbotBtn" data-acct="${account.id}" title="Run live Diffbot scraping to identify technologies and company attributes"><i class="bi bi-cloud-arrow-down"></i> Enrich with Diffbot Intel</button>
+    <button type="button" class="action-btn" id="fetchDiffbotBtn" data-acct="${account.id}" title="Run live Diffbot scraping to identify technologies and company attributes"><i class="fa-solid fa-cloud-arrow-down"></i> Enrich with Diffbot Intel</button>
   `;
 }
 
@@ -110,7 +110,7 @@ dashPeople.addEventListener('click', async function (e) {
     const account = state.accounts.find(a => a.id === Number(diffbotBtn.dataset.acct));
     if (!account) return;
     diffbotBtn.disabled = true;
-    diffbotBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Fetching…';
+    diffbotBtn.innerHTML = '<i class="fa-solid fa-hourglass-half"></i> Fetching…';
     try {
       const res = await fetch('/api/account/diffbot', {
         method: 'POST',

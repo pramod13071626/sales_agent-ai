@@ -5,8 +5,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Admin | Sales Intelligence</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
   <link rel="stylesheet" href="css/tokens.css?v=4.0">
   <link rel="stylesheet" href="css/base.css?v=4.0">
   <link rel="stylesheet" href="css/shell.css?v=4.0">
@@ -23,8 +23,8 @@
 
   <header class="dash-topbar">
     <div class="topbar-brand">
-      <div class="topbar-icon" style="background: linear-gradient(135deg, #0061FF, #4f46e5);"><i
-          class="bi bi-shield-lock-fill"></i></div>
+      <div class="topbar-icon" style="background: linear-gradient(135deg, var(--brand), #4f46e5);"><i
+          class="fa-solid fa-shield-halved"></i></div>
       <div>
         <div class="topbar-title">Sales Intelligence Command</div>
         <div class="topbar-sub">Super Admin Management Console</div>
@@ -33,13 +33,13 @@
     <div class="topbar-actions">
       <div class="topbar-dropdown" id="topbarAccountsDropdown">
         <button type="button" class="topbar-link topbar-dropdown-btn" id="globalAccountsBtn" title="View organization accounts">
-          <i class="bi bi-buildings"></i>
+          <i class="fa-solid fa-city"></i>
           <span>Global Accounts</span>
-          <i class="bi bi-chevron-down dropdown-chevron"></i>
+          <i class="fa-solid fa-chevron-down dropdown-chevron"></i>
         </button>
         <div class="topbar-dropdown-menu d-none" id="globalAccountsMenu">
           <div class="dropdown-menu-header">
-            <span class="dropdown-header-title"><i class="bi bi-buildings"></i> Organisation Accounts</span>
+            <span class="dropdown-header-title"><i class="fa-solid fa-city"></i> Organisation Accounts</span>
             <span class="dropdown-header-badge" id="dropdownAccountCount">...</span>
           </div>
           <div class="dropdown-menu-list" id="dropdownAccountList">
@@ -47,12 +47,12 @@
           </div>
         </div>
       </div>
-      <a href="/pipline/" class="topbar-link"><i class="bi bi-compass"></i> Pipeline Explorer <i
-          class="bi bi-box-arrow-up-right"></i></a>
+      <a href="/pipline/" class="topbar-link"><i class="fa-solid fa-compass"></i> Pipeline Explorer <i
+          class="fa-solid fa-arrow-up-right-from-square"></i></a>
       <span id="topbarAuthUser" class="topbar-auth-user"></span>
       <button type="button" class="topbar-link topbar-link-btn" id="adminLogoutBtn" title="Sign out"><i
-          class="bi bi-box-arrow-right"></i> Logout</button>
-      <button id="themeToggle" class="topbar-theme-btn" title="Toggle theme"><i class="bi bi-moon-stars"></i></button>
+          class="fa-solid fa-right-from-bracket"></i> Logout</button>
+      <button id="themeToggle" class="topbar-theme-btn" title="Toggle theme"><i class="fa-solid fa-moon"></i></button>
     </div>
   </header>
 

@@ -3842,6 +3842,156 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
+    def _generate_persona_profiles(session, p: "Persona"):
+        """Runs the person digest subprocess that synthesizes BOTH the
+        Personality and Psychological profiles in one pass (--profiles-only
+        always builds both, see apps/content_pipeline/digest/pipeline.py)
+        and returns the freshly-written Digest row. Shared by the
+        personality-profile and psychological-profile /generate endpoints
+        below so a click on either button doesn't run the subprocess twice.
+        Raises HTTPException on any failure."""
+        content_pipeline_dir = Path(__file__).resolve().parent / "apps" / "content_pipeline"
+
+        # apps/content_pipeline has its own top-level module named `db`
+        # (apps/content_pipeline/db.py) — a straight name collision with
+        # this app's own `db` package, already loaded under that same
+        # name in this process's sys.modules. `import db` inside that
+        # app's own code (people_targets.py, digest/pipeline.py) would
+        # silently resolve to THIS app's db package instead of its own
+        # once cached, no matter what sys.path says. Running it as a
+        # separate process — exactly its own CLI entrypoint, exactly as
+        # a human would run it — sidesteps the collision entirely
+        # instead of fighting Python's module cache for it.
+        sys.path.insert(0, str(content_pipeline_dir))
+        from apps.content_pipeline.people_targets import ALIASES as PEOPLE_ALIASES
+
+        existing = _resolve_persona_digest(session, p)
+        candidates = [existing.target_key] if existing else []
+        candidates += [p.key, slugify(p.full_name or ""), _slugify_dropping_initials(p.full_name or "")]
+        target_key = next((c for c in candidates if c and c in PEOPLE_ALIASES), None)
+        if not target_key:
+            raise HTTPException(
+                status_code=400,
+                detail=f"'{p.full_name}' isn't registered in people_targets.py under any key this resolves "
+                f"({', '.join(c for c in candidates if c)}) — add them there before generating a profile.",
+            )
+
+        # --profiles-only: on-demand generation for exactly the two
+        # profiles, skipping the separate email-rollup LLM call nobody
+        # asked for here. --all-posts: a UI click is a deliberate
+        # "(re)generate now", not a scheduled incremental digest.
+        # --since-days 3650: --all-posts only bypasses the "new since
+        # last run" filter, NOT the recency window underneath it — a
+        # contact whose captured posts are all older than the default
+        # 14 days (e.g. no recent public activity) would otherwise
+        # always fail with "no posts in scope" on a fresh generation.
+        #
+        # Logs to an explicit UTF-8-opened file rather than
+        # capture_output=True/text=True — on this box, letting the
+        # parent auto-decode the captured pipes (locale-dependent, not
+        # UTF-8) silently returned stdout=stderr=None instead of
+        # raising, hiding every real error. This is the same "open the
+        # file as UTF-8 yourself" workaround already needed manually
+        # all session for this app's own Windows-console encoding issue
+        # (main.py's banner prints a Unicode box-drawing character).
+        proc_env = dict(os.environ, PYTHONIOENCODING="utf-8")
+        log_fd, log_path = tempfile.mkstemp(suffix=".log", prefix="profile_gen_")
+        os.close(log_fd)
+        try:
+            with open(log_path, "w", encoding="utf-8") as log_fh:
+                result = subprocess.run(
+                    [sys.executable, "main.py", "digest", target_key, "--person", "--all-posts", "--profiles-only", "--since-days", "3650"],
+                    cwd=str(content_pipeline_dir), env=proc_env,
+                    stdout=log_fh, stderr=subprocess.STDOUT, timeout=300,
+                )
+            with open(log_path, "r", encoding="utf-8", errors="replace") as log_fh:
+                output = log_fh.read()
+        finally:
+            try:
+                os.remove(log_path)
+            except OSError:
+                pass
+
+        if result.returncode != 0:
+            # "No posts in scope" isn't a pipeline failure — it means this
+            # contact genuinely has zero captured public content to
+            # synthesize from (distinct from "not registered" above, where
+            # nobody's even trying to capture anything for them). Surface
+            # it as a 400 like the not-registered case so the frontend
+            # shows the same "please connect content for this contact"
+            # message instead of a generic "something went wrong" retry
+            # prompt — a real subprocess crash still falls through to 502.
+            if re.search(r"no posts in scope|nothing to summarise", output or "", re.I):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"No captured public content is available yet for '{p.full_name}' — nothing to synthesize a profile from.",
+                )
+            raise HTTPException(
+                status_code=502,
+                detail=f"Digest generation failed (exit {result.returncode}): {(output or '(no output)')[-1000:]}",
+            )
+
+        # The subprocess's own db.upsert_digest() call already wrote the
+        # fresh row to Postgres — re-read it here rather than parsing
+        # the subprocess's stdout/local JSON file.
+        session.expire_all()
+        digest_row = _resolve_persona_digest(session, p)
+        return digest_row, output
+
+    @app.get("/api/personas/{persona_id}/personality-profile", tags=["3. Personas & Buying Committee"])
+    def get_persona_personality_profile(persona_id: int, user: User = Depends(auth.require_persona_account_access)):
+        """Retrieve the compiled Executive Personality Profile for a persona.
+
+        Returns profile=None (not a fabricated placeholder) when nothing has
+        been generated yet — the frontend shows an honest "not generated"
+        state, with a Generate button, for that instead of canned text."""
+        session = get_session()
+        try:
+            p = session.query(Persona).filter_by(id=persona_id).first()
+            if not p:
+                raise HTTPException(status_code=404, detail="Persona not found.")
+            digest_row = _resolve_persona_digest(session, p)
+
+            profile = None
+            if digest_row and digest_row.digest and isinstance(digest_row.digest, dict):
+                profile = digest_row.digest.get("personality_profile")
+            if not profile and p.raw_data and isinstance(p.raw_data, dict):
+                profile = p.raw_data.get("personality_profile")
+
+            return {
+                "persona_id": p.id,
+                "persona_name": p.full_name,
+                "title": p.title,
+                "profile": profile,
+            }
+        finally:
+            session.close()
+
+    @app.post("/api/personas/{persona_id}/personality-profile/generate", tags=["3. Personas & Buying Committee"])
+    def generate_persona_personality_profile(persona_id: int, user: User = Depends(auth.require_persona_account_access)):
+        """Trigger on-demand live generation of the personality profile using LLM synthesis."""
+        session = get_session()
+        try:
+            p = session.query(Persona).filter_by(id=persona_id).first()
+            if not p:
+                raise HTTPException(status_code=404, detail="Persona not found.")
+
+            digest_row, output = _generate_persona_profiles(session, p)
+            personality = (digest_row.digest or {}).get("personality_profile") if digest_row else None
+            if not personality:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Digest ran but produced no personality_profile. Output: {output[-1000:]}",
+                )
+
+            return {
+                "status": "success",
+                "persona_id": p.id,
+                "profile": personality
+            }
+        finally:
+            session.close()
+
     @app.post("/api/personas/{persona_id}/psychological-profile/generate", tags=["3. Personas & Buying Committee"])
     def generate_persona_psychological_profile(persona_id: int, user: User = Depends(auth.require_persona_account_access)):
         """Trigger on-demand live generation of the psychological profile using LLM synthesis."""
@@ -3851,79 +4001,7 @@ if FASTAPI_AVAILABLE:
             if not p:
                 raise HTTPException(status_code=404, detail="Persona not found.")
 
-            content_pipeline_dir = Path(__file__).resolve().parent / "apps" / "content_pipeline"
-
-            # apps/content_pipeline has its own top-level module named `db`
-            # (apps/content_pipeline/db.py) — a straight name collision with
-            # this app's own `db` package, already loaded under that same
-            # name in this process's sys.modules. `import db` inside that
-            # app's own code (people_targets.py, digest/pipeline.py) would
-            # silently resolve to THIS app's db package instead of its own
-            # once cached, no matter what sys.path says. Running it as a
-            # separate process — exactly its own CLI entrypoint, exactly as
-            # a human would run it — sidesteps the collision entirely
-            # instead of fighting Python's module cache for it.
-            sys.path.insert(0, str(content_pipeline_dir))
-            from apps.content_pipeline.people_targets import ALIASES as PEOPLE_ALIASES
-
-            existing = _resolve_persona_digest(session, p)
-            candidates = [existing.target_key] if existing else []
-            candidates += [p.key, slugify(p.full_name or ""), _slugify_dropping_initials(p.full_name or "")]
-            target_key = next((c for c in candidates if c and c in PEOPLE_ALIASES), None)
-            if not target_key:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"'{p.full_name}' isn't registered in people_targets.py under any key this resolves "
-                    f"({', '.join(c for c in candidates if c)}) — add them there before generating a profile.",
-                )
-
-            # --profiles-only: on-demand generation for exactly the two
-            # profiles, skipping the separate email-rollup LLM call nobody
-            # asked for here. --all-posts: a UI click is a deliberate
-            # "(re)generate now", not a scheduled incremental digest.
-            # --since-days 3650: --all-posts only bypasses the "new since
-            # last run" filter, NOT the recency window underneath it — a
-            # contact whose captured posts are all older than the default
-            # 14 days (e.g. no recent public activity) would otherwise
-            # always fail with "no posts in scope" on a fresh generation.
-            #
-            # Logs to an explicit UTF-8-opened file rather than
-            # capture_output=True/text=True — on this box, letting the
-            # parent auto-decode the captured pipes (locale-dependent, not
-            # UTF-8) silently returned stdout=stderr=None instead of
-            # raising, hiding every real error. This is the same "open the
-            # file as UTF-8 yourself" workaround already needed manually
-            # all session for this app's own Windows-console encoding issue
-            # (main.py's banner prints a Unicode box-drawing character).
-            proc_env = dict(os.environ, PYTHONIOENCODING="utf-8")
-            log_fd, log_path = tempfile.mkstemp(suffix=".log", prefix="profile_gen_")
-            os.close(log_fd)
-            try:
-                with open(log_path, "w", encoding="utf-8") as log_fh:
-                    result = subprocess.run(
-                        [sys.executable, "main.py", "digest", target_key, "--person", "--all-posts", "--profiles-only", "--since-days", "3650"],
-                        cwd=str(content_pipeline_dir), env=proc_env,
-                        stdout=log_fh, stderr=subprocess.STDOUT, timeout=300,
-                    )
-                with open(log_path, "r", encoding="utf-8", errors="replace") as log_fh:
-                    output = log_fh.read()
-            finally:
-                try:
-                    os.remove(log_path)
-                except OSError:
-                    pass
-
-            if result.returncode != 0:
-                raise HTTPException(
-                    status_code=502,
-                    detail=f"Digest generation failed (exit {result.returncode}): {(output or '(no output)')[-1000:]}",
-                )
-
-            # The subprocess's own db.upsert_digest() call already wrote the
-            # fresh row to Postgres — re-read it here rather than parsing
-            # the subprocess's stdout/local JSON file.
-            session.expire_all()
-            digest_row = _resolve_persona_digest(session, p)
+            digest_row, output = _generate_persona_profiles(session, p)
             psych = (digest_row.digest or {}).get("psychological_profile") if digest_row else None
             if not psych:
                 raise HTTPException(
@@ -4858,11 +4936,32 @@ if FASTAPI_AVAILABLE:
             ai_rx = re.compile(r"\bai\b|artificial|machine learning|\bml\b|genai|process analyst|automation", re.I)
             cloud_rx = re.compile(r"cloud|full-stack|full stack|platform|devops|systems lead|software engineer", re.I)
 
+            # Same taxonomy as HIRING_DOMAINS in jobs-radar.js (the per-account
+            # Hiring Trend Radar deep-dive) — ported here so the Command Center
+            # tile's "top hiring category" agrees with what a rep sees on
+            # click-through, rather than inventing a second classification.
+            # Matched in this order, first hit wins; core_operations is the
+            # catch-all for anything none of the others match (mirrors the
+            # client-side "assign to primary dominant domain" logic exactly).
+            hiring_domains = [
+                {"id": "ai_automation", "name": "AI & Process Automation", "icon": "fa-solid fa-microchip",
+                 "rx": re.compile(r"\bai\b|artificial intelligence|machine learning|\bml\b|genai|generative ai|\bllm\b|copilot|process analyst|deep learning|\bnlp\b|automation|cognitive|neural|agentic|prompt", re.I)},
+                {"id": "cloud_platform", "name": "Cloud & Platform Modernization", "icon": "fa-solid fa-cloud",
+                 "rx": re.compile(r"cloud|infrastructure|full-stack|full stack|platform|devops|architect|systems lead|site reliability|\bsre\b|\baws\b|\bazure\b|\bgcp\b|kubernetes|microservices|distributed systems|software engineer", re.I)},
+                {"id": "data_analytics", "name": "Data Engineering & Analytics", "icon": "fa-solid fa-chart-column",
+                 "rx": re.compile(r"\bdata\b|quantitative|analytics|\bbi\b|data science|\betl\b|\bsql\b|snowflake|databricks|pipeline|warehouse|business intelligence|lakehouse", re.I)},
+                {"id": "risk_compliance", "name": "Risk, Compliance & Control", "icon": "fa-solid fa-shield-halved",
+                 "rx": re.compile(r"\brisk\b|compliance|\bcontrol\b|cyber|security|audit|governance|identity|fraud|surveillance|regulatory|collateral", re.I)},
+                {"id": "core_operations", "name": "Core Business & Operations", "icon": "fa-solid fa-sitemap",
+                 "rx": re.compile(r"product management|\bpom\b|operations|credit|investor services|client processing|custody|asset servicing|settlement|trading|wealth|portfolio|specialist|accountant|\bsales\b|manager", re.I)},
+            ]
+
             leadership_count = 0
             contract_roles = []
             loc_counts: Dict[str, int] = {}
             ai_count = 0
             cloud_count = 0
+            category_counts: Dict[str, int] = {d["id"]: 0 for d in hiring_domains}
 
             for j in jobs:
                 t = j.title or ""
@@ -4890,7 +4989,20 @@ if FASTAPI_AVAILABLE:
                 elif cloud_rx.search(t):
                     cloud_count += 1
 
+                matched_domain = next((d["id"] for d in hiring_domains if d["rx"].search(t)), "core_operations")
+                category_counts[matched_domain] += 1
+
             top_hubs = [{"location": loc, "count": count} for loc, count in sorted(loc_counts.items(), key=lambda x: x[1], reverse=True)[:6]]
+
+            top_category = None
+            if total_roles:
+                top_id, top_count = max(category_counts.items(), key=lambda kv: kv[1])
+                if top_count > 0:
+                    top_domain = next(d for d in hiring_domains if d["id"] == top_id)
+                    top_category = {
+                        "id": top_domain["id"], "name": top_domain["name"], "icon": top_domain["icon"],
+                        "count": top_count,
+                    }
 
             return {
                 "account_id": account.id,
@@ -4904,6 +5016,7 @@ if FASTAPI_AVAILABLE:
                     "ai": ai_count,
                     "cloud": cloud_count,
                 },
+                "top_category": top_category,
                 "contract_leads": contract_roles[:5],
             }
         finally:

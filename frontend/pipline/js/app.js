@@ -8,10 +8,10 @@ $(function () {
   function applySidebarCollapseState(collapsed) {
     if (collapsed) {
       $("#sidebar").addClass("collapsed");
-      $("#sidebarCollapseBtn").html('<i class="bi bi-chevron-bar-right"></i>').attr("title", "Expand sidebar");
+      $("#sidebarCollapseBtn").html('<i class="fa-solid fa-angles-right"></i>').attr("title", "Expand sidebar");
     } else {
       $("#sidebar").removeClass("collapsed");
-      $("#sidebarCollapseBtn").html('<i class="bi bi-layout-sidebar-inset"></i>').attr("title", "Shrink sidebar");
+      $("#sidebarCollapseBtn").html('<i class="fa-solid fa-table-columns"></i>').attr("title", "Shrink sidebar");
     }
   }
 
@@ -509,7 +509,7 @@ $(function () {
     } else if (opts.url && value) {
       const normHref = normalizeUrl(String(value));
       const display = opts.urlLabel || (typeof value === "string" && value.length > 55 ? value.substring(0, 52) + "..." : value);
-      renderedValHtml = `<a href="${esc(normHref)}" target="_blank" rel="noopener noreferrer" style="color:#0284c7;font-weight:600;word-break:break-all;text-decoration:none;">${esc(display)} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;"></i></a>`;
+      renderedValHtml = `<a href="${esc(normHref)}" target="_blank" rel="noopener noreferrer" style="color:#0284c7;font-weight:600;word-break:break-all;text-decoration:none;">${esc(display)} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:.7rem;"></i></a>`;
       rawValStr = String(value);
     } else if (opts.chips && Array.isArray(value)) {
       const maxInitial = opts.maxChips || (label.toLowerCase().includes("keyword") ? 6 : null);
@@ -517,7 +517,7 @@ $(function () {
         if (typeof v === 'object' && v !== null) {
           const mainText = v.name || v.title || v.label || v.term || v.company || Object.values(v)[0];
           const subText = v.relationship || v.domain || v.category || "";
-          return `<span class="data-tag" style="display:inline-flex;align-items:center;gap:4px;" title="${esc(JSON.stringify(v))}"><i class="bi bi-tag" style="font-size:0.65rem;color:#0284c7;"></i> ${esc(mainText)}${subText ? ` <span style="color:#64748b;font-size:0.68rem;">(${esc(subText)})</span>` : ''}</span>`;
+          return `<span class="data-tag" style="display:inline-flex;align-items:center;gap:4px;" title="${esc(JSON.stringify(v))}"><i class="fa-solid fa-tag" style="font-size:0.65rem;color:#0284c7;"></i> ${esc(mainText)}${subText ? ` <span style="color:#64748b;font-size:0.68rem;">(${esc(subText)})</span>` : ''}</span>`;
         }
         return `<span class="data-tag">${esc(String(v))}</span>`;
       };
@@ -534,7 +534,7 @@ $(function () {
               ${hiddenChips}
             </span>
             <button type="button" class="btn btn-sm btn-toggle-chips-expand" data-expanded="false" style="padding:2px 10px;font-size:0.72rem;border-radius:14px;display:inline-flex;align-items:center;gap:4px;cursor:pointer;border:1px solid #cbd5e1;color:#0284c7;background:#f8fafc;font-weight:600;">
-              <span>+${remainingCount} more</span> <i class="bi bi-chevron-down" style="font-size:0.68rem;"></i>
+              <span>+${remainingCount} more</span> <i class="fa-solid fa-chevron-down" style="font-size:0.68rem;"></i>
             </button>
           </div>
         `;
@@ -557,7 +557,7 @@ $(function () {
       <div class="snapshot-field-item${spanClass}" ${canEdit ? `data-entity-type="${esc(entityType)}" data-id="${esc(entityId)}" data-field="${esc(fieldName)}" data-raw-value="${esc(rawValStr)}"` : ""}>
         <div class="snapshot-field-header">
           <span class="snapshot-field-label">${esc(label.toUpperCase())}</span>
-          ${canEdit ? `<i class="bi bi-pencil snapshot-field-pencil" title="Edit ${esc(label)} inline"></i>` : ""}
+          ${canEdit ? `<i class="fa-solid fa-pen snapshot-field-pencil" title="Edit ${esc(label)} inline"></i>` : ""}
         </div>
         <div class="snapshot-field-value">
           ${renderedValHtml}
@@ -606,22 +606,22 @@ $(function () {
               <div class="career-item-header">
                 ${logo ? `
                   <img src="${esc(logo)}" class="career-company-logo" alt="${esc(company)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
-                  <div class="career-logo-fallback" style="display:none;"><i class="bi bi-building"></i></div>
+                  <div class="career-logo-fallback" style="display:none;"><i class="fa-solid fa-building"></i></div>
                 ` : `
-                  <div class="career-logo-fallback"><i class="bi bi-building"></i></div>
+                  <div class="career-logo-fallback"><i class="fa-solid fa-building"></i></div>
                 `}
                 <div class="career-item-info">
                   <div class="career-role-title">${esc(pos)}</div>
                   <div class="career-company-row">
                     ${linkedin ? `
                       <a href="${esc(linkedin)}" target="_blank" rel="noopener noreferrer" class="career-company-link">
-                        ${esc(company)} <i class="bi bi-box-arrow-up-right" style="font-size:0.65rem;"></i>
+                        ${esc(company)} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:0.65rem;"></i>
                       </a>
                     ` : `
                       <span style="font-weight:600;color:#334155;">${esc(company)}</span>
                     `}
-                    ${dateRange ? `<span class="career-date-pill"><i class="bi bi-calendar3"></i> ${esc(dateRange)}</span>` : ""}
-                    ${loc ? `<span style="color:#64748b;font-size:0.75rem;"><i class="bi bi-geo-alt"></i> ${esc(loc)}</span>` : ""}
+                    ${dateRange ? `<span class="career-date-pill"><i class="fa-solid fa-calendar-days"></i> ${esc(dateRange)}</span>` : ""}
+                    ${loc ? `<span style="color:#64748b;font-size:0.75rem;"><i class="fa-solid fa-location-dot"></i> ${esc(loc)}</span>` : ""}
                   </div>
                 </div>
               </div>
@@ -654,12 +654,12 @@ $(function () {
           return `
             <div class="academic-card">
               <div class="academic-icon-box">
-                <i class="bi bi-mortarboard-fill"></i>
+                <i class="fa-solid fa-graduation-cap"></i>
               </div>
               <div>
                 <div class="academic-degree-name">${esc(deg)}</div>
                 <div class="academic-school-name">${esc(school)}</div>
-                ${dateStr ? `<div style="font-size:0.72rem;color:#94a3b8;margin-top:4px;"><i class="bi bi-calendar"></i> Class of ${esc(dateStr)}</div>` : ""}
+                ${dateStr ? `<div style="font-size:0.72rem;color:#94a3b8;margin-top:4px;"><i class="fa-solid fa-calendar"></i> Class of ${esc(dateStr)}</div>` : ""}
               </div>
             </div>
           `;
@@ -674,7 +674,7 @@ $(function () {
       return `
         <div class="lob-structured-card">
           <div class="lob-structured-header">
-            <span class="lob-structured-title"><i class="bi bi-patch-check" style="color:#0284c7;"></i> Intellectual Property &amp; Patents</span>
+            <span class="lob-structured-title"><i class="fa-solid fa-circle-check" style="color:#0284c7;"></i> Intellectual Property &amp; Patents</span>
             <span class="badge" style="background:#f1f5f9;color:#64748b;">No Separate Patents</span>
           </div>
           <div style="color:#94a3b8;font-size:0.8rem;font-style:italic;">No dedicated patents registered directly under this operating division.</div>
@@ -688,7 +688,7 @@ $(function () {
     return `
       <div class="lob-structured-card">
         <div class="lob-structured-header">
-          <span class="lob-structured-title"><i class="bi bi-patch-check-fill" style="color:#0284c7;"></i> Intellectual Property &amp; Patent Portfolio</span>
+          <span class="lob-structured-title"><i class="fa-solid fa-circle-check" style="color:#0284c7;"></i> Intellectual Property &amp; Patent Portfolio</span>
           <span class="badge-solid-green">${esc(status)}</span>
         </div>
         <div class="lob-disclosure-grid">
@@ -717,7 +717,7 @@ $(function () {
       return `
         <div class="lob-structured-card">
           <div class="lob-structured-header">
-            <span class="lob-structured-title"><i class="bi bi-file-earmark-bar-graph" style="color:#059669;"></i> Financial Disclosures &amp; Regulatory Standing</span>
+            <span class="lob-structured-title"><i class="fa-solid fa-file-lines" style="color:#059669;"></i> Financial Disclosures &amp; Regulatory Standing</span>
             <span class="badge" style="background:#f1f5f9;color:#64748b;">Consolidated</span>
           </div>
           <div style="color:#94a3b8;font-size:0.8rem;font-style:italic;">Disclosures consolidated into parent corporate audited filings.</div>
@@ -734,7 +734,7 @@ $(function () {
     return `
       <div class="lob-structured-card">
         <div class="lob-structured-header">
-          <span class="lob-structured-title"><i class="bi bi-file-earmark-bar-graph-fill" style="color:#059669;"></i> Financial Disclosures &amp; Regulatory Standing</span>
+          <span class="lob-structured-title"><i class="fa-solid fa-file-lines" style="color:#059669;"></i> Financial Disclosures &amp; Regulatory Standing</span>
           <span class="badge-solid-green">${esc(status)}</span>
         </div>
         <div class="lob-disclosure-grid">
@@ -759,7 +759,7 @@ $(function () {
               <div class="lob-disclosure-label">REGISTERED LEI IDENTIFIER</div>
               <div class="lob-disclosure-val">
                 <a href="https://search.gleif.org/#/record/${esc(lei)}" target="_blank" rel="noopener noreferrer" style="color:#0284c7;text-decoration:none;font-family:monospace;">
-                  ${esc(lei)} <i class="bi bi-box-arrow-up-right" style="font-size:0.7rem;"></i>
+                  ${esc(lei)} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:0.7rem;"></i>
                 </a>
               </div>
             </div>
@@ -807,7 +807,7 @@ $(function () {
           <div class="section-title-row">
             <div class="section-title-left">
               <span class="section-title-dot"></span>
-              <i class="bi bi-shield-shaded" style="color:#0284c7;"></i>
+              <i class="fa-solid fa-shield-halved" style="color:#0284c7;"></i>
               <span>${sectionPrefix}Direct Peer Competitors &amp; Market Alternatives</span>
             </div>
             <span class="badge" style="background:#f1f5f9;color:#64748b;">None Tracked</span>
@@ -822,7 +822,7 @@ $(function () {
         <div class="section-title-row" style="margin-bottom:10px;">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="bi bi-shield-shaded" style="color:#0284c7;"></i>
+            <i class="fa-solid fa-shield-halved" style="color:#0284c7;"></i>
             <span>${sectionPrefix}Direct Peer Competitors &amp; Market Alternatives</span>
           </div>
           <span class="badge" style="background:#e0f2fe;color:#0369a1;font-weight:700;padding:2px 8px;font-size:0.72rem;">${list.length} Peers Tracked</span>
@@ -866,7 +866,7 @@ $(function () {
               <div class="competitor-compact-card">
                 <div class="competitor-card-head">
                   <div class="competitor-card-title">
-                    <i class="bi bi-shield-check" style="color:#0284c7;font-size:0.9rem;flex-shrink:0;"></i>
+                    <i class="fa-solid fa-shield-halved" style="color:#0284c7;font-size:0.9rem;flex-shrink:0;"></i>
                     <span class="competitor-card-name" title="${esc(name)}">${esc(name)}</span>
                   </div>
                   <span class="competitor-rel-badge" style="flex-shrink:0;">${esc(rel)}</span>
@@ -874,24 +874,24 @@ $(function () {
 
                 <div class="competitor-card-domain">
                   <a href="${esc(webUrl)}" target="_blank" rel="noopener noreferrer" class="competitor-domain-link" title="Visit official corporate domain: ${esc(cleanDomain || webUrl)}">
-                    <i class="bi bi-globe" style="font-size:0.72rem;"></i>
+                    <i class="fa-solid fa-globe" style="font-size:0.72rem;"></i>
                     <span style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(cleanDomain || 'Official Website')}</span>
-                    <i class="bi bi-box-arrow-up-right" style="font-size:0.58rem;"></i>
+                    <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:0.58rem;"></i>
                   </a>
                 </div>
 
                 <div class="competitor-card-actions">
                   <a href="${esc(webUrl)}" target="_blank" rel="noopener noreferrer" class="comp-link-badge" title="Official Domain: ${esc(cleanDomain || webUrl)}">
-                    <i class="bi bi-link-45deg"></i> Web
+                    <i class="fa-solid fa-link"></i> Web
                   </a>
                   <a href="${esc(newsUrl)}" target="_blank" rel="noopener noreferrer" class="comp-link-badge" title="Live Google News Stream">
-                    <i class="bi bi-newspaper"></i> News
+                    <i class="fa-solid fa-newspaper"></i> News
                   </a>
                   <a href="${esc(linkedinUrl)}" target="_blank" rel="noopener noreferrer" class="comp-link-badge" title="LinkedIn Corporate Profile">
-                    <i class="bi bi-linkedin"></i> LinkedIn
+                    <i class="fa-brands fa-linkedin"></i> LinkedIn
                   </a>
                   <a href="${esc(secUrl)}" target="_blank" rel="noopener noreferrer" class="comp-link-badge" title="SEC EDGAR Company Filings">
-                    <i class="bi bi-file-earmark-text"></i> SEC
+                    <i class="fa-solid fa-file-lines"></i> SEC
                   </a>
                 </div>
               </div>
@@ -909,7 +909,7 @@ $(function () {
       return `
         <div class="lob-structured-card" style="grid-column: 1 / -1;">
           <div style="display:flex;align-items:center;gap:10px;padding:8px;color:#64748b;">
-            <i class="bi bi-info-circle-fill" style="color:#0284c7;font-size:1.1rem;"></i>
+            <i class="fa-solid fa-circle-info" style="color:#0284c7;font-size:1.1rem;"></i>
             <div>
               <div style="font-weight:600;color:#334155;font-size:0.85rem;">No Direct Child Divisions Registered</div>
               <div style="font-size:0.75rem;margin-top:2px;">This operating division operates as a direct consolidated unit without secondary nested subsidiaries under the current corporate registry filing.</div>
@@ -942,7 +942,7 @@ $(function () {
                     ${sLegal ? `<div class="sublob-card-subtitle">${esc(sLegal)}</div>` : ''}
                   </div>
                   <span class="sublob-badge-l3">
-                    <i class="bi bi-diagram-3"></i> Level 3
+                    <i class="fa-solid fa-sitemap"></i> Level 3
                   </span>
                 </div>
 
@@ -952,7 +952,7 @@ $(function () {
                     <div class="sublob-meta-val">
                       ${lei ? `
                         <a href="https://search.gleif.org/#/record/${esc(lei)}" target="_blank" rel="noopener noreferrer" style="color:#0284c7;font-family:monospace;" onclick="event.stopPropagation();">
-                          ${esc(lei.length > 14 ? lei.substring(0, 12) + '...' : lei)} <i class="bi bi-box-arrow-up-right" style="font-size:0.65rem;"></i>
+                          ${esc(lei.length > 14 ? lei.substring(0, 12) + '...' : lei)} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:0.65rem;"></i>
                         </a>
                       ` : '<span style="color:#94a3b8;">Pending LEI</span>'}
                     </div>
@@ -975,24 +975,24 @@ $(function () {
 
               <div class="sublob-card-footer">
                 <span class="sublob-parent-tag" title="Parent Line of Business">
-                  <i class="bi bi-building"></i> ${esc(parentName)}
+                  <i class="fa-solid fa-building"></i> ${esc(parentName)}
                 </span>
                 <div style="display:flex;align-items:center;gap:6px;">
                   <button type="button" class="btn-sublob-details" data-sublob-id="${esc(sub.id || '')}" title="View all 18 enterprise database fields">
-                    <i class="bi bi-eye"></i> Details
+                    <i class="fa-solid fa-eye"></i> Details
                   </button>
                   ${isVerified ? `
                     <span class="badge" style="background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;font-size:0.68rem;padding:3px 7px;">
-                      <i class="bi bi-check-circle-fill"></i> Verified ${verifiedAt ? '(' + esc(verifiedAt) + ')' : ''}
+                      <i class="fa-solid fa-circle-check"></i> Verified ${verifiedAt ? '(' + esc(verifiedAt) + ')' : ''}
                     </span>
                   ` : `
                     <span class="badge" style="background:#f8fafc;color:#64748b;border:1px solid #e2e8f0;font-size:0.68rem;padding:3px 7px;">
-                      <i class="bi bi-dash-circle"></i> Unverified
+                      <i class="fa-solid fa-circle-minus"></i> Unverified
                     </span>
                   `}
                   ${sub.id ? `
                     <button type="button" class="btn btn-sm btn-light btn-verify-sublob" data-sublob-id="${esc(sub.id)}" title="Toggle manual verification" style="font-size:0.68rem;padding:2px 6px;border:1px solid #cbd5e1;">
-                      <i class="bi bi-check2-circle"></i>
+                      <i class="fa-solid fa-circle-check"></i>
                     </button>
                   ` : ''}
                 </div>
@@ -1044,7 +1044,7 @@ $(function () {
       <!-- Explainer Banner -->
       <div class="hierarchy-explainer-banner">
         <div class="hierarchy-explainer-icon">
-          <i class="bi bi-diagram-3-fill"></i>
+          <i class="fa-solid fa-sitemap"></i>
         </div>
         <div class="hierarchy-explainer-text">
           <div class="hierarchy-explainer-title">
@@ -1056,12 +1056,12 @@ $(function () {
             Below is the multi-tier hierarchy containing <strong>${directCount} Direct Operating Divisions (LOBs)</strong> and <strong>${sublobCount} Indirect Operating Sub-LOBs</strong> under the ultimate parent company.
           </p>
           <div class="hierarchy-stats-bar">
-            <span class="hierarchy-stat-chip"><i class="bi bi-shield-check" style="color:#059669;"></i> Parent LEI: <strong>${esc(parentLei)}</strong></span>
-            <span class="hierarchy-stat-chip"><i class="bi bi-diagram-2" style="color:#0284c7;"></i> <strong>${totalCount}</strong> Total Global Entities</span>
-            <span class="hierarchy-stat-chip"><i class="bi bi-building" style="color:#0ea5e9;"></i> <strong>${directCount}</strong> Direct LOBs</span>
-            <span class="hierarchy-stat-chip"><i class="bi bi-diagram-3" style="color:#d97706;"></i> <strong>${sublobCount}</strong> Operating Sub-LOBs</span>
-            <span class="hierarchy-stat-chip"><i class="bi bi-globe" style="color:#6366f1;"></i> <strong>${countries.length}</strong> Global Jurisdictions (${countries.slice(0, 6).join(", ")})</span>
-            ${mappedCount > 0 ? `<span class="hierarchy-stat-chip" style="background:#ecfdf5;border-color:#a7f3d0;color:#047857;"><i class="bi bi-check-circle-fill"></i> <strong>${mappedCount}</strong> Mapped to Pipeline LOBs</span>` : ""}
+            <span class="hierarchy-stat-chip"><i class="fa-solid fa-shield-halved" style="color:#059669;"></i> Parent LEI: <strong>${esc(parentLei)}</strong></span>
+            <span class="hierarchy-stat-chip"><i class="fa-solid fa-diagram-project" style="color:#0284c7;"></i> <strong>${totalCount}</strong> Total Global Entities</span>
+            <span class="hierarchy-stat-chip"><i class="fa-solid fa-building" style="color:#0ea5e9;"></i> <strong>${directCount}</strong> Direct LOBs</span>
+            <span class="hierarchy-stat-chip"><i class="fa-solid fa-sitemap" style="color:#d97706;"></i> <strong>${sublobCount}</strong> Operating Sub-LOBs</span>
+            <span class="hierarchy-stat-chip"><i class="fa-solid fa-globe" style="color:#6366f1;"></i> <strong>${countries.length}</strong> Global Jurisdictions (${countries.slice(0, 6).join(", ")})</span>
+            ${mappedCount > 0 ? `<span class="hierarchy-stat-chip" style="background:#ecfdf5;border-color:#a7f3d0;color:#047857;"><i class="fa-solid fa-circle-check"></i> <strong>${mappedCount}</strong> Mapped to Pipeline LOBs</span>` : ""}
           </div>
         </div>
       </div>
@@ -1071,7 +1071,7 @@ $(function () {
         <div class="hierarchy-root-header">
           <div>
             <div style="font-size:0.68rem;font-weight:700;color:#0284c7;letter-spacing:0.05em;text-transform:uppercase;">
-              <i class="bi bi-award-fill"></i> ULTIMATE PARENT HOLDING ENTITY (LEVEL 1)
+              <i class="fa-solid fa-award"></i> ULTIMATE PARENT HOLDING ENTITY (LEVEL 1)
             </div>
             <div class="hierarchy-root-title">
               ${esc(account.legal_name || account.display_name || account.name)}
@@ -1080,10 +1080,10 @@ $(function () {
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
             <span class="badge-solid-green">ACTIVE &amp; VERIFIED</span>
             <a href="https://search.gleif.org/#/record/${esc(parentLei)}" target="_blank" rel="noopener noreferrer" class="hierarchy-root-lei" title="View official GLEIF Golden Copy registry record">
-              <i class="bi bi-box-arrow-up-right" style="color:#0284c7;"></i> LEI: ${esc(parentLei)}
+              <i class="fa-solid fa-arrow-up-right-from-square" style="color:#0284c7;"></i> LEI: ${esc(parentLei)}
             </a>
             <button type="button" class="btn btn-sm btn-light copy-lei-btn" data-lei="${esc(parentLei)}" title="Copy LEI to clipboard" style="font-size:0.7rem;padding:3px 8px;border:1px solid #cbd5e1;">
-              <i class="bi bi-clipboard"></i> Copy
+              <i class="fa-solid fa-clipboard"></i> Copy
             </button>
           </div>
         </div>
@@ -1093,7 +1093,7 @@ $(function () {
       <div class="hierarchy-branch-connector">
         <div class="hierarchy-branch-line"></div>
         <div class="hierarchy-branch-badge">
-          <i class="bi bi-diagram-3"></i> Direct LOBs (${directCount}) &amp; Operating Sub-LOBs (${sublobCount})
+          <i class="fa-solid fa-sitemap"></i> Direct LOBs (${directCount}) &amp; Operating Sub-LOBs (${sublobCount})
         </div>
         <div class="hierarchy-branch-line"></div>
       </div>
@@ -1104,16 +1104,16 @@ $(function () {
           All Global Subsidiaries (${totalCount})
         </button>
         <button type="button" class="hierarchy-filter-btn" data-filter="direct">
-          <i class="bi bi-building"></i> Direct LOBs (${directCount})
+          <i class="fa-solid fa-building"></i> Direct LOBs (${directCount})
         </button>
         <button type="button" class="hierarchy-filter-btn" data-filter="sublob">
-          <i class="bi bi-diagram-3"></i> Operating Sub-LOBs (${sublobCount})
+          <i class="fa-solid fa-sitemap"></i> Operating Sub-LOBs (${sublobCount})
         </button>
       </div>
 
       <!-- Search & Filter Controls -->
       <div class="subsidiary-search-box">
-        <i class="bi bi-search" style="color:#94a3b8;font-size:0.85rem;margin-left:4px;"></i>
+        <i class="fa-solid fa-magnifying-glass" style="color:#94a3b8;font-size:0.85rem;margin-left:4px;"></i>
         <input type="text" class="subsidiary-search-input" placeholder="Search subsidiaries by name, country (US, CA, GB, JP), or LEI..." />
         <span class="badge" style="background:#f1f5f9;color:#64748b;font-size:0.75rem;padding:7px 12px;border:1px solid #e2e8f0;" id="subsidiaryCountBadge">${totalCount} Entities</span>
       </div>
@@ -1142,27 +1142,27 @@ $(function () {
                 <div class="subsidiary-meta-row">
                   ${isSub ? `
                     <span class="jurisdiction-tag" style="background:#fef3c7;color:#92400e;font-weight:700;">
-                      <i class="bi bi-diagram-3"></i> Level 3: Sub-LOB
+                      <i class="fa-solid fa-sitemap"></i> Level 3: Sub-LOB
                     </span>
                   ` : `
                     <span class="jurisdiction-tag" style="background:#e0f2fe;color:#0284c7;font-weight:700;">
-                      <i class="bi bi-building"></i> Level 2: Direct LOB
+                      <i class="fa-solid fa-building"></i> Level 2: Direct LOB
                     </span>
                   `}
                   <span class="jurisdiction-tag">
                     ${getCountryFlag(child.country)} ${esc(child.jurisdiction || child.country || "Global")}
                   </span>
-                  ${child.legal_form ? `<span class="jurisdiction-tag" title="Entity Legal Form Code"><i class="bi bi-file-earmark-text"></i> ${esc(child.legal_form)}</span>` : ""}
-                  ${child.is_commercial_lob ? `<span class="jurisdiction-tag" style="background:#f0fdf4;color:#047857;" title="Commercial Operating Unit"><i class="bi bi-briefcase-fill"></i> Commercial</span>` : ""}
+                  ${child.legal_form ? `<span class="jurisdiction-tag" title="Entity Legal Form Code"><i class="fa-solid fa-file-lines"></i> ${esc(child.legal_form)}</span>` : ""}
+                  ${child.is_commercial_lob ? `<span class="jurisdiction-tag" style="background:#f0fdf4;color:#047857;" title="Commercial Operating Unit"><i class="fa-solid fa-briefcase"></i> Commercial</span>` : ""}
                 </div>
               </div>
               <div style="margin-top:10px;padding-top:8px;border-top:1px dashed #e2e8f0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">
                 <a href="https://search.gleif.org/#/record/${esc(child.lei)}" target="_blank" rel="noopener noreferrer" class="lei-code-badge" title="View GLEIF official record">
-                  <i class="bi bi-box-arrow-up-right"></i> LEI: ${esc(child.lei ? (child.lei.length > 16 ? child.lei.substring(0, 14) + "..." : child.lei) : "N/A")}
+                  <i class="fa-solid fa-arrow-up-right-from-square"></i> LEI: ${esc(child.lei ? (child.lei.length > 16 ? child.lei.substring(0, 14) + "..." : child.lei) : "N/A")}
                 </a>
                 ${isMapped ? `
                   <a href="javascript:void(0)" class="lob-matched-badge" data-lob-id="${esc(matchedLobId)}" title="Click to view Line of Business #${matchedLobId}">
-                    <i class="bi bi-check-circle-fill"></i> Mapped LOB #${matchedLobId}
+                    <i class="fa-solid fa-circle-check"></i> Mapped LOB #${matchedLobId}
                   </a>
                 ` : `
                   <span style="font-size:0.68rem;color:#94a3b8;">${esc(child.relationship_type || (isSub ? "Indirect Operating Sub-LOB" : "Direct Child Entity"))}</span>
@@ -1176,15 +1176,15 @@ $(function () {
       ${secSubs.length ? `
         <div style="margin-top:20px;padding-top:14px;border-top:1px solid #e2e8f0;">
           <div style="font-size:0.82rem;font-weight:700;color:#0f172a;margin-bottom:8px;display:flex;align-items:center;gap:6px;">
-            <i class="bi bi-file-earmark-spreadsheet" style="color:#0284c7;"></i> SEC Form 10-K Exhibit 21 Disclosed Subsidiaries (${secSubs.length})
+            <i class="fa-solid fa-file-excel" style="color:#0284c7;"></i> SEC Form 10-K Exhibit 21 Disclosed Subsidiaries (${secSubs.length})
           </div>
           <div class="subsidiaries-grid">
             ${secSubs.map(sub => `
               <div class="subsidiary-card">
                 <div class="subsidiary-name">${esc(sub.legal_name || sub.name)}</div>
                 <div class="subsidiary-meta-row">
-                  <span class="jurisdiction-tag"><i class="bi bi-geo-alt"></i> ${esc(sub.jurisdiction || sub.state || "US")}</span>
-                  ${sub.filing_year ? `<span class="jurisdiction-tag"><i class="bi bi-calendar"></i> Filing Year: ${esc(sub.filing_year)}</span>` : ""}
+                  <span class="jurisdiction-tag"><i class="fa-solid fa-location-dot"></i> ${esc(sub.jurisdiction || sub.state || "US")}</span>
+                  ${sub.filing_year ? `<span class="jurisdiction-tag"><i class="fa-solid fa-calendar"></i> Filing Year: ${esc(sub.filing_year)}</span>` : ""}
                 </div>
               </div>
             `).join("")}
@@ -1195,7 +1195,7 @@ $(function () {
       <!-- Collapsible Raw Regulatory JSON -->
       <div class="raw-json-accordion">
         <button type="button" class="btn btn-sm btn-outline-secondary btn-toggle-raw-json" style="font-size:0.72rem;">
-          <i class="bi bi-code-slash"></i> View Raw Regulatory Data (JSON) <i class="bi bi-chevron-down"></i>
+          <i class="fa-solid fa-code"></i> View Raw Regulatory Data (JSON) <i class="fa-solid fa-chevron-down"></i>
         </button>
         <div class="raw-json-container d-none" style="margin-top:10px;">
           <pre style="font-size:.7rem;max-height:220px;overflow:auto;background:#0f172a;color:#f8fafc;padding:12px;border-radius:6px;margin:0;white-space:pre-wrap;">${esc(JSON.stringify(tree, null, 2))}</pre>
@@ -1219,7 +1219,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="bi bi-building" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="fa-solid fa-building" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>1. Corporate Identity &amp; Legal Registration</span>
           </div>
           <span class="section-subtitle-hint">Click pencil icon to edit inline</span>
@@ -1243,7 +1243,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="bi bi-geo-alt" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="fa-solid fa-location-dot" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>2. Location &amp; Corporate Contact</span>
           </div>
           <span class="section-subtitle-hint">Click pencil icon to edit inline</span>
@@ -1265,7 +1265,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="bi bi-share" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="fa-solid fa-share-nodes" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>3. Social Media &amp; Developer Footprint</span>
           </div>
           <span class="section-subtitle-hint">Click pencil icon to edit inline</span>
@@ -1285,7 +1285,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="bi bi-currency-dollar" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="fa-solid fa-dollar-sign" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>4. Financial Valuation &amp; Securities</span>
           </div>
           <span class="section-subtitle-hint">Click pencil icon to edit inline</span>
@@ -1310,7 +1310,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="bi bi-shield-check" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="fa-solid fa-shield-halved" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>5. Regulatory Compliance &amp; SEC EDGAR</span>
           </div>
           <span class="section-subtitle-hint">Click pencil icon to edit inline</span>
@@ -1328,7 +1328,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="bi bi-cpu" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="fa-solid fa-microchip" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>6. Web Traffic, IT Spend &amp; IP Assets</span>
           </div>
           <span class="section-subtitle-hint">Click pencil icon to edit inline</span>
@@ -1353,7 +1353,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="bi bi-broadcast" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="fa-solid fa-tower-broadcast" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>7. 15 OSINT Scraping Launchpad Feeds</span>
           </div>
           <span class="section-subtitle-hint">Click pencil icon to edit inline</span>
@@ -1377,7 +1377,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="bi bi-tags" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="fa-solid fa-tags" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>8. Industry Classifications &amp; Hierarchy Metrics</span>
           </div>
           <span class="section-subtitle-hint">Click pencil icon to edit inline</span>
@@ -1402,7 +1402,7 @@ $(function () {
           <div class="section-title-row">
             <div class="section-title-left">
               <span class="section-title-dot"></span>
-              <i class="bi bi-diagram-3-fill" style="color:#0284c7;font-size:0.95rem;"></i>
+              <i class="fa-solid fa-sitemap" style="color:#0284c7;font-size:0.95rem;"></i>
               <span>9. Corporate Regulatory &amp; Legal Registry Summary</span>
             </div>
             <span class="section-subtitle-hint">GLEIF ISO 17442 &amp; SEC Form 10-K Exhibit 21</span>
@@ -1415,7 +1415,7 @@ $(function () {
               </div>
               <div class="snapshot-field-value">
                 <a href="https://search.gleif.org/#/record/${esc(account.organisational_hierarchy_tree.gleif_lei || account.sec_cik || '')}" target="_blank" style="color:#0284c7;text-decoration:none;">
-                  ${esc(account.organisational_hierarchy_tree.gleif_lei || 'Verified in Registry')} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;"></i>
+                  ${esc(account.organisational_hierarchy_tree.gleif_lei || 'Verified in Registry')} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:.7rem;"></i>
                 </a>
               </div>
             </div>
@@ -1436,7 +1436,7 @@ $(function () {
               <div class="snapshot-field-value">
                 ${account.sec_edgar_url ? `
                   <a href="${esc(account.sec_edgar_url)}" target="_blank" style="color:#0284c7;text-decoration:none;">
-                    SEC Form 10-K Exhibit 21 <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;"></i>
+                    SEC Form 10-K Exhibit 21 <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:.7rem;"></i>
                   </a>
                 ` : 'SEC Exhibit 21 Indexed'}
               </div>
@@ -1445,7 +1445,7 @@ $(function () {
 
           <div style="margin-top:12px;padding:10px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;font-size:0.78rem;color:#64748b;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
             <div>
-              <i class="bi bi-info-circle-fill" style="color:#0284c7;"></i>
+              <i class="fa-solid fa-circle-info" style="color:#0284c7;"></i>
               Active operating business units, divisional heads, and technology stacks are organized under the <strong>Lines of Business (${(account.lobs || []).length})</strong> tab.
             </div>
             <button type="button" class="crumb-lobs" style="font-size:0.74rem;padding:4px 12px;background:#0284c7;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600;">
@@ -1468,7 +1468,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="bi bi-building" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="fa-solid fa-building" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>1. Corporate Identity &amp; Legal Structure</span>
           </div>
           <span class="section-subtitle-hint">Click pencil icon to edit inline</span>
@@ -1492,7 +1492,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="bi bi-bar-chart" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="fa-solid fa-chart-column" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>2. Financial Metrics &amp; Executive Leadership</span>
           </div>
           <span class="section-subtitle-hint">Click pencil icon to edit inline</span>
@@ -1509,7 +1509,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="bi bi-cpu" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="fa-solid fa-microchip" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>3. Technology Stack &amp; Infrastructure</span>
           </div>
           <span class="section-subtitle-hint">Click pencil icon to edit inline</span>
@@ -1527,7 +1527,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="bi bi-journal-text" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="fa-solid fa-book" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>5. Patents &amp; Financial Disclosures</span>
           </div>
           <span class="section-subtitle-hint">Regulatory Disclosures &amp; IP Holdings</span>
@@ -1543,7 +1543,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="bi bi-broadcast-pin" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="fa-solid fa-tower-broadcast" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>6. OSINT Stream Feed Endpoints &amp; Tracking Queries</span>
           </div>
           <span class="section-subtitle-hint">Click pencil icon to configure stream endpoints inline</span>
@@ -1569,26 +1569,26 @@ $(function () {
     currentVaultContext = { entityType: "persona", id: p.id };
 
     const verifiedStreams = [
-      { label: "LinkedIn Profile URL", val: p.linkedin_url, icon: "bi-linkedin" },
-      { label: "Official Corporate Bio URL", val: p.corporate_bio_url, icon: "bi-building-check", isBespoke: true },
-      { label: "Crunchbase Profile URL", val: p.crunchbase_url, icon: "bi-briefcase" },
-      { label: "SEC Form 4 Insider Trades URL", val: p.sec_insider_trades_url, icon: "bi-file-earmark-lock" },
-      { label: "FEC Political Contributions URL", val: p.fec_contributions_url, icon: "bi-bank" },
-      { label: "Quiver Quantitative Insider URL", val: p.quiver_insider_url, icon: "bi-graph-up-arrow", isBespoke: true },
-      { label: "Bloomberg Media & Videos URL", val: p.bloomberg_url, icon: "bi-tv", isBespoke: true },
-      { label: "Wall Street Journal Article URL", val: p.wsj_article_url, icon: "bi-newspaper", isBespoke: true },
-      { label: "Major Media Interview URL", val: p.media_interview_url, icon: "bi-mic-fill", isBespoke: true },
-      { label: "Annual Report & Proxy Statement URL", val: p.annual_report_url, icon: "bi-file-earmark-text" },
-      { label: "ZoomInfo Profile URL", val: p.zoominfo_url, icon: "bi-person-badge" },
-      { label: "Google News Real-Time RSS URL", val: p.rss_url, icon: "bi-rss" },
-      { label: "YouTube Media & Keynotes URL", val: p.youtube_url, icon: "bi-youtube", isBespoke: true },
-      { label: "Executive Podcast Appearances URL", val: p.podcast_url, icon: "bi-headphones", isBespoke: true },
-      { label: "OpenInsider Trades Screener URL", val: p.openinsider_url, icon: "bi-currency-exchange" },
-      { label: "SECForm4 Live Filings URL", val: p.secform4_url, icon: "bi-shield-shaded" },
-      { label: "Wayback Career Archive URL", val: p.wayback_url, icon: "bi-clock-history" },
-      { label: "TheOrg Executive Chart URL", val: p.theorg_url, icon: "bi-diagram-3-fill", isBespoke: true },
-      { label: "Seeking Alpha Transcripts URL", val: p.seeking_alpha_url, icon: "bi-chat-square-quote-fill", isBespoke: true },
-      { label: "External Board & Civic Roles URL", val: p.external_board_url, icon: "bi-award-fill", isBespoke: true }
+      { label: "LinkedIn Profile URL", val: p.linkedin_url, icon: "fa-brands fa-linkedin" },
+      { label: "Official Corporate Bio URL", val: p.corporate_bio_url, icon: "fa-solid fa-building-circle-check", isBespoke: true },
+      { label: "Crunchbase Profile URL", val: p.crunchbase_url, icon: "fa-solid fa-briefcase" },
+      { label: "SEC Form 4 Insider Trades URL", val: p.sec_insider_trades_url, icon: "fa-solid fa-lock" },
+      { label: "FEC Political Contributions URL", val: p.fec_contributions_url, icon: "fa-solid fa-building-columns" },
+      { label: "Quiver Quantitative Insider URL", val: p.quiver_insider_url, icon: "fa-solid fa-arrow-trend-up", isBespoke: true },
+      { label: "Bloomberg Media & Videos URL", val: p.bloomberg_url, icon: "fa-solid fa-tv", isBespoke: true },
+      { label: "Wall Street Journal Article URL", val: p.wsj_article_url, icon: "fa-solid fa-newspaper", isBespoke: true },
+      { label: "Major Media Interview URL", val: p.media_interview_url, icon: "fa-solid fa-microphone", isBespoke: true },
+      { label: "Annual Report & Proxy Statement URL", val: p.annual_report_url, icon: "fa-solid fa-file-lines" },
+      { label: "ZoomInfo Profile URL", val: p.zoominfo_url, icon: "fa-solid fa-id-badge" },
+      { label: "Google News Real-Time RSS URL", val: p.rss_url, icon: "fa-solid fa-rss" },
+      { label: "YouTube Media & Keynotes URL", val: p.youtube_url, icon: "fa-brands fa-youtube", isBespoke: true },
+      { label: "Executive Podcast Appearances URL", val: p.podcast_url, icon: "fa-solid fa-headphones", isBespoke: true },
+      { label: "OpenInsider Trades Screener URL", val: p.openinsider_url, icon: "fa-solid fa-right-left" },
+      { label: "SECForm4 Live Filings URL", val: p.secform4_url, icon: "fa-solid fa-shield-halved" },
+      { label: "Wayback Career Archive URL", val: p.wayback_url, icon: "fa-solid fa-clock-rotate-left" },
+      { label: "TheOrg Executive Chart URL", val: p.theorg_url, icon: "fa-solid fa-sitemap", isBespoke: true },
+      { label: "Seeking Alpha Transcripts URL", val: p.seeking_alpha_url, icon: "fa-solid fa-comment-dots", isBespoke: true },
+      { label: "External Board & Civic Roles URL", val: p.external_board_url, icon: "fa-solid fa-award", isBespoke: true }
     ];
 
     // Filter dedicated-column streams that have a value
@@ -1612,7 +1612,7 @@ $(function () {
           activeStreams.push({
             label: (feed.source || feed.type || "Intelligence Feed") + " URL",
             val: feedUrl,
-            icon: "bi-rss-fill",
+            icon: "fa-solid fa-rss",
             isManifest: true   // distinct badge style (blue) from DB-column streams
           });
           existingUrls.add(feedUrl.toLowerCase()); // prevent duplicates within manifest itself
@@ -1626,7 +1626,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="bi bi-person-vcard" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="fa-solid fa-address-card" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>1. Executive Profile &amp; Demographics</span>
           </div>
           <span class="section-subtitle-hint">Click pencil icon to edit inline</span>
@@ -1647,7 +1647,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="bi bi-envelope" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="fa-solid fa-envelope" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>2. Verified Contact Coordinates</span>
           </div>
           <span class="section-subtitle-hint">Click pencil icon to edit inline</span>
@@ -1670,7 +1670,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="bi bi-briefcase" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="fa-solid fa-briefcase" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>3. Career &amp; Employment History</span>
           </div>
           <span class="section-subtitle-hint">Executive Career Journey &amp; Corporate Background</span>
@@ -1692,7 +1692,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="bi bi-mortarboard" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="fa-solid fa-graduation-cap" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>4. Academic Background &amp; Degrees</span>
           </div>
           <span class="section-subtitle-hint">Verified Academic Credentials &amp; Degrees</span>
@@ -1709,7 +1709,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="bi bi-stars" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="fa-solid fa-star" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>5. AI Sales Dossier &amp; Behavioral Tone</span>
           </div>
           <span class="section-subtitle-hint">Click pencil icon to edit inline</span>
@@ -1729,7 +1729,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="bi bi-bullseye" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="fa-solid fa-bullseye" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>6. Skills, Operational Pain Points &amp; Buying Authority</span>
           </div>
           <span class="section-subtitle-hint">Click pencil icon to edit inline</span>
@@ -1750,7 +1750,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="bi bi-shield-check" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="fa-solid fa-shield-halved" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>7. Verified Executive Intelligence (${activeStreams.length} Active Streams)</span>
           </div>
           <span class="section-subtitle-hint">Click pencil icon to edit inline &bull; Verified live feeds</span>
@@ -1765,23 +1765,23 @@ $(function () {
           <div style="margin-top:14px;padding-top:12px;border-top:1px solid #e2e8f0;">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
               <span style="font-size:0.75rem;font-weight:700;color:#0284c7;text-transform:uppercase;letter-spacing:0.5px;">
-                <i class="bi bi-cpu-fill"></i> Active OSINT Streams Manifest (${activeStreams.length} verified channels)
+                <i class="fa-solid fa-microchip"></i> Active OSINT Streams Manifest (${activeStreams.length} verified channels)
               </span>
               <span style="font-size:0.68rem;color:#64748b;">Key: ${esc(p.osint_feed_manifest && p.osint_feed_manifest.key ? p.osint_feed_manifest.key : (p.key || ''))}</span>
             </div>
             <div style="display:flex;flex-wrap:wrap;gap:6px;">
               ${activeStreams.map(s => {
                 const badgeClass = s.isBespoke ? 'badge-solid-purple' : s.isManifest ? 'badge-solid-blue' : 'badge-solid-green';
-                const iconClass  = s.isBespoke ? 'bi-patch-check-fill' : s.isManifest ? 'bi-rss-fill' : 'bi-check-circle-fill';
+                const iconClass  = s.isBespoke ? 'fa-solid fa-circle-check' : s.isManifest ? 'fa-solid fa-rss' : 'fa-solid fa-circle-check';
                 const iconColor  = s.isBespoke ? '#a855f7' : s.isManifest ? '#0284c7' : '#10b981';
                 return `
                 <a href="${esc(normalizeUrl(String(s.val)))}" target="_blank" rel="noopener noreferrer"
                    class="${badgeClass}"
                    style="text-decoration:none;display:inline-flex;align-items:center;gap:4px;padding:4px 8px;font-size:0.72rem;"
                    title="${esc(s.val)}">
-                  <i class="bi ${iconClass}" style="color:${iconColor};"></i>
+                  <i class="${iconClass}" style="color:${iconColor};"></i>
                   ${esc(s.label.replace(' URL', '').toUpperCase())}
-                  <i class="bi bi-box-arrow-up-right" style="font-size:0.6rem;"></i>
+                  <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:0.6rem;"></i>
                 </a>`;
               }).join('')}
 
@@ -1796,14 +1796,14 @@ $(function () {
           <div class="section-title-row">
             <div class="section-title-left">
               <span class="section-title-dot"></span>
-              <i class="bi bi-code-square" style="color:#0284c7;font-size:0.95rem;"></i>
+              <i class="fa-solid fa-code" style="color:#0284c7;font-size:0.95rem;"></i>
               <span>8. Ingestion Audit Payload (JSON)</span>
             </div>
             <span class="section-subtitle-hint">Technical Ingestion Audit</span>
           </div>
           <div class="raw-json-accordion" style="margin-top:0;border-top:none;padding-top:0;">
             <button type="button" class="btn btn-sm btn-outline-secondary btn-toggle-raw-json" style="font-size:0.75rem;">
-              <i class="bi bi-code-slash"></i> View Ingestion Audit Payload (JSON) <i class="bi bi-chevron-down"></i>
+              <i class="fa-solid fa-code"></i> View Ingestion Audit Payload (JSON) <i class="fa-solid fa-chevron-down"></i>
             </button>
             <div class="raw-json-container d-none" style="margin-top:10px;">
               <pre style="font-size:.7rem;max-height:260px;overflow:auto;background:#0f172a;color:#f8fafc;padding:12px;border-radius:6px;margin:0;white-space:pre-wrap;">${esc(JSON.stringify(p.raw_data, null, 2))}</pre>
@@ -2231,7 +2231,7 @@ $(function () {
              data-lob-id="${lob.id}"
              ${isExtra ? 'style="display:none;"' : ''}
              title="Click to explore ${esc(lob.name)} division and personas">
-          <div class="compact-card-avatar"><i class="bi bi-folder2"></i></div>
+          <div class="compact-card-avatar"><i class="fa-solid fa-folder"></i></div>
           <div class="compact-card-body">
             <div class="compact-card-title">${esc(lob.name)}</div>
             <div class="compact-card-subtitle">${esc(subtitle)}</div>
@@ -2245,7 +2245,7 @@ $(function () {
       $container.after(`
         <div class="lob-toggle-footer" style="grid-column: 1 / -1; width: 100%; text-align: center; margin-top: 12px; padding-top: 10px; border-top: 1px dashed #e2e8f0;">
           <button type="button" class="btn-toggle-lobs-expand" data-expanded="false" style="background:#f8fafc;border:1px solid #cbd5e1;color:#0284c7;font-size:0.8rem;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px;padding:6px 16px;border-radius:20px;transition:all .15s ease;">
-            <span>View all ${lobs.length} Lines of Business (+${extraCount} more)</span> <i class="bi bi-chevron-down" style="font-size:0.75rem;"></i>
+            <span>View all ${lobs.length} Lines of Business (+${extraCount} more)</span> <i class="fa-solid fa-chevron-down" style="font-size:0.75rem;"></i>
           </button>
         </div>
       `);
@@ -2280,10 +2280,10 @@ $(function () {
               ${opStatus !== "—" ? `<span class="badge-solid-green">${esc(opStatus)}</span>` : ""}
               ${industry !== "—" ? `<span class="badge-solid-purple">${esc(industry)}</span>` : ""}
               <span class="badge-health-pill ${aHealth.confidenceScore >= 80 ? 'health-green' : (aHealth.confidenceScore >= 60 ? 'health-blue' : 'health-amber')}" title="Data Completeness: ${aHealth.completenessPct}% (${aHealth.populatedCount}/${aHealth.totalFields} fields) | Source Coverage: ${aHealth.coveragePct}% (${aHealth.sourcesHit}/${aHealth.totalSources} sources)">
-                <i class="bi bi-shield-check"></i> <strong>${aHealth.confidenceScore}% Confidence</strong> &bull; ${aHealth.completenessPct}% Filled (${aHealth.populatedCount}/${aHealth.totalFields}) &bull; ${aHealth.sourcesHit}/${aHealth.totalSources} Sources
+                <i class="fa-solid fa-shield-halved"></i> <strong>${aHealth.confidenceScore}% Confidence</strong> &bull; ${aHealth.completenessPct}% Filled (${aHealth.populatedCount}/${aHealth.totalFields}) &bull; ${aHealth.sourcesHit}/${aHealth.totalSources} Sources
               </span>
               <button type="button" class="btn-verify-badge ${account.is_manually_verified ? 'verified' : 'unverified'}" data-entity-type="account" data-id="${account.id}" title="${account.is_manually_verified ? `Verified ${formatTimeAgo(account.manually_verified_at)}` : 'Click to toggle verification'}">
-                <i class="bi ${account.is_manually_verified ? 'bi-patch-check-fill' : 'bi-shield-exclamation'}"></i>
+                <i class="${account.is_manually_verified ? 'fa-solid fa-circle-check' : 'fa-solid fa-shield-halved'}"></i>
                 <span>${account.is_manually_verified ? `Manually Verified ✓ (${formatTimeAgo(account.manually_verified_at)})` : 'AI Inferred • Verify'}</span>
               </button>
             </div>
@@ -2294,13 +2294,13 @@ $(function () {
         <div class="header-actions-col">
           <div class="header-btn-group">
             <button type="button" class="action-btn-pill btn-pill-blue acct-btn-pull" data-entity-type="account" data-key="${acctKey}">
-              <i class="bi bi-caret-down-fill" style="font-size:0.65rem;"></i> Pull
+              <i class="fa-solid fa-caret-down" style="font-size:0.65rem;"></i> Pull
             </button>
             <button type="button" class="action-btn-pill btn-pill-validate acct-btn-validate" data-entity-type="account" data-key="${acctKey}">
-              <i class="bi bi-check2"></i> Validate
+              <i class="fa-solid fa-check"></i> Validate
             </button>
             <button type="button" class="action-btn-pill btn-pill-dump acct-btn-dump" data-entity-type="account" data-key="${acctKey}">
-              <i class="bi bi-database"></i> Dump
+              <i class="fa-solid fa-database"></i> Dump
             </button>
             <button type="button" class="action-btn-pill btn-pill-purple" id="acctEditBtn">
               Edit
@@ -2396,7 +2396,7 @@ $(function () {
       </div>
 
       <div class="tab-search-box-wrap">
-        <i class="bi bi-search"></i>
+        <i class="fa-solid fa-magnifying-glass"></i>
         <input type="text" id="tabSearchInput" placeholder="Search divisions, personas, fields..." autocomplete="off" />
       </div>
     `;
@@ -2537,8 +2537,8 @@ $(function () {
         ? `<div class="activity-toggle-footer" style="padding-top:10px;border-top:1px dashed #e2e8f0;margin-top:10px;text-align:center;">
              <button type="button" class="btn-toggle-activity-expand" data-expanded="${wasExpanded ? 'true' : 'false'}" style="background:none;border:none;color:#0284c7;font-size:0.78rem;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:6px;transition:all .15s ease;">
                ${wasExpanded 
-                 ? `<span>Show latest 3 only</span> <i class="bi bi-chevron-up" style="font-size:0.72rem;"></i>`
-                 : `<span>View full run history (${extraCount} more)</span> <i class="bi bi-chevron-down" style="font-size:0.72rem;"></i>`
+                 ? `<span>Show latest 3 only</span> <i class="fa-solid fa-chevron-up" style="font-size:0.72rem;"></i>`
+                 : `<span>View full run history (${extraCount} more)</span> <i class="fa-solid fa-chevron-down" style="font-size:0.72rem;"></i>`
                }
              </button>
            </div>`
@@ -2590,7 +2590,7 @@ $(function () {
           </div>
           <div style="display:flex;align-items:center;gap:6px;">
             <span class="feed-status-time">${timeStr}</span>
-            ${isConfigured ? `<i class="bi bi-box-arrow-up-right" style="font-size:0.68rem;color:#0284c7;"></i>` : `<i class="bi bi-plus-circle" style="font-size:0.75rem;color:#94a3b8;"></i>`}
+            ${isConfigured ? `<i class="fa-solid fa-arrow-up-right-from-square" style="font-size:0.68rem;color:#0284c7;"></i>` : `<i class="fa-solid fa-circle-plus" style="font-size:0.75rem;color:#94a3b8;"></i>`}
           </div>
         </div>
       `;
@@ -2662,7 +2662,7 @@ $(function () {
         }).join("") + (hasExtraEvents ? `
           <div class="activity-toggle-footer" style="padding-top:10px;border-top:1px dashed #e2e8f0;margin-top:10px;text-align:center;">
             <button type="button" class="btn-toggle-activity-expand" data-expanded="false" style="background:none;border:none;color:#0284c7;font-size:0.78rem;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:6px;transition:all .15s ease;">
-              <span>View full run history (${extraEventsCount} more)</span> <i class="bi bi-chevron-down" style="font-size:0.72rem;"></i>
+              <span>View full run history (${extraEventsCount} more)</span> <i class="fa-solid fa-chevron-down" style="font-size:0.72rem;"></i>
             </button>
           </div>
         ` : '')
@@ -2686,7 +2686,7 @@ $(function () {
             <div class="snapshot-field-item" data-entity-type="account" data-id="${account.id}" data-field="employee_count_range" data-raw-value="${esc(account.employee_count_range || '')}">
               <div class="snapshot-field-header">
                 <span class="snapshot-field-label">EMPLOYEES</span>
-                <i class="bi bi-pencil snapshot-field-pencil" title="Edit Employees inline"></i>
+                <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Employees inline"></i>
               </div>
               <div class="snapshot-field-value">${esc(employees)}</div>
             </div>
@@ -2694,7 +2694,7 @@ $(function () {
             <div class="snapshot-field-item" data-entity-type="account" data-id="${account.id}" data-field="estimated_revenue_range" data-raw-value="${esc(account.estimated_revenue_range || account.revenue || '')}">
               <div class="snapshot-field-header">
                 <span class="snapshot-field-label">ANNUAL REVENUE</span>
-                <i class="bi bi-pencil snapshot-field-pencil" title="Edit Revenue inline"></i>
+                <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Revenue inline"></i>
               </div>
               <div class="snapshot-field-value">${esc(revenue)}</div>
             </div>
@@ -2702,7 +2702,7 @@ $(function () {
             <div class="snapshot-field-item" data-entity-type="account" data-id="${account.id}" data-field="company_type" data-raw-value="${esc(account.company_type || '')}">
               <div class="snapshot-field-header">
                 <span class="snapshot-field-label">COMPANY TYPE</span>
-                <i class="bi bi-pencil snapshot-field-pencil" title="Edit Company Type inline"></i>
+                <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Company Type inline"></i>
               </div>
               <div class="snapshot-field-value">${esc(compType)}</div>
             </div>
@@ -2710,7 +2710,7 @@ $(function () {
             <div class="snapshot-field-item" data-entity-type="account" data-id="${account.id}" data-field="operating_status" data-raw-value="${esc(account.operating_status || '')}">
               <div class="snapshot-field-header">
                 <span class="snapshot-field-label">OPERATING STATUS</span>
-                <i class="bi bi-pencil snapshot-field-pencil" title="Edit Operating Status inline"></i>
+                <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Operating Status inline"></i>
               </div>
               <div class="snapshot-field-value">
                 ${opStatus !== "—" ? `<span class="badge-solid-green">${esc(opStatus)}</span>` : `<span style="color:#94a3b8;">—</span>`}
@@ -2720,7 +2720,7 @@ $(function () {
             <div class="snapshot-field-item" data-entity-type="account" data-id="${account.id}" data-field="founded_year" data-raw-value="${esc(account.founded_year || '')}">
               <div class="snapshot-field-header">
                 <span class="snapshot-field-label">FOUNDED</span>
-                <i class="bi bi-pencil snapshot-field-pencil" title="Edit Founded Year inline"></i>
+                <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Founded Year inline"></i>
               </div>
               <div class="snapshot-field-value">${esc(founded)}</div>
             </div>
@@ -2728,7 +2728,7 @@ $(function () {
             <div class="snapshot-field-item" data-entity-type="account" data-id="${account.id}" data-field="city" data-raw-value="${esc(account.city || '')}">
               <div class="snapshot-field-header">
                 <span class="snapshot-field-label">LOCATION (HQ)</span>
-                <i class="bi bi-pencil snapshot-field-pencil" title="Edit Location inline"></i>
+                <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Location inline"></i>
               </div>
               <div class="snapshot-field-value">${esc(account.headquarters_location || (account.city ? `${account.city}, ${account.country || ''}` : '—'))}</div>
             </div>
@@ -2736,7 +2736,7 @@ $(function () {
             <div class="snapshot-field-item" data-entity-type="account" data-id="${account.id}" data-field="sec_cik" data-raw-value="${esc(account.sec_cik || '')}">
               <div class="snapshot-field-header">
                 <span class="snapshot-field-label">REGULATORY ID (CIK / LEI)</span>
-                <i class="bi bi-pencil snapshot-field-pencil" title="Edit Regulatory ID inline"></i>
+                <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Regulatory ID inline"></i>
               </div>
               <div class="snapshot-field-value" style="font-size:.8rem;letter-spacing:-0.02em;">${esc(secOrLei)}</div>
             </div>
@@ -2744,12 +2744,12 @@ $(function () {
             <div class="snapshot-field-item" data-entity-type="account" data-id="${account.id}" data-field="primary_domain" data-raw-value="${esc(account.primary_domain || account.domain || '')}">
               <div class="snapshot-field-header">
                 <span class="snapshot-field-label">OFFICIAL WEBSITE / DOMAIN</span>
-                <i class="bi bi-pencil snapshot-field-pencil" title="Edit Domain inline"></i>
+                <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Domain inline"></i>
               </div>
               <div class="snapshot-field-value">
                 ${domain !== "—" ? `
                   <a href="${account.website_url || 'https://' + domain}" target="_blank" style="color:var(--text-primary);text-decoration:none;">
-                    ${esc(domain)} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;color:#0284c7;"></i>
+                    ${esc(domain)} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:.7rem;color:#0284c7;"></i>
                   </a>
                 ` : `<span style="color:#94a3b8;">—</span>`}
               </div>
@@ -2759,7 +2759,7 @@ $(function () {
           <!-- Collapsible Vault: All 95 Account Attributes -->
           <div class="vault-collapsible-wrapper">
             <button type="button" class="vault-toggle-button" id="toggleAccountVaultBtn">
-              <i class="bi bi-database"></i> View All 95 Account Attributes &amp; Regulatory Filings <i class="bi bi-chevron-down" style="font-size:.7rem;"></i>
+              <i class="fa-solid fa-database"></i> View All 95 Account Attributes &amp; Regulatory Filings <i class="fa-solid fa-chevron-down" style="font-size:.7rem;"></i>
             </button>
             <div class="vault-content-area d-none" id="accountVaultArea"></div>
           </div>
@@ -2791,27 +2791,27 @@ $(function () {
 
             <div class="source-checklist-horizontal-grid">
               <div class="source-check-card ${checkSec ? 'active' : ''}">
-                ${checkSec ? '<i class="bi bi-check2-circle text-success" style="font-size:0.95rem;"></i>' : '<i class="bi bi-dash-circle text-muted"></i>'}
+                ${checkSec ? '<i class="fa-solid fa-circle-check text-success" style="font-size:0.95rem;"></i>' : '<i class="fa-solid fa-circle-minus text-muted"></i>'}
                 <span>SEC Filings (EDGAR)</span>
               </div>
               <div class="source-check-card ${checkGleif ? 'active' : ''}">
-                ${checkGleif ? '<i class="bi bi-check2-circle text-success" style="font-size:0.95rem;"></i>' : '<i class="bi bi-dash-circle text-muted"></i>'}
+                ${checkGleif ? '<i class="fa-solid fa-circle-check text-success" style="font-size:0.95rem;"></i>' : '<i class="fa-solid fa-circle-minus text-muted"></i>'}
                 <span>GLEIF Global LEI</span>
               </div>
               <div class="source-check-card ${checkFinnhub ? 'active' : ''}">
-                ${checkFinnhub ? '<i class="bi bi-check2-circle text-success" style="font-size:0.95rem;"></i>' : '<i class="bi bi-dash-circle text-muted"></i>'}
+                ${checkFinnhub ? '<i class="fa-solid fa-circle-check text-success" style="font-size:0.95rem;"></i>' : '<i class="fa-solid fa-circle-minus text-muted"></i>'}
                 <span>Finnhub Market Data</span>
               </div>
               <div class="source-check-card ${checkPatents ? 'active' : ''}">
-                ${checkPatents ? '<i class="bi bi-check2-circle text-success" style="font-size:0.95rem;"></i>' : '<i class="bi bi-dash-circle text-muted"></i>'}
+                ${checkPatents ? '<i class="fa-solid fa-circle-check text-success" style="font-size:0.95rem;"></i>' : '<i class="fa-solid fa-circle-minus text-muted"></i>'}
                 <span>USPTO Patents</span>
               </div>
               <div class="source-check-card ${checkDiffbot ? 'active' : ''}">
-                ${checkDiffbot ? '<i class="bi bi-check2-circle text-success" style="font-size:0.95rem;"></i>' : '<i class="bi bi-dash-circle text-muted"></i>'}
+                ${checkDiffbot ? '<i class="fa-solid fa-circle-check text-success" style="font-size:0.95rem;"></i>' : '<i class="fa-solid fa-circle-minus text-muted"></i>'}
                 <span>Diffbot KG Graph</span>
               </div>
               <div class="source-check-card ${checkWiki ? 'active' : ''}">
-                ${checkWiki ? '<i class="bi bi-check2-circle text-success" style="font-size:0.95rem;"></i>' : '<i class="bi bi-dash-circle text-muted"></i>'}
+                ${checkWiki ? '<i class="fa-solid fa-circle-check text-success" style="font-size:0.95rem;"></i>' : '<i class="fa-solid fa-circle-minus text-muted"></i>'}
                 <span>Wikipedia / DBpedia</span>
               </div>
             </div>
@@ -2825,7 +2825,7 @@ $(function () {
               <span class="section-title-dot"></span>
               <span>Live Intelligence Feeds &amp; OSINT Channels</span>
             </div>
-            <a href="javascript:void(0)" class="section-action-link" id="btnAddIntelligenceFeed" title="Add or configure an intelligence feed"><i class="bi bi-plus"></i> Add feed</a>
+            <a href="javascript:void(0)" class="section-action-link" id="btnAddIntelligenceFeed" title="Add or configure an intelligence feed"><i class="fa-solid fa-plus"></i> Add feed</a>
           </div>
 
           <div class="feed-status-horizontal-grid">
@@ -2889,7 +2889,7 @@ $(function () {
           <div class="section-title-row">
             <div class="section-title-left">
               <span class="section-title-dot"></span>
-              <i class="bi bi-diagram-3-fill" style="color:#0284c7;font-size:0.95rem;"></i>
+              <i class="fa-solid fa-sitemap" style="color:#0284c7;font-size:0.95rem;"></i>
               <span>Operating Sub-LOBs &amp; Child Divisions (${subLobs.length})</span>
             </div>
             <span class="section-subtitle-hint">Level 3 Grandchild Subsidiaries &amp; Specialized Operating Units</span>
@@ -2940,7 +2940,7 @@ $(function () {
     const lobStreams = [
       {
         name: "LinkedIn Division Intelligence",
-        icon: "bi-linkedin",
+        icon: "fa-brands fa-linkedin",
         active: Boolean(lob.domain || directPersonas.some(p => p.linkedin_url)),
         url: lob.domain 
           ? `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(lobName + (acctName ? ' ' + acctName : ''))}`
@@ -2948,7 +2948,7 @@ $(function () {
       },
       {
         name: "Google News Stream",
-        icon: "bi-newspaper",
+        icon: "fa-solid fa-newspaper",
         active: Boolean(lob.google_news_rss_url || activeAccount.rss_url || activeAccount.news_query),
         url: lob.google_news_rss_url || (activeAccount.news_query 
           ? `https://news.google.com/search?q=${encodeURIComponent(activeAccount.news_query)}`
@@ -2956,7 +2956,7 @@ $(function () {
       },
       {
         name: "X / Twitter Feed",
-        icon: "bi-twitter-x",
+        icon: "fa-brands fa-x-twitter",
         active: Boolean(lob.twitter_live_url || activeAccount.twitter_live_url || activeAccount.twitter_handle),
         url: lob.twitter_live_url || activeAccount.twitter_live_url || (activeAccount.twitter_handle 
           ? `https://twitter.com/${activeAccount.twitter_handle.replace('@', '')}` 
@@ -2964,31 +2964,31 @@ $(function () {
       },
       {
         name: "Reddit Community Discussions",
-        icon: "bi-reddit",
+        icon: "fa-brands fa-reddit",
         active: Boolean(lob.reddit_rss_url || activeAccount.reddit_rss_url || activeAccount.reddit_query),
         url: lob.reddit_rss_url || activeAccount.reddit_rss_url || `https://www.reddit.com/search/?q=${encodeURIComponent(lobName + (acctName ? ' ' + acctName : ''))}`,
       },
       {
         name: "USPTO Patent Intelligence",
-        icon: "bi-award",
+        icon: "fa-solid fa-award",
         active: Boolean(lob.google_patents_url || (Array.isArray(lob.patents) && lob.patents.length) || activeAccount.google_patents_url || (activeAccount.patents_granted > 0)),
         url: lob.google_patents_url || activeAccount.google_patents_url || `https://patents.google.com/?assignee=${encodeURIComponent(acctName || lobName)}&q=${encodeURIComponent(lobName)}`,
       },
       {
         name: "Search Trends Momentum",
-        icon: "bi-graph-up-arrow",
+        icon: "fa-solid fa-arrow-trend-up",
         active: Boolean(lob.google_trends_url || activeAccount.google_trends_url),
         url: lob.google_trends_url || activeAccount.google_trends_url || `https://trends.google.com/trends/explore?q=${encodeURIComponent(lobName || acctName)}`,
       },
       {
         name: "YouTube Media & Interviews",
-        icon: "bi-youtube",
+        icon: "fa-brands fa-youtube",
         active: Boolean(lob.youtube_search_url || activeAccount.youtube_search_url),
         url: lob.youtube_search_url || activeAccount.youtube_search_url || `https://www.youtube.com/results?search_query=${encodeURIComponent((acctName ? acctName + ' ' : '') + lobName)}`,
       },
       {
         name: "Glassdoor Workplace Reviews",
-        icon: "bi-building-check",
+        icon: "fa-solid fa-building-circle-check",
         active: Boolean(activeAccount.glassdoor_url),
         url: activeAccount.glassdoor_url || `https://www.glassdoor.com/Search/results.htm?keyword=${encodeURIComponent(acctName || lobName)}`,
       },
@@ -2997,7 +2997,7 @@ $(function () {
     if (lob.website_url || lob.domain) {
       lobStreams.unshift({
         name: "Division Web Portal",
-        icon: "bi-globe2",
+        icon: "fa-solid fa-earth-americas",
         active: true,
         url: lob.website_url || `https://${lob.domain.replace(/^https?:\/\//, '')}`,
       });
@@ -3017,7 +3017,7 @@ $(function () {
         <div class="modern-entity-header">
           <div class="header-main-info">
             <div class="header-avatar-box avatar-blue">
-              <i class="bi bi-folder2-open"></i>
+              <i class="fa-solid fa-folder-open"></i>
             </div>
             <div>
               <h1 class="header-entity-name">${esc(lob.name)}</h1>
@@ -3027,15 +3027,15 @@ $(function () {
                 <span class="badge-solid-gray">${directPersonas.length} Contacts</span>
                 ${(lob.sub_lobs || lob.subLobs || []).length > 0 ? `
                   <span class="sublob-count-pill" title="Nested Level 3 child divisions registered under this LOB">
-                    <i class="bi bi-diagram-3"></i> ${(lob.sub_lobs || lob.subLobs).length} Sub-LOBs
+                    <i class="fa-solid fa-sitemap"></i> ${(lob.sub_lobs || lob.subLobs).length} Sub-LOBs
                   </span>
                 ` : ""}
                 ${domainStr !== "—" ? `<span class="badge-solid-green">Domain Mapped</span>` : `<span class="badge-solid-gray">Domain Unmapped</span>`}
                 <span class="badge-health-pill ${comp.confidenceScore >= 80 ? 'health-green' : (comp.confidenceScore >= 60 ? 'health-blue' : 'health-amber')}" title="Data Completeness: ${comp.completenessPct}% (${comp.populatedCount}/${comp.totalFields} fields) | Source Coverage: ${comp.coveragePct}% (${comp.sourcesHit}/${comp.totalSources} streams)">
-                  <i class="bi bi-shield-check"></i> <strong>${comp.confidenceScore}% Confidence</strong> &bull; ${comp.completenessPct}% Filled (${comp.populatedCount}/${comp.totalFields}) &bull; ${comp.sourcesHit}/${comp.totalSources} Streams
+                  <i class="fa-solid fa-shield-halved"></i> <strong>${comp.confidenceScore}% Confidence</strong> &bull; ${comp.completenessPct}% Filled (${comp.populatedCount}/${comp.totalFields}) &bull; ${comp.sourcesHit}/${comp.totalSources} Streams
                 </span>
                 <button type="button" class="btn-verify-badge ${lob.is_manually_verified ? 'verified' : 'unverified'}" data-entity-type="lob" data-id="${lob.id}" title="${lob.is_manually_verified ? `Verified ${formatTimeAgo(lob.manually_verified_at)}` : 'Click to toggle verification'}">
-                  <i class="bi ${lob.is_manually_verified ? 'bi-patch-check-fill' : 'bi-shield-exclamation'}"></i>
+                  <i class="${lob.is_manually_verified ? 'fa-solid fa-circle-check' : 'fa-solid fa-shield-halved'}"></i>
                   <span>${lob.is_manually_verified ? `Manually Verified ✓ (${formatTimeAgo(lob.manually_verified_at)})` : 'AI Inferred • Verify'}</span>
                 </button>
               </div>
@@ -3046,13 +3046,13 @@ $(function () {
           <div class="header-actions-col">
             <div class="header-btn-group">
               <button type="button" class="action-btn-pill btn-pill-blue panel-btn-pull" data-entity-type="lob" data-key="${lobKey}">
-                <i class="bi bi-caret-down-fill" style="font-size:0.65rem;"></i> Pull
+                <i class="fa-solid fa-caret-down" style="font-size:0.65rem;"></i> Pull
               </button>
               <button type="button" class="action-btn-pill btn-pill-validate panel-btn-validate" data-entity-type="lob" data-key="${lobKey}" ${validateBtnDisabled ? "disabled" : ""}>
-                <i class="bi bi-check2"></i> Validate
+                <i class="fa-solid fa-check"></i> Validate
               </button>
               <button type="button" class="action-btn-pill btn-pill-dump panel-btn-dump" data-entity-type="lob" data-key="${lobKey}" ${dumpBtnDisabled ? "disabled" : ""}>
-                <i class="bi bi-database"></i> Dump
+                <i class="fa-solid fa-database"></i> Dump
               </button>
               <button type="button" class="action-btn-pill btn-pill-purple" id="lobEditToggleBtn">
                 Edit
@@ -3082,7 +3082,7 @@ $(function () {
             <div class="snapshot-field-item" data-entity-type="lob" data-id="${lob.id}" data-field="overview" data-raw-value="${esc(lob.overview || lob.desc || '')}" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px 14px;margin-bottom:14px;">
               <div class="snapshot-field-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
                 <span class="snapshot-field-label">DIVISION OVERVIEW</span>
-                <i class="bi bi-pencil snapshot-field-pencil" title="Edit Division Overview inline"></i>
+                <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Division Overview inline"></i>
               </div>
               <div class="snapshot-field-value" style="font-size:0.84rem;color:#1e293b;line-height:1.5;">
                 ${esc(overviewStr)}
@@ -3093,7 +3093,7 @@ $(function () {
               <div class="snapshot-field-item" data-entity-type="lob" data-id="${lob.id}" data-field="relationship_type" data-raw-value="${esc(lob.relationship_type || '')}">
                 <div class="snapshot-field-header">
                   <span class="snapshot-field-label">RELATIONSHIP TYPE</span>
-                  <i class="bi bi-pencil snapshot-field-pencil" title="Edit Relationship Type inline"></i>
+                  <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Relationship Type inline"></i>
                 </div>
                 <div class="snapshot-field-value">${esc(relTypeStr)}</div>
               </div>
@@ -3101,7 +3101,7 @@ $(function () {
               <div class="snapshot-field-item" data-entity-type="lob" data-id="${lob.id}" data-field="domain" data-raw-value="${esc(lob.domain || '')}">
                 <div class="snapshot-field-header">
                   <span class="snapshot-field-label">PRIMARY DOMAIN</span>
-                  <i class="bi bi-pencil snapshot-field-pencil" title="Edit Domain inline"></i>
+                  <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Domain inline"></i>
                 </div>
                 <div class="snapshot-field-value">${esc(domainStr)}</div>
               </div>
@@ -3109,16 +3109,16 @@ $(function () {
               <div class="snapshot-field-item" data-entity-type="lob" data-id="${lob.id}" data-field="website_url" data-raw-value="${esc(lob.website_url || '')}">
                 <div class="snapshot-field-header">
                   <span class="snapshot-field-label">WEBSITE</span>
-                  <i class="bi bi-pencil snapshot-field-pencil" title="Edit Website inline"></i>
+                  <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Website inline"></i>
                 </div>
                 <div class="snapshot-field-value">
                   ${lob.website_url ? `
                     <a href="${esc(lob.website_url)}" target="_blank" style="color:var(--brand);text-decoration:none;">
-                      ${esc(lob.website_url.replace(/^https?:\/\//, ''))} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;"></i>
+                      ${esc(lob.website_url.replace(/^https?:\/\//, ''))} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:.7rem;"></i>
                     </a>
                   ` : (lob.domain ? `
                     <a href="https://${esc(lob.domain)}" target="_blank" style="color:var(--brand);text-decoration:none;">
-                      ${esc(lob.domain)} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;"></i>
+                      ${esc(lob.domain)} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:.7rem;"></i>
                     </a>
                   ` : `<span style="color:#94a3b8;">—</span>`)}
                 </div>
@@ -3136,12 +3136,12 @@ $(function () {
               <div class="snapshot-field-item" data-entity-type="lob" data-id="${lob.id}" data-field="crunchbase_url" data-raw-value="${esc(lob.crunchbase_url || '')}">
                 <div class="snapshot-field-header">
                   <span class="snapshot-field-label">CRUNCHBASE PROFILE</span>
-                  <i class="bi bi-pencil snapshot-field-pencil" title="Edit Crunchbase URL inline"></i>
+                  <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Crunchbase URL inline"></i>
                 </div>
                 <div class="snapshot-field-value" style="font-size:0.78rem;">
                   ${lob.crunchbase_url ? `
                     <a href="${esc(lob.crunchbase_url)}" target="_blank" style="color:var(--brand);text-decoration:none;">
-                      ${esc(lob.crunchbase_url.replace(/^https?:\/\//, ''))} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;"></i>
+                      ${esc(lob.crunchbase_url.replace(/^https?:\/\//, ''))} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:.7rem;"></i>
                     </a>
                   ` : `<span style="color:#94a3b8;">—</span>`}
                 </div>
@@ -3150,7 +3150,7 @@ $(function () {
               <div class="snapshot-field-item">
                 <div class="snapshot-field-header">
                   <span class="snapshot-field-label">COMMERCIAL REGISTRY</span>
-                  <i class="bi bi-pencil snapshot-field-pencil"></i>
+                  <i class="fa-solid fa-pen snapshot-field-pencil"></i>
                 </div>
                 <div class="snapshot-field-value" style="font-size:0.8rem;">
                   ${esc(registryStr)}
@@ -3164,7 +3164,7 @@ $(function () {
             <!-- Collapsible Vault: All LOB Columns, Competitors & Tech -->
             <div class="vault-collapsible-wrapper">
               <button type="button" class="vault-toggle-button" id="toggleLobVaultBtn">
-                <i class="bi bi-database"></i> View All LOB Attributes, Competitors, Technologies &amp; Patents <i class="bi bi-chevron-down" style="font-size:.7rem;"></i>
+                <i class="fa-solid fa-database"></i> View All LOB Attributes, Competitors, Technologies &amp; Patents <i class="fa-solid fa-chevron-down" style="font-size:.7rem;"></i>
               </button>
               <div class="vault-content-area d-none" id="lobVaultArea"></div>
             </div>
@@ -3183,7 +3183,7 @@ $(function () {
               <div class="snapshot-field-item" data-entity-type="lob" data-id="${lob.id}" data-field="audited_segment_revenue" data-raw-value="${esc(lob.audited_segment_revenue || lob.revenue || '')}">
                 <div class="snapshot-field-header">
                   <span class="snapshot-field-label">SEGMENT REVENUE</span>
-                  <i class="bi bi-pencil snapshot-field-pencil" title="Edit Segment Revenue inline"></i>
+                  <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Segment Revenue inline"></i>
                 </div>
                 <div class="snapshot-field-value">${esc(revStr)}</div>
               </div>
@@ -3191,7 +3191,7 @@ $(function () {
               <div class="snapshot-field-item" data-entity-type="lob" data-id="${lob.id}" data-field="segment_headcount" data-raw-value="${esc(lob.segment_headcount || lob.headcount || '')}">
                 <div class="snapshot-field-header">
                   <span class="snapshot-field-label">HEADCOUNT / SIZE</span>
-                  <i class="bi bi-pencil snapshot-field-pencil" title="Edit Headcount inline"></i>
+                  <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Headcount inline"></i>
                 </div>
                 <div class="snapshot-field-value">${esc(headcountStr)}</div>
               </div>
@@ -3199,7 +3199,7 @@ $(function () {
               <div class="snapshot-field-item" data-entity-type="lob" data-id="${lob.id}" data-field="operating_head" data-raw-value="${esc(lob.operating_head || lob.head || '')}">
                 <div class="snapshot-field-header">
                   <span class="snapshot-field-label">OPERATING HEAD</span>
-                  <i class="bi bi-pencil snapshot-field-pencil" title="Edit Operating Head inline"></i>
+                  <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Operating Head inline"></i>
                 </div>
                 <div class="snapshot-field-value">${esc(opHeadStr)}</div>
               </div>
@@ -3207,7 +3207,7 @@ $(function () {
               <div class="snapshot-field-item">
                 <div class="snapshot-field-header">
                   <span class="snapshot-field-label">MAPPED CONTACTS</span>
-                  <i class="bi bi-pencil snapshot-field-pencil"></i>
+                  <i class="fa-solid fa-pen snapshot-field-pencil"></i>
                 </div>
                 <div class="snapshot-field-value" style="color:#d97706;">${directPersonas.length} Identified</div>
               </div>
@@ -3219,7 +3219,7 @@ $(function () {
             <div class="section-title-row" style="margin-bottom:12px;">
               <div class="section-title-left">
                 <span class="section-title-dot"></span>
-                <i class="bi bi-broadcast-pin" style="color:#0284c7;font-size:0.95rem;"></i>
+                <i class="fa-solid fa-tower-broadcast" style="color:#0284c7;font-size:0.95rem;"></i>
                 <span>Live OSINT &amp; Public Intelligence Streams</span>
               </div>
               <span class="badge" style="background:#e0f2fe;color:#0369a1;font-weight:700;padding:3px 10px;font-size:0.72rem;border-radius:12px;">
@@ -3233,9 +3233,9 @@ $(function () {
                    class="osint-stream-chip ${s.active ? 'stream-active' : 'stream-pending'}"
                    title="${s.active ? 'Verified active channel: ' + esc(s.url) : 'Query launchpad: ' + esc(s.url)}">
                   <span class="dot-indicator ${s.active ? 'dot-green' : 'dot-gray'}"></span>
-                  <i class="bi ${s.icon}"></i>
+                  <i class="${s.icon}"></i>
                   <span class="stream-chip-label">${esc(s.name)}</span>
-                  <i class="bi bi-box-arrow-up-right stream-ext-icon"></i>
+                  <i class="fa-solid fa-arrow-up-right-from-square stream-ext-icon"></i>
                 </a>
               `).join('')}
             </div>
@@ -3317,10 +3317,10 @@ $(function () {
                 ${p.email ? `<span class="badge-solid-green">Email Verified</span>` : `<span class="badge-solid-gray">Email Unverified</span>`}
                 ${locStr !== "—" ? `<span class="badge-solid-gray">${esc(locStr)}</span>` : ""}
                 <span class="badge-health-pill ${comp.confidenceScore >= 80 ? 'health-green' : (comp.confidenceScore >= 60 ? 'health-blue' : 'health-amber')}" title="Data Completeness: ${comp.completenessPct}% (${comp.populatedCount}/${comp.totalFields} fields) | Source Coverage: ${comp.coveragePct}% (${comp.sourcesHit}/${comp.totalSources} sources)">
-                  <i class="bi bi-shield-check"></i> <strong>${comp.confidenceScore}% Confidence</strong> &bull; ${comp.completenessPct}% Filled (${comp.populatedCount}/${comp.totalFields}) &bull; ${comp.sourcesHit}/${comp.totalSources} Sources
+                  <i class="fa-solid fa-shield-halved"></i> <strong>${comp.confidenceScore}% Confidence</strong> &bull; ${comp.completenessPct}% Filled (${comp.populatedCount}/${comp.totalFields}) &bull; ${comp.sourcesHit}/${comp.totalSources} Sources
                 </span>
                 <button type="button" class="btn-verify-badge ${p.is_manually_verified ? 'verified' : 'unverified'}" data-entity-type="persona" data-id="${p.id}" title="${p.is_manually_verified ? `Verified ${formatTimeAgo(p.manually_verified_at)}` : 'Click to toggle verification'}">
-                  <i class="bi ${p.is_manually_verified ? 'bi-patch-check-fill' : 'bi-shield-exclamation'}"></i>
+                  <i class="${p.is_manually_verified ? 'fa-solid fa-circle-check' : 'fa-solid fa-shield-halved'}"></i>
                   <span>${p.is_manually_verified ? `Manually Verified ✓ (${formatTimeAgo(p.manually_verified_at)})` : 'AI Inferred • Verify'}</span>
                 </button>
               </div>
@@ -3330,13 +3330,13 @@ $(function () {
           <div class="header-actions-col">
             <div class="header-btn-group">
               <button type="button" class="action-btn-pill btn-pill-blue panel-btn-pull" data-entity-type="persona" data-key="${pKey}">
-                <i class="bi bi-caret-down-fill" style="font-size:0.65rem;"></i> Pull
+                <i class="fa-solid fa-caret-down" style="font-size:0.65rem;"></i> Pull
               </button>
               <button type="button" class="action-btn-pill btn-pill-validate panel-btn-validate" data-entity-type="persona" data-key="${pKey}" ${validateBtnDisabled ? "disabled" : ""}>
-                <i class="bi bi-check2"></i> Validate
+                <i class="fa-solid fa-check"></i> Validate
               </button>
               <button type="button" class="action-btn-pill btn-pill-dump panel-btn-dump" data-entity-type="persona" data-key="${pKey}" ${dumpBtnDisabled ? "disabled" : ""}>
-                <i class="bi bi-database"></i> Dump
+                <i class="fa-solid fa-database"></i> Dump
               </button>
               <button type="button" class="action-btn-pill btn-pill-purple" id="personaEditToggleBtn">
                 Edit
@@ -3350,7 +3350,7 @@ $(function () {
       <!-- Edit Mode Notification Banner -->
       <div class="edit-mode-alert-banner fade-in d-none" id="personaEditBanner">
         <div class="edit-banner-left">
-          <i class="bi bi-pencil" style="font-size:1rem;"></i>
+          <i class="fa-solid fa-pen" style="font-size:1rem;"></i>
           <span>Edit mode is ON &mdash; fields are editable. Changes re-validate on save.</span>
         </div>
         <div class="edit-banner-actions">
@@ -3376,7 +3376,7 @@ $(function () {
             <div class="snapshot-field-item snapshot-field-item-uniform" data-entity-type="persona" data-id="${p.id}" data-field="full_name" data-raw-value="${esc(p.full_name || p.name || '')}">
               <div class="snapshot-field-header">
                 <span class="snapshot-field-label">FULL NAME</span>
-                <i class="bi bi-pencil snapshot-field-pencil" title="Edit Full Name inline"></i>
+                <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Full Name inline"></i>
               </div>
               <div class="snapshot-field-value">${esc(p.name || p.full_name)}</div>
             </div>
@@ -3384,7 +3384,7 @@ $(function () {
             <div class="snapshot-field-item snapshot-field-item-uniform" data-entity-type="persona" data-id="${p.id}" data-field="title" data-raw-value="${esc(p.title || '')}">
               <div class="snapshot-field-header">
                 <span class="snapshot-field-label">CORPORATE TITLE</span>
-                <i class="bi bi-pencil snapshot-field-pencil" title="Edit Corporate Title inline"></i>
+                <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Corporate Title inline"></i>
               </div>
               <div class="snapshot-field-value">${esc(p.title || "—")}</div>
             </div>
@@ -3392,7 +3392,7 @@ $(function () {
             <div class="snapshot-field-item snapshot-field-item-uniform" data-entity-type="persona" data-id="${p.id}" data-field="email" data-raw-value="${esc(p.email || '')}">
               <div class="snapshot-field-header">
                 <span class="snapshot-field-label">CORPORATE EMAIL</span>
-                <i class="bi bi-pencil snapshot-field-pencil" title="Edit Corporate Email inline"></i>
+                <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Corporate Email inline"></i>
               </div>
               <div class="snapshot-field-value" style="font-size:0.8rem;${!p.email ? 'color:#94a3b8;' : ''}">
                 ${emailStr !== "—" ? esc(emailStr) : "—"}
@@ -3402,7 +3402,7 @@ $(function () {
             <div class="snapshot-field-item snapshot-field-item-uniform" data-entity-type="persona" data-id="${p.id}" data-field="email_status" data-raw-value="${esc(p.email_status || '')}">
               <div class="snapshot-field-header">
                 <span class="snapshot-field-label">EMAIL STATUS</span>
-                <i class="bi bi-pencil snapshot-field-pencil" title="Edit Email Status inline"></i>
+                <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Email Status inline"></i>
               </div>
               <div class="snapshot-field-value">
                 ${emailStatusStr !== "—" ? `<span class="badge-solid-green">${esc(emailStatusStr)}</span>` : `<span style="color:#94a3b8;">—</span>`}
@@ -3412,7 +3412,7 @@ $(function () {
             <div class="snapshot-field-item snapshot-field-item-uniform" data-entity-type="persona" data-id="${p.id}" data-field="phone" data-raw-value="${esc(p.phone || p.direct_mobile_phone || '')}">
               <div class="snapshot-field-header">
                 <span class="snapshot-field-label">PHONE</span>
-                <i class="bi bi-pencil snapshot-field-pencil" title="Edit Phone inline"></i>
+                <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Phone inline"></i>
               </div>
               <div class="snapshot-field-value" style="font-size:0.82rem;">${esc(phoneStr)}</div>
             </div>
@@ -3420,7 +3420,7 @@ $(function () {
             <div class="snapshot-field-item snapshot-field-item-uniform" data-entity-type="persona" data-id="${p.id}" data-field="city" data-raw-value="${esc(p.city || '')}">
               <div class="snapshot-field-header">
                 <span class="snapshot-field-label">LOCATION / BASE</span>
-                <i class="bi bi-pencil snapshot-field-pencil" title="Edit Location/City inline"></i>
+                <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Location/City inline"></i>
               </div>
               <div class="snapshot-field-value" style="font-size:0.82rem;">${esc(locStr)}</div>
             </div>
@@ -3428,7 +3428,7 @@ $(function () {
             <div class="snapshot-field-item snapshot-field-item-uniform" data-entity-type="persona" data-id="${p.id}" data-field="degree" data-raw-value="${esc(p.degree || '')}">
               <div class="snapshot-field-header">
                 <span class="snapshot-field-label">EDUCATION</span>
-                <i class="bi bi-pencil snapshot-field-pencil" title="Edit Education/Degree inline"></i>
+                <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Education/Degree inline"></i>
               </div>
               <div class="snapshot-field-value" style="font-size:0.82rem;">${esc(eduStr)}</div>
             </div>
@@ -3436,7 +3436,7 @@ $(function () {
             <div class="snapshot-field-item snapshot-field-item-uniform" data-entity-type="persona" data-id="${p.id}" data-field="prior_company" data-raw-value="${esc(p.prior_company || '')}">
               <div class="snapshot-field-header">
                 <span class="snapshot-field-label">PRIOR EXPERIENCE</span>
-                <i class="bi bi-pencil snapshot-field-pencil" title="Edit Prior Company inline"></i>
+                <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Prior Company inline"></i>
               </div>
               <div class="snapshot-field-value" style="font-size:0.82rem;">${esc(priorStr)}</div>
             </div>
@@ -3444,7 +3444,7 @@ $(function () {
             <div class="snapshot-field-item snapshot-field-item-uniform" data-entity-type="persona" data-id="${p.id}" data-field="current_role_tenure_months" data-raw-value="${esc(p.current_role_tenure_months || '')}">
               <div class="snapshot-field-header">
                 <span class="snapshot-field-label">TENURE AT ${esc(coTicker)}</span>
-                <i class="bi bi-pencil snapshot-field-pencil" title="Edit Role Tenure (months) inline"></i>
+                <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Role Tenure (months) inline"></i>
               </div>
               <div class="snapshot-field-value">${esc(tenureStr)}</div>
             </div>
@@ -3462,7 +3462,7 @@ $(function () {
           <div class="core-validation-strip">
             <div class="core-validation-header">
               <div class="core-validation-title">
-                <i class="bi bi-shield-check"></i>
+                <i class="fa-solid fa-shield-halved"></i>
                 <span>Core Field Validation &amp; Quality Status</span>
               </div>
               <div class="core-validation-score-wrap">
@@ -3474,27 +3474,27 @@ $(function () {
             <div class="core-validation-chips-row">
               <div class="core-validation-chip ${emailValid ? 'chip-passed' : 'chip-failed'}">
                 <span class="chip-label">Email Format</span>
-                <span class="chip-status">${emailValid ? '<i class="bi bi-check2"></i> Verified' : '&mdash; Missing'}</span>
+                <span class="chip-status">${emailValid ? '<i class="fa-solid fa-check"></i> Verified' : '&mdash; Missing'}</span>
               </div>
 
               <div class="core-validation-chip ${domainMatch ? 'chip-passed' : 'chip-failed'}">
                 <span class="chip-label">Domain Match (${esc(activeAccount.domain || '—')})</span>
-                <span class="chip-status">${domainMatch ? '<i class="bi bi-check2"></i> Verified' : '&mdash; Unmatched'}</span>
+                <span class="chip-status">${domainMatch ? '<i class="fa-solid fa-check"></i> Verified' : '&mdash; Unmatched'}</span>
               </div>
 
               <div class="core-validation-chip ${titleValid ? 'chip-passed' : 'chip-failed'}">
                 <span class="chip-label">Title &amp; Seniority</span>
-                <span class="chip-status">${titleValid ? '<i class="bi bi-check2"></i> Verified' : '&mdash; Incomplete'}</span>
+                <span class="chip-status">${titleValid ? '<i class="fa-solid fa-check"></i> Verified' : '&mdash; Incomplete'}</span>
               </div>
 
               <div class="core-validation-chip ${authorityValid ? 'chip-passed' : 'chip-failed'}">
                 <span class="chip-label">Authority Mapped</span>
-                <span class="chip-status">${authorityValid ? '<i class="bi bi-check2"></i> Verified' : '&mdash; Pending'}</span>
+                <span class="chip-status">${authorityValid ? '<i class="fa-solid fa-check"></i> Verified' : '&mdash; Pending'}</span>
               </div>
 
               <div class="core-validation-chip ${linkedinValid ? 'chip-passed' : 'chip-failed'}">
                 <span class="chip-label">LinkedIn Linked</span>
-                <span class="chip-status">${linkedinValid ? '<i class="bi bi-check2"></i> Verified' : '&mdash; Unlinked'}</span>
+                <span class="chip-status">${linkedinValid ? '<i class="fa-solid fa-check"></i> Verified' : '&mdash; Unlinked'}</span>
               </div>
             </div>
           </div>
@@ -3502,7 +3502,7 @@ $(function () {
           <!-- Collapsible Vault: All 69 Persona Columns -->
           <div class="vault-collapsible-wrapper">
             <button type="button" class="vault-toggle-button" id="togglePersonaVaultBtn">
-              <i class="bi bi-database"></i> View All 69 Persona Attributes, Dossier &amp; OSINT Feeds <i class="bi bi-chevron-down" style="font-size:.7rem;"></i>
+              <i class="fa-solid fa-database"></i> View All 69 Persona Attributes, Dossier &amp; OSINT Feeds <i class="fa-solid fa-chevron-down" style="font-size:.7rem;"></i>
             </button>
             <div class="vault-content-area d-none" id="personaVaultArea"></div>
           </div>
@@ -3742,12 +3742,12 @@ $(function () {
     if (isExpanded) {
       $extras.slideUp(180);
       $btn.attr("data-expanded", "false");
-      $btn.html(`<span>View full run history (${extraCount} more)</span> <i class="bi bi-chevron-down" style="font-size:0.72rem;"></i>`);
+      $btn.html(`<span>View full run history (${extraCount} more)</span> <i class="fa-solid fa-chevron-down" style="font-size:0.72rem;"></i>`);
       $("#activityShowingHint").text("Showing latest 3");
     } else {
       $extras.slideDown(220);
       $btn.attr("data-expanded", "true");
-      $btn.html(`<span>Show latest 3 only</span> <i class="bi bi-chevron-up" style="font-size:0.72rem;"></i>`);
+      $btn.html(`<span>Show latest 3 only</span> <i class="fa-solid fa-chevron-up" style="font-size:0.72rem;"></i>`);
       $("#activityShowingHint").text(`Showing all ${totalCount}`);
     }
   });
@@ -3765,11 +3765,11 @@ $(function () {
     if (isExpanded) {
       $extra.css("display", "none");
       $btn.attr("data-expanded", "false");
-      $btn.html(`<span>+${totalExtra} more</span> <i class="bi bi-chevron-down" style="font-size:0.68rem;"></i>`);
+      $btn.html(`<span>+${totalExtra} more</span> <i class="fa-solid fa-chevron-down" style="font-size:0.68rem;"></i>`);
     } else {
       $extra.css("display", "inline-flex");
       $btn.attr("data-expanded", "true");
-      $btn.html(`<span>Show less</span> <i class="bi bi-chevron-up" style="font-size:0.68rem;"></i>`);
+      $btn.html(`<span>Show less</span> <i class="fa-solid fa-chevron-up" style="font-size:0.68rem;"></i>`);
     }
   });
 
@@ -3833,13 +3833,13 @@ $(function () {
         const timeStr = res.manually_verified_at ? formatTimeAgo(res.manually_verified_at) : "";
         if (isVerified) {
           $btn.removeClass("unverified").addClass("verified");
-          $btn.find("i").removeClass("bi-shield-exclamation").addClass("bi-patch-check-fill");
+          $btn.find("i").removeClass("fa-solid fa-shield-halved").addClass("fa-solid fa-circle-check");
           $btn.find("span").text(`Manually Verified ✓ (${timeStr})`);
           $btn.attr("title", `Verified ${timeStr}`);
           showNotification(`Marked ${entityType} as Manually Verified in PostgreSQL!`, "success");
         } else {
           $btn.removeClass("verified").addClass("unverified");
-          $btn.find("i").removeClass("bi-patch-check-fill").addClass("bi-shield-exclamation");
+          $btn.find("i").removeClass("fa-solid fa-circle-check").addClass("fa-solid fa-shield-halved");
           $btn.find("span").text("AI Inferred • Verify");
           $btn.attr("title", "Click to toggle verification");
           showNotification(`Reset ${entityType} verification flag to AI Inferred.`, "info");
@@ -3892,8 +3892,8 @@ $(function () {
     $valContainer.html(`
       <div class="inline-edit-box">
         <input type="text" class="inline-edit-input" value="${esc(cleanVal)}" />
-        <button type="button" class="inline-edit-save" title="Save to PostgreSQL"><i class="bi bi-check-lg"></i></button>
-        <button type="button" class="inline-edit-cancel" title="Cancel"><i class="bi bi-x-lg"></i></button>
+        <button type="button" class="inline-edit-save" title="Save to PostgreSQL"><i class="fa-solid fa-check"></i></button>
+        <button type="button" class="inline-edit-cancel" title="Cancel"><i class="fa-solid fa-xmark"></i></button>
       </div>
     `);
 
@@ -3902,7 +3902,7 @@ $(function () {
 
     function saveField() {
       const newVal = $input.val().trim();
-      $valContainer.html(`<span style="color:#0284c7;font-size:0.75rem;"><i class="bi bi-arrow-repeat spin"></i> Saving...</span>`);
+      $valContainer.html(`<span style="color:#0284c7;font-size:0.75rem;"><i class="fa-solid fa-arrows-rotate spin"></i> Saving...</span>`);
 
       const payload = {};
       const intFields = [
@@ -3942,7 +3942,7 @@ $(function () {
           const timeStr = formatTimeAgo(verifyAt);
           const $badge = $(`.btn-verify-badge[data-entity-type="${entityType}"][data-id="${entityId}"]`);
           $badge.removeClass("unverified").addClass("verified");
-          $badge.find("i").removeClass("bi-shield-exclamation").addClass("bi-patch-check-fill");
+          $badge.find("i").removeClass("fa-solid fa-shield-halved").addClass("fa-solid fa-circle-check");
           $badge.find("span").text(`Manually Verified ✓ (${timeStr})`);
           $badge.attr("title", `Verified ${timeStr}`);
 
@@ -4033,9 +4033,9 @@ $(function () {
     const $container = $(this).siblings(".raw-json-container");
     $container.toggleClass("d-none");
     const isHidden = $container.hasClass("d-none");
-    $(this).find(".bi-chevron-down, .bi-chevron-up")
-      .toggleClass("bi-chevron-down", isHidden)
-      .toggleClass("bi-chevron-up", !isHidden);
+    $(this).find(".fa-chevron-down, .fa-chevron-up")
+      .toggleClass("fa-solid fa-chevron-down", isHidden)
+      .toggleClass("fa-solid fa-chevron-up", !isHidden);
   });
 
   $(document).on("click", ".lob-matched-badge", function (e) {
@@ -4111,7 +4111,7 @@ $(function () {
     };
 
     const $btn = $(this);
-    $btn.prop("disabled", true).html(`<i class="bi bi-arrow-repeat spin"></i> Saving to PostgreSQL...`);
+    $btn.prop("disabled", true).html(`<i class="fa-solid fa-arrows-rotate spin"></i> Saving to PostgreSQL...`);
 
     $.ajax({
       url: `/api/accounts/${acctId}`,
@@ -4119,7 +4119,7 @@ $(function () {
       contentType: "application/json",
       data: JSON.stringify(payload),
       success: function (res) {
-        $btn.prop("disabled", false).html(`<i class="bi bi-check2-circle"></i> Save &amp; Mark Verified`);
+        $btn.prop("disabled", false).html(`<i class="fa-solid fa-circle-check"></i> Save &amp; Mark Verified`);
         const modalEl = document.getElementById("universalAccountEditModal");
         const modal = bootstrap.Modal.getInstance(modalEl);
         if (modal) modal.hide();
@@ -4138,7 +4138,7 @@ $(function () {
         }
       },
       error: function (err) {
-        $btn.prop("disabled", false).html(`<i class="bi bi-check2-circle"></i> Save &amp; Mark Verified`);
+        $btn.prop("disabled", false).html(`<i class="fa-solid fa-circle-check"></i> Save &amp; Mark Verified`);
         showNotification(`Account save failed: ${err.responseText || err.statusText}`, "error");
       }
     });
@@ -4166,7 +4166,7 @@ $(function () {
     };
 
     const $btn = $(this);
-    $btn.prop("disabled", true).html(`<i class="bi bi-arrow-repeat spin"></i> Saving...`);
+    $btn.prop("disabled", true).html(`<i class="fa-solid fa-arrows-rotate spin"></i> Saving...`);
 
     $.ajax({
       url: `/api/lobs/${lobId}`,
@@ -4266,7 +4266,7 @@ $(function () {
     };
 
     const $btn = $(this);
-    $btn.prop("disabled", true).html(`<i class="bi bi-arrow-repeat spin"></i> Saving to PostgreSQL...`);
+    $btn.prop("disabled", true).html(`<i class="fa-solid fa-arrows-rotate spin"></i> Saving to PostgreSQL...`);
 
     $.ajax({
       url: `/api/personas/${personaId}`,
@@ -4274,7 +4274,7 @@ $(function () {
       contentType: "application/json",
       data: JSON.stringify(payload),
       success: function (res) {
-        $btn.prop("disabled", false).html(`<i class="bi bi-check2-circle"></i> Save &amp; Mark Verified`);
+        $btn.prop("disabled", false).html(`<i class="fa-solid fa-circle-check"></i> Save &amp; Mark Verified`);
         const modalEl = document.getElementById("universalPersonaEditModal");
         const modal = bootstrap.Modal.getInstance(modalEl);
         if (modal) modal.hide();
@@ -4297,7 +4297,7 @@ $(function () {
         }
       },
       error: function (err) {
-        $btn.prop("disabled", false).html(`<i class="bi bi-check2-circle"></i> Save &amp; Mark Verified`);
+        $btn.prop("disabled", false).html(`<i class="fa-solid fa-circle-check"></i> Save &amp; Mark Verified`);
         showNotification(`Persona save failed: ${err.responseText || err.statusText}`, "error");
       }
     });
@@ -4370,7 +4370,7 @@ $(function () {
     function tag(label, val, icon) {
       if (!val && val !== 0 && val !== "0") return "";
       return `<div class="detail-field">
-        <div class="detail-label">${icon ? `<i class="bi ${icon}"></i> ` : ""}${label}</div>
+        <div class="detail-label">${icon ? `<i class="${icon}"></i> ` : ""}${label}</div>
         <div class="detail-val">${esc(String(val))}</div>
       </div>`;
     }
@@ -4378,10 +4378,10 @@ $(function () {
       if (!url) return "";
       const display = linkText || url.replace(/^https?:\/\//, "").slice(0, 36);
       return `<div class="detail-field">
-        <div class="detail-label">${icon ? `<i class="bi ${icon}"></i> ` : ""}${label}</div>
+        <div class="detail-label">${icon ? `<i class="${icon}"></i> ` : ""}${label}</div>
         <div class="detail-val">
           <a href="${esc(url)}" target="_blank" rel="noopener" style="color:var(--brand);font-weight:600;word-break:break-all;">
-            ${esc(display)} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;"></i>
+            ${esc(display)} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:.7rem;"></i>
           </a>
         </div>
       </div>`;
@@ -4399,37 +4399,37 @@ $(function () {
       <div class="detail-panel fade-in" style="border-top:none;border-radius:12px;margin-top:16px;">
         <div class="detail-section">
           <div class="detail-section-heading">
-            <i class="bi bi-building-gear"></i> Enterprise Intelligence Snapshot
+            <i class="fa-solid fa-building"></i> Enterprise Intelligence Snapshot
           </div>
           <div class="detail-grid">
-            ${tag("Employees", account.employee_count_range || "1-5000", "bi-people")}
-            ${tag("Company Type", account.company_type || "Private", "bi-diagram-3")}
-            ${tag("Operating Status", account.operating_status || "ACTIVE", "bi-activity")}
-            ${tag("Revenue", revenueVal, "bi-cash-stack")}
-            ${tag("Location", loc, "bi-geo-alt")}
-            ${tag("Founded", account.founded_year, "bi-calendar3")}
-            ${tag("Funding Status", account.funding_status || "Private", "bi-graph-up-arrow")}
-            ${tag("IPO Status", account.ipo_status || "Private", "bi-bank")}
-            ${tag("Regulatory ID", secOrLei, "bi-file-earmark-check")}
-            ${tag("Industry", industries, "bi-tags")}
-            ${linkTag("Official Website", websiteUrl, "bi-globe")}
+            ${tag("Employees", account.employee_count_range || "1-5000", "fa-solid fa-users")}
+            ${tag("Company Type", account.company_type || "Private", "fa-solid fa-sitemap")}
+            ${tag("Operating Status", account.operating_status || "ACTIVE", "fa-solid fa-heart-pulse")}
+            ${tag("Revenue", revenueVal, "fa-solid fa-money-bill-wave")}
+            ${tag("Location", loc, "fa-solid fa-location-dot")}
+            ${tag("Founded", account.founded_year, "fa-solid fa-calendar-days")}
+            ${tag("Funding Status", account.funding_status || "Private", "fa-solid fa-arrow-trend-up")}
+            ${tag("IPO Status", account.ipo_status || "Private", "fa-solid fa-building-columns")}
+            ${tag("Regulatory ID", secOrLei, "fa-solid fa-file-circle-check")}
+            ${tag("Industry", industries, "fa-solid fa-tags")}
+            ${linkTag("Official Website", websiteUrl, "fa-solid fa-globe")}
           </div>
         </div>
         <div class="detail-section">
           <div class="detail-section-heading">
-            <i class="bi bi-link-45deg"></i> Intelligence Feeds &amp; Live Signals
+            <i class="fa-solid fa-link"></i> Intelligence Feeds &amp; Live Signals
           </div>
           <div class="detail-grid">
-            ${linkTag("SEC EDGAR", account.sec_edgar_url, "bi-file-earmark-ruled")}
-            ${linkTag("LinkedIn", account.linkedin_url, "bi-linkedin")}
-            ${linkTag("Twitter / X", account.twitter_live_url || account.twitter_url, "bi-twitter-x")}
-            ${linkTag("Google News", account.rss_url, "bi-newspaper")}
-            ${linkTag("Reddit Feed", account.reddit_rss_url, "bi-reddit")}
-            ${linkTag("Google Patents", account.google_patents_url, "bi-lightbulb")}
-            ${linkTag("Google Trends", account.google_trends_url, "bi-graph-up")}
-            ${linkTag("YouTube", account.youtube_search_url, "bi-youtube")}
-            ${linkTag("Crunchbase", account.crunchbase_url, "bi-boxes")}
-            ${linkTag("Wikidata", account.wikidata_entity_url, "bi-wikipedia")}
+            ${linkTag("SEC EDGAR", account.sec_edgar_url, "fa-solid fa-file-lines")}
+            ${linkTag("LinkedIn", account.linkedin_url, "fa-brands fa-linkedin")}
+            ${linkTag("Twitter / X", account.twitter_live_url || account.twitter_url, "fa-brands fa-x-twitter")}
+            ${linkTag("Google News", account.rss_url, "fa-solid fa-newspaper")}
+            ${linkTag("Reddit Feed", account.reddit_rss_url, "fa-brands fa-reddit")}
+            ${linkTag("Google Patents", account.google_patents_url, "fa-solid fa-lightbulb")}
+            ${linkTag("Google Trends", account.google_trends_url, "fa-solid fa-arrow-trend-up")}
+            ${linkTag("YouTube", account.youtube_search_url, "fa-brands fa-youtube")}
+            ${linkTag("Crunchbase", account.crunchbase_url, "fa-solid fa-boxes-stacked")}
+            ${linkTag("Wikidata", account.wikidata_entity_url, "fa-brands fa-wikipedia-w")}
           </div>
         </div>
       </div>`;
@@ -4481,7 +4481,7 @@ $(function () {
                     border-radius: 12px; margin-top: 8px;">
           <div style="width: 48px; height: 48px; border-radius: 50%; background: var(--badge-bg, #f1f5f9);
                       display: inline-flex; align-items: center; justify-content: center; margin-bottom: 12px; color: var(--accent, #0ea5e9); font-size: 1.4rem;">
-            <i class="bi bi-people"></i>
+            <i class="fa-solid fa-users"></i>
           </div>
           <div style="font-weight: 600; color: var(--text, #1e293b); font-size: 0.95rem; margin-bottom: 4px;">
             No Executive Personas Discovered Yet
@@ -4492,7 +4492,7 @@ $(function () {
         </div>
       `);
       $("#allPersonasShowMoreContainer").addClass("d-none");
-      $("#allPersonasBatchPull, #personaBatchPull").prop("disabled", false).removeClass("done running").html('<i class="bi bi-cloud-arrow-down"></i> Pull All');
+      $("#allPersonasBatchPull, #personaBatchPull").prop("disabled", false).removeClass("done running").html('<i class="fa-solid fa-cloud-arrow-down"></i> Pull All');
       $("#allPersonasBatchValidate, #personaBatchValidate").prop("disabled", true);
       $("#allPersonasBatchDump, #personaBatchDump").prop("disabled", true);
       return;
@@ -4501,7 +4501,7 @@ $(function () {
     console.log("[renderDir] showing section, rendering cards");
     $("#allPersonasSection").removeClass("d-none");
     $("#allPersonasCountBadge").text(`(${all.length} Total Captured)`);
-    $("#allPersonasBatchPull, #personaBatchPull").removeClass("running").addClass("done").html('<i class="bi bi-cloud-arrow-down"></i> Pulled ✔');
+    $("#allPersonasBatchPull, #personaBatchPull").removeClass("running").addClass("done").html('<i class="fa-solid fa-cloud-arrow-down"></i> Pulled ✔');
     $("#allPersonasBatchValidate, #personaBatchValidate").prop("disabled", false);
     $("#allPersonasBatchDump, #personaBatchDump").prop("disabled", false);
 
@@ -4582,7 +4582,7 @@ $(function () {
       $container.append(`
         <div style="grid-column: 1/-1; padding: 24px; text-align: center;
                     color: var(--text-muted); font-size: 0.85rem;">
-          <i class="bi bi-search" style="font-size: 1.5rem; display: block; margin-bottom: 8px;"></i>
+          <i class="fa-solid fa-magnifying-glass" style="font-size: 1.5rem; display: block; margin-bottom: 8px;"></i>
           No executive personas found matching your filter criteria.
         </div>
       `);
@@ -4670,7 +4670,7 @@ $(function () {
       lob.subLobs && lob.subLobs.length
         ? `
       <div class="detail-section">
-        <div class="detail-section-heading"><i class="bi bi-folder-symlink"
+        <div class="detail-section-heading"><i class="fa-solid fa-folder-tree"
           ></i> Sub-Divisions &amp; Operating Groups (${lob.subLobs.length})</div>
         <p class="section-desc"
           >Nested subsidiaries, specialized business lines, and operational branches mapped under this
@@ -4697,7 +4697,7 @@ $(function () {
       <div class="detail-panel fade-in" data-entity-type="lob" data-key="${lobKey}">
         <div class="detail-panel-header">
           <div class="detail-panel-title-area">
-            <span class="pill pill-brand detail-panel-badge"><i class="bi bi-diagram-2"
+            <span class="pill pill-brand detail-panel-badge"><i class="fa-solid fa-diagram-project"
               ></i> Line of Business Deep Dive</span>
             <h2 class="detail-panel-title">${esc(lob.name)}</h2>
             <p class="detail-panel-subtitle"
@@ -4708,17 +4708,17 @@ $(function () {
               <button type="button" class="panel-btn panel-btn-pull"
                       ${pullBtnDisabled ? "disabled" : ""}
                       title="Step 1: Pull live public feeds (News, Social, Filings, Patents) for this LOB">
-                <i class="bi bi-cloud-arrow-down"></i> Pull
+                <i class="fa-solid fa-cloud-arrow-down"></i> Pull
               </button>
               <button type="button" class="panel-btn panel-btn-validate"
                       ${validateBtnDisabled ? "disabled" : ""}
                       title="Step 2: AI cleans, verifies, and extracts strategic intent from scraped signals">
-                <i class="bi bi-shield-check"></i> Validate
+                <i class="fa-solid fa-shield-halved"></i> Validate
               </button>
               <button type="button" class="panel-btn panel-btn-dump"
                       ${dumpBtnDisabled ? "disabled" : ""}
                       title="Step 3: Save verified structured intelligence into NeonDB">
-                <i class="bi bi-database-check"></i> Dump
+                <i class="fa-solid fa-database"></i> Dump
               </button>
             </div>
             <div class="panel-status-msg" id="panelStatusMsg"
@@ -4741,7 +4741,7 @@ $(function () {
 
         <!-- Categorized Section 1: Overview & Structure -->
         <div class="detail-section">
-          <div class="detail-section-heading"><i class="bi bi-building"
+          <div class="detail-section-heading"><i class="fa-solid fa-building"
             ></i> Overview &amp; Corporate Structure</div>
           <p class="section-desc"
             >Operating scope, relationship taxonomy, primary web domains, and commercial registry
@@ -4761,7 +4761,7 @@ $(function () {
               <div class="detail-label">Primary Domain</div>
               <div class="detail-val">
                 ${lob.domain ? `<a href="https://${esc(lob.domain)}" target="_blank"
-                  >${esc(lob.domain)} <i class="bi bi-box-arrow-up-right"></i></a>` : `<span
+                  >${esc(lob.domain)} <i class="fa-solid fa-arrow-up-right-from-square"></i></a>` : `<span
                   class="text-muted">Not specified</span>`}
               </div>
             </div>
@@ -4769,7 +4769,7 @@ $(function () {
               <div class="detail-label">Website URL</div>
               <div class="detail-val">
                 ${lob.website_url ? `<a href="${esc(lob.website_url)}" target="_blank"
-                  >${esc(lob.website_url)} <i class="bi bi-box-arrow-up-right"></i></a>` : `<span
+                  >${esc(lob.website_url)} <i class="fa-solid fa-arrow-up-right-from-square"></i></a>` : `<span
                   class="text-muted">Not specified</span>`}
               </div>
             </div>
@@ -4777,7 +4777,7 @@ $(function () {
               <div class="detail-label">Crunchbase Profile</div>
               <div class="detail-val">
                 ${lob.crunchbase_url ? `<a href="${esc(lob.crunchbase_url)}" target="_blank"
-                  >View Profile <i class="bi bi-box-arrow-up-right"></i></a>` : `<span class="text-muted"
+                  >View Profile <i class="fa-solid fa-arrow-up-right-from-square"></i></a>` : `<span class="text-muted"
                   >Not specified</span>`}
               </div>
             </div>
@@ -4786,7 +4786,7 @@ $(function () {
 
         <!-- Categorized Section 2: Segment Metrics -->
         <div class="detail-section">
-          <div class="detail-section-heading"><i class="bi bi-bar-chart-line"
+          <div class="detail-section-heading"><i class="fa-solid fa-chart-line"
             ></i> Segment Financials &amp; Operational Scale</div>
           <p class="section-desc"
             >Reported segment revenues, organizational headcount, leadership structure, and mapped
@@ -4813,7 +4813,7 @@ $(function () {
 
         <!-- Categorized Section 3: Intelligence Feeds -->
         <div class="detail-section">
-          <div class="detail-section-heading"><i class="bi bi-broadcast"
+          <div class="detail-section-heading"><i class="fa-solid fa-tower-broadcast"
             ></i> Live Intelligence Feeds &amp; Public Signals</div>
           <p class="section-desc"
             >Click any platform card below to view recent scraped post activity, AI sentiment analysis,
@@ -4828,8 +4828,8 @@ $(function () {
                       lob.name + " " + (activeAccount ? activeAccount.name : "")
                     )}`
               }" title="Click to view LinkedIn activity summary and extracted posts">
-                <span class="feed-title"><i class="bi bi-linkedin" style="color:#0077b5;"
-                  ></i> LinkedIn Intelligence <i class="bi bi-chevron-right"
+                <span class="feed-title"><i class="fa-brands fa-linkedin" style="color:#0077b5;"
+                  ></i> LinkedIn Intelligence <i class="fa-solid fa-chevron-right"
                   style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${
@@ -4853,8 +4853,8 @@ $(function () {
                     ? activeAccount.name
                     : ""))}&f=live`
               }" title="Click to view Twitter/X live feed summary and sentiment">
-                <span class="feed-title"><i class="bi bi-twitter-x"></i> Twitter / X Feed <i
-                  class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+                <span class="feed-title"><i class="fa-brands fa-x-twitter"></i> Twitter / X Feed <i
+                  class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${
                 lob.twitter_live_url
@@ -4875,8 +4875,8 @@ $(function () {
                   ? esc(lob.reddit_rss_url)
                   : `https://www.reddit.com/search/?q=${encodeURIComponent(lob.name)}`
               }" title="Click to view Reddit discussions and public sentiment">
-                <span class="feed-title"><i class="bi bi-reddit" style="color:#ff4500;"
-                  ></i> Reddit Community <i class="bi bi-chevron-right"
+                <span class="feed-title"><i class="fa-brands fa-reddit" style="color:#ff4500;"
+                  ></i> Reddit Community <i class="fa-solid fa-chevron-right"
                   style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${
@@ -4897,8 +4897,8 @@ $(function () {
                   ? esc(lob.youtube_search_url)
                   : `https://www.youtube.com/results?search_query=${encodeURIComponent(lob.name)}`
               }" title="Click to view YouTube interviews, keynote presentations, and webinars">
-                <span class="feed-title"><i class="bi bi-youtube" style="color:#ff0000;"
-                  ></i> YouTube Media <i class="bi bi-chevron-right"
+                <span class="feed-title"><i class="fa-brands fa-youtube" style="color:#ff0000;"
+                  ></i> YouTube Media <i class="fa-solid fa-chevron-right"
                   style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${
@@ -4918,8 +4918,8 @@ $(function () {
                   ? esc(lob.google_news_rss_url)
                   : `https://news.google.com/rss/search?q=${encodeURIComponent(lob.name)}`
               }" title="Click to view Google News headlines and press coverage">
-                <span class="feed-title"><i class="bi bi-newspaper" style="color:#4285f4;"
-                  ></i> Google News RSS <i class="bi bi-chevron-right"
+                <span class="feed-title"><i class="fa-solid fa-newspaper" style="color:#4285f4;"
+                  ></i> Google News RSS <i class="fa-solid fa-chevron-right"
                   style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${
@@ -4939,8 +4939,8 @@ $(function () {
                   ? esc(lob.google_patents_url)
                   : `https://patents.google.com/?q=${encodeURIComponent(lob.name)}`
               }" title="Click to view patent filings, R&D innovations, and IP portfolio">
-                <span class="feed-title"><i class="bi bi-lightbulb" style="color:#34a853;"
-                  ></i> Patents Explorer <i class="bi bi-chevron-right"
+                <span class="feed-title"><i class="fa-solid fa-lightbulb" style="color:#34a853;"
+                  ></i> Patents Explorer <i class="fa-solid fa-chevron-right"
                   style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${
@@ -4960,8 +4960,8 @@ $(function () {
                   ? esc(lob.google_trends_url)
                   : `https://trends.google.com/trends/explore?q=${encodeURIComponent(lob.name)}`
               }" title="Click to view search term momentum and keyword interest">
-                <span class="feed-title"><i class="bi bi-graph-up" style="color:#ea4335;"
-                  ></i> Search Trends <i class="bi bi-chevron-right"
+                <span class="feed-title"><i class="fa-solid fa-arrow-trend-up" style="color:#ea4335;"
+                  ></i> Search Trends <i class="fa-solid fa-chevron-right"
                   style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${
@@ -4996,7 +4996,7 @@ $(function () {
         ? p.skills
             .map(
               (s) =>
-                `<span class="data-tag" title="Verified skill area"><i class="bi bi-check2"></i> ${esc(s)}</span>`,
+                `<span class="data-tag" title="Verified skill area"><i class="fa-solid fa-check"></i> ${esc(s)}</span>`,
             )
             .join("")
         : '<span class="text-muted" style="font-size:.8rem;">No skills mapped</span>';
@@ -5006,7 +5006,7 @@ $(function () {
             .map(
               (k) =>
                 `<span class="data-tag data-tag-success" title="Target KPI priority"><i
-                  class="bi bi-bullseye"></i> ${esc(k)}</span>`,
+                  class="fa-solid fa-bullseye"></i> ${esc(k)}</span>`,
             )
             .join("")
         : '<span class="text-muted" style="font-size:.8rem;">No KPIs mapped</span>';
@@ -5016,7 +5016,7 @@ $(function () {
             .map(
               (pain) =>
                 `<span class="data-tag data-tag-warning" title="Critical operational challenge"><i
-                  class="bi bi-exclamation-circle"></i> ${esc(pain)}</span>`,
+                  class="fa-solid fa-circle-exclamation"></i> ${esc(pain)}</span>`,
             )
             .join("")
         : '<span class="text-muted" style="font-size:.8rem;">None recorded</span>';
@@ -5025,7 +5025,7 @@ $(function () {
         ? p.key_objections
             .map(
               (obj) =>
-                `<span class="data-tag" title="Anticipated sales objection"><i class="bi bi-shield"></i>
+                `<span class="data-tag" title="Anticipated sales objection"><i class="fa-solid fa-shield"></i>
                   ${esc(obj)}</span>`,
             )
             .join("")
@@ -5035,7 +5035,7 @@ $(function () {
       <div class="detail-panel fade-in" data-entity-type="persona" data-key="${pKey}">
         <div class="detail-panel-header">
           <div class="detail-panel-title-area">
-            <span class="pill pill-brand detail-panel-badge"><i class="bi bi-person-badge"
+            <span class="pill pill-brand detail-panel-badge"><i class="fa-solid fa-id-badge"
               ></i> Executive Persona Call Prep</span>
             <h2 class="detail-panel-title">${esc(p.name)}</h2>
             <p class="detail-panel-subtitle">
@@ -5050,17 +5050,17 @@ $(function () {
                       ${pullBtnDisabled ? "disabled" : ""}
                       title="Step 1: Pull live social posts, press interviews, and author records for
                         this executive">
-                <i class="bi bi-cloud-arrow-down"></i> Pull
+                <i class="fa-solid fa-cloud-arrow-down"></i> Pull
               </button>
               <button type="button" class="panel-btn panel-btn-validate"
                       ${validateBtnDisabled ? "disabled" : ""}
                       title="Step 2: AI parses communication style, icebreakers, and objection readiness">
-                <i class="bi bi-shield-check"></i> Validate
+                <i class="fa-solid fa-shield-halved"></i> Validate
               </button>
               <button type="button" class="panel-btn panel-btn-dump"
                       ${dumpBtnDisabled ? "disabled" : ""}
                       title="Step 3: Save validated executive persona profile into NeonDB">
-                <i class="bi bi-database-check"></i> Dump
+                <i class="fa-solid fa-database"></i> Dump
               </button>
             </div>
             <div class="panel-status-msg" id="panelStatusMsg"
@@ -5083,7 +5083,7 @@ $(function () {
 
         <!-- Categorized Section 1: Executive Profile & Demographics -->
         <div class="detail-section">
-          <div class="detail-section-heading"><i class="bi bi-person-vcard"
+          <div class="detail-section-heading"><i class="fa-solid fa-address-card"
             ></i> Executive Profile &amp; Demographics</div>
           <p class="section-desc"
             >Corporate title, verified contact information, geographic base, academic background, and
@@ -5101,7 +5101,7 @@ $(function () {
               <div class="detail-label">Corporate Email</div>
               <div class="detail-val">
                 ${p.email ? `<a href="mailto:${esc(p.email)}">${esc(p.email)} <i
-                  class="bi bi-envelope-check"></i></a>` : `<span class="text-muted"
+                  class="fa-solid fa-envelope-circle-check"></i></a>` : `<span class="text-muted"
                   >Not discovered</span>`}
               </div>
             </div>
@@ -5137,7 +5137,7 @@ $(function () {
 
         <!-- Categorized Section 2: Behavior & Strategic KPIs -->
         <div class="detail-section">
-          <div class="detail-section-heading"><i class="bi bi-bullseye"
+          <div class="detail-section-heading"><i class="fa-solid fa-bullseye"
             ></i> Strategic Priorities &amp; Operational Pain Points</div>
           <p class="section-desc"
             >Key performance metrics the executive is evaluated on, top operational blockers, and
@@ -5164,7 +5164,7 @@ $(function () {
 
         <!-- Categorized Section 3: Personalized Messaging & Pitch -->
         <div class="detail-section">
-          <div class="detail-section-heading"><i class="bi bi-chat-quote-fill"
+          <div class="detail-section-heading"><i class="fa-solid fa-comment-dots"
             ></i> Personalized Engagement &amp; Pitch Strategy</div>
           <p class="section-desc"
             >AI-tailored opening icebreaker based on recent initiatives, targeted value proposition, and
@@ -5172,7 +5172,7 @@ $(function () {
           <div class="detail-grid">
             <div class="detail-field span-full"
               style="background: var(--brand-soft); border-color: rgba(0,97,255,.25);">
-              <div class="detail-label" style="color:var(--brand);"><i class="bi bi-stars"
+              <div class="detail-label" style="color:var(--brand);"><i class="fa-solid fa-star"
                 ></i> Tailored Call Icebreaker</div>
               <div class="detail-val" style="font-size:.9rem; color:var(--text-primary); font-weight:600;">
                 "${esc(p.personalized_icebreaker || `Congratulations on your leadership initiatives at
@@ -5203,7 +5203,7 @@ $(function () {
 
         <!-- Categorized Section 4: Verified Executive Intelligence Streams & Feeds -->
         <div class="detail-section">
-          <div class="detail-section-heading"><i class="bi bi-broadcast-pin"
+          <div class="detail-section-heading"><i class="fa-solid fa-tower-broadcast"
             ></i> Executive Intelligence &amp; Live Feeds</div>
           <p class="section-desc"
             >Click any verified platform card to inspect real-time executive filings, articles, and public commentary.</p>
@@ -5213,7 +5213,7 @@ $(function () {
                 <button type="button" class="feed-title-btn" data-platform="linkedin"
                   data-title="LinkedIn Executive Intelligence" data-entity="${esc(p.name)}" data-url="${esc(p.linkedin_url)}"
                   title="Click to view executive LinkedIn activity">
-                  <span class="feed-title"><i class="bi bi-linkedin" style="color:#0077b5;"></i> LinkedIn Profile <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+                  <span class="feed-title"><i class="fa-brands fa-linkedin" style="color:#0077b5;"></i> LinkedIn Profile <i class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
                 </button>
                 <a href="${esc(p.linkedin_url)}" target="_blank" class="feed-right-icon-link" title="Open LinkedIn in new tab">${BRAND_ICONS.linkedin}</a>
               </div>
@@ -5224,9 +5224,9 @@ $(function () {
                 <button type="button" class="feed-title-btn" data-platform="corporate_bio"
                   data-title="Official Corporate Bio" data-entity="${esc(p.name)}" data-url="${esc(p.corporate_bio_url)}"
                   title="Click to view official corporate biography on bny.com">
-                  <span class="feed-title"><i class="bi bi-building" style="color:#0f172a;"></i> Corporate Bio <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+                  <span class="feed-title"><i class="fa-solid fa-building" style="color:#0f172a;"></i> Corporate Bio <i class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
                 </button>
-                <a href="${esc(p.corporate_bio_url)}" target="_blank" class="feed-right-icon-link" title="Open Corporate Bio in new tab"><i class="bi bi-box-arrow-up-right" style="color:#0f172a;font-size:1.1rem;"></i></a>
+                <a href="${esc(p.corporate_bio_url)}" target="_blank" class="feed-right-icon-link" title="Open Corporate Bio in new tab"><i class="fa-solid fa-arrow-up-right-from-square" style="color:#0f172a;font-size:1.1rem;"></i></a>
               </div>
             ` : ''}
 
@@ -5235,9 +5235,9 @@ $(function () {
                 <button type="button" class="feed-title-btn" data-platform="crunchbase"
                   data-title="Crunchbase Executive Profile" data-entity="${esc(p.name)}" data-url="${esc(p.crunchbase_url)}"
                   title="Click to view Crunchbase profile">
-                  <span class="feed-title"><i class="bi bi-briefcase-fill" style="color:#0284c7;"></i> Crunchbase <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+                  <span class="feed-title"><i class="fa-solid fa-briefcase" style="color:#0284c7;"></i> Crunchbase <i class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
                 </button>
-                <a href="${esc(p.crunchbase_url)}" target="_blank" class="feed-right-icon-link" title="Open Crunchbase in new tab"><i class="bi bi-box-arrow-up-right" style="color:#0284c7;font-size:1.1rem;"></i></a>
+                <a href="${esc(p.crunchbase_url)}" target="_blank" class="feed-right-icon-link" title="Open Crunchbase in new tab"><i class="fa-solid fa-arrow-up-right-from-square" style="color:#0284c7;font-size:1.1rem;"></i></a>
               </div>
             ` : ''}
 
@@ -5246,9 +5246,9 @@ $(function () {
                 <button type="button" class="feed-title-btn" data-platform="sec"
                   data-title="SEC Form 4 Insider Filings" data-entity="${esc(p.name)}" data-url="${esc(p.sec_insider_trades_url)}"
                   title="Click to view SEC EDGAR Form 4 filings">
-                  <span class="feed-title"><i class="bi bi-file-earmark-text-fill" style="color:#1e3a8a;"></i> SEC Form 4 <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+                  <span class="feed-title"><i class="fa-solid fa-file-lines" style="color:#1e3a8a;"></i> SEC Form 4 <i class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
                 </button>
-                <a href="${esc(p.sec_insider_trades_url)}" target="_blank" class="feed-right-icon-link" title="Open SEC Form 4 in new tab"><i class="bi bi-box-arrow-up-right" style="color:#1e3a8a;font-size:1.1rem;"></i></a>
+                <a href="${esc(p.sec_insider_trades_url)}" target="_blank" class="feed-right-icon-link" title="Open SEC Form 4 in new tab"><i class="fa-solid fa-arrow-up-right-from-square" style="color:#1e3a8a;font-size:1.1rem;"></i></a>
               </div>
             ` : ''}
 
@@ -5257,9 +5257,9 @@ $(function () {
                 <button type="button" class="feed-title-btn" data-platform="fec"
                   data-title="FEC Political Contributions" data-entity="${esc(p.name)}" data-url="${esc(p.fec_contributions_url)}"
                   title="Click to view FEC political contributions">
-                  <span class="feed-title"><i class="bi bi-bank" style="color:#059669;"></i> FEC Contributions <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+                  <span class="feed-title"><i class="fa-solid fa-building-columns" style="color:#059669;"></i> FEC Contributions <i class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
                 </button>
-                <a href="${esc(p.fec_contributions_url)}" target="_blank" class="feed-right-icon-link" title="Open FEC in new tab"><i class="bi bi-box-arrow-up-right" style="color:#059669;font-size:1.1rem;"></i></a>
+                <a href="${esc(p.fec_contributions_url)}" target="_blank" class="feed-right-icon-link" title="Open FEC in new tab"><i class="fa-solid fa-arrow-up-right-from-square" style="color:#059669;font-size:1.1rem;"></i></a>
               </div>
             ` : ''}
 
@@ -5268,9 +5268,9 @@ $(function () {
                 <button type="button" class="feed-title-btn" data-platform="quiver"
                   data-title="Quiver Quant Insider Net Worth" data-entity="${esc(p.name)}" data-url="${esc(p.quiver_insider_url)}"
                   title="Click to view Quiver Quantitative Insider data">
-                  <span class="feed-title"><i class="bi bi-graph-up" style="color:#6366f1;"></i> Quiver Quant <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+                  <span class="feed-title"><i class="fa-solid fa-arrow-trend-up" style="color:#6366f1;"></i> Quiver Quant <i class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
                 </button>
-                <a href="${esc(p.quiver_insider_url)}" target="_blank" class="feed-right-icon-link" title="Open Quiver Quant in new tab"><i class="bi bi-box-arrow-up-right" style="color:#6366f1;font-size:1.1rem;"></i></a>
+                <a href="${esc(p.quiver_insider_url)}" target="_blank" class="feed-right-icon-link" title="Open Quiver Quant in new tab"><i class="fa-solid fa-arrow-up-right-from-square" style="color:#6366f1;font-size:1.1rem;"></i></a>
               </div>
             ` : ''}
 
@@ -5279,9 +5279,9 @@ $(function () {
                 <button type="button" class="feed-title-btn" data-platform="bloomberg"
                   data-title="Bloomberg Media & Videos" data-entity="${esc(p.name)}" data-url="${esc(p.bloomberg_url)}"
                   title="Click to view Bloomberg video">
-                  <span class="feed-title"><i class="bi bi-camera-video-fill" style="color:#000;"></i> Bloomberg Media <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+                  <span class="feed-title"><i class="fa-solid fa-video" style="color:#000;"></i> Bloomberg Media <i class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
                 </button>
-                <a href="${esc(p.bloomberg_url)}" target="_blank" class="feed-right-icon-link" title="Open Bloomberg in new tab"><i class="bi bi-box-arrow-up-right" style="color:#000;font-size:1.1rem;"></i></a>
+                <a href="${esc(p.bloomberg_url)}" target="_blank" class="feed-right-icon-link" title="Open Bloomberg in new tab"><i class="fa-solid fa-arrow-up-right-from-square" style="color:#000;font-size:1.1rem;"></i></a>
               </div>
             ` : ''}
 
@@ -5290,9 +5290,9 @@ $(function () {
                 <button type="button" class="feed-title-btn" data-platform="wsj"
                   data-title="Wall Street Journal Article" data-entity="${esc(p.name)}" data-url="${esc(p.wsj_article_url)}"
                   title="Click to view WSJ article">
-                  <span class="feed-title"><i class="bi bi-journal-text" style="color:#111827;"></i> Wall Street Journal <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+                  <span class="feed-title"><i class="fa-solid fa-book" style="color:#111827;"></i> Wall Street Journal <i class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
                 </button>
-                <a href="${esc(p.wsj_article_url)}" target="_blank" class="feed-right-icon-link" title="Open WSJ in new tab"><i class="bi bi-box-arrow-up-right" style="color:#111827;font-size:1.1rem;"></i></a>
+                <a href="${esc(p.wsj_article_url)}" target="_blank" class="feed-right-icon-link" title="Open WSJ in new tab"><i class="fa-solid fa-arrow-up-right-from-square" style="color:#111827;font-size:1.1rem;"></i></a>
               </div>
             ` : ''}
 
@@ -5301,9 +5301,9 @@ $(function () {
                 <button type="button" class="feed-title-btn" data-platform="media"
                   data-title="Major Media Feature Interview" data-entity="${esc(p.name)}" data-url="${esc(p.media_interview_url)}"
                   title="Click to view major media interview">
-                  <span class="feed-title"><i class="bi bi-chat-square-quote-fill" style="color:#d97706;"></i> Media Interview <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+                  <span class="feed-title"><i class="fa-solid fa-comment-dots" style="color:#d97706;"></i> Media Interview <i class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
                 </button>
-                <a href="${esc(p.media_interview_url)}" target="_blank" class="feed-right-icon-link" title="Open Media Interview in new tab"><i class="bi bi-box-arrow-up-right" style="color:#d97706;font-size:1.1rem;"></i></a>
+                <a href="${esc(p.media_interview_url)}" target="_blank" class="feed-right-icon-link" title="Open Media Interview in new tab"><i class="fa-solid fa-arrow-up-right-from-square" style="color:#d97706;font-size:1.1rem;"></i></a>
               </div>
             ` : ''}
 
@@ -5312,9 +5312,9 @@ $(function () {
                 <button type="button" class="feed-title-btn" data-platform="annual_report"
                   data-title="BNY Annual Report & Proxy" data-entity="${esc(p.name)}" data-url="${esc(p.annual_report_url)}"
                   title="Click to view Annual Report / Proxy">
-                  <span class="feed-title"><i class="bi bi-file-earmark-pdf-fill" style="color:#b91c1c;"></i> Annual Report &amp; Proxy <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+                  <span class="feed-title"><i class="fa-solid fa-file-pdf" style="color:#b91c1c;"></i> Annual Report &amp; Proxy <i class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
                 </button>
-                <a href="${esc(p.annual_report_url)}" target="_blank" class="feed-right-icon-link" title="Open Annual Report in new tab"><i class="bi bi-box-arrow-up-right" style="color:#b91c1c;font-size:1.1rem;"></i></a>
+                <a href="${esc(p.annual_report_url)}" target="_blank" class="feed-right-icon-link" title="Open Annual Report in new tab"><i class="fa-solid fa-arrow-up-right-from-square" style="color:#b91c1c;font-size:1.1rem;"></i></a>
               </div>
             ` : ''}
 
@@ -5323,9 +5323,9 @@ $(function () {
                 <button type="button" class="feed-title-btn" data-platform="zoominfo"
                   data-title="ZoomInfo Contact Profile" data-entity="${esc(p.name)}" data-url="${esc(p.zoominfo_url)}"
                   title="Click to view ZoomInfo profile">
-                  <span class="feed-title"><i class="bi bi-telephone-fill" style="color:#2563eb;"></i> ZoomInfo Profile <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+                  <span class="feed-title"><i class="fa-solid fa-phone" style="color:#2563eb;"></i> ZoomInfo Profile <i class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
                 </button>
-                <a href="${esc(p.zoominfo_url)}" target="_blank" class="feed-right-icon-link" title="Open ZoomInfo in new tab"><i class="bi bi-box-arrow-up-right" style="color:#2563eb;font-size:1.1rem;"></i></a>
+                <a href="${esc(p.zoominfo_url)}" target="_blank" class="feed-right-icon-link" title="Open ZoomInfo in new tab"><i class="fa-solid fa-arrow-up-right-from-square" style="color:#2563eb;font-size:1.1rem;"></i></a>
               </div>
             ` : ''}
 
@@ -5336,8 +5336,8 @@ $(function () {
                   ? esc(p.rss_url)
                   : `https://news.google.com/search?q=${encodeURIComponent(p.name + " " + activeAccount.name)}`
               }" title="Click to view Google News articles and press mentions">
-                <span class="feed-title"><i class="bi bi-newspaper" style="color:#4285f4;"
-                  ></i> Google News <i class="bi bi-chevron-right"
+                <span class="feed-title"><i class="fa-solid fa-newspaper" style="color:#4285f4;"
+                  ></i> Google News <i class="fa-solid fa-chevron-right"
                   style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${
@@ -5972,30 +5972,30 @@ $(function () {
     $("#lobBatchPull")
       .prop("disabled", false)
       .removeClass("running done")
-      .html('<i class="bi bi-cloud-arrow-down"></i> Pull All');
+      .html('<i class="fa-solid fa-cloud-arrow-down"></i> Pull All');
     $("#lobBatchValidate")
       .prop("disabled", true)
       .removeClass("running done")
-      .html('<i class="bi bi-shield-check"></i> Validate All');
+      .html('<i class="fa-solid fa-shield-halved"></i> Validate All');
     $("#lobBatchDump")
       .prop("disabled", true)
       .removeClass("running done")
-      .html('<i class="bi bi-database-check"></i> Dump All');
+      .html('<i class="fa-solid fa-database"></i> Dump All');
     $("#lobBatchProgress").addClass("d-none");
 
     // Reset Persona buttons
     $("#personaBatchPull")
       .prop("disabled", false)
       .removeClass("running done")
-      .html('<i class="bi bi-cloud-arrow-down"></i> Pull All');
+      .html('<i class="fa-solid fa-cloud-arrow-down"></i> Pull All');
     $("#personaBatchValidate")
       .prop("disabled", true)
       .removeClass("running done")
-      .html('<i class="bi bi-shield-check"></i> Validate All');
+      .html('<i class="fa-solid fa-shield-halved"></i> Validate All');
     $("#personaBatchDump")
       .prop("disabled", true)
       .removeClass("running done")
-      .html('<i class="bi bi-database-check"></i> Dump All');
+      .html('<i class="fa-solid fa-database"></i> Dump All');
     $("#personaBatchProgress").addClass("d-none");
   }
 
@@ -6024,7 +6024,7 @@ $(function () {
       const $dumpBtn = $("#lobBatchDump");
 
       $fill.removeClass("validate dump");
-      $pullBtn.prop("disabled", true).addClass("running").html('<i class="bi bi-hourglass-split"></i> Discovering...');
+      $pullBtn.prop("disabled", true).addClass("running").html('<i class="fa-solid fa-hourglass-half"></i> Discovering...');
       $fill.css("width", "50%");
       $status.html(`Discovering Operating Subsidiaries & LOBs for <strong>${esc(activeAccount.name)}</strong>...`);
 
@@ -6055,16 +6055,16 @@ $(function () {
 
           $fill.css("width", "100%");
           $status.html(`<strong>✔ Complete:</strong> Discovered <span class="batch-success">${discovered.length} Lines of Business & Subsidiaries</span>`);
-          $pullBtn.removeClass("running").addClass("done").html('<i class="bi bi-cloud-arrow-down"></i> Pulled ✔');
+          $pullBtn.removeClass("running").addClass("done").html('<i class="fa-solid fa-cloud-arrow-down"></i> Pulled ✔');
           lobBatchState.pulled = true;
           $validateBtn.prop("disabled", false);
         } else {
           $status.html(`<span class="batch-fail">Discovery failed: ${res.statusText}</span>`);
-          $pullBtn.removeClass("running").prop("disabled", false).html('<i class="bi bi-cloud-arrow-down"></i> Pull All');
+          $pullBtn.removeClass("running").prop("disabled", false).html('<i class="fa-solid fa-cloud-arrow-down"></i> Pull All');
         }
       } catch (err) {
         $status.html(`<span class="batch-fail">Error: ${err.message}</span>`);
-        $pullBtn.removeClass("running").prop("disabled", false).html('<i class="bi bi-cloud-arrow-down"></i> Pull All');
+        $pullBtn.removeClass("running").prop("disabled", false).html('<i class="fa-solid fa-cloud-arrow-down"></i> Pull All');
       }
 
       lobBatchState.running = false;
@@ -6098,7 +6098,7 @@ $(function () {
       action === "pull" ? $pullBtn : action === "validate" ? $validateBtn : $dumpBtn;
     const actionLabel =
       action === "pull" ? "Pulling" : action === "validate" ? "Validating" : "Dumping";
-    actionBtn.addClass("running").html(`<i class="bi bi-hourglass-split"></i> ${actionLabel}...`);
+    actionBtn.addClass("running").html(`<i class="fa-solid fa-hourglass-half"></i> ${actionLabel}...`);
 
     for (let i = 0; i < lobs.length; i++) {
       const lob = lobs[i];
@@ -6192,15 +6192,15 @@ $(function () {
 
     if (action === "pull") {
       lobBatchState.pulled = true;
-      actionBtn.html('<i class="bi bi-cloud-arrow-down"></i> Pulled ✔');
+      actionBtn.html('<i class="fa-solid fa-cloud-arrow-down"></i> Pulled ✔');
       $validateBtn.prop("disabled", false);
     } else if (action === "validate") {
       lobBatchState.validated = true;
-      actionBtn.html('<i class="bi bi-shield-check"></i> Validated ✔');
+      actionBtn.html('<i class="fa-solid fa-shield-halved"></i> Validated ✔');
       $dumpBtn.prop("disabled", false);
     } else if (action === "dump") {
       lobBatchState.dumped = true;
-      actionBtn.html('<i class="bi bi-database-check"></i> Dumped ✔');
+      actionBtn.html('<i class="fa-solid fa-database"></i> Dumped ✔');
       if (successCount > 0) refreshAccountsCache();
     }
 
@@ -6235,7 +6235,7 @@ $(function () {
       const $dumpBtn = $("#personaBatchDump, #allPersonasBatchDump");
 
       $fill.removeClass("validate dump");
-      $pullBtn.prop("disabled", true).addClass("running").html('<i class="bi bi-hourglass-split"></i> Discovering Contacts...');
+      $pullBtn.prop("disabled", true).addClass("running").html('<i class="fa-solid fa-hourglass-half"></i> Discovering Contacts...');
       $fill.css("width", "50%");
       $status.html(`Discovering Executive Hierarchy & Contacts for <strong>${esc(activeAccount.name)}</strong>...`);
 
@@ -6265,17 +6265,17 @@ $(function () {
 
           $fill.css("width", "100%");
           $status.html(`<strong>✔ Complete:</strong> Discovered <span class="batch-success">${flatList.length} Contacts & Executives</span>`);
-          $pullBtn.removeClass("running").addClass("done").html('<i class="bi bi-cloud-arrow-down"></i> Pulled ✔');
+          $pullBtn.removeClass("running").addClass("done").html('<i class="fa-solid fa-cloud-arrow-down"></i> Pulled ✔');
           personaBatchState.pulled = true;
           $validateBtn.prop("disabled", false);
           $dumpBtn.prop("disabled", false);
         } else {
           $status.html(`<span class="batch-fail">Hierarchy fetch failed: ${res.statusText}</span>`);
-          $pullBtn.removeClass("running").prop("disabled", false).html('<i class="bi bi-cloud-arrow-down"></i> Pull All');
+          $pullBtn.removeClass("running").prop("disabled", false).html('<i class="fa-solid fa-cloud-arrow-down"></i> Pull All');
         }
       } catch (err) {
         $status.html(`<span class="batch-fail">Error: ${err.message}</span>`);
-        $pullBtn.removeClass("running").prop("disabled", false).html('<i class="bi bi-cloud-arrow-down"></i> Pull All');
+        $pullBtn.removeClass("running").prop("disabled", false).html('<i class="fa-solid fa-cloud-arrow-down"></i> Pull All');
       }
 
       personaBatchState.running = false;
@@ -6306,7 +6306,7 @@ $(function () {
       action === "pull" ? $pullBtn : action === "validate" ? $validateBtn : $dumpBtn;
     const actionLabel =
       action === "pull" ? "Pulling" : action === "validate" ? "Validating" : "Dumping";
-    actionBtn.addClass("running").html(`<i class="bi bi-hourglass-split"></i> ${actionLabel}...`);
+    actionBtn.addClass("running").html(`<i class="fa-solid fa-hourglass-half"></i> ${actionLabel}...`);
 
     for (let i = 0; i < personas.length; i++) {
       const p = personas[i];
@@ -6396,15 +6396,15 @@ $(function () {
 
     if (action === "pull") {
       personaBatchState.pulled = true;
-      actionBtn.html('<i class="bi bi-cloud-arrow-down"></i> Pulled ✔');
+      actionBtn.html('<i class="fa-solid fa-cloud-arrow-down"></i> Pulled ✔');
       $validateBtn.prop("disabled", false);
     } else if (action === "validate") {
       personaBatchState.validated = true;
-      actionBtn.html('<i class="bi bi-shield-check"></i> Validated ✔');
+      actionBtn.html('<i class="fa-solid fa-shield-halved"></i> Validated ✔');
       $dumpBtn.prop("disabled", false);
     } else if (action === "dump") {
       personaBatchState.dumped = true;
-      actionBtn.html('<i class="bi bi-database-check"></i> Dumped ✔');
+      actionBtn.html('<i class="fa-solid fa-database"></i> Dumped ✔');
       if (successCount > 0) refreshAccountsCache();
     }
 
@@ -6459,7 +6459,7 @@ $(function () {
            data-entity-type="account" data-key="${acctKey}" style="margin-bottom:18px;">
         <div class="detail-panel-header" style="display:flex;align-items:flex-start;gap:14px;">
           <div style="flex:1;">
-            <span class="pill pill-brand detail-panel-badge"><i class="bi bi-buildings"
+            <span class="pill pill-brand detail-panel-badge"><i class="fa-solid fa-city"
               ></i> Account Data Pipeline</span>
             <h2 class="detail-panel-title">${esc(account.name)}</h2>
             <p class="detail-panel-subtitle"
@@ -6471,15 +6471,15 @@ $(function () {
               <button type="button" class="panel-btn panel-btn-pull acct-btn-pull"
                 title="Pull live firmographics from 11 sources — SEC EDGAR, GLEIF, Apify Crunchbase,
                   Glassdoor, Diffbot KG, Serper, Wikipedia, OpenCorporates, FMP, CourtListener, FEC"><i
-                class="bi bi-cloud-arrow-down"></i> Pull</button>
+                class="fa-solid fa-cloud-arrow-down"></i> Pull</button>
               <button type="button" class="panel-btn panel-btn-validate acct-btn-validate"
                       ${validateDisabled}
                       title="Validate completeness and data quality score across all 89 columns"><i
-                        class="bi bi-shield-check"></i> Validate</button>
+                        class="fa-solid fa-shield-halved"></i> Validate</button>
               <button type="button" class="panel-btn panel-btn-dump acct-btn-dump"
                       ${dumpDisabled}
                       title="Persist all enriched account data into PostgreSQL accounts table"><i
-                        class="bi bi-database-check"></i> Dump DB</button>
+                        class="fa-solid fa-database"></i> Dump DB</button>
             </div>
             <div class="panel-status-msg" id="acctPanelStatusMsg"
               >${state.message || "Ready for data ingestion cycle."}</div>
@@ -6500,7 +6500,7 @@ $(function () {
     const $btn = $(this);
     const $status = $("#acctPanelStatusMsg");
 
-    $btn.html('<i class="bi bi-hourglass-split"></i> Pulling...').prop("disabled", true);
+    $btn.html('<i class="fa-solid fa-hourglass-half"></i> Pulling...').prop("disabled", true);
     $status.html(
       `<span style="color:var(--text-muted);">` +
         `Contacting 11 sources — SEC, GLEIF, Crunchbase, Diffbot, Glassdoor... this may take 30–60 sec` +
@@ -6539,7 +6539,7 @@ $(function () {
             .slice(0, 20)
             .map(
               (n) =>
-                `<span class="data-tag" style="font-size:.72rem;"><i class="bi bi-folder2"></i> ${esc(n)}</span>`,
+                `<span class="data-tag" style="font-size:.72rem;"><i class="fa-solid fa-folder"></i> ${esc(n)}</span>`,
             )
             .join(" ") +
           (discoveredLobs.length > 20
@@ -6556,7 +6556,7 @@ $(function () {
             .slice(0, 8)
             .map(
               (p) =>
-                `<span class="data-tag" style="font-size:.72rem;"><i class="bi bi-person"></i>
+                `<span class="data-tag" style="font-size:.72rem;"><i class="fa-solid fa-user"></i>
                   ${esc(p.name)}</span>`,
             )
             .join(" ") +
@@ -6575,7 +6575,7 @@ $(function () {
     } catch (e) {
       console.error("Account pull error:", e);
       state.message = `<span style="color:#ef4444;">Pull failed — ${esc(e.message)}</span>`;
-      $btn.html('<i class="bi bi-cloud-arrow-down"></i> Pull').prop("disabled", false);
+      $btn.html('<i class="fa-solid fa-cloud-arrow-down"></i> Pull').prop("disabled", false);
       $status.html(state.message);
     }
   });
@@ -6588,7 +6588,7 @@ $(function () {
     const $btn = $(this);
     const $status = $("#acctPanelStatusMsg");
 
-    $btn.html('<i class="bi bi-hourglass-split"></i> Validating...').prop("disabled", true);
+    $btn.html('<i class="fa-solid fa-hourglass-half"></i> Validating...').prop("disabled", true);
     $status.html(
       '<span style="color:var(--text-muted);">Running quality checks across 89 columns...</span>',
     );
@@ -6625,7 +6625,7 @@ $(function () {
     } catch (e) {
       console.error("Account validate error:", e);
       state.message = `<span style="color:#ef4444;">Validation failed — ${esc(e.message)}</span>`;
-      $btn.html('<i class="bi bi-shield-check"></i> Validate').prop("disabled", false);
+      $btn.html('<i class="fa-solid fa-shield-halved"></i> Validate').prop("disabled", false);
       $status.html(state.message);
     }
   });
@@ -6638,7 +6638,7 @@ $(function () {
     const $btn = $(this);
     const $status = $("#acctPanelStatusMsg");
 
-    $btn.html('<i class="bi bi-hourglass-split"></i> Saving...').prop("disabled", true);
+    $btn.html('<i class="fa-solid fa-hourglass-half"></i> Saving...').prop("disabled", true);
     $status.html(
       '<span style="color:var(--text-muted);">Writing to PostgreSQL accounts table...</span>',
     );
@@ -6677,7 +6677,7 @@ $(function () {
     } catch (e) {
       console.error("Account dump error:", e);
       state.message = `<span style="color:#ef4444;">Dump failed — ${esc(e.message)}</span>`;
-      $btn.html('<i class="bi bi-database-check"></i> Dump DB').prop("disabled", false);
+      $btn.html('<i class="fa-solid fa-database"></i> Dump DB').prop("disabled", false);
       $status.html(state.message);
     }
   });
@@ -6685,7 +6685,7 @@ $(function () {
   // ─── Notification Toast Helper ──────────────────────────────────────────
   function showNotification(message, type = "success") {
     const isSuccess = type === "success";
-    const icon = isSuccess ? "bi-check-circle-fill" : "bi-exclamation-triangle-fill";
+    const icon = isSuccess ? "fa-solid fa-circle-check" : "fa-solid fa-triangle-exclamation";
     const bg = isSuccess
       ? "linear-gradient(135deg,#059669,#10b981)"
       : "linear-gradient(135deg,#dc2626,#ef4444)";
@@ -6697,7 +6697,7 @@ $(function () {
                   border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,0.18);
                   display:flex;align-items:center;gap:12px;font-size:0.85rem;
                   font-weight:600;transition:all 0.3s ease;">
-        <i class="bi ${icon}" style="font-size:1.15rem;"></i>
+        <i class="${icon}" style="font-size:1.15rem;"></i>
         <div style="flex:1;line-height:1.35;">${message}</div>
       </div>
     `);
@@ -6746,7 +6746,7 @@ $(function () {
       .replace(/\/$/, "");
 
     const originalBtnText = $btn.html();
-    $btn.html('<i class="bi bi-hourglass-split"></i> Creating in DB...').prop("disabled", true);
+    $btn.html('<i class="fa-solid fa-hourglass-half"></i> Creating in DB...').prop("disabled", true);
 
     try {
       // 1. Persist initial account row in PostgreSQL immediately so it has an official ID and survives
@@ -6832,7 +6832,7 @@ $(function () {
     }
     const $btn = $(this);
     const origHtml = $btn.html();
-    $btn.prop("disabled", true).html('<i class="bi bi-hourglass-split"></i>&nbsp;<span>Running...</span>');
+    $btn.prop("disabled", true).html('<i class="fa-solid fa-hourglass-half"></i>&nbsp;<span>Running...</span>');
     showNotification(`🚀 Triggering composite pipeline for <strong>${esc(activeAccount.name)}</strong>...`, "info");
 
     try {
@@ -6867,7 +6867,7 @@ $(function () {
     const sublobId = $btn.data("sublob-id");
     if (!sublobId) return;
 
-    $btn.prop("disabled", true).html('<i class="bi bi-hourglass"></i>');
+    $btn.prop("disabled", true).html('<i class="fa-solid fa-hourglass"></i>');
     try {
       const res = await fetch(`${API_BASE}/api/sub-lobs/${sublobId}`, {
         method: "PATCH",
@@ -6880,16 +6880,16 @@ $(function () {
         $card.addClass("verified");
         $btn.replaceWith(`
           <span class="badge" style="background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;font-size:0.68rem;padding:3px 7px;">
-            <i class="bi bi-check-circle-fill"></i> Verified
+            <i class="fa-solid fa-circle-check"></i> Verified
           </span>
         `);
       } else {
         showNotification("Failed to update Sub-LOB verification.", "error");
-        $btn.prop("disabled", false).html('<i class="bi bi-check2-circle"></i>');
+        $btn.prop("disabled", false).html('<i class="fa-solid fa-circle-check"></i>');
       }
     } catch (err) {
       showNotification(`Error: ${err.message}`, "error");
-      $btn.prop("disabled", false).html('<i class="bi bi-check2-circle"></i>');
+      $btn.prop("disabled", false).html('<i class="fa-solid fa-circle-check"></i>');
     }
   });
 
@@ -6902,7 +6902,7 @@ $(function () {
 
     $body.html(`
       <div style="text-align:center;padding:36px 20px;color:#0284c7;">
-        <i class="bi bi-arrow-repeat spin" style="font-size:2.2rem;"></i>
+        <i class="fa-solid fa-arrows-rotate spin" style="font-size:2.2rem;"></i>
         <div style="margin-top:12px;font-weight:600;font-size:0.9rem;">Loading Verified Sub-LOB Dossier...</div>
       </div>
     `);
@@ -6955,9 +6955,9 @@ $(function () {
 
     $verifyBtn.attr("data-sublob-id", sub.id);
     if (isVerified) {
-      $verifyBtn.removeClass("btn-primary").addClass("btn-success").html('<i class="bi bi-check-circle-fill"></i> Verified ✓');
+      $verifyBtn.removeClass("btn-primary").addClass("btn-success").html('<i class="fa-solid fa-circle-check"></i> Verified ✓');
     } else {
-      $verifyBtn.removeClass("btn-success").addClass("btn-primary").html('<i class="bi bi-check2-circle"></i> Mark Verified');
+      $verifyBtn.removeClass("btn-success").addClass("btn-primary").html('<i class="fa-solid fa-circle-check"></i> Mark Verified');
     }
 
     $body.html(`
@@ -6965,9 +6965,9 @@ $(function () {
       <div style="background:linear-gradient(135deg,#f8fafc,#f1f5f9);border:1px solid #e2e8f0;border-radius:10px;padding:16px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">
         <div>
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
-            <span class="badge" style="background:#e0f2fe;color:#0284c7;font-weight:700;"><i class="bi bi-diagram-3"></i> ${esc(entityLevel)}</span>
+            <span class="badge" style="background:#e0f2fe;color:#0284c7;font-weight:700;"><i class="fa-solid fa-sitemap"></i> ${esc(entityLevel)}</span>
             <span class="badge-solid-green">${esc(status)}</span>
-            ${isVerified ? `<span class="badge" style="background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;"><i class="bi bi-check-circle-fill"></i> Manually Verified</span>` : `<span class="badge" style="background:#f8fafc;color:#64748b;border:1px solid #e2e8f0;"><i class="bi bi-dash-circle"></i> AI Inferred</span>`}
+            ${isVerified ? `<span class="badge" style="background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;"><i class="fa-solid fa-circle-check"></i> Manually Verified</span>` : `<span class="badge" style="background:#f8fafc;color:#64748b;border:1px solid #e2e8f0;"><i class="fa-solid fa-circle-minus"></i> AI Inferred</span>`}
           </div>
           <h4 style="margin:0;font-size:1.15rem;font-weight:700;color:#0f172a;">${esc(sName)}</h4>
           ${sLegal && sLegal !== sName ? `<div style="font-size:0.8rem;color:#64748b;margin-top:2px;">Legal Registration: <strong>${esc(sLegal)}</strong></div>` : ''}
@@ -6975,7 +6975,7 @@ $(function () {
         <div>
           ${lei ? `
             <a href="https://search.gleif.org/#/record/${esc(lei)}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-primary" style="font-size:0.75rem;padding:5px 12px;border-radius:6px;font-weight:600;">
-              <i class="bi bi-shield-check"></i> GLEIF Golden Copy <i class="bi bi-box-arrow-up-right" style="font-size:0.65rem;"></i>
+              <i class="fa-solid fa-shield-halved"></i> GLEIF Golden Copy <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:0.65rem;"></i>
             </a>
           ` : ''}
         </div>
@@ -6987,7 +6987,7 @@ $(function () {
           <div class="sublob-detail-label">LEI IDENTIFIER (ISO 17442)</div>
           <div class="sublob-detail-value" style="font-family:monospace;display:flex;align-items:center;justify-content:space-between;">
             <span>${esc(lei || '—')}</span>
-            ${lei ? `<button type="button" class="btn btn-xs copy-lei-btn" data-lei="${esc(lei)}" style="padding:1px 6px;font-size:0.7rem;border:1px solid #cbd5e1;background:#fff;border-radius:4px;" title="Copy LEI"><i class="bi bi-clipboard"></i></button>` : ''}
+            ${lei ? `<button type="button" class="btn btn-xs copy-lei-btn" data-lei="${esc(lei)}" style="padding:1px 6px;font-size:0.7rem;border:1px solid #cbd5e1;background:#fff;border-radius:4px;" title="Copy LEI"><i class="fa-solid fa-clipboard"></i></button>` : ''}
           </div>
         </div>
 
@@ -7011,7 +7011,7 @@ $(function () {
         <div class="sublob-detail-cell">
           <div class="sublob-detail-label">CONTROLLING PARENT LOB</div>
           <div class="sublob-detail-value" style="color:#0284c7;display:flex;align-items:center;gap:5px;">
-            <i class="bi bi-building"></i> ${esc(parentName)}
+            <i class="fa-solid fa-building"></i> ${esc(parentName)}
           </div>
         </div>
 
@@ -7020,7 +7020,7 @@ $(function () {
           <div class="sublob-detail-value" style="font-family:monospace;">
             ${parentLei && parentLei !== '—' ? `
               <a href="https://search.gleif.org/#/record/${esc(parentLei)}" target="_blank" rel="noopener noreferrer" style="color:#0284c7;">
-                ${esc(parentLei)} <i class="bi bi-box-arrow-up-right" style="font-size:0.65rem;"></i>
+                ${esc(parentLei)} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:0.65rem;"></i>
               </a>
             ` : '—'}
           </div>
@@ -7029,7 +7029,7 @@ $(function () {
         <div class="sublob-detail-cell">
           <div class="sublob-detail-label">DIGITAL DOMAIN</div>
           <div class="sublob-detail-value">
-            ${domain ? `<span style="color:#0284c7;"><i class="bi bi-globe"></i> ${esc(domain)}</span>` : '<span style="color:#94a3b8;">Inherited from parent LOB</span>'}
+            ${domain ? `<span style="color:#0284c7;"><i class="fa-solid fa-globe"></i> ${esc(domain)}</span>` : '<span style="color:#94a3b8;">Inherited from parent LOB</span>'}
           </div>
         </div>
 
@@ -7038,7 +7038,7 @@ $(function () {
           <div class="sublob-detail-value">
             ${website ? `
               <a href="${esc(website)}" target="_blank" rel="noopener noreferrer" style="color:#0284c7;word-break:break-all;">
-                ${esc(website)} <i class="bi bi-box-arrow-up-right" style="font-size:0.65rem;"></i>
+                ${esc(website)} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:0.65rem;"></i>
               </a>
             ` : '<span style="color:#94a3b8;">—</span>'}
           </div>
@@ -7047,7 +7047,7 @@ $(function () {
         <div class="sublob-detail-cell">
           <div class="sublob-detail-label">MANUAL VERIFICATION STATUS</div>
           <div class="sublob-detail-value" style="display:flex;align-items:center;gap:6px;">
-            <i class="bi ${isVerified ? 'bi-check-circle-fill' : 'bi-dash-circle'}" style="color:${isVerified ? '#059669' : '#94a3b8'};"></i>
+            <i class="${isVerified ? 'fa-solid fa-circle-check' : 'fa-solid fa-circle-minus'}" style="color:${isVerified ? '#059669' : '#94a3b8'};"></i>
             <span>${isVerified ? 'Verified by Sales Engineer' : 'AI Inferred (Unverified)'}</span>
           </div>
         </div>
@@ -7061,7 +7061,7 @@ $(function () {
       <!-- Collapsible Raw Metadata Payload -->
       <div style="margin-top:16px;">
         <button type="button" class="btn btn-sm btn-outline-secondary btn-toggle-raw-json" style="font-size:0.75rem;">
-          <i class="bi bi-code-slash"></i> View Raw Ingestion Metadata (JSON) <i class="bi bi-chevron-down"></i>
+          <i class="fa-solid fa-code"></i> View Raw Ingestion Metadata (JSON) <i class="fa-solid fa-chevron-down"></i>
         </button>
         <div class="raw-json-container d-none" style="margin-top:10px;">
           <pre style="font-size:.7rem;max-height:220px;overflow:auto;background:#0f172a;color:#f8fafc;padding:12px;border-radius:8px;margin:0;white-space:pre-wrap;">${esc(JSON.stringify(meta, null, 2))}</pre>
@@ -7094,7 +7094,7 @@ $(function () {
     if (!subId) return;
 
     const $btn = $(this);
-    $btn.prop("disabled", true).html('<i class="bi bi-arrow-repeat spin"></i> Verifying...');
+    $btn.prop("disabled", true).html('<i class="fa-solid fa-arrows-rotate spin"></i> Verifying...');
     try {
       const res = await fetch(`${API_BASE}/api/sub-lobs/${subId}`, {
         method: "PATCH",
@@ -7103,7 +7103,7 @@ $(function () {
       });
       if (res.ok) {
         showNotification("✔ Sub-LOB marked as manually verified in database!", "success");
-        $btn.removeClass("btn-primary").addClass("btn-success").html('<i class="bi bi-check-circle-fill"></i> Verified ✓');
+        $btn.removeClass("btn-primary").addClass("btn-success").html('<i class="fa-solid fa-circle-check"></i> Verified ✓');
         if (activeLob && Array.isArray(activeLob.sub_lobs)) {
           const s = activeLob.sub_lobs.find(x => String(x.id) === String(subId));
           if (s) {
@@ -7114,7 +7114,7 @@ $(function () {
         $(`.sublob-card[data-sublob-id="${subId}"]`).addClass("verified");
         $(`.sublob-card[data-sublob-id="${subId}"] .btn-verify-sublob`).replaceWith(`
           <span class="badge" style="background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;font-size:0.68rem;padding:3px 7px;">
-            <i class="bi bi-check-circle-fill"></i> Verified
+            <i class="fa-solid fa-circle-check"></i> Verified
           </span>
         `);
         if (activeAccount && activeAccount.name) {
@@ -7122,11 +7122,11 @@ $(function () {
         }
       } else {
         showNotification("Verification update failed.", "error");
-        $btn.prop("disabled", false).html('<i class="bi bi-check2-circle"></i> Mark Verified');
+        $btn.prop("disabled", false).html('<i class="fa-solid fa-circle-check"></i> Mark Verified');
       }
     } catch (err) {
       showNotification(`Error: ${err.message}`, "error");
-      $btn.prop("disabled", false).html('<i class="bi bi-check2-circle"></i> Mark Verified');
+      $btn.prop("disabled", false).html('<i class="fa-solid fa-circle-check"></i> Mark Verified');
     }
   });
 
@@ -7184,7 +7184,7 @@ $(function () {
     }
 
     const $btn = $(this);
-    $btn.prop("disabled", true).html('<i class="bi bi-arrow-repeat spin"></i> Saving...');
+    $btn.prop("disabled", true).html('<i class="fa-solid fa-arrows-rotate spin"></i> Saving...');
 
     try {
       const payload = { [channelKey]: feedUrl };
@@ -7217,7 +7217,7 @@ $(function () {
     } catch (err) {
       showNotification(`Error: ${err.message}`, "error");
     } finally {
-      $btn.prop("disabled", false).html('<i class="bi bi-check2"></i> Save &amp; Activate Feed');
+      $btn.prop("disabled", false).html('<i class="fa-solid fa-check"></i> Save &amp; Activate Feed');
     }
   });
 
@@ -7227,21 +7227,21 @@ $(function () {
     if (!activeAccount) return;
 
     const allChannels = [
-      { name: "X / Twitter Live Activity", key: "twitter_live_url", url: activeAccount.twitter_live_url, icon: "bi-twitter-x" },
-      { name: "Google News Live RSS Feed", key: "rss_url", url: activeAccount.rss_url || activeAccount.news_query, icon: "bi-newspaper" },
-      { name: "Reddit Community Discussions", key: "reddit_rss_url", url: activeAccount.reddit_rss_url || activeAccount.reddit_query, icon: "bi-reddit" },
-      { name: "Google Patents Portfolio", key: "google_patents_url", url: activeAccount.google_patents_url, icon: "bi-patch-check-fill" },
-      { name: "YouTube Executive Media", key: "youtube_search_url", url: activeAccount.youtube_search_url, icon: "bi-youtube" },
-      { name: "Wikidata Knowledge Entity", key: "wikidata_entity_url", url: activeAccount.wikidata_entity_url, icon: "bi-diagram-2" },
-      { name: "Google Trends Analytics", key: "google_trends_url", url: activeAccount.google_trends_url, icon: "bi-graph-up-arrow" },
-      { name: "Glassdoor Workplace Reviews", key: "glassdoor_url", url: activeAccount.glassdoor_url, icon: "bi-star-fill" },
-      { name: "GitHub Repositories", key: "github_url", url: activeAccount.github_url, icon: "bi-github" },
-      { name: "Corporate Press & Blog", key: "blog_url", url: activeAccount.blog_url, icon: "bi-journal-text" },
-      { name: "SEC EDGAR Search URL", key: "sec_edgar_url", url: activeAccount.sec_edgar_url, icon: "bi-file-earmark-text" },
-      { name: "SEC Filings RSS Feed", key: "sec_filings_rss", url: activeAccount.sec_filings_rss, icon: "bi-rss" },
-      { name: "OpenAlex Academic Institution", key: "openalex_institution_url", url: activeAccount.openalex_institution_url, icon: "bi-mortarboard-fill" },
-      { name: "Official Corporate Website", key: "website_url", url: activeAccount.website_url || (activeAccount.domain ? 'https://' + activeAccount.domain : ''), icon: "bi-globe" },
-      { name: "LinkedIn Corporate Page", key: "linkedin_url", url: activeAccount.linkedin_url, icon: "bi-linkedin" },
+      { name: "X / Twitter Live Activity", key: "twitter_live_url", url: activeAccount.twitter_live_url, icon: "fa-brands fa-x-twitter" },
+      { name: "Google News Live RSS Feed", key: "rss_url", url: activeAccount.rss_url || activeAccount.news_query, icon: "fa-solid fa-newspaper" },
+      { name: "Reddit Community Discussions", key: "reddit_rss_url", url: activeAccount.reddit_rss_url || activeAccount.reddit_query, icon: "fa-brands fa-reddit" },
+      { name: "Google Patents Portfolio", key: "google_patents_url", url: activeAccount.google_patents_url, icon: "fa-solid fa-circle-check" },
+      { name: "YouTube Executive Media", key: "youtube_search_url", url: activeAccount.youtube_search_url, icon: "fa-brands fa-youtube" },
+      { name: "Wikidata Knowledge Entity", key: "wikidata_entity_url", url: activeAccount.wikidata_entity_url, icon: "fa-solid fa-diagram-project" },
+      { name: "Google Trends Analytics", key: "google_trends_url", url: activeAccount.google_trends_url, icon: "fa-solid fa-arrow-trend-up" },
+      { name: "Glassdoor Workplace Reviews", key: "glassdoor_url", url: activeAccount.glassdoor_url, icon: "fa-solid fa-star" },
+      { name: "GitHub Repositories", key: "github_url", url: activeAccount.github_url, icon: "fa-brands fa-github" },
+      { name: "Corporate Press & Blog", key: "blog_url", url: activeAccount.blog_url, icon: "fa-solid fa-book" },
+      { name: "SEC EDGAR Search URL", key: "sec_edgar_url", url: activeAccount.sec_edgar_url, icon: "fa-solid fa-file-lines" },
+      { name: "SEC Filings RSS Feed", key: "sec_filings_rss", url: activeAccount.sec_filings_rss, icon: "fa-solid fa-rss" },
+      { name: "OpenAlex Academic Institution", key: "openalex_institution_url", url: activeAccount.openalex_institution_url, icon: "fa-solid fa-graduation-cap" },
+      { name: "Official Corporate Website", key: "website_url", url: activeAccount.website_url || (activeAccount.domain ? 'https://' + activeAccount.domain : ''), icon: "fa-solid fa-globe" },
+      { name: "LinkedIn Corporate Page", key: "linkedin_url", url: activeAccount.linkedin_url, icon: "fa-brands fa-linkedin" },
     ];
 
     $("#allActiveFeedsSubtitle").text(`Multi-source automated intelligence feeds for ${activeAccount.name || activeAccount.legal_name}`);
@@ -7256,7 +7256,7 @@ $(function () {
               <div>
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
                   <div style="display:flex;align-items:center;gap:8px;font-weight:700;color:#0f172a;font-size:0.86rem;">
-                    <i class="bi ${ch.icon}" style="color:#0284c7;font-size:1rem;"></i>
+                    <i class="${ch.icon}" style="color:#0284c7;font-size:1rem;"></i>
                     <span>${esc(ch.name)}</span>
                   </div>
                   <span class="${isActive ? 'badge-solid-green' : 'badge-solid-gray'}" style="font-size:0.65rem;padding:2px 7px;">
@@ -7264,17 +7264,17 @@ $(function () {
                   </span>
                 </div>
                 <div style="font-size:0.75rem;color:#64748b;word-break:break-all;">
-                  ${isActive ? `<a href="${esc(norm)}" target="_blank" rel="noopener noreferrer" style="color:#0284c7;text-decoration:none;">${esc(ch.url.length > 55 ? ch.url.substring(0, 52) + '...' : ch.url)} <i class="bi bi-box-arrow-up-right" style="font-size:0.65rem;"></i></a>` : '<span style="color:#94a3b8;font-style:italic;">No endpoint configured</span>'}
+                  ${isActive ? `<a href="${esc(norm)}" target="_blank" rel="noopener noreferrer" style="color:#0284c7;text-decoration:none;">${esc(ch.url.length > 55 ? ch.url.substring(0, 52) + '...' : ch.url)} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:0.65rem;"></i></a>` : '<span style="color:#94a3b8;font-style:italic;">No endpoint configured</span>'}
                 </div>
               </div>
               <div style="display:flex;align-items:center;justify-content:flex-end;gap:6px;margin-top:4px;">
                 ${isActive ? `
                   <a href="${esc(norm)}" target="_blank" rel="noopener noreferrer" class="btn btn-xs btn-outline-primary" style="padding:3px 10px;font-size:0.72rem;border-radius:6px;text-decoration:none;font-weight:600;">
-                    <i class="bi bi-box-arrow-up-right"></i> Launch
+                    <i class="fa-solid fa-arrow-up-right-from-square"></i> Launch
                   </a>
                 ` : `
                   <button type="button" class="btn btn-xs btn-outline-secondary btn-configure-feed-channel" data-channel-key="${ch.key}" data-channel-name="${esc(ch.name)}" style="padding:3px 10px;font-size:0.72rem;border-radius:6px;">
-                    <i class="bi bi-gear"></i> Configure
+                    <i class="fa-solid fa-gear"></i> Configure
                   </button>
                 `}
               </div>
@@ -7312,12 +7312,12 @@ $(function () {
       $extraCards.hide();
       $btn.attr("data-expanded", "false");
       $btn.find("span").text(`View all ${totalCount} Lines of Business (+${extraCount} more)`);
-      $btn.find("i").removeClass("bi-chevron-up").addClass("bi-chevron-down");
+      $btn.find("i").removeClass("fa-solid fa-chevron-up").addClass("fa-solid fa-chevron-down");
     } else {
       $extraCards.css("display", "flex");
       $btn.attr("data-expanded", "true");
       $btn.find("span").text(`Show less (top 10 Divisions)`);
-      $btn.find("i").removeClass("bi-chevron-down").addClass("bi-chevron-up");
+      $btn.find("i").removeClass("fa-solid fa-chevron-down").addClass("fa-solid fa-chevron-up");
     }
   });
 });

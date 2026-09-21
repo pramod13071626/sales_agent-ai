@@ -11,8 +11,8 @@ export function renderTopbarTicker() {
   });
 
   topbarTicker.innerHTML = `
-    <div class="topbar-ticker-pill" title="Total enterprise accounts monitored"><i class="bi bi-buildings"></i> <strong>${totalAccounts}</strong> Accounts</div>
-    <div class="topbar-ticker-pill" title="Total executive contacts & decision makers mapped"><i class="bi bi-people-fill"></i> <strong>${totalContacts}</strong> Contacts</div>
-    <div class="topbar-ticker-pill" title="Active signals captured from SEC filings, web & social discourse"><i class="bi bi-lightning-charge-fill"></i> <strong>${totalSignals}</strong> Signals</div>
+    <div class="topbar-ticker-pill" title="Total enterprise accounts monitored"><i class="fa-solid fa-city"></i> <strong>${totalAccounts}</strong> Accounts</div>
+    <div class="topbar-ticker-pill" title="Total executive contacts & decision makers mapped"><i class="fa-solid fa-users"></i> <strong>${totalContacts}</strong> Contacts</div>
+    <div class="topbar-ticker-pill" title="Active signals captured from SEC filings, web & social discourse"><i class="fa-solid fa-bolt"></i> <strong>${totalSignals}</strong> Signals</div>
   `;
 }

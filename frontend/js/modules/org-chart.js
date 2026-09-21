@@ -50,7 +50,7 @@ export function renderOrgChart(account, lob) {
 
     if (!rootNode) {
       return `<div class="empty-block">
-        <div class="empty-block-icon"><i class="bi bi-diagram-2"></i></div>
+        <div class="empty-block-icon"><i class="fa-solid fa-diagram-project"></i></div>
         <div class="empty-block-text">No verified reporting-line tree captured yet for <strong>${esc(lob.name)}</strong>.</div>
       </div>`;
     }
@@ -99,25 +99,25 @@ export function renderOrgChart(account, lob) {
     {
       id: 'directors',
       title: 'Vice Presidents & Directors',
-      icon: 'bi-award',
+      icon: 'fa-solid fa-award',
       filter: p => /director/i.test(p.title || '')
     },
     {
       id: 'dept_app',
       title: 'Department & Application Leadership',
-      icon: 'bi-grid-1x2',
+      icon: 'fa-solid fa-table-cells',
       filter: p => /department head|application|tax manager|team lead/i.test(p.title || '')
     },
     {
       id: 'scrum_proj',
       title: 'Engineering, Project & Scrum Leads',
-      icon: 'bi-cpu',
+      icon: 'fa-solid fa-microchip',
       filter: p => /scrum|project lead|consultant/i.test(p.title || '')
     },
     {
       id: 'ops_lead',
       title: 'Operations & Enterprise Lead Managers',
-      icon: 'bi-briefcase',
+      icon: 'fa-solid fa-briefcase',
       filter: () => true // Catch-all for remaining VPs
     }
   ];
@@ -163,7 +163,7 @@ export function renderOrgChart(account, lob) {
         ${vpGroups.map(g => `
           <div class="orgchart-tier-block">
             <div class="orgchart-tier-header">
-              <span class="orgchart-tier-title"><i class="bi ${g.icon}"></i> ${esc(g.title)}</span>
+              <span class="orgchart-tier-title"><i class="${g.icon}"></i> ${esc(g.title)}</span>
               <span class="orgchart-tier-count">${g.people.length} mapped</span>
             </div>
             <div class="orgchart-tier-grid">

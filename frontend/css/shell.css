@@ -90,6 +90,13 @@
   font-size: .78rem; font-weight: 600; color: rgba(255,255,255,.8);
   display: flex; align-items: center; gap: 6px;
 }
+.topbar-auth-avatar {
+  width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
+  background: var(--brand);
+  color: #fff; font-size: .6rem; font-weight: 700;
+  display: grid; place-items: center;
+  border: 1.5px solid rgba(255,255,255,.25);
+}
 
 .topbar-theme-btn {
   width: 34px; height: 34px;

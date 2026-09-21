@@ -65,7 +65,7 @@ function cardHtml(a) {
           <span class="nav-score-badge ${scoreClass}">${esc(scoreLabel)}</span>
         </div>
         <div class="nav-account-sub">${esc(subtitle)}</div>
-        ${contactsCount ? `<div class="nav-account-tags"><span class="nav-micro-tag"><i class="bi bi-people-fill"></i> ${contactsCount} contacts</span></div>` : ''}
+        ${contactsCount ? `<div class="nav-account-tags"><span class="nav-micro-tag"><i class="fa-solid fa-users"></i> ${contactsCount} contacts</span></div>` : ''}
       </div>
     </div>`;
 }
@@ -77,7 +77,7 @@ function render() {
   const tree = el('navTree');
   if (!tree) return;
   if (!list.length) {
-    tree.innerHTML = '<div class="nav-empty"><i class="bi bi-search" style="font-size:1.4rem;"></i>No accounts match the current search.</div>';
+    tree.innerHTML = '<div class="nav-empty"><i class="fa-solid fa-magnifying-glass" style="font-size:1.4rem;"></i>No accounts match the current search.</div>';
     return;
   }
   tree.innerHTML = list.map(cardHtml).join('');
@@ -157,7 +157,7 @@ export async function initAccountsNav() {
   if (collapseBtn && dashNav) {
     collapseBtn.addEventListener('click', () => {
       const collapsed = dashNav.classList.toggle('is-collapsed');
-      if (collapseIcon) collapseIcon.className = collapsed ? 'bi bi-layout-sidebar' : 'bi bi-layout-sidebar-reverse';
+      if (collapseIcon) collapseIcon.className = collapsed ? 'fa-solid fa-table-columns' : 'fa-solid fa-table-columns';
       collapseBtn.setAttribute('title', collapsed ? 'Expand navigator' : 'Collapse navigator');
     });
   }

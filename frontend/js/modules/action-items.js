@@ -83,29 +83,29 @@ function renderItemCard(item) {
       <div class="action-item-main">
         <div class="action-item-title-row">
           <span class="pill ${PRIORITY_PILL[item.priority] || 'pill-muted'}">${esc(item.priority)}</span>
-          ${isSuggestion ? `<span class="pill pill-brand"><i class="bi bi-stars"></i> Suggested</span>` : ''}
+          ${isSuggestion ? `<span class="pill pill-brand"><i class="fa-solid fa-star"></i> Suggested</span>` : ''}
           <span class="action-item-title">${esc(item.title)}</span>
         </div>
         ${desc ? `<div class="action-item-desc">${esc(desc)}</div>` : ''}
-        ${rationale ? `<div class="action-item-rationale"><i class="bi bi-info-circle"></i> ${esc(rationale)}${sourceUrl && sourceUrl !== 'bio' ? ` — <a href="${esc(sourceUrl)}" target="_blank" rel="noopener">source</a>` : ''}</div>` : ''}
+        ${rationale ? `<div class="action-item-rationale"><i class="fa-solid fa-circle-info"></i> ${esc(rationale)}${sourceUrl && sourceUrl !== 'bio' ? ` — <a href="${esc(sourceUrl)}" target="_blank" rel="noopener">source</a>` : ''}</div>` : ''}
         <div class="action-item-meta">
-          ${item.persona_name ? `<span><i class="bi bi-person"></i> ${esc(item.persona_name)}</span>` : ''}
-          ${due ? `<span class="${item.is_overdue ? 'action-item-overdue-text' : ''}"><i class="bi bi-calendar3"></i> ${item.is_overdue ? 'Overdue: ' : 'Due '}${esc(due)}</span>` : ''}
-          ${!isSuggestion ? `<span><i class="bi bi-person-check"></i> ${item.assigned_to_name ? esc(item.assigned_to_name) : 'Unassigned'}</span>` : ''}
-          ${item.source !== 'manual' ? `<span class="chip" style="padding:2px 8px;font-size:.66rem;"><i class="bi bi-magic"></i> auto</span>` : ''}
+          ${item.persona_name ? `<span><i class="fa-solid fa-user"></i> ${esc(item.persona_name)}</span>` : ''}
+          ${due ? `<span class="${item.is_overdue ? 'action-item-overdue-text' : ''}"><i class="fa-solid fa-calendar-days"></i> ${item.is_overdue ? 'Overdue: ' : 'Due '}${esc(due)}</span>` : ''}
+          ${!isSuggestion ? `<span><i class="fa-solid fa-user-check"></i> ${item.assigned_to_name ? esc(item.assigned_to_name) : 'Unassigned'}</span>` : ''}
+          ${item.source !== 'manual' ? `<span class="chip" style="padding:2px 8px;font-size:.66rem;"><i class="fa-solid fa-wand-magic-sparkles"></i> auto</span>` : ''}
         </div>
       </div>
       <div class="action-item-controls">
         ${isSuggestion ? `
-          <button type="button" class="aitem-btn" data-action="approve" data-item-id="${item.id}"><i class="bi bi-check2"></i> Approve</button>
-          <button type="button" class="aitem-btn danger" data-action="reject" data-item-id="${item.id}"><i class="bi bi-x-lg"></i> Dismiss</button>
+          <button type="button" class="aitem-btn" data-action="approve" data-item-id="${item.id}"><i class="fa-solid fa-check"></i> Approve</button>
+          <button type="button" class="aitem-btn danger" data-action="reject" data-item-id="${item.id}"><i class="fa-solid fa-xmark"></i> Dismiss</button>
         ` : `
           <select class="aitem-select" data-action="set-status" data-item-id="${item.id}">
             ${EDITABLE_STATUSES.map(v => `<option value="${v}" ${item.status === v ? 'selected' : ''}>${STATUS_LABEL[v]}</option>`).join('')}
           </select>
-          ${!item.assigned_to_id ? `<button type="button" class="aitem-btn" data-action="take" data-item-id="${item.id}"><i class="bi bi-hand-index"></i> Take</button>` : ''}
-          ${item.status !== 'done' ? `<button type="button" class="aitem-btn" data-action="complete" data-item-id="${item.id}"><i class="bi bi-check2"></i> Done</button>` : ''}
-          <button type="button" class="aitem-btn danger" data-action="delete" data-item-id="${item.id}"><i class="bi bi-trash"></i></button>
+          ${!item.assigned_to_id ? `<button type="button" class="aitem-btn" data-action="take" data-item-id="${item.id}"><i class="fa-solid fa-hand-pointer"></i> Take</button>` : ''}
+          ${item.status !== 'done' ? `<button type="button" class="aitem-btn" data-action="complete" data-item-id="${item.id}"><i class="fa-solid fa-check"></i> Done</button>` : ''}
+          <button type="button" class="aitem-btn danger" data-action="delete" data-item-id="${item.id}"><i class="fa-solid fa-trash"></i></button>
         `}
       </div>
     </div>
@@ -121,7 +121,7 @@ export function renderList(items, filterStatus) {
   const filtered = filterStatus === 'all' ? items : items.filter(i => i.status === filterStatus);
   if (!filtered.length) {
     return `<div class="empty-block" style="padding:20px 4px;">
-      <div class="empty-block-icon"><i class="bi bi-check2-square"></i></div>
+      <div class="empty-block-icon"><i class="fa-solid fa-square-check"></i></div>
       <div class="empty-block-text">No ${filterStatus === 'all' ? '' : STATUS_LABEL[filterStatus].toLowerCase() + ' '}action items yet.</div>
     </div>`;
   }
@@ -148,6 +148,53 @@ export function renderFilterChips(items, activeStatus) {
 
 // ── Contact-drawer section (persona-scoped, always-rendered like the
 // drawer's other sections — see contact-drawer.js) ─────────────────────
+// Sales-process rationale for the fields below (kept deliberately small —
+// this is a quick in-drawer add, not the full /tasks page): a task with no
+// due date or owner is the #1 reason follow-ups silently die after a call —
+// CRM task UX (Salesforce Activities, HubSpot Tasks) universally forces a
+// due date and an owner at creation for exactly that reason. Priority
+// mirrors the same triage vocabulary already used throughout this app's
+// action-item list/filter UI, so a rep never learns a second scale. "Assign
+// to me" defaults on, since the common case is a rep logging their own
+// next step while still in the drawer — an unassigned task is one nobody
+// is accountable for.
+function renderQuickAddForm(account, persona) {
+  const today = new Date().toISOString().slice(0, 10);
+  return `
+    <div class="aitem-form" id="personaActionItemForm" data-account-id="${account.id}" data-persona-id="${persona.id}" style="margin-top:10px;">
+      <div style="grid-column:1/-1;">
+        <label for="aitemTitle">What's the next step?</label>
+        <input type="text" id="aitemTitle" name="title" placeholder="e.g. Call to discuss Q3 budget" required maxlength="500">
+      </div>
+      <div>
+        <label for="aitemPriority">Priority</label>
+        <select id="aitemPriority" name="priority">
+          <option value="high">High</option>
+          <option value="medium" selected>Medium</option>
+          <option value="low">Low</option>
+        </select>
+      </div>
+      <div>
+        <label for="aitemDueDate">Due date</label>
+        <input type="date" id="aitemDueDate" name="due_date" min="${today}" value="${today}">
+      </div>
+      <div style="grid-column:1/-1;">
+        <label for="aitemDesc">Notes (optional)</label>
+        <input type="text" id="aitemDesc" name="description" placeholder="Context for whoever picks this up" maxlength="2000">
+      </div>
+      <div style="grid-column:1/-1; display:flex; align-items:center; gap:8px; font-size:.78rem; color:var(--text-secondary);">
+        <input type="checkbox" id="aitemAssignMe" name="assign_me" checked style="width:auto;">
+        <label for="aitemAssignMe" style="margin:0; font-size:inherit; font-weight:400; color:inherit; text-transform:none; letter-spacing:normal;">Assign to me</label>
+      </div>
+      <div class="aitem-form-error d-none" id="aitemFormError"></div>
+      <div style="grid-column:1/-1; display:flex; gap:8px; justify-content:flex-end;">
+        <button type="button" class="aitem-btn" data-action="quick-add-cancel">Cancel</button>
+        <button type="button" class="aitem-submit" data-action="quick-add-submit">Add action item</button>
+      </div>
+    </div>
+  `;
+}
+
 export function renderPersonaActionItems(account, persona) {
   if (!account) {
     return `<div class="empty-block" style="padding:12px 4px;"><div class="empty-block-text">Open this contact from their account to manage action items.</div></div>`;
@@ -155,8 +202,9 @@ export function renderPersonaActionItems(account, persona) {
   const items = (state.actionItemsByAccount[account.id] || []).filter(i => i.persona_id === persona.id);
   return `
     <div id="personaActionItemsBody">${renderList(items, 'all')}</div>
+    <div id="personaActionItemFormWrap" class="d-none">${renderQuickAddForm(account, persona)}</div>
     <button type="button" class="aitem-btn" style="margin-top:10px;" id="personaActionItemQuickAdd" data-account-id="${account.id}" data-persona-id="${persona.id}">
-      <i class="bi bi-plus-lg"></i> Add action item for ${esc(persona.name || 'this contact')}
+      <i class="fa-solid fa-plus"></i> Add action item for ${esc(persona.name || 'this contact')}
     </button>
   `;
 }
@@ -167,13 +215,62 @@ export function renderPersonaActionItems(account, persona) {
 export async function handleActionItemClick(e, account) {
   const btn = e.target.closest('[data-action="take"], [data-action="complete"], [data-action="delete"], [data-action="approve"], [data-action="reject"]');
   const quickAdd = e.target.closest('#personaActionItemQuickAdd');
+  const cancelBtn = e.target.closest('[data-action="quick-add-cancel"]');
+  const submitBtn = e.target.closest('[data-action="quick-add-submit"]');
 
+  // These three don't touch server data — they only toggle the quick-add
+  // form's own visibility (or show a client-side validation message), so
+  // they return false: the caller (contact-drawer.js) re-renders this whole
+  // section on `true`, which would instantly stomp the DOM change just made
+  // here (open the form, then immediately reset it shut) since nothing in
+  // state.actionItemsByAccount actually changed for it to reflect.
   if (quickAdd) {
-    const title = window.prompt('Action item title:');
-    if (title && title.trim()) {
-      await createActionItem(Number(quickAdd.dataset.accountId), {
-        title: title.trim(), persona_id: Number(quickAdd.dataset.personaId),
-      });
+    quickAdd.classList.add('d-none');
+    const formWrap = document.getElementById('personaActionItemFormWrap');
+    if (formWrap) {
+      formWrap.classList.remove('d-none');
+      document.getElementById('aitemTitle')?.focus();
+    }
+    return false;
+  }
+
+  if (cancelBtn) {
+    document.getElementById('personaActionItemFormWrap')?.classList.add('d-none');
+    document.getElementById('personaActionItemQuickAdd')?.classList.remove('d-none');
+    return false;
+  }
+
+  if (submitBtn) {
+    const form = document.getElementById('personaActionItemForm');
+    const errorEl = document.getElementById('aitemFormError');
+    const title = (document.getElementById('aitemTitle')?.value || '').trim();
+    if (!title) {
+      if (errorEl) { errorEl.textContent = "What's the next step? — a title is required."; errorEl.classList.remove('d-none'); }
+      document.getElementById('aitemTitle')?.focus();
+      return false;
+    }
+    const priority = document.getElementById('aitemPriority')?.value || 'medium';
+    const dueDateRaw = document.getElementById('aitemDueDate')?.value;
+    const description = (document.getElementById('aitemDesc')?.value || '').trim();
+    const assignMe = document.getElementById('aitemAssignMe')?.checked;
+    const me = getCurrentUser();
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Adding…';
+    const ok = await createActionItem(Number(form.dataset.accountId), {
+      title,
+      persona_id: Number(form.dataset.personaId),
+      priority,
+      due_date: dueDateRaw ? new Date(dueDateRaw).toISOString() : null,
+      description: description || null,
+      assigned_to_id: assignMe && me ? me.id : null,
+    });
+    if (!ok) {
+      // Failed (network/server error) — leave the form open with the
+      // rep's typed input intact rather than wiping it via a re-render;
+      // createActionItem already surfaced why via a toast.
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Add action item';
+      return false;
     }
     return true;
   }
@@ -222,8 +319,10 @@ async function createActionItem(accountId, payload) {
     }
     await refetchAccountActionItems(accountId);
     showToast('Action item added.');
+    return true;
   } catch (err) {
     showToast(err.message);
+    return false;
   }
 }
 
@@ -240,7 +339,7 @@ export async function renderMyTasksPanel() {
   const open = items.filter(i => i.status !== 'done' && i.status !== 'cancelled');
   if (!open.length) {
     return `<div class="empty-block" style="padding:20px 4px;">
-      <div class="empty-block-icon"><i class="bi bi-check2-circle"></i></div>
+      <div class="empty-block-icon"><i class="fa-solid fa-circle-check"></i></div>
       <div class="empty-block-text">Nothing assigned to you right now.</div>
     </div>`;
   }
@@ -252,8 +351,8 @@ export async function renderMyTasksPanel() {
           <span class="action-item-title">${esc(i.title)}</span>
         </div>
         <div class="action-item-meta">
-          <span><i class="bi bi-building"></i> ${esc(i.account_name || 'Account')}</span>
-          ${i.due_date ? `<span class="${i.is_overdue ? 'action-item-overdue-text' : ''}"><i class="bi bi-calendar3"></i> ${i.is_overdue ? 'Overdue: ' : 'Due '}${esc(formatDueDate(i.due_date))}</span>` : ''}
+          <span><i class="fa-solid fa-building"></i> ${esc(i.account_name || 'Account')}</span>
+          ${i.due_date ? `<span class="${i.is_overdue ? 'action-item-overdue-text' : ''}"><i class="fa-solid fa-calendar-days"></i> ${i.is_overdue ? 'Overdue: ' : 'Due '}${esc(formatDueDate(i.due_date))}</span>` : ''}
         </div>
       </div>
     </div>

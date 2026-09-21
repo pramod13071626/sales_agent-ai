@@ -9,7 +9,7 @@ export const HIRING_DOMAINS = [
   {
     id: 'ai_automation',
     name: 'AI & Process Automation',
-    icon: 'bi-cpu-fill',
+    icon: 'fa-solid fa-microchip',
     color: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
     offerId: 'ai',
     keywords: [
@@ -22,7 +22,7 @@ export const HIRING_DOMAINS = [
   {
     id: 'cloud_platform',
     name: 'Cloud & Platform Modernization',
-    icon: 'bi-cloud-check-fill',
+    icon: 'fa-solid fa-cloud',
     color: 'linear-gradient(135deg, #0ea5e9, #0284c7)',
     offerId: 'cloud',
     keywords: [
@@ -35,7 +35,7 @@ export const HIRING_DOMAINS = [
   {
     id: 'data_analytics',
     name: 'Data Engineering & Analytics',
-    icon: 'bi-bar-chart-fill',
+    icon: 'fa-solid fa-chart-column',
     color: 'linear-gradient(135deg, #10b981, #059669)',
     offerId: 'data',
     keywords: [
@@ -47,7 +47,7 @@ export const HIRING_DOMAINS = [
   {
     id: 'risk_compliance',
     name: 'Risk, Compliance & Control',
-    icon: 'bi-shield-check',
+    icon: 'fa-solid fa-shield-halved',
     color: 'linear-gradient(135deg, #f59e0b, #d97706)',
     offerId: 'cyber',
     keywords: [
@@ -59,7 +59,7 @@ export const HIRING_DOMAINS = [
   {
     id: 'core_operations',
     name: 'Core Business & Operations',
-    icon: 'bi-diagram-3-fill',
+    icon: 'fa-solid fa-sitemap',
     color: 'linear-gradient(135deg, #ec4899, #db2777)',
     offerId: null,
     keywords: [
@@ -138,11 +138,11 @@ export function analyzeHiringTrends(jobs, account) {
     const list = categorizedJobs.get(d.id) || [];
     const count = list.length;
     const pct = Math.round((count / total) * 100);
-    let surgeBadge = { label: 'STEADY', icon: 'bi-check-circle', cssClass: 'surge-steady' };
+    let surgeBadge = { label: 'STEADY', icon: 'fa-solid fa-circle-check', cssClass: 'surge-steady' };
     if (pct >= 30) {
-      surgeBadge = { label: 'HIGH SURGE', icon: 'bi-fire', cssClass: 'surge-high' };
+      surgeBadge = { label: 'HIGH SURGE', icon: 'fa-solid fa-fire', cssClass: 'surge-high' };
     } else if (pct >= 15) {
-      surgeBadge = { label: 'ACTIVE', icon: 'bi-lightning-charge-fill', cssClass: 'surge-active' };
+      surgeBadge = { label: 'ACTIVE', icon: 'fa-solid fa-bolt', cssClass: 'surge-active' };
     }
     return {
       ...d,
@@ -240,11 +240,11 @@ export function renderHiringTrendRadar(account, jobs) {
     return `
       <div class="panel">
         <div class="panel-title">
-          <span><i class="bi bi-graph-up-arrow"></i> Organisational Hiring &amp; Strategic Trend Radar</span>
+          <span><i class="fa-solid fa-arrow-trend-up"></i> Organisational Hiring &amp; Strategic Trend Radar</span>
           <span class="context-badge">0 Open Roles</span>
         </div>
         <div class="empty-block" style="padding:36px 16px;">
-          <div class="empty-block-icon"><i class="bi bi-briefcase"></i></div>
+          <div class="empty-block-icon"><i class="fa-solid fa-briefcase"></i></div>
           <div class="empty-block-text">No active LinkedIn job postings recorded in the database for ${esc(account.name || 'this account')}.</div>
         </div>
       </div>
@@ -260,10 +260,10 @@ export function renderHiringTrendRadar(account, jobs) {
     <div class="panel radar-container">
       <div class="panel-title">
         <div>
-          <span><i class="bi bi-graph-up-arrow" style="color:var(--brand);"></i> Organisational Hiring &amp; Strategic Trend Radar</span>
+          <span><i class="fa-solid fa-arrow-trend-up" style="color:var(--brand);"></i> Organisational Hiring &amp; Strategic Trend Radar</span>
           <p class="section-desc" style="margin:4px 0 0 0;">Dynamic intelligence derived from ${total} live requisitions in database for <strong>${esc(account.name)}</strong></p>
         </div>
-        <span class="context-badge live"><i class="bi bi-layers-fill"></i> ${total} Total Roles Monitored</span>
+        <span class="context-badge live"><i class="fa-solid fa-layer-group"></i> ${total} Total Roles Monitored</span>
       </div>
 
       <!-- Top 3 Strategic KPI Metric Cards -->
@@ -271,7 +271,7 @@ export function renderHiringTrendRadar(account, jobs) {
         <div class="radar-kpi-card">
           <div class="radar-kpi-header">
             <span class="radar-kpi-label">Top Booming Domain</span>
-            <span class="radar-kpi-icon" style="color:#6366f1;"><i class="${topDomain ? topDomain.icon : 'bi-stars'}"></i></span>
+            <span class="radar-kpi-icon" style="color:#6366f1;"><i class="${topDomain ? topDomain.icon : 'fa-solid fa-star'}"></i></span>
           </div>
           <div class="radar-kpi-value">${topDomain ? esc(topDomain.name) : 'Balanced'}</div>
           <div class="radar-kpi-sub">
@@ -283,7 +283,7 @@ export function renderHiringTrendRadar(account, jobs) {
         <div class="radar-kpi-card">
           <div class="radar-kpi-header">
             <span class="radar-kpi-label">Leadership Expansion</span>
-            <span class="radar-kpi-icon" style="color:#0ea5e9;"><i class="bi bi-people-fill"></i></span>
+            <span class="radar-kpi-icon" style="color:#0ea5e9;"><i class="fa-solid fa-users"></i></span>
           </div>
           <div class="radar-kpi-value">${leadershipCount} VP &amp; Lead Roles</div>
           <div class="radar-kpi-sub">
@@ -295,7 +295,7 @@ export function renderHiringTrendRadar(account, jobs) {
         <div class="radar-kpi-card">
           <div class="radar-kpi-header">
             <span class="radar-kpi-label">Regional Footprint</span>
-            <span class="radar-kpi-icon" style="color:#10b981;"><i class="bi bi-geo-alt-fill"></i></span>
+            <span class="radar-kpi-icon" style="color:#10b981;"><i class="fa-solid fa-location-dot"></i></span>
           </div>
           <div class="radar-kpi-value">${topLocations.length} Active Regional Hubs</div>
           <div class="radar-kpi-sub">
@@ -309,13 +309,13 @@ export function renderHiringTrendRadar(account, jobs) {
       <div class="radar-tech-hubs-bar">
         <div class="radar-tech-col">
           <div class="radar-col-header">
-            <span class="radar-col-title"><i class="bi bi-cpu-fill" style="color:var(--brand);"></i> Primary Tech Stack in Motion</span>
+            <span class="radar-col-title"><i class="fa-solid fa-microchip" style="color:var(--brand);"></i> Primary Tech Stack in Motion</span>
             <span class="radar-count-badge">${topTech.length} Detected</span>
           </div>
           <div class="radar-pill-row">
             ${topTech.length ? topTech.map(t => `
               <div class="radar-item-pill tech-pill" title="${t.count} requisitions require ${esc(t.tech)}">
-                <i class="bi bi-check2-circle"></i>
+                <i class="fa-solid fa-circle-check"></i>
                 <strong>${esc(t.tech)}</strong>
                 <span class="pill-badge">${t.count}</span>
               </div>
@@ -325,13 +325,13 @@ export function renderHiringTrendRadar(account, jobs) {
 
         <div class="radar-hubs-col">
           <div class="radar-col-header">
-            <span class="radar-col-title"><i class="bi bi-geo-alt-fill" style="color:#10b981;"></i> Regional Delivery &amp; CoE Hubs</span>
+            <span class="radar-col-title"><i class="fa-solid fa-location-dot" style="color:#10b981;"></i> Regional Delivery &amp; CoE Hubs</span>
             <span class="radar-count-badge">${topLocations.length} Hubs</span>
           </div>
           <div class="radar-pill-row">
             ${topLocations.length ? topLocations.map(l => `
               <div class="radar-item-pill hub-pill" title="${l.count} requisitions in ${esc(l.location)}">
-                <i class="bi bi-buildings"></i>
+                <i class="fa-solid fa-city"></i>
                 <span>${esc(l.location)}</span>
                 <span class="pill-badge">${l.count}</span>
               </div>
@@ -343,16 +343,16 @@ export function renderHiringTrendRadar(account, jobs) {
       <!-- 1. Domain Investment Distribution -->
       <div class="radar-section">
         <div class="radar-section-title">
-          <i class="bi bi-bar-chart-steps"></i> Domain Investment Distribution
+          <i class="fa-solid fa-bars-progress"></i> Domain Investment Distribution
         </div>
         <div class="radar-bars-wrap">
           ${domains.map(d => `
             <div class="radar-bar-row">
               <div class="radar-bar-info">
-                <span class="radar-bar-name"><i class="bi ${d.icon}"></i> ${esc(d.name)}</span>
+                <span class="radar-bar-name"><i class="${d.icon}"></i> ${esc(d.name)}</span>
                 <div class="radar-bar-metrics">
                   <span class="radar-bar-pct"><strong>${d.pct}%</strong> (${d.count} roles)</span>
-                  <span class="radar-surge-pill ${d.surgeBadge.cssClass}"><i class="bi ${d.surgeBadge.icon}"></i> ${d.surgeBadge.label}</span>
+                  <span class="radar-surge-pill ${d.surgeBadge.cssClass}"><i class="${d.surgeBadge.icon}"></i> ${d.surgeBadge.label}</span>
                 </div>
               </div>
               <div class="radar-bar-track">
@@ -374,7 +374,7 @@ export function renderHiringTrendRadar(account, jobs) {
           <div class="radar-section" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(6, 95, 70, 0.04)); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: var(--radius, 10px); padding: 16px;">
             <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
               <div style="font-size: 0.85rem; font-weight: 700; color: #059669; display: flex; align-items: center; gap: 6px;">
-                <i class="bi bi-briefcase-fill"></i> Immediate Staff Augmentation Opportunities (${contractRoles.length} Roles)
+                <i class="fa-solid fa-briefcase"></i> Immediate Staff Augmentation Opportunities (${contractRoles.length} Roles)
               </div>
               <span class="pill pill-success" style="font-size: 0.68rem;">External Sourcing Trigger</span>
             </div>
@@ -385,10 +385,10 @@ export function renderHiringTrendRadar(account, jobs) {
               ${contractRoles.slice(0, 6).map(j => `
                 <div style="background: var(--surface-bg, #ffffff); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 6px; padding: 8px 12px; display: flex; flex-direction: column; gap: 4px;">
                   <a href="${j.job_url ? esc(j.job_url) : '#'}" target="_blank" rel="noopener" style="font-size: 0.78rem; font-weight: 600; color: var(--brand); text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
-                    ${esc(j.title)} <i class="bi bi-box-arrow-up-right" style="font-size: 0.65rem;"></i>
+                    ${esc(j.title)} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 0.65rem;"></i>
                   </a>
                   <div style="font-size: 0.7rem; color: var(--text-muted); display: flex; justify-content: space-between;">
-                    <span><i class="bi bi-geo-alt"></i> ${esc(j.location || 'US')}</span>
+                    <span><i class="fa-solid fa-location-dot"></i> ${esc(j.location || 'US')}</span>
                     <span>${j.applicants ? `${j.applicants} applicants` : 'Active'}</span>
                   </div>
                 </div>
@@ -401,7 +401,7 @@ export function renderHiringTrendRadar(account, jobs) {
       <!-- 3. Strategic Sales Takeaways & Pitch Angles -->
       <div class="radar-section">
         <div class="radar-section-title">
-          <i class="bi bi-lightbulb-fill" style="color:#eab308;"></i> Strategic Sales Takeaways &amp; Pitch Angles
+          <i class="fa-solid fa-lightbulb" style="color:#eab308;"></i> Strategic Sales Takeaways &amp; Pitch Angles
         </div>
         <div class="radar-triggers-list">
           ${triggers.map((t, idx) => `
@@ -412,12 +412,12 @@ export function renderHiringTrendRadar(account, jobs) {
               </div>
               <div class="radar-trigger-detail">${esc(t.detail)}</div>
               <div class="radar-trigger-pitch">
-                <span class="radar-pitch-tag"><i class="bi bi-bullseye"></i> Recommended Play</span>
+                <span class="radar-pitch-tag"><i class="fa-solid fa-bullseye"></i> Recommended Play</span>
                 <span>${esc(t.pitch)}</span>
               </div>
               <div class="radar-trigger-actions">
                 <button type="button" class="radar-copy-btn" data-talking-point="${esc(t.talkingPoint)}">
-                  <i class="bi bi-clipboard-check"></i> Copy Executive Talking Point
+                  <i class="fa-solid fa-clipboard-check"></i> Copy Executive Talking Point
                 </button>
               </div>
             </div>
@@ -428,7 +428,7 @@ export function renderHiringTrendRadar(account, jobs) {
       <!-- 4. Live Paginated Requisitions Browser -->
       <div class="radar-section">
         <div class="radar-section-title" style="display: flex; align-items: center; justify-content: space-between;">
-          <span><i class="bi bi-folder2-open" style="color:var(--brand);"></i> Live LinkedIn Requisitions Browser (${total} Monitored Roles)</span>
+          <span><i class="fa-solid fa-folder-open" style="color:var(--brand);"></i> Live LinkedIn Requisitions Browser (${total} Monitored Roles)</span>
           <span style="font-size: 0.7rem; font-weight: 500; color: var(--text-muted);">Verified PostgreSQL Database Records</span>
         </div>
         <div style="max-height: 480px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 8px; background: var(--card-bg, #ffffff);">
@@ -439,7 +439,7 @@ export function renderHiringTrendRadar(account, jobs) {
               <div style="padding: 10px 14px; border-bottom: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 4px;">
                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
                   <a href="${j.job_url ? esc(j.job_url) : '#'}" target="_blank" rel="noopener" style="font-size: 0.8rem; font-weight: 600; color: var(--brand); text-decoration: none; display: inline-flex; align-items: center; gap: 5px;">
-                    ${esc(j.title)} <i class="bi bi-box-arrow-up-right" style="font-size: 0.65rem;"></i>
+                    ${esc(j.title)} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 0.65rem;"></i>
                   </a>
                   <div style="display: flex; gap: 4px; flex-shrink: 0;">
                     ${isContract ? '<span class="pill pill-success" style="font-size: 0.6rem; padding: 1px 5px;">CONTRACT</span>' : ''}
@@ -448,9 +448,9 @@ export function renderHiringTrendRadar(account, jobs) {
                   </div>
                 </div>
                 <div style="display: flex; align-items: center; gap: 14px; font-size: 0.72rem; color: var(--text-muted);">
-                  <span><i class="bi bi-geo-alt"></i> ${esc(j.location || 'US')}</span>
-                  ${j.applicants ? `<span><i class="bi bi-people"></i> ${j.applicants} applicants</span>` : ''}
-                  ${j.posted_date ? `<span><i class="bi bi-clock"></i> ${esc(j.posted_date)}</span>` : ''}
+                  <span><i class="fa-solid fa-location-dot"></i> ${esc(j.location || 'US')}</span>
+                  ${j.applicants ? `<span><i class="fa-solid fa-users"></i> ${j.applicants} applicants</span>` : ''}
+                  ${j.posted_date ? `<span><i class="fa-solid fa-clock"></i> ${esc(j.posted_date)}</span>` : ''}
                 </div>
               </div>
             `;

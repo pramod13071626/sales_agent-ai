@@ -3,7 +3,7 @@
 // count + Logout when logged in. Not enforced anywhere yet (AUTH_ENFORCED=false
 // server-side, see AUTH_JWT_IMPLEMENTATION_PLAN.md §9) — this just makes the
 // feature discoverable and usable while that's the case.
-import { esc } from './utils.js';
+import { esc, initials } from './utils.js';
 import { getCurrentUser, logout, refreshAccessToken } from './auth-client.js';
 import { renderMyTasksPanel } from './action-items.js';
 import { myTasksDrawer, myTasksDrawerBackdrop, myTasksDrawerBody } from './dom.js';
@@ -35,17 +35,17 @@ function render() {
   const user = getCurrentUser();
 
   if (!user) {
-    el.innerHTML = `<a href="/login" class="topbar-link"><i class="bi bi-box-arrow-in-right"></i> Sign In</a>`;
+    el.innerHTML = `<a href="/login" class="topbar-link"><i class="fa-solid fa-right-to-bracket"></i> Sign In</a>`;
     return;
   }
 
   const showTasks = user.role === 'super_admin' || user.has_tasks_access !== false;
 
   el.innerHTML = `
-    ${user.role === 'super_admin' ? '<a href="/admin" class="topbar-link"><i class="bi bi-people"></i> Admin</a>' : ''}
-    ${showTasks ? '<button type="button" id="topbarMyTasksBtn" class="topbar-link topbar-link-btn"><i class="bi bi-list-check"></i> My Tasks <span class="tab-badge" id="topbarMyTasksBadge">…</span></button>' : ''}
-    <span class="topbar-auth-user" title="${esc(user.email)}"><i class="bi bi-person-circle"></i> ${esc(user.full_name || user.email)}</span>
-    <button type="button" id="topbarLogoutBtn" class="topbar-link topbar-link-btn"><i class="bi bi-box-arrow-right"></i> Logout</button>
+    ${user.role === 'super_admin' ? '<a href="/admin" class="topbar-link"><i class="fa-solid fa-users"></i> Admin</a>' : ''}
+    ${showTasks ? '<button type="button" id="topbarMyTasksBtn" class="topbar-link topbar-link-btn"><i class="fa-solid fa-list-check"></i> My Tasks <span class="tab-badge" id="topbarMyTasksBadge">…</span></button>' : ''}
+    <span class="topbar-auth-user" title="${esc(user.email)}"><span class="topbar-auth-avatar">${esc(initials(user.full_name || user.email))}</span> ${esc(user.full_name || user.email)}</span>
+    <button type="button" id="topbarLogoutBtn" class="topbar-link topbar-link-btn"><i class="fa-solid fa-right-from-bracket"></i> Logout</button>
   `;
   document.getElementById('topbarLogoutBtn').addEventListener('click', async () => {
     await logout();

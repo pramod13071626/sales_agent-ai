@@ -21,22 +21,22 @@ function renderHeroCard(p) {
         <div class="profile-hero-info">
           <div class="profile-hero-name">
             ${esc(p.name || 'Executive Contact')}
-            ${dossierReady ? '<i class="bi bi-stars" title="AI call-prep dossier available"></i>' : ''}
+            ${dossierReady ? '<i class="fa-solid fa-star" title="AI call-prep dossier available"></i>' : ''}
           </div>
           <div class="profile-hero-title">${esc(p.title || 'Executive Title')}</div>
-          ${p.company_name ? `<div class="profile-hero-company"><i class="bi bi-building"></i> ${esc(p.company_name)}</div>` : ''}
+          ${p.company_name ? `<div class="profile-hero-company"><i class="fa-solid fa-building"></i> ${esc(p.company_name)}</div>` : ''}
           <div class="profile-hero-meta-chips">
-            ${isCSuite ? '<span class="meta-badge badge-csuite"><i class="bi bi-award"></i> C-Suite</span>' : ''}
-            ${p.decision_authority ? `<span class="meta-badge badge-authority"><i class="bi bi-check2-circle"></i> ${esc(p.decision_authority)} Authority</span>` : ''}
-            ${p.budget_authority ? `<span class="meta-badge"><i class="bi bi-wallet2"></i> ${esc(p.budget_authority)} Budget</span>` : ''}
-            ${location ? `<span class="meta-badge"><i class="bi bi-geo-alt"></i> ${esc(location)}</span>` : ''}
+            ${isCSuite ? '<span class="meta-badge badge-csuite"><i class="fa-solid fa-award"></i> C-Suite</span>' : ''}
+            ${p.decision_authority ? `<span class="meta-badge badge-authority"><i class="fa-solid fa-circle-check"></i> ${esc(p.decision_authority)} Authority</span>` : ''}
+            ${p.budget_authority ? `<span class="meta-badge"><i class="fa-solid fa-wallet"></i> ${esc(p.budget_authority)} Budget</span>` : ''}
+            ${location ? `<span class="meta-badge"><i class="fa-solid fa-location-dot"></i> ${esc(location)}</span>` : ''}
           </div>
         </div>
       </div>
       <div class="profile-hero-actions">
-        <a class="profile-action-btn ${p.email ? '' : 'disabled'}" ${p.email ? `href="mailto:${esc(p.email)}"` : ''}><i class="bi bi-envelope"></i> Email</a>
-        <a class="profile-action-btn ${p.phone ? '' : 'disabled'}" ${p.phone ? `href="tel:${esc(p.phone)}"` : ''}><i class="bi bi-telephone"></i> Call</a>
-        <a class="profile-action-btn ${p.linkedin_url ? '' : 'disabled'}" ${p.linkedin_url ? `href="${esc(p.linkedin_url)}" target="_blank" rel="noopener"` : ''}><i class="bi bi-linkedin"></i> LinkedIn</a>
+        <a class="profile-action-btn ${p.email ? '' : 'disabled'}" ${p.email ? `href="mailto:${esc(p.email)}"` : ''}><i class="fa-solid fa-envelope"></i> Email</a>
+        <a class="profile-action-btn ${p.phone ? '' : 'disabled'}" ${p.phone ? `href="tel:${esc(p.phone)}"` : ''}><i class="fa-solid fa-phone"></i> Call</a>
+        <a class="profile-action-btn ${p.linkedin_url ? '' : 'disabled'}" ${p.linkedin_url ? `href="${esc(p.linkedin_url)}" target="_blank" rel="noopener"` : ''}><i class="fa-brands fa-linkedin"></i> LinkedIn</a>
       </div>
     </div>
   `;
@@ -47,7 +47,7 @@ function renderCallPrepWidget(persona) {
   return `
     <div class="profile-widget">
       <div class="profile-widget-header">
-        <div class="profile-widget-title"><i class="bi bi-chat-left-text"></i> Sales Call-Prep &amp; Battlecards</div>
+        <div class="profile-widget-title"><i class="fa-solid fa-comment"></i> Sales Call-Prep &amp; Battlecards</div>
         <span class="profile-widget-tag">Active Mandates</span>
       </div>
       ${renderDossierTabs(persona)}
@@ -65,20 +65,20 @@ function renderBackgroundWidget(persona) {
   return `
     <div class="profile-widget">
       <div class="profile-widget-header">
-        <div class="profile-widget-title"><i class="bi bi-briefcase"></i> Professional Background &amp; Competencies</div>
+        <div class="profile-widget-title"><i class="fa-solid fa-briefcase"></i> Professional Background &amp; Competencies</div>
         <span class="profile-widget-tag">Profile Data</span>
       </div>
 
       ${background ? `
         <div class="dossier-block">
-          <div class="dossier-label"><i class="bi bi-mortarboard"></i> Academic &amp; Prior Corporate Career</div>
+          <div class="dossier-label"><i class="fa-solid fa-graduation-cap"></i> Academic &amp; Prior Corporate Career</div>
           <div class="dossier-text">${esc(background)}</div>
         </div>
       ` : ''}
 
       ${(persona.skills && persona.skills.length) ? `
         <div class="dossier-block">
-          <div class="dossier-label"><i class="bi bi-lightning-charge"></i> Core Competencies &amp; Focus Areas</div>
+          <div class="dossier-label"><i class="fa-solid fa-bolt"></i> Core Competencies &amp; Focus Areas</div>
           <div class="chip-row">${persona.skills.map(s => `<span class="chip">${esc(s)}</span>`).join('')}</div>
         </div>
       ` : ''}
@@ -97,10 +97,10 @@ function renderPersonalityProfileWidget(digestEntry, persona) {
   return `
     <div class="profile-widget">
       <div class="profile-widget-header">
-        <div class="profile-widget-title"><i class="bi bi-person-lines-fill"></i> Executive Personality Profile</div>
-        <button type="button" class="profile-action-btn btn-primary" id="drawerDownloadPdfBtn" style="padding: 5px 12px; font-size: .8rem; font-weight: 600;"><i class="bi bi-file-earmark-pdf"></i> Download Personality Report</button>
+        <div class="profile-widget-title"><i class="fa-solid fa-address-card"></i> Executive Personality Profile</div>
+        <button type="button" class="profile-action-btn btn-primary" id="drawerDownloadPdfBtn" style="padding: 5px 12px; font-size: .8rem; font-weight: 600;"><i class="fa-solid fa-file-pdf"></i> Download Personality Report</button>
       </div>
-      ${renderFullPersonalityProfile(digestEntry, persona)}
+      <div data-profile-widget="personality">${renderFullPersonalityProfile(digestEntry, persona)}</div>
     </div>
   `;
 }
@@ -110,10 +110,10 @@ function renderPsychologicalProfileWidget(digestEntry, persona) {
   return `
     <div class="profile-widget">
       <div class="profile-widget-header">
-        <div class="profile-widget-title"><i class="bi bi-activity"></i> Executive Psychological Profile</div>
-        <button type="button" class="profile-action-btn btn-primary" id="downloadPsychologicalPdfBtn" style="padding: 5px 12px; font-size: .8rem; font-weight: 600;"><i class="bi bi-file-earmark-pdf"></i> Download Psychological Report</button>
+        <div class="profile-widget-title"><i class="fa-solid fa-heart-pulse"></i> Executive Psychological Profile</div>
+        <button type="button" class="profile-action-btn btn-primary" id="downloadPsychologicalPdfBtn" style="padding: 5px 12px; font-size: .8rem; font-weight: 600;"><i class="fa-solid fa-file-pdf"></i> Download Psychological Report</button>
       </div>
-      ${renderFullPsychologicalProfile(digestEntry, persona)}
+      <div data-profile-widget="psychological">${renderFullPsychologicalProfile(digestEntry, persona)}</div>
     </div>
   `;
 }
@@ -123,7 +123,7 @@ function renderSignalsWidget(digestEntry, posts) {
   return `
     <div class="profile-widget">
       <div class="profile-widget-header">
-        <div class="profile-widget-title"><i class="bi bi-broadcast-pin"></i> Captured Public Signals &amp; Activity</div>
+        <div class="profile-widget-title"><i class="fa-solid fa-tower-broadcast"></i> Captured Public Signals &amp; Activity</div>
         <span class="profile-widget-tag">${posts.length} Captured Signal${posts.length !== 1 ? 's' : ''}</span>
       </div>
       ${renderTabbedSignalsWidget(digestEntry, posts)}

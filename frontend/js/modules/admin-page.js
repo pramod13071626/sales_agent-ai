@@ -56,7 +56,7 @@ function renderTopBarUser(user) {
   if (!el || !user) return;
   const displayName = user.full_name || user.email;
   el.innerHTML = `
-    <i class="bi bi-person-circle" style="font-size:1.05rem; opacity:0.9;"></i>
+    <i class="fa-solid fa-circle-user" style="font-size:1.05rem; opacity:0.9;"></i>
     <span style="font-weight:600; color:#fff;" title="${esc(user.email)}">${esc(displayName)}</span>
     <span style="background:rgba(255,255,255,0.18); color:#fff; font-size:0.64rem; font-weight:700; padding:2px 7px; border-radius:4px; letter-spacing:0.04em; text-transform:uppercase;">Super Admin</span>
   `;
@@ -77,28 +77,28 @@ function renderKPIBanner(stats) {
   return `
     <div class="admin-kpi-grid">
       <div class="admin-kpi-card">
-        <div class="admin-kpi-icon blue"><i class="bi bi-people-fill"></i></div>
+        <div class="admin-kpi-icon blue"><i class="fa-solid fa-users"></i></div>
         <div>
           <div class="admin-kpi-value">${stats.total_users || 0}</div>
           <div class="admin-kpi-label">Total Users</div>
         </div>
       </div>
       <div class="admin-kpi-card">
-        <div class="admin-kpi-icon green"><i class="bi bi-person-check-fill"></i></div>
+        <div class="admin-kpi-icon green"><i class="fa-solid fa-user-check"></i></div>
         <div>
           <div class="admin-kpi-value">${stats.active_users || 0}</div>
           <div class="admin-kpi-label">Active Users</div>
         </div>
       </div>
       <div class="admin-kpi-card">
-        <div class="admin-kpi-icon purple"><i class="bi bi-shield-shaded"></i></div>
+        <div class="admin-kpi-icon purple"><i class="fa-solid fa-shield-halved"></i></div>
         <div>
           <div class="admin-kpi-value">${stats.super_admin_count || 0}</div>
           <div class="admin-kpi-label">Super Admins</div>
         </div>
       </div>
       <div class="admin-kpi-card">
-        <div class="admin-kpi-icon amber"><i class="bi bi-buildings"></i></div>
+        <div class="admin-kpi-icon amber"><i class="fa-solid fa-city"></i></div>
         <div>
           <div class="admin-kpi-value">${stats.total_accounts || 0}</div>
           <div class="admin-kpi-label">Tracked Accounts</div>
@@ -112,8 +112,8 @@ function renderCreateForm() {
   return `
     <div class="admin-panel admin-create-panel">
       <div class="admin-panel-header">
-        <div class="admin-panel-title"><i class="bi bi-person-plus-fill"></i> Create New User Account</div>
-        <span class="context-badge live"><i class="bi bi-shield-plus"></i> Instant Provisioning</span>
+        <div class="admin-panel-title"><i class="fa-solid fa-user-plus"></i> Create New User Account</div>
+        <span class="context-badge live"><i class="fa-solid fa-shield-halved"></i> Instant Provisioning</span>
       </div>
       <div class="admin-panel-body">
         <form id="createUserForm" class="admin-form-horizontal">
@@ -138,7 +138,7 @@ function renderCreateForm() {
           </div>
           <div class="admin-form-group btn-group">
             <button type="submit" class="admin-submit-btn" id="createUserSubmit">
-              <i class="bi bi-plus-circle-fill"></i> Create User
+              <i class="fa-solid fa-circle-plus"></i> Create User
             </button>
           </div>
         </form>
@@ -201,23 +201,23 @@ function renderUsersTable(currentUserId) {
         <td>
           <div class="admin-row-actions">
             <button type="button" class="admin-btn admin-access-btn" data-action="access" title="Manage account visibility">
-              <i class="bi bi-shield-lock"></i> Access
+              <i class="fa-solid fa-shield-halved"></i> Access
             </button>
             <div class="admin-kebab-wrap">
               <button type="button" class="admin-btn admin-kebab-btn" data-action="kebab-toggle" title="More options" aria-haspopup="true">
-                <i class="bi bi-three-dots-vertical"></i>
+                <i class="fa-solid fa-ellipsis-vertical"></i>
               </button>
               <div class="admin-kebab-menu d-none">
                 <button type="button" class="admin-kebab-item" data-action="edit-user">
-                  <i class="bi bi-pencil-square"></i> Edit User
+                  <i class="fa-solid fa-pen-to-square"></i> Edit User
                 </button>
                 ${!isAdmin ? `
                   <button type="button" class="admin-kebab-item" data-action="toggle-active">
-                    <i class="bi bi-power"></i> ${u.is_active ? 'Deactivate' : 'Activate'}
+                    <i class="fa-solid fa-power-off"></i> ${u.is_active ? 'Deactivate' : 'Activate'}
                   </button>
                   <div class="admin-kebab-divider"></div>
                   <button type="button" class="admin-kebab-item danger" data-action="delete">
-                    <i class="bi bi-trash-fill"></i> Delete User
+                    <i class="fa-solid fa-trash"></i> Delete User
                   </button>
                 ` : ''}
               </div>
@@ -232,16 +232,16 @@ function renderUsersTable(currentUserId) {
     <div class="admin-panel">
       <div class="admin-panel-header">
         <div class="admin-panel-title">
-          <i class="bi bi-people-fill"></i> User Directory & Access Control
+          <i class="fa-solid fa-users"></i> User Directory & Access Control
         </div>
         <span class="context-badge live" id="userCountBadge">${filtered.length} of ${usersCache.length} users</span>
       </div>
 
       <div class="admin-filter-bar">
         <div class="admin-search-box">
-          <i class="bi bi-search search-icon"></i>
+          <i class="fa-solid fa-magnifying-glass search-icon"></i>
           <input type="text" class="admin-search-input" id="adminUserSearch" placeholder="Search by name, email, or role..." value="${esc(searchQuery)}">
-          <button type="button" class="admin-search-clear" id="adminUserSearchClear"><i class="bi bi-x-circle-fill"></i></button>
+          <button type="button" class="admin-search-clear" id="adminUserSearchClear"><i class="fa-solid fa-circle-xmark"></i></button>
         </div>
         <div class="admin-filter-chips">
           <button type="button" class="admin-filter-chip ${currentFilter === 'all' ? 'active' : ''}" data-filter="all">All</button>
@@ -264,7 +264,7 @@ function renderUsersTable(currentUserId) {
             </tr>
           </thead>
           <tbody id="adminTableBody">
-            ${rows || `<tr><td colspan="5" style="text-align:center; padding:36px; color:var(--text-muted);"><i class="bi bi-search" style="font-size:1.5rem; display:block; margin-bottom:8px;"></i> No users matched your search criteria.</td></tr>`}
+            ${rows || `<tr><td colspan="5" style="text-align:center; padding:36px; color:var(--text-muted);"><i class="fa-solid fa-magnifying-glass" style="font-size:1.5rem; display:block; margin-bottom:8px;"></i> No users matched your search criteria.</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -275,7 +275,7 @@ function renderUsersTable(currentUserId) {
 function renderAuditRow(e) {
   return `
     <div class="admin-activity-row">
-      <div class="admin-activity-icon-wrap"><i class="bi bi-shield-check"></i></div>
+      <div class="admin-activity-icon-wrap"><i class="fa-solid fa-shield-halved"></i></div>
       <div class="admin-activity-content">
         <div class="admin-activity-text">
           <strong>${esc(e.actor)}</strong> — ${esc((e.action || '').replace(/_/g, ' '))}
@@ -291,7 +291,7 @@ function renderActivity() {
   return `
     <div class="admin-panel">
       <div class="admin-panel-header">
-        <div class="admin-panel-title"><i class="bi bi-clock-history"></i> Security & Audit Trail</div>
+        <div class="admin-panel-title"><i class="fa-solid fa-clock-rotate-left"></i> Security & Audit Trail</div>
         <span class="context-badge live" id="auditCountBadge">Loading…</span>
       </div>
       <div class="admin-panel-body">
@@ -300,7 +300,7 @@ function renderActivity() {
         </div>
         <div class="admin-audit-footer" id="adminAuditFooter" style="display:none;">
           <button type="button" class="admin-btn" id="loadMoreAuditBtn">
-            <i class="bi bi-arrow-down-circle"></i> Load More Logs (<span id="auditRemainingCount">0</span> remaining)
+            <i class="fa-solid fa-circle-down"></i> Load More Logs (<span id="auditRemainingCount">0</span> remaining)
           </button>
         </div>
       </div>
@@ -347,7 +347,7 @@ async function loadAuditLogs(reset = false) {
             footer.style.display = 'block';
             footer.innerHTML = `
               <button type="button" class="admin-btn" id="loadMoreAuditBtn">
-                <i class="bi bi-arrow-down-circle"></i> Load More Logs (<span id="auditRemainingCount">${auditTotal - auditLogs.length}</span> remaining)
+                <i class="fa-solid fa-circle-down"></i> Load More Logs (<span id="auditRemainingCount">${auditTotal - auditLogs.length}</span> remaining)
               </button>
             `;
             const newBtn = document.getElementById('loadMoreAuditBtn');
@@ -356,7 +356,7 @@ async function loadAuditLogs(reset = false) {
             }
           } else {
             footer.style.display = 'block';
-            footer.innerHTML = '<div style="font-size:0.72rem; color:var(--text-muted); text-align:center; padding:4px 0;"><i class="bi bi-check2-all"></i> All audit records loaded</div>';
+            footer.innerHTML = '<div style="font-size:0.72rem; color:var(--text-muted); text-align:center; padding:4px 0;"><i class="fa-solid fa-check-double"></i> All audit records loaded</div>';
           }
         }
       }
@@ -379,11 +379,11 @@ function renderModalShell() {
       <div class="admin-modal">
         <div class="admin-modal-header">
           <div class="admin-modal-title" id="accessModalTitle">Manage Account &amp; Dashboard Access</div>
-          <button type="button" class="admin-modal-close" id="accessModalClose"><i class="bi bi-x-lg"></i></button>
+          <button type="button" class="admin-modal-close" id="accessModalClose"><i class="fa-solid fa-xmark"></i></button>
         </div>
         <div id="accessModalDashboardToggles"></div>
         <div class="admin-access-section-label" id="accessModalDashboardLabel" style="display:none;">
-          <i class="bi bi-buildings"></i> Assigned Company Accounts &amp; Dossiers
+          <i class="fa-solid fa-city"></i> Assigned Company Accounts &amp; Dossiers
         </div>
         <div style="font-size:0.75rem; color:var(--text-muted); padding:0 24px 8px 24px; margin-top:-4px; display:none;" id="accessModalAccountSubLabel">
           Assign individual company accounts (e.g. BNY Mellon, BlackRock) to grant access to company intelligence, org charts, hiring trends, and financials.
@@ -399,31 +399,31 @@ function renderModalShell() {
       <div class="admin-modal" style="max-width: 480px;">
         <div class="admin-modal-header">
           <div class="admin-modal-title" id="editUserModalTitle">
-            <i class="bi bi-person-gear"></i> Edit User Account
+            <i class="fa-solid fa-user-gear"></i> Edit User Account
           </div>
-          <button type="button" class="admin-modal-close" id="editUserModalClose"><i class="bi bi-x-lg"></i></button>
+          <button type="button" class="admin-modal-close" id="editUserModalClose"><i class="fa-solid fa-xmark"></i></button>
         </div>
         <form class="admin-modal-form" id="editUserForm">
           <input type="hidden" name="user_id" id="editUserId">
           <div class="admin-modal-body" style="padding:20px; display:flex; flex-direction:column; gap:14px;">
             <div class="admin-form-group">
-              <label class="admin-form-label" for="editUserFullName"><i class="bi bi-person"></i> Full Name</label>
+              <label class="admin-form-label" for="editUserFullName"><i class="fa-solid fa-user"></i> Full Name</label>
               <input type="text" class="admin-form-input" id="editUserFullName" name="full_name" placeholder="e.g. Robin Vince">
             </div>
             <div class="admin-form-group">
-              <label class="admin-form-label" for="editUserEmail"><i class="bi bi-envelope"></i> Email Address <span style="font-weight:400; font-size:0.7rem; color:var(--text-muted); margin-left:4px;">(Read-only)</span></label>
+              <label class="admin-form-label" for="editUserEmail"><i class="fa-solid fa-envelope"></i> Email Address <span style="font-weight:400; font-size:0.7rem; color:var(--text-muted); margin-left:4px;">(Read-only)</span></label>
               <input type="email" class="admin-form-input" id="editUserEmail" name="email" readonly disabled style="opacity:0.75; cursor:not-allowed; background:var(--input-bg);" placeholder="user@company.com" title="Email address cannot be modified">
             </div>
             <div class="admin-form-row" style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
               <div class="admin-form-group">
-                <label class="admin-form-label" for="editUserRole"><i class="bi bi-shield-check"></i> System Role</label>
+                <label class="admin-form-label" for="editUserRole"><i class="fa-solid fa-shield-halved"></i> System Role</label>
                 <select class="admin-form-select" id="editUserRole" name="role">
                   <option value="user">User</option>
                   <option value="super_admin">Super Admin</option>
                 </select>
               </div>
               <div class="admin-form-group">
-                <label class="admin-form-label" for="editUserStatus"><i class="bi bi-activity"></i> Account Status</label>
+                <label class="admin-form-label" for="editUserStatus"><i class="fa-solid fa-heart-pulse"></i> Account Status</label>
                 <select class="admin-form-select" id="editUserStatus" name="is_active">
                   <option value="true">Active</option>
                   <option value="false">Inactive</option>
@@ -432,7 +432,7 @@ function renderModalShell() {
             </div>
             <div class="admin-form-group">
               <label class="admin-form-label" for="editUserPassword">
-                <i class="bi bi-key"></i> New Password <span style="font-weight:400; font-size:0.7rem; color:var(--text-muted);">(Leave blank to keep unchanged)</span>
+                <i class="fa-solid fa-key"></i> New Password <span style="font-weight:400; font-size:0.7rem; color:var(--text-muted);">(Leave blank to keep unchanged)</span>
               </label>
               <input type="password" class="admin-form-input" id="editUserPassword" name="password" placeholder="••••••••" autocomplete="new-password">
             </div>
@@ -441,7 +441,7 @@ function renderModalShell() {
           <div class="admin-modal-footer" style="display:flex; justify-content:flex-end; gap:10px; padding:14px 20px; border-top:1px solid var(--panel-border); background:var(--panel-bg);">
             <button type="button" class="admin-btn" id="editUserCancelBtn">Cancel</button>
             <button type="submit" class="admin-btn primary" id="editUserSubmitBtn">
-              <i class="bi bi-check2-circle"></i> Save Changes
+              <i class="fa-solid fa-circle-check"></i> Save Changes
             </button>
           </div>
         </form>
@@ -549,7 +549,7 @@ function wireEvents() {
         errorEl.style.display = 'flex';
       } finally {
         submitBtn.disabled = false;
-        submitBtn.innerHTML = '<i class="bi bi-plus-circle-fill"></i> Create User Account';
+        submitBtn.innerHTML = '<i class="fa-solid fa-circle-plus"></i> Create User Account';
       }
     });
   }
@@ -705,7 +705,7 @@ function wireEvents() {
         errorEl.style.display = 'flex';
       } finally {
         submitBtn.disabled = false;
-        submitBtn.innerHTML = '<i class="bi bi-check2-circle"></i> Save Changes';
+        submitBtn.innerHTML = '<i class="fa-solid fa-circle-check"></i> Save Changes';
       }
     });
   }
@@ -749,7 +749,7 @@ function openEditUserModal(user, isSelf) {
 
   if (!backdrop || !user) return;
 
-  if (title) title.innerHTML = `<i class="bi bi-person-gear"></i> Edit User — ${esc(user.email)}`;
+  if (title) title.innerHTML = `<i class="fa-solid fa-user-gear"></i> Edit User — ${esc(user.email)}`;
   if (idInput) idInput.value = user.id;
   if (nameInput) nameInput.value = user.full_name || '';
   if (emailInput) emailInput.value = user.email || '';
@@ -813,23 +813,23 @@ function updateTableOnly(currentUserId) {
         <td>
           <div class="admin-row-actions">
             <button type="button" class="admin-btn admin-access-btn" data-action="access" title="Manage account visibility">
-              <i class="bi bi-shield-lock"></i> Access
+              <i class="fa-solid fa-shield-halved"></i> Access
             </button>
             <div class="admin-kebab-wrap">
               <button type="button" class="admin-btn admin-kebab-btn" data-action="kebab-toggle" title="More options" aria-haspopup="true">
-                <i class="bi bi-three-dots-vertical"></i>
+                <i class="fa-solid fa-ellipsis-vertical"></i>
               </button>
               <div class="admin-kebab-menu d-none">
                 <button type="button" class="admin-kebab-item" data-action="edit-user">
-                  <i class="bi bi-pencil-square"></i> Edit User
+                  <i class="fa-solid fa-pen-to-square"></i> Edit User
                 </button>
                 ${!isAdmin ? `
                   <button type="button" class="admin-kebab-item" data-action="toggle-active">
-                    <i class="bi bi-power"></i> ${u.is_active ? 'Deactivate' : 'Activate'}
+                    <i class="fa-solid fa-power-off"></i> ${u.is_active ? 'Deactivate' : 'Activate'}
                   </button>
                   <div class="admin-kebab-divider"></div>
                   <button type="button" class="admin-kebab-item danger" data-action="delete">
-                    <i class="bi bi-trash-fill"></i> Delete User
+                    <i class="fa-solid fa-trash"></i> Delete User
                   </button>
                 ` : ''}
               </div>
@@ -840,7 +840,7 @@ function updateTableOnly(currentUserId) {
     `;
   }).join('');
 
-  tbody.innerHTML = rows || `<tr><td colspan="5" style="text-align:center; padding:36px; color:var(--text-muted);"><i class="bi bi-search" style="font-size:1.5rem; display:block; margin-bottom:8px;"></i> No users matched your search criteria.</td></tr>`;
+  tbody.innerHTML = rows || `<tr><td colspan="5" style="text-align:center; padding:36px; color:var(--text-muted);"><i class="fa-solid fa-magnifying-glass" style="font-size:1.5rem; display:block; margin-bottom:8px;"></i> No users matched your search criteria.</td></tr>`;
 }
 
 function closeAccessModal() {
@@ -855,28 +855,28 @@ function renderDashboardAccessToggles(userId, permissions, disabled) {
     {
       key: 'has_dashboard_access',
       name: 'Global Executive Digest & Radar',
-      icon: 'bi-bar-chart-line-fill',
+      icon: 'fa-solid fa-chart-line',
       path: '/',
       sub: 'Cross-account portfolio overview, executive briefing & macro sales alerts',
     },
     {
       key: 'has_command_center_access',
       name: 'Sales Command Center',
-      icon: 'bi-graph-up-arrow',
+      icon: 'fa-solid fa-arrow-trend-up',
       path: '/command-center',
       sub: 'Action-first rep & manager daily command dashboard',
     },
     {
       key: 'has_tasks_access',
       name: 'My Tasks & Action Items',
-      icon: 'bi-list-check',
+      icon: 'fa-solid fa-list-check',
       path: '/tasks',
       sub: 'Personal task manager, reminders & cross-account deliverables',
     },
     {
       key: 'has_pipeline_access',
       name: 'Data Pipeline Console',
-      icon: 'bi-compass',
+      icon: 'fa-solid fa-compass',
       path: '/pipeline',
       sub: 'Raw data ingestion pipeline & automated scraper runs',
     },
@@ -884,7 +884,7 @@ function renderDashboardAccessToggles(userId, permissions, disabled) {
 
   wrap.innerHTML = `
     <div class="admin-access-section-label">
-      <i class="bi bi-grid-1x2"></i> Dashboard &amp; View Permissions
+      <i class="fa-solid fa-table-cells"></i> Dashboard &amp; View Permissions
     </div>
     <div class="admin-access-dashboards-grid">
       ${dashboards.map(d => {
@@ -894,12 +894,12 @@ function renderDashboardAccessToggles(userId, permissions, disabled) {
             <label class="admin-access-toggle">
               <input type="checkbox" data-perm-key="${d.key}" ${hasAccess ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
               <div>
-                <div><i class="bi ${d.icon}" style="margin-right:4px; color:var(--brand);"></i> <strong>${esc(d.name)}</strong> <span style="font-size:0.7rem; color:var(--text-muted);">(${d.path})</span></div>
+                <div><i class="${d.icon}" style="margin-right:4px; color:var(--brand);"></i> <strong>${esc(d.name)}</strong> <span style="font-size:0.7rem; color:var(--text-muted);">(${d.path})</span></div>
                 <div style="font-size:0.72rem; color:var(--text-muted); font-weight:normal;">${esc(d.sub)}</div>
               </div>
             </label>
             <span style="font-size:0.7rem; color:var(--text-muted); white-space:nowrap; margin-left:8px;">
-              ${disabled ? 'Always on for Super Admin' : (hasAccess ? '<i class="bi bi-check-circle-fill" style="color:var(--success);"></i> Granted' : '<i class="bi bi-slash-circle" style="color:var(--danger);"></i> Restricted')}
+              ${disabled ? 'Always on for Super Admin' : (hasAccess ? '<i class="fa-solid fa-circle-check" style="color:var(--success);"></i> Granted' : '<i class="fa-solid fa-ban" style="color:var(--danger);"></i> Restricted')}
             </span>
           </div>
         `;
@@ -961,7 +961,7 @@ async function openAccessModal(userId, email) {
       }, true);
       body.innerHTML = `
         <div style="padding:24px; text-align:center; color:var(--text-secondary);">
-          <i class="bi bi-shield-lock" style="font-size:2rem; color:var(--brand); display:block; margin-bottom:12px;"></i>
+          <i class="fa-solid fa-shield-halved" style="font-size:2rem; color:var(--brand); display:block; margin-bottom:12px;"></i>
           <strong>Super Admin Global Access</strong>
           <p style="font-size:0.8rem; color:var(--text-muted); margin-top:6px;">
             This user is a Super Admin and automatically holds unrestricted access to all dashboards and accounts.
@@ -993,7 +993,7 @@ async function openAccessModal(userId, email) {
             <input type="checkbox" data-account-id="${a.id}" ${a.granted ? 'checked' : ''}>
             <span>${esc(a.name)}</span>
           </label>
-          <span style="font-size:0.7rem; color:var(--text-muted);">${a.granted ? '<i class="bi bi-check-circle-fill" style="color:var(--success);"></i> Granted' : 'Restricted'}</span>
+          <span style="font-size:0.7rem; color:var(--text-muted);">${a.granted ? '<i class="fa-solid fa-circle-check" style="color:var(--success);"></i> Granted' : 'Restricted'}</span>
         </div>
       `).join('') || '<div style="color:var(--text-muted); text-align:center; padding:16px;">No matching accounts found.</div>';
 
@@ -1134,10 +1134,10 @@ async function init() {
   if (user.role !== 'super_admin') {
     main.innerHTML = `
       <div class="admin-page-error">
-        <i class="bi bi-shield-slash" style="font-size:2.5rem; color:var(--danger); display:block; margin-bottom:12px;"></i>
+        <i class="fa-solid fa-shield-halved" style="font-size:2.5rem; color:var(--danger); display:block; margin-bottom:12px;"></i>
         <h2>Access Restricted</h2>
         <p>This console is restricted to Super Administrators only.</p>
-        <button type="button" class="admin-btn" id="restrictedLogoutBtn" style="margin-top:16px;"><i class="bi bi-box-arrow-right"></i> Sign Out</button>
+        <button type="button" class="admin-btn" id="restrictedLogoutBtn" style="margin-top:16px;"><i class="fa-solid fa-right-from-bracket"></i> Sign Out</button>
       </div>
     `;
     const rBtn = document.getElementById('restrictedLogoutBtn');

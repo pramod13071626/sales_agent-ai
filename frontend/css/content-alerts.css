@@ -89,7 +89,7 @@
   font-size: .74rem; color: var(--text-muted); font-style: italic; line-height: 1.5;
   padding-top: 8px; border-top: 1px dashed var(--border-color);
 }
-.alert-evidence i.bi-quote { font-style: normal; margin-right: 3px; }
+.alert-evidence i.fa-quote-left { font-style: normal; margin-right: 3px; }
 .alert-evidence-meta { font-style: normal; font-weight: 600; color: var(--text-secondary); margin-left: 4px; }
 .alert-evidence a { margin-left: 6px; color: var(--brand); }
 
@@ -242,7 +242,7 @@
   font-size: .74rem; color: var(--text-muted); font-style: italic; line-height: 1.5;
   margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border-color);
 }
-.opportunity-evidence i.bi-quote { font-style: normal; margin-right: 3px; }
+.opportunity-evidence i.fa-quote-left { font-style: normal; margin-right: 3px; }
 .opportunity-idea {
   font-size: .78rem; color: var(--text-primary); line-height: 1.5;
   margin-top: 8px; padding: 8px 10px;

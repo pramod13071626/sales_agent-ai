@@ -16,7 +16,7 @@ function itemHtml(item) {
         <div class="cc-playbook-account">${esc(acct ? acct.name : '')}</div>
       </div>
       <button type="button" class="cc-btn ${item.crmSynced ? 'cc-btn-done' : 'cc-btn-primary'} cc-btn-sm" data-rank="${item.rank}" ${item.crmSynced ? 'disabled' : ''}>
-        ${item.crmSynced ? '<i class="bi bi-check2"></i> Synced' : 'Push to CRM'}
+        ${item.crmSynced ? '<i class="fa-solid fa-check"></i> Synced' : 'Push to CRM'}
       </button>
     </li>`;
 }

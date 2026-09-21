@@ -92,15 +92,22 @@
 .cc-row-matrix-feed { grid-template-columns: 55fr 45fr; }
 
 .cc-panel {
+  /* Flat, bordered, shadow-free — matches Dastone's own .card (box-shadow:
+     none; relies on the border alone), not the heavier elevated-card look
+     this app used before the restyle. */
   background: var(--panel-bg);
   border: 1px solid var(--border-color);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   padding: 16px;
   display: flex; flex-direction: column;
   min-width: 0;
 }
-.cc-panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-.cc-panel-head h2 { font-size: .86rem; font-weight: 500; margin: 0; color: var(--text-primary); }
+.cc-panel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px; padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-color);
+}
+.cc-panel-head h2 { font-size: .95rem; font-weight: 500; margin: 0; color: var(--text-primary); }
 .cc-panel-link { font-size: .72rem; color: var(--brand); text-decoration: none; }
 .cc-panel-link:hover { text-decoration: underline; }
 .cc-panel-note { font-size: .66rem; color: var(--text-muted); }
@@ -467,6 +474,70 @@
   background: rgba(245, 158, 11, 0.12);
   color: #d97706;
 }
+
+/* KPI Tile Grid — one compact card per account (renderHiringSignals) */
+.hs-tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.hs-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: var(--transition);
+}
+.hs-tile:hover {
+  border-color: var(--brand);
+  background: var(--input-bg);
+  transform: translateY(-1px);
+}
+.hs-tile-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.hs-tile-head-text { min-width: 0; }
+.hs-tile-name {
+  font-size: .78rem; font-weight: 700; color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.hs-tile-ticker { font-size: .64rem; color: var(--text-muted); font-weight: 600; }
+.hs-tile-top-category {
+  display: flex; align-items: center; gap: 5px;
+  font-size: .68rem; color: var(--text-secondary);
+  white-space: nowrap; overflow: hidden;
+}
+.hs-tile-top-category i { color: var(--brand); flex-shrink: 0; }
+.hs-tile-top-category span:not(.hs-tile-top-category-count) {
+  overflow: hidden; text-overflow: ellipsis;
+}
+.hs-tile-top-category strong { color: var(--text-primary); font-weight: 700; }
+.hs-tile-top-category-count {
+  margin-left: auto; flex-shrink: 0;
+  font-size: .62rem; font-weight: 700; color: var(--brand);
+  background: var(--brand-muted); border-radius: var(--radius-xs);
+  padding: 1px 5px;
+}
+.hs-tile-kpis {
+  display: flex; gap: 6px; margin-top: auto; padding-top: 4px;
+}
+.hs-tile-kpi {
+  flex: 1; text-align: center; padding: 6px 2px;
+  background: var(--badge-bg); border-radius: var(--radius-sm);
+}
+.hs-tile-kpi-num { font-size: .92rem; font-weight: 800; color: var(--text-primary); line-height: 1.1; }
+.hs-tile-kpi-label { font-size: .58rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .02em; margin-top: 2px; }
+.hs-tile-kpi-highlight { background: var(--brand-muted); }
+.hs-tile-kpi-highlight .hs-tile-kpi-num { color: var(--brand); }
+/* .hs-domain-tag's own margin-left:auto assumes a flex ROW (its other use,
+   inline in a title row) — here it's a direct child of .hs-tile's flex
+   COLUMN, where that's inert and the container's default align-items:stretch
+   would otherwise stretch this badge to the tile's full width. */
+.hs-tile > .hs-domain-tag { align-self: flex-start; margin-left: 0; }
 
 /* Bulletin Headline */
 .hs-bulletin-headline {

@@ -61,11 +61,11 @@ async function loadAccounts(user) {
         return;
       } else {
         // No dashboards enabled: render in-place message, do not redirect in a loop
-        navTree.innerHTML = '<div class="nav-empty" style="padding:20px; text-align:center;"><i class="bi bi-shield-lock" style="font-size:1.5rem; display:block; margin-bottom:8px;"></i>No accounts assigned yet.</div>';
+        navTree.innerHTML = '<div class="nav-empty" style="padding:20px; text-align:center;"><i class="fa-solid fa-shield-halved" style="font-size:1.5rem; display:block; margin-bottom:8px;"></i>No accounts assigned yet.</div>';
         dashEmpty.classList.add('digest-mode');
         dashEmpty.innerHTML = `
           <div class="empty-block" style="margin:40px auto; max-width:440px; text-align:center; padding:32px;">
-            <div class="empty-block-icon" style="font-size:2.5rem; color:var(--text-muted); margin-bottom:12px;"><i class="bi bi-shield-lock"></i></div>
+            <div class="empty-block-icon" style="font-size:2.5rem; color:var(--text-muted); margin-bottom:12px;"><i class="fa-solid fa-shield-halved"></i></div>
             <div style="font-size:1.1rem; font-weight:700; color:var(--text-primary); margin-bottom:8px;">Account Access Required</div>
             <div style="font-size:0.85rem; color:var(--text-secondary); line-height:1.5;">You do not currently have any assigned company accounts or dashboard permissions. Ask your Super Administrator to grant you access.</div>
           </div>`;
@@ -121,7 +121,7 @@ async function loadAccounts(user) {
     console.error(err);
     navTree.innerHTML = '<div class="nav-empty">Error loading accounts. Ensure the API is running.</div>';
     dashEmpty.classList.add('digest-mode');
-    dashEmpty.innerHTML = '<div class="empty-block"><div class="empty-block-icon"><i class="bi bi-exclamation-triangle"></i></div><div class="empty-block-text">Could not load account data. Ensure the API server is running.</div></div>';
+    dashEmpty.innerHTML = '<div class="empty-block"><div class="empty-block-icon"><i class="fa-solid fa-triangle-exclamation"></i></div><div class="empty-block-text">Could not load account data. Ensure the API server is running.</div></div>';
   }
 }
 

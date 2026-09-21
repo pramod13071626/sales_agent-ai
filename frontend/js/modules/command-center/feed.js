@@ -33,7 +33,7 @@ function renderAccountFilterPill() {
   if (!wrap) return;
   if (!ccState.activeAccountId) { wrap.innerHTML = ''; return; }
   const acct = accountById(ccState.activeAccountId);
-  wrap.innerHTML = `<button type="button" class="cc-chip cc-chip-brand cc-chip-removable" id="ccClearAccountFilter">Filtered: ${esc(acct ? acct.name : '')} <i class="bi bi-x"></i></button>`;
+  wrap.innerHTML = `<button type="button" class="cc-chip cc-chip-brand cc-chip-removable" id="ccClearAccountFilter">Filtered: ${esc(acct ? acct.name : '')} <i class="fa-solid fa-xmark"></i></button>`;
   document.getElementById('ccClearAccountFilter').addEventListener('click', () => {
     ccState.activeAccountId = null;
     renderFeed();

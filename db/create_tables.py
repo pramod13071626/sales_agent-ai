@@ -70,6 +70,13 @@ def ensure_schema_compatibility():
             "ALTER TABLE sub_lobs ADD COLUMN IF NOT EXISTS website_url TEXT;",
             "ALTER TABLE sub_lobs ADD COLUMN IF NOT EXISTS is_manually_verified BOOLEAN DEFAULT FALSE;",
             "ALTER TABLE sub_lobs ADD COLUMN IF NOT EXISTS manually_verified_at TIMESTAMPTZ;",
+            # 7. digests.target_key must be the PRIMARY KEY (db/models/digest.py) —
+            # apps/content_pipeline/db.py upserts with ON CONFLICT (target_key),
+            # which needs a real unique/PK constraint on that column to work.
+            # Some environments' digests table predates the model's primary_key=True
+            # and was created without it; retrofit it here (try/except below no-ops
+            # once it already exists).
+            "ALTER TABLE digests ADD CONSTRAINT digests_pkey PRIMARY KEY (target_key);",
         ]
         for stmt in alter_statements:
             try:

@@ -6,7 +6,7 @@
 export const WIDGET_GUIDES = {
   matrix: {
     title: 'Account Priority Matrix',
-    icon: 'bi-grid-1x2-fill',
+    icon: 'fa-solid fa-table-cells',
     badge: 'Prioritization & Strategy',
     summary: 'Plots monitored enterprise accounts across buying urgency (signal velocity) and deal potential (strategic value). Bubble size reflects estimated contract value.',
     actionTip: 'Focus daily prospecting on top-right quadrant accounts with high urgency and high value. Click any bubble to open the account dossier.',
@@ -14,7 +14,7 @@ export const WIDGET_GUIDES = {
   },
   priority_feed: {
     title: 'Priority Signal Feed',
-    icon: 'bi-lightning-charge-fill',
+    icon: 'fa-solid fa-bolt',
     badge: 'Real-Time Intent Feed',
     summary: 'Real-time stream of high-impact buying intent triggers—such as hiring surges, executive appointments, earnings calls, and tech migrations—scored from 1 to 100.',
     actionTip: 'Filter by signal category or account, then click "Draft outreach" to generate an AI-tailored pitch referencing that exact trigger.',
@@ -22,7 +22,7 @@ export const WIDGET_GUIDES = {
   },
   playbook: {
     title: "This Week's Playbook",
-    icon: 'bi-journal-bookmark-fill',
+    icon: 'fa-solid fa-bookmark',
     badge: 'Weekly Action Plan',
     summary: 'AI-synthesized, prescriptive weekly game plan highlighting the highest-leverage outreach plays across your target accounts.',
     actionTip: 'Treat this as your weekly checklist. It specifies which accounts have active buying windows and the exact pitch angle to lead with.',
@@ -30,7 +30,7 @@ export const WIDGET_GUIDES = {
   },
   timeline: {
     title: 'Executive Movements',
-    icon: 'bi-clock-history',
+    icon: 'fa-solid fa-clock-rotate-left',
     badge: 'Leadership Shifts',
     summary: 'Chronological timeline of leadership appointments, promotions, and departures across key buying committee personas over the last 30 days.',
     actionTip: 'Engage newly appointed executives during their first 90 days when they are evaluating new vendors and establishing modernization budgets.',
@@ -38,7 +38,7 @@ export const WIDGET_GUIDES = {
   },
   due_soon: {
     title: 'Due Soon & Follow-ups',
-    icon: 'bi-check2-circle',
+    icon: 'fa-solid fa-circle-check',
     badge: 'Task Management',
     summary: 'Centralized list of scheduled outreach tasks, prospect follow-ups, and CRM action items due within the next 7 days.',
     actionTip: 'Review daily to maintain deal momentum and ensure no client commitments or follow-ups slip through the cracks. Click "View all" for full task queue.',
@@ -46,7 +46,7 @@ export const WIDGET_GUIDES = {
   },
   hiring: {
     title: 'Hiring Signals & Requisitions',
-    icon: 'bi-briefcase-fill',
+    icon: 'fa-solid fa-briefcase',
     badge: 'Talent & Capacity Demand',
     summary: 'Tracks open requisitions, leadership hiring, contractor demand, and active tech hubs queried directly from PostgreSQL.',
     actionTip: 'Surges in technical roles or contract flags indicate funded initiatives. Expand the "Live Requisitions Browser" to view live postings.',
@@ -54,7 +54,7 @@ export const WIDGET_GUIDES = {
   },
   strategic_tracks: {
     title: 'Strategic Investment Tracks',
-    icon: 'bi-diagram-3-fill',
+    icon: 'fa-solid fa-sitemap',
     badge: 'Enterprise Alignment',
     summary: 'Translates technical hiring clusters into major enterprise investment tracks (AI Hub, Cloud Modernization) mapped directly to sponsoring C-Suite & VP leaders.',
     actionTip: 'Align your sales pitch with the target sponsor and recommended pitch play to address their specific department budget priorities.',
@@ -62,7 +62,7 @@ export const WIDGET_GUIDES = {
   },
   capital: {
     title: 'Capital Events',
-    icon: 'bi-cash-coin',
+    icon: 'fa-solid fa-coins',
     badge: 'Liquidity & Budget Triggers',
     summary: 'Monitors funding rounds, acquisitions, IPO announcements, and corporate restructuring across target accounts over the last 12 months.',
     actionTip: 'Capital events unlock fresh IT budget and create post-merger integration needs—prime windows for enterprise digital transformation pitches.',
@@ -70,7 +70,7 @@ export const WIDGET_GUIDES = {
   },
   coverage: {
     title: 'Org Coverage Gaps',
-    icon: 'bi-person-x-fill',
+    icon: 'fa-solid fa-user-xmark',
     badge: 'Relationship Risk',
     summary: 'Audits relationship health across departments to highlight single-threaded accounts and unmapped decision makers.',
     actionTip: 'Multi-thread into accounts by identifying and prospecting missing committee roles before single-point-of-contact deals stall.',
@@ -78,7 +78,7 @@ export const WIDGET_GUIDES = {
   },
   competitor: {
     title: 'Competitor Mentions',
-    icon: 'bi-shield-shaded',
+    icon: 'fa-solid fa-shield-halved',
     badge: 'Competitive Intelligence',
     summary: 'Scans filings, news, and job requirements for mentions of incumbent vendors and competing software or consulting firms.',
     actionTip: 'Identify upcoming contract renewal windows and vendor dissatisfaction cues to position competitive displacement strategies.',
@@ -86,7 +86,7 @@ export const WIDGET_GUIDES = {
   },
   tech_signals: {
     title: 'Tech & IP Signals',
-    icon: 'bi-cpu-fill',
+    icon: 'fa-solid fa-microchip',
     badge: 'Architecture & Patents',
     summary: 'Tracks patent filings, tech stack changes, framework modernizations, and cloud infrastructure investments.',
     actionTip: 'Cite specific technologies and architectural initiatives in your outreach to build immediate technical credibility with engineering leaders.',
@@ -94,7 +94,7 @@ export const WIDGET_GUIDES = {
   },
   objections: {
     title: 'Objections & Pain Points',
-    icon: 'bi-chat-square-quote-fill',
+    icon: 'fa-solid fa-comment-dots',
     badge: 'Pitch Preparation',
     summary: 'Ranks the operational pain points and sales objections captured across every persona in your accounts, by how many personas mention each one.',
     actionTip: 'Pre-empt the top objection before the prospect raises it — lead your pitch with the pain point that shows up most across your book.',
@@ -102,7 +102,7 @@ export const WIDGET_GUIDES = {
   },
   decision_makers: {
     title: 'New & Changed Decision-Makers',
-    icon: 'bi-person-lines-fill',
+    icon: 'fa-solid fa-address-card',
     badge: 'Buying Committee Changes',
     summary: 'Executives who joined or were promoted in the last 30 days at accounts you track, cross-checked against your own persona directory.',
     actionTip: '"Not yet mapped" means a real gap — add them to the buying committee. "Role change" means someone you already have a relationship with just gained influence — re-engage them.',
@@ -110,7 +110,7 @@ export const WIDGET_GUIDES = {
   },
   news: {
     title: 'Google News',
-    icon: 'bi-newspaper',
+    icon: 'fa-solid fa-newspaper',
     badge: 'Public Coverage',
     summary: 'Recent Google News coverage already captured in the database for your accounts — earnings, leadership, market moves, and general press.',
     actionTip: 'Reference a specific, recent headline in outreach — it signals you\'re paying attention to their business, not sending a generic template.',
@@ -137,7 +137,7 @@ export function initWidgetGuides() {
     if (!guide || !modal) return;
 
     if (titleEl) titleEl.textContent = guide.title;
-    if (iconEl) iconEl.className = `bi ${guide.icon || 'bi-info-circle-fill'}`;
+    if (iconEl) iconEl.className = `${guide.icon || 'fa-solid fa-circle-info'}`;
     if (badgeEl) badgeEl.textContent = guide.badge || 'Sales Intelligence';
     if (summaryEl) summaryEl.textContent = guide.summary;
     if (actionEl) actionEl.textContent = guide.actionTip;
