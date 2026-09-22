@@ -1150,7 +1150,7 @@ if FASTAPI_AVAILABLE:
             wrapper_doc = {"account": req.account_data}
             schema = AccountSchema.from_enriched_json(wrapper_doc)
             repo = AccountRepository(session)
-            acct = repo.upsert(schema)
+            acct = repo.upsert(schema, raw_data=req.account_data)
             session.commit()
 
             PipelineRunLogger.log_event(
@@ -3277,23 +3277,55 @@ if FASTAPI_AVAILABLE:
             )
             raise HTTPException(status_code=500, detail=f"Validation failed: {str(e)}")
 
+    def _parse_run_level_and_action(run_id_str: str, entities: Optional[Dict[str, Any]]) -> tuple[str, str]:
+        """Dynamically parses pipeline_level and action from run_id or entities_extracted without hardcoding."""
+        ent = entities or {}
+        level = ent.get("level")
+        action = ent.get("action")
+        if not level or not action:
+            parts = str(run_id_str or "").lower().split("_")
+            if not level:
+                for cand in ["account", "sublob", "lob", "persona", "composite"]:
+                    if cand in parts:
+                        level = cand
+                        break
+            if not action:
+                for cand in ["pull", "validate", "dump", "purge", "verify", "toggle"]:
+                    if cand in parts:
+                        action = cand
+                        break
+        return level or "pipeline", action or "run"
+
     @pipeline_router.get("/runs")
-    def list_pipeline_runs(limit: int = 50, company_name: Optional[str] = Query(None)):
-        """Lists recent execution runs from PostgreSQL pipeline_runs table."""
+    def list_pipeline_runs(
+        limit: int = 50,
+        company_name: Optional[str] = Query(None),
+        exclude_dumps: bool = Query(True),
+    ):
+        """Lists recent execution runs from PostgreSQL pipeline_runs table.
+        By default, filters out individual entity micro-dumps so real stage runs are clearly visible.
+        """
         from db.models import PipelineRun
         session = get_session()
         try:
             query = session.query(PipelineRun)
             if company_name:
                 query = query.filter(PipelineRun.company_name.ilike(f"%{company_name}%"))
+            if exclude_dumps:
+                query = query.filter(
+                    ~PipelineRun.run_id.contains("_dump_"),
+                    ~PipelineRun.run_id.contains("_toggle_"),
+                )
             runs = query.order_by(PipelineRun.started_at.desc()).limit(limit).all()
-            run_list = [
-                {
+            run_list = []
+            for r in runs:
+                lvl, act = _parse_run_level_and_action(r.run_id, r.entities_extracted)
+                run_list.append({
                     "id": r.id,
                     "run_id": r.run_id,
                     "company_name": r.company_name,
-                    "pipeline_level": getattr(r, "pipeline_level", "pipeline"),
-                    "action": getattr(r, "action", "run"),
+                    "pipeline_level": lvl,
+                    "action": act,
                     "target_url": r.target_url,
                     "status": r.status,
                     "quality_score": float(r.quality_score or 0.0),
@@ -3307,9 +3339,7 @@ if FASTAPI_AVAILABLE:
                     "enriched_storage_dir": r.enriched_storage_dir,
                     "execution_logs": r.execution_logs,
                     "error_message": r.error_message,
-                }
-                for r in runs
-            ]
+                })
             return {"status": "success", "runs": run_list}
         finally:
             session.close()
@@ -3323,12 +3353,13 @@ if FASTAPI_AVAILABLE:
             r = session.query(PipelineRun).filter(PipelineRun.run_id == run_id).first()
             if not r:
                 raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found.")
+            lvl, act = _parse_run_level_and_action(r.run_id, r.entities_extracted)
             return {
                 "id": r.id,
                 "run_id": r.run_id,
                 "company_name": r.company_name,
-                "pipeline_level": getattr(r, "pipeline_level", "pipeline"),
-                "action": getattr(r, "action", "run"),
+                "pipeline_level": lvl,
+                "action": act,
                 "target_url": r.target_url,
                 "status": r.status,
                 "quality_score": float(r.quality_score or 0.0),
@@ -4050,6 +4081,70 @@ if FASTAPI_AVAILABLE:
         """Returns enterprise run telemetry & credit usage breakdown for an account."""
         from services.telemetry_service import TelemetryService
         return TelemetryService.get_run_credit_breakdown(account_id=account_id)
+
+    @app.get("/api/system/health", tags=["0. System Telemetry"])
+    def get_system_health():
+        """Returns live system telemetry, credit usage stats, database status, and API connectors health."""
+        from db.models import PipelineRun, Account, Lob, Persona
+        from config import (
+            POSTGRES_DB,
+            GEMINI_API_KEY,
+            LLM_MODEL,
+            EXA_API_KEY,
+            TAVILY_API_KEY,
+            DIFFBOT_TOKEN,
+            APIFY_TOKEN,
+            SERPER_API_KEY,
+            FINNHUB_API_KEY,
+        )
+        session = get_session()
+        try:
+            total_accts = session.query(Account).count()
+            total_lobs = session.query(Lob).count()
+            total_personas = session.query(Persona).count()
+
+            # Pipeline execution aggregates
+            runs = session.query(PipelineRun).order_by(PipelineRun.started_at.desc()).all()
+            total_runs = len(runs)
+            total_credits = sum(int(r.total_credits_used or 0) for r in runs)
+            last_run = runs[0].started_at.isoformat() if runs and runs[0].started_at else None
+
+            connectors = {
+                "sec_edgar": {"name": "SEC EDGAR", "status": "active", "type": "Regulatory Filings"},
+                "gemini": {"name": "Google Gemini", "status": "active" if bool(GEMINI_API_KEY) else "unconfigured", "type": "AI Synthesis", "model": LLM_MODEL},
+                "exa": {"name": "Exa AI Search", "status": "active" if bool(EXA_API_KEY) else "unconfigured", "type": "Neural Search"},
+                "tavily": {"name": "Tavily AI", "status": "active" if bool(TAVILY_API_KEY) else "unconfigured", "type": "Web Intelligence"},
+                "diffbot": {"name": "Diffbot KG", "status": "active" if bool(DIFFBOT_TOKEN) else "unconfigured", "type": "Knowledge Graph"},
+                "finnhub": {"name": "Finnhub Financials", "status": "active" if bool(FINNHUB_API_KEY) else "unconfigured", "type": "Market Telemetry"},
+                "apify": {"name": "Apify Engine", "status": "active" if bool(APIFY_TOKEN) else "unconfigured", "type": "Social & Web"},
+                "serper": {"name": "Serper Google OSINT", "status": "active" if bool(SERPER_API_KEY) else "unconfigured", "type": "Search Engine"},
+            }
+
+            return {
+                "status": "healthy",
+                "database": {
+                    "status": "connected",
+                    "engine": "PostgreSQL",
+                    "name": POSTGRES_DB,
+                },
+                "stats": {
+                    "total_accounts": total_accts,
+                    "total_lobs": total_lobs,
+                    "total_personas": total_personas,
+                    "total_pipeline_runs": total_runs,
+                    "total_credits_consumed": total_credits,
+                    "last_sync_timestamp": last_run,
+                },
+                "connectors": connectors,
+            }
+        except Exception as e:
+            return {
+                "status": "degraded",
+                "error": str(e),
+                "database": {"status": "error", "name": POSTGRES_DB},
+            }
+        finally:
+            session.close()
 
     @app.get("/api/pipeline/runs/{run_id}/credit-breakdown", tags=["4. Pipeline Orchestration"])
     def get_run_credit_breakdown_by_id(run_id: str):

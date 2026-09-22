@@ -46,14 +46,17 @@
       <i class="bi bi-plus-circle"></i>&nbsp;<span>Add New Account</span>
     </button>
 
-    <div class="sidebar-label">Accounts</div>
+    <div class="sidebar-label-row">
+      <span class="sidebar-label">Accounts</span>
+      <span class="sidebar-accounts-count" id="sidebarAccountsCount">0</span>
+    </div>
 
     <div class="account-list" id="accountList">
       <!-- Accounts will be injected here via JS -->
       <div class="spinner-wrap"><div class="spinner"></div></div>
     </div>
 
-    <div class="sidebar-footer"><span>Connected to NeonDB</span></div>
+    <div class="sidebar-footer"><span>Connected to PostgreSQL (sales_ai_universal)</span></div>
   </aside>
 
   <!-- ── Main Content ────────────────────────────────────────── -->
@@ -64,31 +67,98 @@
       <!-- Top Brand Header Bar -->
       <div class="pipeline-top-bar">
         <div class="pipeline-top-left">
-          <div class="pipeline-top-logo">K</div>
-          <div class="pipeline-top-title">Account Data Pipeline</div>
+          <div class="pipeline-top-logo"><i class="bi bi-diagram-3-fill"></i></div>
+          <div class="pipeline-top-title">Sales Intelligence</div>
+          
+          <!-- Live Global Telemetry Strip -->
+          <div class="topbar-telemetry-strip" id="topbarTelemetry">
+            <span class="telemetry-pill" title="Total Enterprise Accounts Active in Database">
+              <i class="bi bi-buildings"></i> <strong id="topbarAccountsCount">0</strong> Accounts
+            </span>
+            <span class="telemetry-pill" title="Total Verified Executive Personas Mapped">
+              <i class="bi bi-people-fill"></i> <strong id="topbarPersonasCount">0</strong> Personas
+            </span>
+            <span class="telemetry-pill" title="Total Operating Divisions &amp; Subsidiaries Indexed">
+              <i class="bi bi-diagram-3"></i> <strong id="topbarLobsCount">0</strong> Divisions
+            </span>
+            <span class="telemetry-pill db-status" title="PostgreSQL: sales_ai_universal (Connected)">
+              <span class="pulse-dot-green"></span> PostgreSQL Connected
+            </span>
+          </div>
         </div>
+
         <div class="pipeline-top-right">
-          <span class="pipeline-status-ready"><i class="bi bi-circle-fill" style="font-size:0.45rem;"></i> Pipeline: Ready</span>
-          <div class="pipeline-user-avatar">A</div>
+          <!-- Command Palette Trigger Button -->
+          <button type="button" class="topbar-search-trigger" id="topbarSpotlightBtn" title="Quick Search (Ctrl+K)">
+            <i class="bi bi-search"></i>
+            <span>Search anything...</span>
+            <kbd>Ctrl K</kbd>
+          </button>
+
+          <!-- Active Pipeline Status Pill -->
+          <span class="pipeline-status-badge ready" id="pipelineStatusBadge">
+            <i class="bi bi-circle-fill"></i> Pipeline: Ready
+          </span>
         </div>
       </div>
 
-      <!-- Empty state -->
-      <div id="emptyState" class="empty-state fade-in">
-        <div class="empty-icon"><i class="bi bi-buildings"></i></div>
-        <p class="empty-title">Select an Account to Begin Exploration</p>
-        <p class="empty-sub">
-          Choose any enterprise account from the left sidebar to analyze operating divisions,
-          inspect executive stakeholders, and pull live multi-source signals.
-        </p>
-        
-        <div class="step-guide" style="margin-top:16px; justify-content:center;">
-          <div class="step-guide-item"><span class="step-guide-num">1</span> Pick an enterprise account</div>
-          <div class="step-guide-item">
-            <span class="step-guide-num">2</span> Select an operational division (LOB)
+      <!-- Interactive Quick-Launch Hub (Empty State) -->
+      <div id="emptyState" class="empty-state-hub fade-in">
+        <!-- Hub Top Banner -->
+        <div class="hub-header">
+          <div class="hub-header-badge">
+            <span class="pulse-dot-green"></span> Enterprise Sales Intelligence Console
           </div>
-          <div class="step-guide-item">
-            <span class="step-guide-num">3</span> Open executive call prep &amp; feeds
+          <h1 class="hub-title">Interactive Quick-Launch Hub</h1>
+          <p class="hub-subtitle">
+            Explore mapped executive hierarchies, audited operating divisions, and real-time signals across verified corporate accounts.
+          </p>
+        </div>
+
+        <!-- Global System Health & Metered Credit Telemetry -->
+        <div class="hub-telemetry-section">
+          <div class="hub-section-heading">
+            <i class="bi bi-cpu-fill"></i> System Telemetry &amp; Metered Pipeline Health
+          </div>
+          <div class="hub-kpi-grid" id="hubKpiGrid">
+            <div class="hub-kpi-card">
+              <div class="hub-kpi-label"><i class="bi bi-lightning-charge-fill text-warning"></i> Metered Credits Consumed</div>
+              <div class="hub-kpi-val" id="hubCreditsConsumed">0</div>
+              <div class="hub-kpi-sub">Across all pipeline stages</div>
+            </div>
+            <div class="hub-kpi-card">
+              <div class="hub-kpi-label"><i class="bi bi-clock-history text-primary"></i> Total Pipeline Runs</div>
+              <div class="hub-kpi-val" id="hubTotalRuns">0</div>
+              <div class="hub-kpi-sub">Ingestion, LOB &amp; Persona batches</div>
+            </div>
+            <div class="hub-kpi-card">
+              <div class="hub-kpi-label"><i class="bi bi-database-fill-check text-success"></i> Database Engine</div>
+              <div class="hub-kpi-val text-success" id="hubDbStatus"><span class="pulse-dot-green"></span> PostgreSQL</div>
+              <div class="hub-kpi-sub" id="hubDbName">sales_ai_universal</div>
+            </div>
+            <div class="hub-kpi-card">
+              <div class="hub-kpi-label"><i class="bi bi-arrow-repeat text-info"></i> Last Synced</div>
+              <div class="hub-kpi-val" id="hubLastSync">—</div>
+              <div class="hub-kpi-sub" id="hubFreshnessLabel">System freshness status</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Live Intelligence Feeds & OSINT Channels (Account Info Style) -->
+        <div class="pipeline-section-card fade-in" style="margin-top:20px;">
+          <div class="section-title-row">
+            <div class="section-title-left">
+              <span class="section-title-dot"></span>
+              <span>Live Intelligence Feeds &amp; OSINT Channels</span>
+              <span class="badge-feed-count" id="hubActiveConnectorsBadge">8 Active</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;">
+              <span class="section-subtitle-hint" id="hubConnectorsFreshnessHint"><i class="bi bi-arrow-repeat"></i> Verified Multi-Source Gateways</span>
+            </div>
+          </div>
+
+          <div class="osint-channel-tile-grid" id="hubConnectorsGrid">
+            <!-- Dynamically populated from /api/system/health in osint-channel-tile style -->
           </div>
         </div>
       </div>
@@ -199,7 +269,7 @@
               <span class="text-muted" style="font-size: .75rem; font-weight: normal;"
                     id="allPersonasCountBadge"></span>
             </div>
-            <div class="d-flex align-items-center gap-3 flex-wrap">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
               <div class="batch-pipeline-actions" id="allPersonasBatchActions">
                 <button type="button" class="batch-btn batch-btn-pull" id="allPersonasBatchPull"
                         title="Step 1: Discover and pull live 4-tier hierarchy for all personas">
@@ -223,6 +293,29 @@
                        placeholder="Search name, title, department..." autocomplete="off" />
                 <button type="button" id="clearAllPersonasSearch" class="persona-search-clear"
                         title="Clear search"><i class="bi bi-x"></i></button>
+              </div>
+
+              <!-- Export Directory Dropdown -->
+              <div class="persona-export-wrapper" style="position:relative;">
+                <button type="button" class="persona-export-btn" id="btnExportPersonas" title="Export directory for CRM import">
+                  <i class="bi bi-download"></i> Export <i class="bi bi-chevron-down" style="font-size:.65rem;margin-left:2px;"></i>
+                </button>
+                <div class="persona-export-menu d-none" id="personaExportMenu">
+                  <a href="javascript:void(0)" class="persona-export-item" data-format="csv">
+                    <i class="bi bi-file-earmark-spreadsheet text-success"></i>
+                    <div>
+                      <div class="export-item-title">Export as CSV</div>
+                      <div class="export-item-sub">Formatted for HubSpot &amp; Salesforce</div>
+                    </div>
+                  </a>
+                  <a href="javascript:void(0)" class="persona-export-item" data-format="json">
+                    <i class="bi bi-filetype-json text-primary"></i>
+                    <div>
+                      <div class="export-item-title">Export as JSON</div>
+                      <div class="export-item-sub">Full multi-source intelligence payload</div>
+                    </div>
+                  </a>
+                </div>
               </div>
             </div>
           </div>
@@ -1061,6 +1154,67 @@
     </div>
   </div>
 </div>
+
+<!-- Omnichannel Command Palette (Cmd+K / Ctrl+K) Spotlight Modal -->
+<div class="spotlight-backdrop d-none" id="spotlightBackdrop">
+  <div class="spotlight-card fade-in" id="spotlightModal">
+    <div class="spotlight-search-header">
+      <i class="bi bi-search spotlight-search-icon"></i>
+      <input type="text" id="spotlightInput" placeholder="Search accounts, lines of business, executive personas... (Esc to close)" autocomplete="off" />
+      <kbd class="spotlight-esc-badge" id="spotlightCloseBtn">ESC</kbd>
+    </div>
+    <div class="spotlight-results-container" id="spotlightResults">
+      <!-- Dynamically populated grouped results -->
+    </div>
+    <div class="spotlight-footer">
+      <div class="spotlight-tips">
+        <span><kbd>&uarr;</kbd> <kbd>&darr;</kbd> Navigate</span>
+        <span><kbd>&crarr;</kbd> Select</span>
+        <span><kbd>ESC</kbd> Close</span>
+      </div>
+      <div class="spotlight-footer-meta" id="spotlightTotalCount">Ready</div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide-Over Executive Dossier Drawer -->
+<div id="executiveDrawerBackdrop" class="executive-drawer-backdrop d-none"></div>
+<aside id="executiveDossierDrawer" class="executive-dossier-drawer" aria-hidden="true">
+  <div class="drawer-header-sticky">
+    <div class="drawer-header-left">
+      <div class="drawer-avatar" id="drawerAvatar">EX</div>
+      <div class="drawer-header-titles">
+        <div class="drawer-name-row">
+          <span class="drawer-name" id="drawerName">Executive Name</span>
+          <span class="drawer-tier-badge" id="drawerTierBadge">C-Suite</span>
+          <span class="drawer-health-badge" id="drawerHealthBadge">95% Confidence</span>
+        </div>
+        <div class="drawer-title" id="drawerTitle">Executive Title</div>
+        <div class="drawer-company-meta" id="drawerCompanyMeta">Company &bull; Division</div>
+      </div>
+    </div>
+    <button type="button" class="drawer-close-btn" id="closeExecutiveDrawerBtn" title="Close Dossier (Esc)">
+      <i class="bi bi-x-lg"></i>
+    </button>
+  </div>
+
+  <div class="drawer-action-bar" id="drawerActionBar">
+    <!-- Quick outreach action buttons dynamically populated -->
+  </div>
+
+  <div class="drawer-scroll-body" id="drawerBody">
+    <!-- Detailed sections: AI Call Prep, Contact Vault, Background, Social -->
+  </div>
+
+  <div class="drawer-footer-sticky">
+    <button type="button" class="drawer-fullpage-link" id="drawerOpenFullPageBtn">
+      <i class="bi bi-box-arrow-up-right"></i> Open Full Page Dossier View
+    </button>
+    <button type="button" class="btn btn-sm btn-outline-secondary" id="drawerCloseFooterBtn">
+      Close
+    </button>
+  </div>
+</aside>
 
 <!-- Floating Notification Toast Container -->
 <div id="toastNotificationContainer"

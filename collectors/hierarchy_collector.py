@@ -512,7 +512,7 @@ APOLLO_SEARCH_PASSES = [
             "SEVP",
             "General Counsel",
         ],
-        "max_pages": 3,
+        "max_pages": 5,
         "per_page": 100,
     },
     {
@@ -527,7 +527,7 @@ APOLLO_SEARCH_PASSES = [
             "Division President",
             "Senior Executive",
         ],
-        "max_pages": 4,
+        "max_pages": 5,
         "per_page": 100,
     },
     {
@@ -545,7 +545,7 @@ APOLLO_SEARCH_PASSES = [
             "Head of Data",
             "Head of Cloud",
         ],
-        "max_pages": 3,
+        "max_pages": 5,
         "per_page": 100,
     },
     {
@@ -736,12 +736,12 @@ def fetch_apollo_hierarchy_via_monid(
     company_name: Optional[str] = None,
     sec_cik: Optional[str] = None,
     raw_apollo_dir: Optional[Path] = None,
-    max_total_records: int = 500,
+    max_total_records: int = 1500,
 ) -> List[Dict[str, Any]]:
     """
     Enterprise-Grade 4-Pass Tiered Apollo Ingestion System with Multi-Page Pagination.
     Executes partitioned queries for C-Suite, Global Heads, Technology Leaders, and Management,
-    collecting up to max_total_records (default: 500) without title saturation.
+    collecting up to max_total_records (default: 1500) without title saturation.
     """
     print(
         f"[*] [Hierarchy] Querying Monid.ai for domain: '{company_domain}' "

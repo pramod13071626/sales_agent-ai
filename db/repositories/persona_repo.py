@@ -59,15 +59,17 @@ class PersonaRepository:
         first_name: Optional[str] = None,
         last_name: Optional[str] = None,
         title: Optional[str] = None,
+        linkedin_url: Optional[str] = None,
     ) -> Optional[Persona]:
         """
         Enterprise Deduplication Mapping Layer:
         Resolves an incoming persona to an existing record using a prioritized multi-strategy hierarchy:
         1. Exact external_id match (Apollo/DKG global UID)
         2. Direct verified email match
-        3. Key match (including base key if key has subsidiary suffix)
-        4. Full name match (unmasked)
-        5. First name + prefix/initial last name match with title correlation
+        3. Canonical LinkedIn profile URL match (/in/{handle})
+        4. Key match (including base key if key has subsidiary suffix)
+        5. Full name match (exact and middle-initial normalized)
+        6. First name + prefix/initial last name match with title correlation
         """
         if not account_id:
             return None
@@ -92,7 +94,20 @@ class PersonaRepository:
             if match:
                 return match
 
-        # 3. Key match (including base key without subsidiary suffix)
+        # 3. Canonical LinkedIn profile match (/in/{handle})
+        if linkedin_url and "/in/" in str(linkedin_url):
+            clean_li = str(linkedin_url).strip().lower()
+            m = re.search(r'linkedin\.com/in/([^/?#\s]+)', clean_li)
+            if m:
+                handle = m.group(1).rstrip('/')
+                match = self.session.query(Persona).filter(
+                    Persona.account_id == account_id,
+                    Persona.linkedin_url.ilike(f"%linkedin.com/in/{handle}%")
+                ).first()
+                if match:
+                    return match
+
+        # 4. Key match (including base key without subsidiary suffix)
         if key and str(key).strip():
             k = str(key).strip()
             match = self.session.query(Persona).filter(
@@ -114,7 +129,7 @@ class PersonaRepository:
                         if match:
                             return match
 
-        # 4. Full Name match (if unmasked)
+        # 5. Full Name match (exact & middle-initial normalized)
         if full_name and len(full_name.strip()) > 3 and "***" not in full_name:
             fn = full_name.strip()
             match = self.session.query(Persona).filter(
@@ -124,7 +139,26 @@ class PersonaRepository:
             if match:
                 return match
 
-        # 5. First + Last name fuzzy/initial correlation
+            # Middle-initial insensitive match (e.g. "Robert S. Kapito" <=> "Robert Kapito")
+            words = [w for w in re.split(r'\s+', fn) if w]
+            if len(words) >= 2:
+                norm_fn = re.sub(r'\b[a-zA-Z]\.?\s+', ' ', fn).strip()
+                norm_fn = ' '.join(norm_fn.split())
+                tokens = norm_fn.split()
+                if len(tokens) >= 2 and len(tokens[0]) >= 2 and len(tokens[-1]) >= 2:
+                    first_t = tokens[0]
+                    last_t = tokens[-1]
+                    candidates = self.session.query(Persona).filter(
+                        Persona.account_id == account_id,
+                        Persona.full_name.ilike(f"{first_t}%{last_t}")
+                    ).all()
+                    for cand in candidates:
+                        cand_norm = re.sub(r'\b[a-zA-Z]\.?\s+', ' ', cand.full_name or '').strip()
+                        cand_norm = ' '.join(cand_norm.split())
+                        if cand_norm.lower() == norm_fn.lower():
+                            return cand
+
+        # 6. First + Last name fuzzy/initial correlation
         if first_name and last_name:
             fn = first_name.strip().lower()
             ln = last_name.strip().replace(".", "").lower()
@@ -186,6 +220,33 @@ class PersonaRepository:
                     master.full_name = val
                 continue
 
+            if field == "last_name":
+                # Upgrade initial (e.g. 'P.' or 'P') to full last name (e.g. 'Patrick')
+                clean_curr = str(current_val).strip().replace(".", "")
+                clean_val = str(val).strip().replace(".", "")
+                if len(clean_curr) <= 2 and len(clean_val) > len(clean_curr):
+                    master.last_name = val
+                continue
+
+            if field == "display_name":
+                # Prefer display name with full name over initial
+                if len(str(val)) > len(str(current_val)):
+                    master.display_name = val
+                continue
+
+            if field == "email":
+                # Prefer verified or full name email over initial/synthesized email
+                incoming_status = incoming_data.get("email_status")
+                master_status = getattr(master, "email_status", None)
+                if incoming_status == "verified" and master_status != "verified":
+                    master.email = val
+                    master.email_status = "verified"
+                elif (master_status in ("synthesized", "unverified", None) or "@" not in str(current_val)) and ("@" in str(val)):
+                    master.email = val
+                    if incoming_status:
+                        master.email_status = incoming_status
+                continue
+
             if field == "linkedin_url":
                 # Prefer direct personal profiles (/in/) over generic search URLs
                 if "/in/" in str(val) and "/in/" not in str(current_val):
@@ -212,8 +273,26 @@ class PersonaRepository:
                     flag_modified(master, "raw_data")
                 continue
 
+            if field in (
+                "degree", "institution", "headline", "value_proposition", "personalized_icebreaker",
+                "tier", "seniority_raw", "city", "state", "country", "phone", "direct_mobile_phone",
+                "personal_email", "sec_cik", "crunchbase_permalink", "crunchbase_url", "youtube_channel_id",
+                "reddit_query", "news_query", "patents_query", "career_trajectory_score", "current_role_tenure_months"
+            ):
+                if val and (current_val is None or current_val == "" or len(str(val)) > len(str(current_val))):
+                    setattr(master, field, val)
+                continue
+
+            if field in (
+                "skills", "past_companies", "previous_titles", "employment_history",
+                "education_history", "target_kpis", "operational_pain_points", "key_objections"
+            ):
+                if val and (not current_val or len(val) > len(current_val)):
+                    setattr(master, field, val)
+                continue
+
             if field.endswith("_url"):
-                if val and (current_val is None or "/search" in str(current_val) or "query=" in str(current_val)):
+                if val and (current_val is None or current_val == "" or "/search" in str(current_val) or "query=" in str(current_val) or len(str(val)) > len(str(current_val))):
                     setattr(master, field, val)
                 continue
 
@@ -242,6 +321,7 @@ class PersonaRepository:
                     first_name=schema.first_name or person_data.get("first_name"),
                     last_name=schema.last_name or person_data.get("last_name"),
                     title=schema.title or person_data.get("title"),
+                    linkedin_url=schema.linkedin_url or person_data.get("linkedin_url"),
                 )
                 
                 if existing:
@@ -278,6 +358,7 @@ class PersonaRepository:
                 first_name=schema.first_name,
                 last_name=schema.last_name,
                 title=schema.title,
+                linkedin_url=schema.linkedin_url,
             )
 
         data = schema.model_dump()

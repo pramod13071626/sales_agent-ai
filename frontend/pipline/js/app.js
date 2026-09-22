@@ -108,10 +108,15 @@ $(function () {
           const parsed = JSON.parse(cached);
           if (parsed && Array.isArray(parsed.accounts) && parsed.accounts.length > 0) {
             MOCK_DATA = parsed;
+            updateGlobalTelemetry();
             renderSidebar();
-            const $firstItem = $("#accountList .account-item").first();
-            if ($firstItem.length && !activeAccount) {
-              $firstItem.trigger("click");
+            const savedId = activeAccount ? activeAccount.id : sessionStorage.getItem("pipeline_active_account_id");
+            if (savedId && $(`#accountList .account-item[data-id="${savedId}"]`).length) {
+              if (!activeAccount) {
+                $(`#accountList .account-item[data-id="${savedId}"]`).trigger("click");
+              }
+            } else if (!activeAccount) {
+              renderEmptyStateHub();
             }
           }
         }
@@ -183,12 +188,17 @@ $(function () {
         sessionStorage.setItem("pipeline_accounts_cache", JSON.stringify(data));
       } catch (e) {}
 
-      const currentActiveId = activeAccount ? activeAccount.id : null;
+      updateGlobalTelemetry();
+      const savedId = activeAccount ? activeAccount.id : sessionStorage.getItem("pipeline_active_account_id");
       renderSidebar();
-      if (currentActiveId) {
-        $(`#accountList .account-item[data-id="${currentActiveId}"]`).addClass("active");
-      } else if (MOCK_DATA.accounts && MOCK_DATA.accounts.length > 0) {
-        $("#accountList .account-item").first().trigger("click");
+      if (savedId && $(`#accountList .account-item[data-id="${savedId}"]`).length) {
+        if (!activeAccount) {
+          $(`#accountList .account-item[data-id="${savedId}"]`).trigger("click");
+        } else {
+          $(`#accountList .account-item[data-id="${savedId}"]`).addClass("active");
+        }
+      } else if (!activeAccount) {
+        renderEmptyStateHub();
       }
     } catch (err) {
       console.error("[loadData] Error:", err);
@@ -295,38 +305,436 @@ $(function () {
       .replace(/^-+|-+$/g, "");
   }
 
-  // 1. Render Sidebar Accounts
-  function renderSidebar(filterQuery = "") {
-    const $list = $("#accountList").empty();
-    const q = (filterQuery || "").trim().toLowerCase();
-    let count = 0;
+  // ─── Global Topbar Database Telemetry ────────────────────────────────────
+  function updateGlobalTelemetry() {
+    const accounts = Array.isArray(MOCK_DATA.accounts) ? MOCK_DATA.accounts : [];
+    const totalAccounts = accounts.length;
+    let totalPersonas = 0;
+    let totalLobs = 0;
 
-    (MOCK_DATA.accounts || []).forEach((acct) => {
-      const acctName = acct.name || "Unnamed Account";
-      if (!q || acctName.toLowerCase().includes(q)) {
-        count++;
-        $list.append(`
-          <button type="button" class="account-item fade-in" data-id="${acct.id}">
-            <div class="acct-avatar">${esc(getInitials(acctName))}</div>
-            <div class="acct-info">
-              <div class="acct-name">${esc(acctName)}</div>
-            </div>
-          </button>
-        `);
+    accounts.forEach((a) => {
+      const pCount = (a.personas && Array.isArray(a.personas)) ? a.personas.length : (a.total_contacts_captured || 0);
+      totalPersonas += (typeof pCount === "number" && !isNaN(pCount)) ? pCount : 0;
+
+      const lCount = (a.lobs && Array.isArray(a.lobs)) ? a.lobs.length : (a.lobs_count || 0);
+      totalLobs += (typeof lCount === "number" && !isNaN(lCount)) ? lCount : 0;
+    });
+
+    $("#topbarAccountsCount").text(totalAccounts.toLocaleString());
+    $("#topbarPersonasCount").text(totalPersonas.toLocaleString());
+    $("#topbarLobsCount").text(totalLobs.toLocaleString());
+  }
+
+  // Ensure default clean light theme
+  try {
+    document.documentElement.setAttribute("data-theme", "light");
+    localStorage.removeItem("pipeline_theme");
+  } catch (e) {}
+
+  // ─── Global Pipeline Live Pulse Status ──────────────────────────────────
+  let pipelineTimerInterval = null;
+  let pipelineStartTime = null;
+
+  function setGlobalPipelineStatus(isRunning, levelName = "Pipeline") {
+    const $badge = $("#pipelineStatusBadge");
+    if (!$badge.length) return;
+
+    if (pipelineTimerInterval) {
+      clearInterval(pipelineTimerInterval);
+      pipelineTimerInterval = null;
+    }
+
+    if (isRunning) {
+      pipelineStartTime = Date.now();
+      $badge.removeClass("ready done error").addClass("running");
+      const updateTimer = () => {
+        const elapsed = ((Date.now() - pipelineStartTime) / 1000).toFixed(1);
+        $badge.html(`<span class="pulse-dot-blue"></span> Running ${esc(levelName)} (${elapsed}s)`);
+      };
+      updateTimer();
+      pipelineTimerInterval = setInterval(updateTimer, 200);
+    } else {
+      if (pipelineStartTime) {
+        const totalTime = ((Date.now() - pipelineStartTime) / 1000).toFixed(1);
+        $badge.removeClass("running error").addClass("ready done");
+        $badge.html(`<i class="bi bi-check-circle-fill text-success"></i> ${esc(levelName)} Complete (${totalTime}s)`);
+        pipelineStartTime = null;
+        setTimeout(() => {
+          $badge.removeClass("done");
+          $badge.html(`<i class="bi bi-circle-fill"></i> Pipeline: Ready`);
+        }, 3500);
+      } else {
+        $badge.removeClass("running done error").addClass("ready");
+        $badge.html(`<i class="bi bi-circle-fill"></i> Pipeline: Ready`);
+      }
+    }
+  }
+  window.setGlobalPipelineStatus = setGlobalPipelineStatus;
+
+  // ─── Omnichannel Command Palette (Cmd+K / Ctrl+K) ────────────────────────
+  function initSpotlight() {
+    const $backdrop = $("#spotlightBackdrop");
+    const $input = $("#spotlightInput");
+    const $results = $("#spotlightResults");
+    const $count = $("#spotlightTotalCount");
+
+    function openSpotlight() {
+      $backdrop.removeClass("d-none");
+      $input.val("").focus();
+      renderSpotlightResults("");
+    }
+
+    function closeSpotlight() {
+      $backdrop.addClass("d-none");
+    }
+
+    $("#topbarSpotlightBtn").on("click", openSpotlight);
+    $("#spotlightCloseBtn").on("click", closeSpotlight);
+
+    $backdrop.on("click", function (e) {
+      if ($(e.target).is("#spotlightBackdrop")) {
+        closeSpotlight();
       }
     });
 
-    if (count === 0) {
-      $list.append(
-        `<div style="padding:12px 10px;font-size:.8rem;color:var(--text-muted);">
-          No accounts match.
-        </div>`,
-      );
+    $(document).on("keydown", function (e) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        if ($backdrop.hasClass("d-none")) {
+          openSpotlight();
+        } else {
+          closeSpotlight();
+        }
+        return;
+      }
+
+      if (!$backdrop.hasClass("d-none")) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          closeSpotlight();
+          return;
+        }
+
+        const $items = $results.find(".spotlight-item");
+        if (!$items.length) return;
+
+        let currentIndex = $items.index($results.find(".spotlight-item.active"));
+
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          if (currentIndex < 0 || currentIndex >= $items.length - 1) {
+            currentIndex = 0;
+          } else {
+            currentIndex++;
+          }
+          $items.removeClass("active");
+          const $target = $items.eq(currentIndex).addClass("active");
+          if ($target[0]) $target[0].scrollIntoView({ block: "nearest" });
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          if (currentIndex <= 0) {
+            currentIndex = $items.length - 1;
+          } else {
+            currentIndex--;
+          }
+          $items.removeClass("active");
+          const $target = $items.eq(currentIndex).addClass("active");
+          if ($target[0]) $target[0].scrollIntoView({ block: "nearest" });
+        } else if (e.key === "Enter") {
+          e.preventDefault();
+          if (currentIndex >= 0 && currentIndex < $items.length) {
+            $items.eq(currentIndex).trigger("click");
+          }
+        }
+      }
+    });
+
+    $input.on("input", function () {
+      renderSpotlightResults($(this).val());
+    });
+
+    function renderSpotlightResults(rawQuery) {
+      const q = (rawQuery || "").trim().toLowerCase();
+      const accounts = Array.isArray(MOCK_DATA.accounts) ? MOCK_DATA.accounts : [];
+
+      if (!q) {
+        // Show default quick accounts
+        let html = `<div class="spotlight-group-title">Enterprise Accounts</div>`;
+        accounts.slice(0, 6).forEach((a) => {
+          const aName = a.name || a.display_name || "Unnamed Account";
+          const domain = a.primary_domain || a.domain || "";
+          const lobsCount = (a.lobs || []).length || a.lobs_count || 0;
+          const personasCount = (a.personas || []).length || a.total_contacts_captured || 0;
+
+          html += `
+            <div class="spotlight-item" data-type="account" data-account-id="${a.id}">
+              <div class="spotlight-item-left">
+                <div class="spotlight-item-icon"><i class="bi bi-buildings"></i></div>
+                <div class="spotlight-item-text">
+                  <div class="spotlight-item-title">${esc(aName)}</div>
+                  <div class="spotlight-item-sub">${esc(domain)}${domain ? " &bull; " : ""}${lobsCount} LOBs &bull; ${personasCount} contacts</div>
+                </div>
+              </div>
+              <span class="spotlight-item-badge">Account</span>
+            </div>
+          `;
+        });
+        $results.html(html);
+        $results.find(".spotlight-item").first().addClass("active");
+        $count.text("Type to search all accounts, LOBs, and personas");
+        return;
+      }
+
+      // 1. Search Accounts
+      const matchedAccounts = accounts.filter((a) => {
+        const name = (a.name || a.display_name || "").toLowerCase();
+        const domain = (a.primary_domain || a.domain || "").toLowerCase();
+        const ticker = (a.stock_symbol || a.ticker || "").toLowerCase();
+        const key = (a.key || "").toLowerCase();
+        return name.includes(q) || domain.includes(q) || ticker.includes(q) || key.includes(q);
+      }).slice(0, 5);
+
+      // 2. Search LOBs across all accounts
+      const matchedLobs = [];
+      for (const a of accounts) {
+        if (matchedLobs.length >= 8) break;
+        const lobs = a.lobs || [];
+        for (const l of lobs) {
+          if (matchedLobs.length >= 8) break;
+          const lName = (l.lob_name || l.name || l.division_name || "").toLowerCase();
+          const desc = (l.description || "").toLowerCase();
+          if (lName.includes(q) || desc.includes(q)) {
+            matchedLobs.push({
+              accountId: a.id,
+              accountName: a.name || a.display_name || "Account",
+              lob: l,
+            });
+          }
+        }
+      }
+
+      // 3. Search Personas across all accounts
+      const matchedPersonas = [];
+      for (const a of accounts) {
+        if (matchedPersonas.length >= 10) break;
+        const personas = a.personas || [];
+        for (const p of personas) {
+          if (matchedPersonas.length >= 10) break;
+          const pName = (p.name || "").toLowerCase();
+          const pTitle = (p.title || p.job_title || "").toLowerCase();
+          const pDept = (p.department || "").toLowerCase();
+          if (pName.includes(q) || pTitle.includes(q) || pDept.includes(q)) {
+            matchedPersonas.push({
+              accountId: a.id,
+              accountName: a.name || a.display_name || "Account",
+              persona: p,
+            });
+          }
+        }
+      }
+
+      const totalMatches = matchedAccounts.length + matchedLobs.length + matchedPersonas.length;
+
+      if (totalMatches === 0) {
+        $results.html(`
+          <div style="padding:36px 16px;text-align:center;color:#64748b;font-size:.85rem;">
+            <i class="bi bi-search" style="font-size:1.6rem;opacity:.4;display:block;margin-bottom:8px;"></i>
+            No results found for "<strong>${esc(q)}</strong>"
+          </div>
+        `);
+        $count.text("0 results");
+        return;
+      }
+
+      let html = "";
+
+      // Render Accounts Group
+      if (matchedAccounts.length > 0) {
+        html += `<div class="spotlight-group-title">Enterprise Accounts (${matchedAccounts.length})</div>`;
+        matchedAccounts.forEach((a) => {
+          const aName = a.name || a.display_name || "Unnamed Account";
+          const domain = a.primary_domain || a.domain || "";
+          html += `
+            <div class="spotlight-item" data-type="account" data-account-id="${a.id}">
+              <div class="spotlight-item-left">
+                <div class="spotlight-item-icon"><i class="bi bi-buildings"></i></div>
+                <div class="spotlight-item-text">
+                  <div class="spotlight-item-title">${esc(aName)}</div>
+                  <div class="spotlight-item-sub">${esc(domain)}${a.stock_symbol ? ` &bull; ${esc(a.stock_symbol)}` : ""}</div>
+                </div>
+              </div>
+              <span class="spotlight-item-badge">Account</span>
+            </div>
+          `;
+        });
+      }
+
+      // Render LOBs Group
+      if (matchedLobs.length > 0) {
+        html += `<div class="spotlight-group-title">Lines of Business &amp; Divisions (${matchedLobs.length})</div>`;
+        matchedLobs.forEach((item) => {
+          const lobName = item.lob.lob_name || item.lob.name || "Division";
+          const relType = item.lob.relationship_type || "Operating Division";
+          html += `
+            <div class="spotlight-item" data-type="lob" data-account-id="${item.accountId}" data-lob-id="${item.lob.id}">
+              <div class="spotlight-item-left">
+                <div class="spotlight-item-icon"><i class="bi bi-diagram-3"></i></div>
+                <div class="spotlight-item-text">
+                  <div class="spotlight-item-title">${esc(lobName)}</div>
+                  <div class="spotlight-item-sub">${esc(item.accountName)} &bull; ${esc(relType)}</div>
+                </div>
+              </div>
+              <span class="spotlight-item-badge">Division</span>
+            </div>
+          `;
+        });
+      }
+
+      // Render Personas Group
+      if (matchedPersonas.length > 0) {
+        html += `<div class="spotlight-group-title">Executive Stakeholders (${matchedPersonas.length})</div>`;
+        matchedPersonas.forEach((item) => {
+          const pName = item.persona.name || "Executive";
+          const pTitle = item.persona.title || item.persona.job_title || "Executive";
+          html += `
+            <div class="spotlight-item" data-type="persona" data-account-id="${item.accountId}" data-persona-id="${item.persona.id}">
+              <div class="spotlight-item-left">
+                <div class="spotlight-item-icon"><i class="bi bi-person-badge"></i></div>
+                <div class="spotlight-item-text">
+                  <div class="spotlight-item-title">${esc(pName)}</div>
+                  <div class="spotlight-item-sub">${esc(pTitle)} &bull; ${esc(item.accountName)}</div>
+                </div>
+              </div>
+              <span class="spotlight-item-badge">Persona</span>
+            </div>
+          `;
+        });
+      }
+
+      $results.html(html);
+      $results.find(".spotlight-item").first().addClass("active");
+      $count.text(`${totalMatches} match${totalMatches === 1 ? "" : "es"} found`);
     }
+
+    // Click handler for spotlight items
+    $results.on("click", ".spotlight-item", function () {
+      const type = $(this).data("type");
+      const accountId = $(this).data("account-id");
+      const lobId = $(this).data("lob-id");
+      const personaId = $(this).data("persona-id");
+
+      closeSpotlight();
+
+      if (!accountId) return;
+
+      const currentId = activeAccount ? activeAccount.id : null;
+      if (String(currentId) !== String(accountId)) {
+        $(`#accountList .account-item[data-id="${accountId}"]`).trigger("click");
+      }
+
+      if (type === "lob" && lobId) {
+        setTimeout(() => {
+          $(".tab-pill-btn[data-nav-tab='lobs']").trigger("click");
+          setTimeout(() => {
+            const $card = $(`.lob-card[data-lob-id="${lobId}"]`);
+            if ($card.length) {
+              $card.trigger("click");
+              $("html, body").animate({ scrollTop: $card.offset().top - 90 }, 300);
+              $card.addClass("highlight-pulse");
+              setTimeout(() => $card.removeClass("highlight-pulse"), 2500);
+            }
+          }, 120);
+        }, 80);
+      } else if (type === "persona" && personaId) {
+        setTimeout(() => {
+          $(".tab-pill-btn[data-nav-tab='personas']").trigger("click");
+          setTimeout(() => {
+            const $pCard = $(`.persona-card[data-persona-id="${personaId}"]`);
+            if ($pCard.length) {
+              $("html, body").animate({ scrollTop: $pCard.offset().top - 100 }, 300);
+              $pCard.addClass("highlight-pulse");
+              setTimeout(() => $pCard.removeClass("highlight-pulse"), 2500);
+            }
+          }, 120);
+        }, 80);
+      }
+    });
+  }
+
+  // 1. Render Clean Enterprise Sidebar Accounts
+  function renderSidebar(filterQuery = "") {
+    updateGlobalTelemetry();
+    const $list = $("#accountList").empty();
+    const q = (filterQuery !== undefined ? filterQuery : ($("#accountSearch").val() || "")).trim().toLowerCase();
+
+    const accounts = Array.isArray(MOCK_DATA.accounts) ? [...MOCK_DATA.accounts] : [];
+
+    // Filter by search query
+    const filtered = accounts.filter((acct) => {
+      const acctName = (acct.name || acct.display_name || "").toLowerCase();
+      const domain = (acct.primary_domain || acct.domain || "").toLowerCase();
+      const ticker = (acct.stock_symbol || acct.ticker || "").toLowerCase();
+      const key = (acct.key || "").toLowerCase();
+      return !q || acctName.includes(q) || domain.includes(q) || ticker.includes(q) || key.includes(q);
+    });
+
+    // Update real accounts counter badge in sidebar header
+    $("#sidebarAccountsCount").text(filtered.length);
+
+    if (filtered.length === 0) {
+      $list.append(
+        `<div style="padding:16px 12px;font-size:.8rem;color:var(--text-muted);text-align:center;">
+          No accounts found.
+        </div>`
+      );
+      return;
+    }
+
+    filtered.forEach((acct) => {
+      const acctName = acct.name || acct.display_name || "Unnamed Account";
+      const sId = String(acct.id);
+      const isActive = activeAccount && String(activeAccount.id) === sId;
+
+      const aHealth = computeAccountHealth(acct);
+      const confidenceScore = aHealth.confidenceScore || 0;
+      const healthClass = confidenceScore >= 80 ? "high" : (confidenceScore >= 60 ? "medium" : "basic");
+
+      const lobsCount = (acct.lobs || []).length || acct.lobs_count || 0;
+      const personasCount = (acct.personas || []).length || acct.total_contacts_captured || 0;
+      const domain = acct.primary_domain || acct.domain || "";
+
+      let subtext = "";
+      if (lobsCount > 0 || personasCount > 0) {
+        const parts = [];
+        if (lobsCount > 0) parts.push(`${lobsCount} LOBs`);
+        if (personasCount > 0) parts.push(`${personasCount} contacts`);
+        subtext = parts.join(` <span class="acct-meta-dot">&bull;</span> `);
+      } else if (domain) {
+        subtext = esc(domain);
+      } else {
+        subtext = esc(acct.company_type || "Enterprise Account");
+      }
+
+      $list.append(`
+        <div class="account-item fade-in ${isActive ? 'active' : ''}" data-id="${acct.id}" role="button" tabindex="0" title="${esc(acctName)} &bull; ${confidenceScore}% Health &bull; ${lobsCount} LOBs &bull; ${personasCount} Personas">
+          <div class="acct-avatar">${esc(getInitials(acctName))}</div>
+          <div class="acct-body">
+            <div class="acct-main-row">
+              <span class="acct-name" title="${esc(acctName)}">${esc(acctName)}</span>
+              <span class="acct-score-pill ${healthClass}">${confidenceScore}%</span>
+            </div>
+            <div class="acct-meta-row">
+              ${subtext}
+            </div>
+          </div>
+        </div>
+      `);
+    });
   }
 
   // Initial load
   loadData();
+  initSpotlight();
 
   // Sidebar Search
   $("#accountSearch").on("input", function () {
@@ -1850,9 +2258,7 @@ $(function () {
         <span class="active-crumb">${esc(activeLob.name)}</span>
       `);
     } else {
-      $("#breadcrumbsBar").html(`
-        <span class="active-crumb">${esc(activeAccount.name)}</span>
-      `);
+      $("#breadcrumbsBar").empty();
     }
   }
 
@@ -2334,6 +2740,8 @@ $(function () {
       $btn.addClass("active").css({ background: "#0284c7", color: "#fff", borderColor: "#0284c7" });
       renderFilteredCards(cat);
     });
+
+
   }
 
   function formatCompactRevenue(val) {
@@ -2502,6 +2910,7 @@ $(function () {
       <div class="tab-search-box-wrap">
         <i class="bi bi-search"></i>
         <input type="text" id="tabSearchInput" placeholder="Search divisions, personas, fields..." autocomplete="off" />
+        <button type="button" id="clearTabSearchBtn" class="tab-search-clear" style="display:none;" title="Clear search"><i class="bi bi-x-circle-fill"></i></button>
       </div>
     `;
   }
@@ -2604,34 +3013,47 @@ $(function () {
       }
 
       const html = runs.map((r, idx) => {
-        const dot = r.status === "completed" ? "dot-green" : (r.status === "failed" ? "dot-red" : "dot-blue");
+        const isSuccess = r.status === "completed";
+        const isFailed = r.status === "failed";
+        const statusClass = isSuccess ? "success" : (isFailed ? "failed" : "running");
+        const statusIcon = isSuccess ? "bi-check-circle-fill" : (isFailed ? "bi-x-circle-fill" : "bi-arrow-repeat spin");
+        const statusLabel = isSuccess ? "Completed" : (isFailed ? "Failed" : (r.status || "In Progress"));
         const timeStr = r.completed_at || r.started_at ? formatTimeAgo(r.completed_at || r.started_at) : "recently";
         const lvl = (r.pipeline_level || "pipeline").toUpperCase();
         const act = (r.action || "run").toUpperCase();
-        const statusText = r.status === "completed" ? "Success" : r.status;
-        const scoreBadge = (r.quality_score !== null && r.quality_score !== undefined) 
-          ? `<span class="badge-solid-green" style="font-size:.65rem;padding:2px 6px;margin-left:6px;">Score: ${r.quality_score}% (${r.quality_grade || '—'})</span>`
-          : "";
         const countStr = formatEntitiesExtracted(r.entities_extracted);
         const durStr = (r.duration_seconds !== null && r.duration_seconds !== undefined) ? `${r.duration_seconds.toFixed(2)}s` : "";
-        const meta = [countStr, durStr, r.raw_storage_dir || r.enriched_storage_dir].filter(Boolean).join(" &bull; ");
+        const storageDir = r.raw_storage_dir || r.enriched_storage_dir || "";
+        const compactStorage = storageDir ? storageDir.split(/[\/\\]/).slice(-2).join("/") : "";
         const isExtra = idx >= 3;
         const displayStyle = (isExtra && !wasExpanded) ? 'style="display:none;"' : '';
 
         return `
-          <div class="timeline-item ${isExtra ? 'timeline-item-extra' : ''}" ${displayStyle}>
-            <span class="timeline-dot ${dot}"></span>
-            <div class="timeline-content">
-              <div class="timeline-title">
-                [${esc(lvl)}] ${esc(act)} &mdash; ${esc(statusText)}
-                ${scoreBadge}
-              </div>
-              <div class="timeline-desc" style="word-break:break-all;">
-                ${meta ? esc(meta) : "Execution logged in PostgreSQL and output audit directory"}
-                ${r.error_message ? `<div style="color:#ef4444;font-size:.7rem;margin-top:2px;">Error: ${esc(r.error_message)}</div>` : ""}
+          <div class="pipeline-activity-card timeline-item timeline-item-extra ${isExtra ? 'extra' : ''}" ${displayStyle}>
+            <div class="activity-card-left">
+              <span class="activity-status-icon ${statusClass}">
+                <i class="bi ${statusIcon}"></i>
+              </span>
+              <div class="activity-card-details">
+                <div class="activity-card-title-row">
+                  <span class="activity-tag-level">${esc(lvl)}</span>
+                  <span class="activity-tag-action">${esc(act)}</span>
+                  <span class="activity-status-badge ${statusClass}">${esc(statusLabel)}</span>
+                  ${(r.quality_score !== null && r.quality_score !== undefined) ? `
+                    <span class="activity-quality-badge"><i class="bi bi-shield-check"></i> Score: ${r.quality_score}% (${esc(r.quality_grade || 'A')})</span>
+                  ` : ''}
+                </div>
+                <div class="activity-card-meta-row">
+                  ${countStr ? `<span class="activity-meta-pill"><i class="bi bi-diagram-3-fill"></i> ${esc(countStr)}</span>` : ''}
+                  ${durStr ? `<span class="activity-meta-pill"><i class="bi bi-stopwatch"></i> ${esc(durStr)}</span>` : ''}
+                  ${compactStorage ? `<span class="activity-meta-pill storage" title="${esc(storageDir)}"><i class="bi bi-folder2"></i> ${esc(compactStorage)}</span>` : ''}
+                </div>
+                ${r.error_message ? `<div class="activity-error-msg"><i class="bi bi-exclamation-circle-fill"></i> ${esc(r.error_message)}</div>` : ''}
               </div>
             </div>
-            <div class="timeline-time">${esc(timeStr)}</div>
+            <div class="activity-card-right">
+              <span class="activity-timestamp"><i class="bi bi-clock"></i> ${esc(timeStr)}</span>
+            </div>
           </div>
         `;
       }).join("");
@@ -2673,76 +3095,86 @@ $(function () {
     const lobsCount = (account.lobs || []).length;
     const personasCount = (account.personas || []).length;
 
-    // Feeds evaluation
+    // Feeds evaluation (Expanded OSINT matrix)
     const feedsList = [
-      { name: "X / Twitter", url: account.twitter_live_url, key: "twitter_live_url" },
-      { name: "Google News RSS", url: account.rss_url || account.news_query, key: "rss_url" },
-      { name: "Reddit Feed", url: account.reddit_rss_url || account.reddit_query, key: "reddit_rss_url" },
-      { name: "Google Patents", url: account.google_patents_url, key: "google_patents_url" },
-      { name: "YouTube Media", url: account.youtube_search_url, key: "youtube_search_url" },
-      { name: "Wikidata", url: account.wikidata_entity_url, key: "wikidata_entity_url" },
+      { name: "X (Twitter) Feed", icon: "bi-twitter-x", url: account.twitter_live_url || account.twitter_url, key: "twitter_live_url", type: "Social Stream" },
+      { name: "Google News Alerts", icon: "bi-newspaper", url: account.rss_url || (account.news_query ? `https://news.google.com/search?q=${encodeURIComponent(account.news_query)}` : null), key: "rss_url", type: "Media RSS" },
+      { name: "Reddit Discussions", icon: "bi-reddit", url: account.reddit_rss_url || (account.reddit_query ? `https://www.reddit.com/search.rss?q=${encodeURIComponent(account.reddit_query)}` : null), key: "reddit_rss_url", type: "Community RSS" },
+      { name: "USPTO Patent Filings", icon: "bi-lightbulb", url: account.google_patents_url, key: "google_patents_url", type: "IP Portfolio" },
+      { name: "Executive Media / Video", icon: "bi-youtube", url: account.youtube_search_url, key: "youtube_search_url", type: "Broadcast Media" },
+      { name: "Wikidata Entity", icon: "bi-diagram-2", url: account.wikidata_entity_url, key: "wikidata_entity_url", type: "Knowledge Graph" },
+      { name: "Google Trends Momentum", icon: "bi-graph-up-arrow", url: account.google_trends_url, key: "google_trends_url", type: "Search Trends" },
+      { name: "SEC EDGAR Submissions", icon: "bi-bank", url: account.sec_submissions_url || account.sec_edgar_url, key: "sec_submissions_url", type: "Regulatory Filings" },
     ];
 
+    const configuredFeedsCount = feedsList.filter(f => Boolean(f.url)).length;
     const feedsHtml = feedsList.map(f => {
       const isConfigured = Boolean(f.url);
-      const timeStr = isConfigured ? `synced ${formatTimeAgo(account.updated_at || account.extracted_at)}` : `<span style="color:#94a3b8;">Not configured &bull; &mdash;</span>`;
-      const dotClass = isConfigured ? "dot-green" : "dot-gray";
-      return `
-        <div class="feed-status-row feed-status-interactive" data-feed-url="${esc(f.url || '')}" data-feed-name="${esc(f.name)}" data-feed-key="${esc(f.key)}" style="cursor:pointer;transition:background 0.15s ease;" title="${isConfigured ? 'Click to open ' + esc(f.name) + ' live feed' : 'Click to configure ' + esc(f.name)}">
-          <div class="feed-status-left">
-            <span class="dot-indicator ${dotClass}"></span>
-            <span style="font-weight:600;">${esc(f.name)}</span>
+      if (isConfigured) {
+        return `
+          <a href="${esc(f.url)}" target="_blank" rel="noopener noreferrer" class="osint-channel-tile active feed-status-row" data-feed-url="${esc(f.url)}" data-feed-name="${esc(f.name)}" data-feed-key="${esc(f.key)}" title="Open live ${esc(f.name)}">
+            <div class="osint-tile-left">
+              <div class="osint-tile-icon"><i class="bi ${f.icon}"></i></div>
+              <div class="osint-tile-info">
+                <div class="osint-tile-title">${esc(f.name)}</div>
+                <div class="osint-tile-type">${esc(f.type)}</div>
+              </div>
+            </div>
+            <span class="osint-live-indicator"><span class="pulse-dot"></span> LIVE <i class="bi bi-box-arrow-up-right" style="font-size:0.65rem;margin-left:2px;"></i></span>
+          </a>
+        `;
+      } else {
+        return `
+          <div class="osint-channel-tile inactive feed-status-row" data-feed-name="${esc(f.name)}" data-feed-key="${esc(f.key)}" title="${esc(f.name)}: Not configured">
+            <div class="osint-tile-left">
+              <div class="osint-tile-icon inactive"><i class="bi ${f.icon}"></i></div>
+              <div class="osint-tile-info">
+                <div class="osint-tile-title">${esc(f.name)}</div>
+                <div class="osint-tile-type">${esc(f.type)}</div>
+              </div>
+            </div>
+            <span class="osint-inactive-indicator">Offline</span>
           </div>
-          <div style="display:flex;align-items:center;gap:6px;">
-            <span class="feed-status-time">${timeStr}</span>
-            ${isConfigured ? `<i class="bi bi-box-arrow-up-right" style="font-size:0.68rem;color:#0284c7;"></i>` : `<i class="bi bi-plus-circle" style="font-size:0.75rem;color:#94a3b8;"></i>`}
-          </div>
-        </div>
-      `;
+        `;
+      }
     }).join("");
 
-    const extraFeedsCount = [account.google_trends_url, account.glassdoor_url, account.github_url, account.blog_url, account.sec_filings_rss, account.sec_edgar_url, account.openalex_institution_url].filter(Boolean).length;
-
-    // Source checklist items
-    const checkSec = coverage.sources.find(s => s.id === 'sec')?.active;
-    const checkGleif = coverage.sources.find(s => s.id === 'gleif')?.active;
-    const checkFinnhub = coverage.sources.find(s => s.id === 'finnhub')?.active;
-    const checkPatents = coverage.sources.find(s => s.id === 'patents')?.active;
-    const checkDiffbot = coverage.sources.find(s => s.id === 'diffbot')?.active;
-    const checkWiki = coverage.sources.find(s => s.id === 'wiki')?.active;
-
-    // Build authentic dynamic timeline events
+    // Build authentic dynamic timeline events for initial fallback render
     const timelineEvents = [];
     if (account.extracted_at || account.updated_at) {
       timelineEvents.push({
-        title: "Intelligence extraction synced",
+        title: "Intelligence Extraction Synced",
         desc: `${coverage.hitCount} of 11 multi-source intelligence connectors aggregated`,
         time: formatTimeAgo(account.extracted_at || account.updated_at),
-        dot: "dot-green"
+        tag: "L1",
+        action: "ENRICH"
       });
     }
     if (lobsCount > 0) {
       timelineEvents.push({
-        title: "Line of business hierarchy mapped",
+        title: "Lines of Business Mapped",
         desc: `${lobsCount} distinct operating segments and subsidiaries indexed`,
         time: formatTimeAgo(account.updated_at || account.created_at),
-        dot: "dot-blue"
+        tag: "L2",
+        action: "INDEX"
       });
     }
     if (personasCount > 0) {
       timelineEvents.push({
-        title: "Executive buying committee captured",
+        title: "Executive Committee Captured",
         desc: `${personasCount} verified leadership personas and decision-makers discovered`,
         time: formatTimeAgo(account.updated_at || account.created_at),
-        dot: "dot-purple"
+        tag: "L3",
+        action: "COLLECT"
       });
     }
     if (account.created_at) {
       timelineEvents.push({
-        title: "Account record initialized",
+        title: "Account Record Initialized",
         desc: "Profile established in sales_ai enterprise database",
         time: formatTimeAgo(account.created_at),
-        dot: "dot-gray"
+        tag: "SYSTEM",
+        action: "INIT"
       });
     }
 
@@ -2755,15 +3187,25 @@ $(function () {
           const isExtra = idx >= visibleEventsCount;
           const displayStyle = isExtra ? 'style="display:none;"' : '';
           return `
-            <div class="timeline-item ${isExtra ? 'timeline-item-extra' : ''}" ${displayStyle}>
-              <span class="timeline-dot ${ev.dot}"></span>
-              <div class="timeline-content">
-                <div class="timeline-title">${esc(ev.title)}</div>
-                <div class="timeline-desc">${esc(ev.desc)}</div>
+            <div class="pipeline-activity-card timeline-item timeline-item-extra ${isExtra ? 'extra' : ''}" ${displayStyle}>
+              <div class="activity-card-left">
+                <span class="activity-status-icon success">
+                  <i class="bi bi-check-circle-fill"></i>
+                </span>
+                <div class="activity-card-details">
+                  <div class="activity-card-title-row">
+                    <span class="activity-tag-level">${esc(ev.tag)}</span>
+                    <span class="activity-tag-action">${esc(ev.action)}</span>
+                    <span class="activity-status-badge success">${esc(ev.title)}</span>
+                  </div>
+                  <div class="activity-card-meta-row">
+                    <span class="activity-meta-pill"><i class="bi bi-info-circle"></i> ${esc(ev.desc)}</span>
+                  </div>
+                </div>
               </div>
-              <div class="timeline-time" style="display:flex;align-items:center;gap:8px;">
-                <span>${esc(ev.time)}</span>
-                <button type="button" class="btn btn-xs btn-outline-primary btn-run-credits" data-action="view-credits" title="View credits & API telemetry for this run" style="font-size:0.68rem;padding:1px 7px;border-radius:4px;color:#4f46e5;border:1px solid #c7d2fe;background:#eef2ff;display:inline-flex;align-items:center;gap:3px;cursor:pointer;">
+              <div class="activity-card-right">
+                <span class="activity-timestamp"><i class="bi bi-clock"></i> ${esc(ev.time)}</span>
+                <button type="button" class="btn btn-xs btn-outline-primary btn-run-credits" data-action="view-credits" title="View credits & API telemetry for this run" style="font-size:0.68rem;padding:2px 8px;border-radius:4px;color:#4f46e5;border:1px solid #c7d2fe;background:#eef2ff;display:inline-flex;align-items:center;gap:3px;cursor:pointer;">
                   <i class="bi bi-lightning-charge-fill" style="color:#6366f1;"></i> <span>Credits</span>
                 </button>
               </div>
@@ -2875,83 +3317,57 @@ $(function () {
           </div>
         </div>
 
-        <!-- Card 2: Source Coverage & Verified Connectors (Horizontal Strip) -->
+        <!-- Card 2: Source Coverage & Verified Connectors -->
         <div class="pipeline-section-card fade-in">
           <div class="section-title-row">
             <div class="section-title-left">
               <span class="section-title-dot"></span>
               <span>Source Coverage &amp; Verified Connectors</span>
             </div>
-            <span class="badge" style="background:#e0f2fe;color:#0369a1;font-weight:700;padding:2px 8px;font-size:0.72rem;">${coverage.coveragePct}% Coverage &bull; ${coverage.sourcesHit ?? 0}/${coverage.totalSources || 11} Active</span>
+            <div class="coverage-header-metrics">
+              <div class="coverage-bar-track" title="${coverage.coveragePct}% verified data coverage">
+                <div class="coverage-bar-fill" style="width: ${coverage.coveragePct}%;"></div>
+              </div>
+              <span class="coverage-score-badge ${coverage.coveragePct >= 60 ? 'high' : 'medium'}">
+                <i class="bi bi-shield-check"></i> ${coverage.coveragePct}% Coverage &bull; ${coverage.sourcesHit ?? 0}/${coverage.totalSources || 11} Active
+              </span>
+            </div>
           </div>
 
-          <div class="source-coverage-horizontal-wrap">
-            <div class="source-coverage-donut-col">
-              <div class="donut-circle-graphic" style="background: conic-gradient(#10b981 0% ${coverage.coveragePct}%, #e2e8f0 ${coverage.coveragePct}% 100%);">
-                <div class="donut-circle-inner">
-                  <span class="donut-pct-text">${coverage.coveragePct}%</span>
-                  <span class="donut-sub-text">sources hit</span>
-                </div>
+          <div class="connectors-chip-matrix">
+            ${(coverage.sources || []).map(src => `
+              <div class="connector-status-badge ${src.active ? 'active' : 'inactive'}" title="${esc(src.name)}: ${src.active ? 'Verified & Active' : 'No Data Captured'}">
+                ${src.active 
+                  ? `<span class="connector-verified-dot"></span> <i class="bi bi-check-circle-fill text-success" style="font-size:0.8rem;"></i>` 
+                  : `<i class="bi bi-dash-circle text-muted" style="font-size:0.8rem;"></i>`}
+                <span>${esc(src.name)}</span>
               </div>
-              <div style="font-size:0.75rem;color:#64748b;line-height:1.4;">
-                <div style="font-weight:700;color:#1e293b;">${coverage.sourcesHit ?? 0} of ${coverage.totalSources || 11}</div>
-                <div>Connectors active</div>
-              </div>
-            </div>
-
-            <div class="source-checklist-horizontal-grid">
-              <div class="source-check-card ${checkSec ? 'active' : ''}">
-                ${checkSec ? '<i class="bi bi-check2-circle text-success" style="font-size:0.95rem;"></i>' : '<i class="bi bi-dash-circle text-muted"></i>'}
-                <span>SEC Filings (EDGAR)</span>
-              </div>
-              <div class="source-check-card ${checkGleif ? 'active' : ''}">
-                ${checkGleif ? '<i class="bi bi-check2-circle text-success" style="font-size:0.95rem;"></i>' : '<i class="bi bi-dash-circle text-muted"></i>'}
-                <span>GLEIF Global LEI</span>
-              </div>
-              <div class="source-check-card ${checkFinnhub ? 'active' : ''}">
-                ${checkFinnhub ? '<i class="bi bi-check2-circle text-success" style="font-size:0.95rem;"></i>' : '<i class="bi bi-dash-circle text-muted"></i>'}
-                <span>Finnhub Market Data</span>
-              </div>
-              <div class="source-check-card ${checkPatents ? 'active' : ''}">
-                ${checkPatents ? '<i class="bi bi-check2-circle text-success" style="font-size:0.95rem;"></i>' : '<i class="bi bi-dash-circle text-muted"></i>'}
-                <span>USPTO Patents</span>
-              </div>
-              <div class="source-check-card ${checkDiffbot ? 'active' : ''}">
-                ${checkDiffbot ? '<i class="bi bi-check2-circle text-success" style="font-size:0.95rem;"></i>' : '<i class="bi bi-dash-circle text-muted"></i>'}
-                <span>Diffbot KG Graph</span>
-              </div>
-              <div class="source-check-card ${checkWiki ? 'active' : ''}">
-                ${checkWiki ? '<i class="bi bi-check2-circle text-success" style="font-size:0.95rem;"></i>' : '<i class="bi bi-dash-circle text-muted"></i>'}
-                <span>Wikipedia / DBpedia</span>
-              </div>
-            </div>
+            `).join("")}
           </div>
         </div>
 
-        <!-- Card 3: Live Intelligence Feeds & OSINT Channels (Horizontal Grid) -->
+        <!-- Card 3: Live Intelligence Feeds & OSINT Channels -->
         <div class="pipeline-section-card fade-in">
           <div class="section-title-row">
             <div class="section-title-left">
               <span class="section-title-dot"></span>
               <span>Live Intelligence Feeds &amp; OSINT Channels</span>
+              <span class="badge-feed-count">${configuredFeedsCount} Active</span>
             </div>
-            <a href="javascript:void(0)" class="section-action-link" id="btnAddIntelligenceFeed" title="Add or configure an intelligence feed"><i class="bi bi-plus"></i> Add feed</a>
+            <div style="display:flex;align-items:center;gap:12px;">
+              ${account.updated_at ? `<span class="section-subtitle-hint"><i class="bi bi-arrow-repeat"></i> Last synced ${formatTimeAgo(account.updated_at)}</span>` : ''}
+              <a href="javascript:void(0)" class="section-action-link" id="btnAddIntelligenceFeed" title="Add or configure an intelligence feed"><i class="bi bi-plus"></i> Add feed</a>
+            </div>
           </div>
 
-          <div class="feed-status-horizontal-grid">
+          <div class="osint-channel-tile-grid">
             ${feedsHtml}
           </div>
 
-          <div style="margin-top:14px;border-top:1px solid #f1f5f9;padding-top:10px;">
-            ${extraFeedsCount > 0 ? `
-              <a href="javascript:void(0)" id="btnViewAllActiveFeeds" style="font-size:.76rem;color:#0284c7;text-decoration:none;font-weight:600;display:inline-flex;align-items:center;gap:4px;cursor:pointer;">
-                Trends, Glassdoor + ${extraFeedsCount} more active &rarr;
-              </a>
-            ` : `
-              <a href="javascript:void(0)" id="btnViewAllActiveFeeds" style="font-size:.74rem;color:#0284c7;text-decoration:none;font-weight:600;display:inline-flex;align-items:center;gap:4px;cursor:pointer;">
-                View All OSINT Channels &rarr;
-              </a>
-            `}
+          <div style="margin-top:10px;padding-top:8px;border-top:1px solid #f1f5f9;display:flex;justify-content:flex-end;">
+            <a href="javascript:void(0)" id="btnViewAllActiveFeeds" style="font-size:.74rem;color:#0284c7;text-decoration:none;font-weight:600;display:inline-flex;align-items:center;gap:4px;cursor:pointer;">
+              View All OSINT Channels &rarr;
+            </a>
           </div>
         </div>
 
@@ -2961,7 +3377,7 @@ $(function () {
             <div class="section-title-left">
               <span class="section-title-dot"></span>
               <span>Recent Pipeline Activity</span>
-              <span class="badge-solid-gray" id="activityCountBadge" style="font-size:.68rem;padding:2px 7px;margin-left:6px;font-weight:600;">${timelineEvents.length}</span>
+              <span class="badge-solid-gray" id="activityCountBadge" style="font-size:.68rem;padding:2px 7px;margin-left:6px;font-weight:600;">${timelineEvents.length} runs</span>
             </div>
             <div style="display:flex;align-items:center;gap:10px;">
               <button type="button" class="btn btn-xs btn-outline-primary" id="btnOpenCreditUsageModal" style="display:inline-flex;align-items:center;gap:5px;font-size:0.75rem;padding:3px 10px;border-radius:6px;font-weight:600;background:rgba(99,102,241,0.06);border-color:#6366f1;color:#4f46e5;cursor:pointer;">
@@ -2971,7 +3387,7 @@ $(function () {
             </div>
           </div>
 
-          <div class="timeline-activity-list" id="recentPipelineActivityList">
+          <div class="pipeline-activity-list" id="recentPipelineActivityList">
             ${timelineHtml}
           </div>
         </div>
@@ -3030,15 +3446,50 @@ $(function () {
               const pKey = p.key || `lob_persona_${idx}`;
               p.key = pKey;
               const pRaw = encodeURIComponent(JSON.stringify(p));
+              const pEmail = p.email || p.sanitized_email || p.work_email || p.personal_email || "";
+              const pPhone = p.phone || p.phone_number || p.sanitized_phone || p.direct_mobile_phone || "";
+              const pLinkedIn = p.linkedin_url || p.linkedin || "";
+              const cik = (activeAccount && activeAccount.sec_cik) ? activeAccount.sec_cik : "";
+              const secInsiderUrl = cik ? `https://www.sec.gov/edgar/searchedgar/companysearch` : "";
+
+              let actionsHtml = "";
+              if (pEmail || pPhone || pLinkedIn || secInsiderUrl) {
+                actionsHtml = `
+                  <div class="persona-card-actions">
+                    ${pEmail ? `
+                      <button type="button" class="persona-action-btn btn-copy-email" data-email="${esc(pEmail)}" title="Copy verified email (${esc(pEmail)})">
+                        <i class="bi bi-envelope-fill"></i>
+                      </button>
+                    ` : ''}
+                    ${pPhone ? `
+                      <button type="button" class="persona-action-btn btn-copy-phone" data-phone="${esc(pPhone)}" title="Copy direct phone (${esc(pPhone)})">
+                        <i class="bi bi-telephone-fill"></i>
+                      </button>
+                    ` : ''}
+                    ${pLinkedIn ? `
+                      <a href="${normalizeUrl(pLinkedIn)}" target="_blank" rel="noopener noreferrer" class="persona-action-btn btn-open-linkedin" title="Open verified LinkedIn Profile" onclick="event.stopPropagation();">
+                        <i class="bi bi-linkedin"></i>
+                      </a>
+                    ` : ''}
+                    ${secInsiderUrl ? `
+                      <a href="${secInsiderUrl}" target="_blank" rel="noopener noreferrer" class="persona-action-btn btn-open-sec" title="SEC Form 4 Insider Filings" onclick="event.stopPropagation();">
+                        <i class="bi bi-bank2"></i>
+                      </a>
+                    ` : ''}
+                  </div>
+                `;
+              }
+
               return `
                 <div class="compact-card persona-card fade-in"
                      data-key="${pKey}"
                      data-raw="${pRaw}"
-                     title="Click to view AI call prep for ${esc(p.name)}">
+                     title="Inspect Executive Dossier for ${esc(p.name)}">
                   <div class="compact-card-avatar avatar-purple" style="color:#fff;">${esc(getInitials(p.name))}</div>
                   <div class="compact-card-body">
                     <div class="compact-card-title">${esc(p.name)}</div>
                     <div class="compact-card-subtitle">${esc(p.title || "Executive")}</div>
+                    ${actionsHtml}
                   </div>
                 </div>
               `;
@@ -3637,6 +4088,10 @@ $(function () {
     activeAccount = MOCK_DATA.accounts.find((a) => a.id === id);
     if (!activeAccount) return;
 
+    try {
+      sessionStorage.setItem("pipeline_active_account_id", String(id));
+    } catch (e) {}
+
     activeLob = null;
     activePersona = null;
 
@@ -3678,6 +4133,149 @@ $(function () {
 
     // Render Complete Enterprise Hierarchy at Account Level
     renderAllPersonasDirectory(activeAccount);
+  });
+
+  // ══════════════════════════════════════════════════════════════════
+  // INTERACTIVE QUICK-LAUNCH HUB (EMPTY STATE)
+  // ══════════════════════════════════════════════════════════════════
+
+  function getConnectorIcon(key) {
+    switch (key) {
+      case "sec_edgar": return "bi-bank2";
+      case "gemini": return "bi-stars";
+      case "exa": return "bi-search";
+      case "tavily": return "bi-globe2";
+      case "diffbot": return "bi-diagram-3";
+      case "finnhub": return "bi-graph-up-arrow";
+      case "apify": return "bi-robot";
+      case "serper": return "bi-google";
+      default: return "bi-hdd-network";
+    }
+  }
+
+  function formatRelativeSyncTime(isoStr) {
+    if (!isoStr) return "Just now";
+    try {
+      const d = new Date(isoStr);
+      if (isNaN(d.getTime())) return "Recently synced";
+      const now = new Date();
+      const diffSec = Math.floor((now - d) / 1000);
+      if (diffSec < 60) return "Just now";
+      if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+      if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+      return d.toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    } catch (_) {
+      return "Recently synced";
+    }
+  }
+
+  async function renderEmptyStateHub() {
+    const $hub = $("#emptyState");
+    if (!$hub.length) return;
+
+    // 1. Fetch live system health & telemetry
+    try {
+      const token = sessionStorage.getItem("access_token") || localStorage.getItem("access_token");
+      const headers = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      const res = await fetch(`${API_BASE}/api/system/health`, { headers, credentials: "include" });
+      if (res.ok) {
+        const health = await res.json();
+        if (health && health.stats) {
+          $("#hubCreditsConsumed").text((health.stats.total_credits_consumed || 0).toLocaleString());
+          $("#hubTotalRuns").text((health.stats.total_pipeline_runs || 0).toLocaleString());
+          
+          if (health.database) {
+            $("#hubDbStatus").html(`<span class="pulse-dot-green"></span> ${esc(health.database.engine || "PostgreSQL")}`);
+            $("#hubDbName").text(health.database.name || "sales_ai_universal");
+          }
+
+          if (health.stats.last_sync_timestamp) {
+            $("#hubLastSync").text(formatRelativeSyncTime(health.stats.last_sync_timestamp));
+            $("#hubFreshnessLabel").text(`Freshness: ${formatRelativeSyncTime(health.stats.last_sync_timestamp)}`);
+          } else {
+            $("#hubLastSync").text("Active");
+            $("#hubFreshnessLabel").text("Live database connected");
+          }
+
+          // Render connectors matrix in sleek OSINT channel tile style
+          const CONNECTOR_PORTAL_URLS = {
+            sec_edgar: "https://www.sec.gov/edgar/searchedgar/companysearch",
+            gemini: "https://ai.google.dev",
+            exa: "https://exa.ai",
+            tavily: "https://tavily.com",
+            diffbot: "https://www.diffbot.com",
+            finnhub: "https://finnhub.io",
+            apify: "https://apify.com",
+            serper: "https://serper.dev",
+          };
+
+          if (health.connectors) {
+            let connHtml = "";
+            let activeCount = 0;
+            for (const [key, c] of Object.entries(health.connectors)) {
+              const isActive = c.status === "active";
+              if (isActive) activeCount++;
+              const portalUrl = CONNECTOR_PORTAL_URLS[key] || "https://www.google.com";
+              const iconClass = getConnectorIcon(key);
+
+              if (isActive) {
+                connHtml += `
+                  <a href="${portalUrl}" target="_blank" rel="noopener noreferrer" class="osint-channel-tile active feed-status-row" data-connector-key="${key}" title="Verified &amp; Connected: Open ${esc(c.name)} Gateway">
+                    <div class="osint-tile-left">
+                      <div class="osint-tile-icon"><i class="bi ${iconClass}"></i></div>
+                      <div class="osint-tile-info">
+                        <div class="osint-tile-title">${esc(c.name)}</div>
+                        <div class="osint-tile-type">${esc(c.type || 'Data Feed')}${c.model ? ` &bull; ${esc(c.model)}` : ''}</div>
+                      </div>
+                    </div>
+                    <span class="osint-live-indicator"><span class="pulse-dot"></span> LIVE <i class="bi bi-box-arrow-up-right" style="font-size:0.65rem;margin-left:2px;"></i></span>
+                  </a>
+                `;
+              } else {
+                connHtml += `
+                  <div class="osint-channel-tile inactive feed-status-row" data-connector-key="${key}" title="${esc(c.name)}: Unconfigured / Offline">
+                    <div class="osint-tile-left">
+                      <div class="osint-tile-icon inactive"><i class="bi ${iconClass}"></i></div>
+                      <div class="osint-tile-info">
+                        <div class="osint-tile-title">${esc(c.name)}</div>
+                        <div class="osint-tile-type">${esc(c.type || 'Data Feed')}</div>
+                      </div>
+                    </div>
+                    <span class="osint-inactive-indicator" style="font-size:0.65rem;color:#94a3b8;background:#f1f5f9;padding:2px 6px;border-radius:4px;font-weight:600;">Offline</span>
+                  </div>
+                `;
+              }
+            }
+            $("#hubConnectorsGrid").html(connHtml);
+            $("#hubActiveConnectorsBadge").text(`${activeCount} Active`);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("[renderEmptyStateHub] System health fetch error:", err);
+    }
+  }
+
+  // Return to Quick-Launch Hub when clicking top-left brand header
+  $(document).on("click", ".pipeline-top-left", function () {
+    activeAccount = null;
+    activeLob = null;
+    activePersona = null;
+    try {
+      sessionStorage.removeItem("pipeline_active_account_id");
+    } catch (e) {}
+
+    $(".account-item").removeClass("active");
+    $("#dashboardContainer").addClass("d-none");
+    $("#lobDetailViewContainer").addClass("d-none").empty();
+    $("#personaDetailViewContainer").addClass("d-none").empty();
+    $("#detailPanelContainer").addClass("d-none").empty();
+    
+    renderModernBreadcrumbs();
+    renderEmptyStateHub();
+    $("#emptyState").removeClass("d-none");
   });
 
   // ══════════════════════════════════════════════════════════════════
@@ -3730,14 +4328,298 @@ $(function () {
   });
 
   // ══════════════════════════════════════════════════════════════════
-  // EVENT: PERSONA CARD SELECTION
+  // EVENT: PERSONA CARD SELECTION (SLIDE-OVER EXECUTIVE DOSSIER DRAWER)
   // ══════════════════════════════════════════════════════════════════
-  $(document).on("click", ".persona-card", function () {
+  $(document).on("click", ".persona-card", function (e) {
+    // If clicked on quick-action buttons inside the card, ignore drawer
+    if ($(e.target).closest(".persona-action-btn").length) {
+      return;
+    }
+
     $(".persona-card").removeClass("active");
     $(this).addClass("active");
 
     const pData = JSON.parse(decodeURIComponent($(this).attr("data-raw")));
     activePersona = pData;
+
+    // Open Executive Dossier Slide-Over Drawer (Zero context loss)
+    openExecutiveDossierDrawer(activePersona);
+  });
+
+  // ─── Floating Toast Notification Helper ───
+  function showToastNotification(message, icon = "bi-check-circle-fill text-success") {
+    const $container = $("#toastNotificationContainer");
+    if (!$container.length) return;
+    const $toast = $(`
+      <div class="pipeline-floating-toast">
+        <i class="bi ${icon}"></i>
+        <span>${esc(message)}</span>
+      </div>
+    `);
+    $container.append($toast);
+    setTimeout(() => {
+      $toast.fadeOut(250, function () { $(this).remove(); });
+    }, 2400);
+  }
+
+  // ─── Quick-Copy Utilities ───
+  $(document).on("click", ".btn-copy-email", function (e) {
+    e.stopPropagation();
+    const email = $(this).data("email") || $(this).attr("data-email");
+    if (!email) return;
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(email).catch(() => {});
+    } else {
+      const ta = document.createElement("textarea");
+      ta.value = email;
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); } catch (_) {}
+      document.body.removeChild(ta);
+    }
+
+    const $btn = $(this);
+    const origHtml = $btn.html();
+    $btn.addClass("copied").html('<i class="bi bi-check-lg"></i>');
+    showToastNotification(`Copied email: ${email}`);
+
+    setTimeout(() => {
+      $btn.removeClass("copied").html(origHtml);
+    }, 1800);
+  });
+
+  $(document).on("click", ".btn-copy-phone", function (e) {
+    e.stopPropagation();
+    const phone = $(this).data("phone") || $(this).attr("data-phone");
+    if (!phone) return;
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(String(phone)).catch(() => {});
+    } else {
+      const ta = document.createElement("textarea");
+      ta.value = String(phone);
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); } catch (_) {}
+      document.body.removeChild(ta);
+    }
+
+    const $btn = $(this);
+    const origHtml = $btn.html();
+    $btn.addClass("copied").html('<i class="bi bi-check-lg"></i>');
+    showToastNotification(`Copied phone: ${phone}`);
+
+    setTimeout(() => {
+      $btn.removeClass("copied").html(origHtml);
+    }, 1800);
+  });
+
+  // ─── Slide-Over Executive Dossier Drawer Logic ───
+  function renderExecutiveDossierDrawer(p) {
+    if (!p) return;
+    const tierCat = getPersonaTierCategory(p);
+    const avatarClass = tierCat === "c_suite" ? "avatar-csuite" : (tierCat === "vp_head" ? "avatar-vp" : "");
+    const tierLabelMap = {
+      c_suite: "C-Suite",
+      vp_head: "VP & Head",
+      director: "Director",
+      manager: "Manager & Lead",
+      other: "Executive Staff",
+    };
+    const tierLabel = tierLabelMap[tierCat] || "Executive";
+
+    const comp = computePersonaCompleteness(p);
+    const score = comp.score || 85;
+
+    const initials = getInitials(p.name || "EX");
+    $("#drawerAvatar").attr("class", `drawer-avatar ${avatarClass}`).text(initials);
+    $("#drawerName").text(p.name || "Executive");
+    $("#drawerTierBadge").attr("class", `drawer-tier-badge ${tierCat}`).text(tierLabel);
+    $("#drawerHealthBadge").text(`${score}% Confidence`);
+    $("#drawerTitle").text(p.title || p.job_title || "Executive Leadership");
+
+    const coName = activeAccount ? (activeAccount.name || activeAccount.display_name || "Enterprise") : "Enterprise";
+    const lobName = (activeLob && activeLob.name) ? activeLob.name : (p.department || "Corporate");
+    $("#drawerCompanyMeta").html(`${esc(coName)} &bull; <i class="bi bi-diagram-3"></i> ${esc(lobName)}`);
+
+    const pEmail = p.email || p.work_email || p.personal_email || p.sanitized_email || "";
+    const pPhone = p.phone || p.direct_mobile_phone || p.sanitized_phone || "";
+    const pLinkedIn = p.linkedin_url || p.linkedin || "";
+    const cik = (activeAccount && activeAccount.sec_cik) ? activeAccount.sec_cik : "";
+    const secInsiderUrl = cik ? `https://www.sec.gov/edgar/searchedgar/companysearch` : "";
+
+    // Action Bar Chips
+    let actionsHtml = "";
+    if (pEmail) {
+      actionsHtml += `
+        <button type="button" class="drawer-action-chip btn-copy-email" data-email="${esc(pEmail)}" title="Click to copy email">
+          <i class="bi bi-envelope-fill text-primary"></i> <span>${esc(pEmail)}</span> <i class="bi bi-copy" style="font-size:0.68rem;opacity:.6;"></i>
+        </button>
+      `;
+    }
+    if (pPhone) {
+      actionsHtml += `
+        <button type="button" class="drawer-action-chip btn-copy-phone" data-phone="${esc(pPhone)}" title="Click to copy phone">
+          <i class="bi bi-telephone-fill text-success"></i> <span>${esc(pPhone)}</span> <i class="bi bi-copy" style="font-size:0.68rem;opacity:.6;"></i>
+        </button>
+      `;
+    }
+    if (pLinkedIn) {
+      actionsHtml += `
+        <a href="${normalizeUrl(pLinkedIn)}" target="_blank" rel="noopener noreferrer" class="drawer-action-chip" title="Open verified LinkedIn Profile">
+          <i class="bi bi-linkedin" style="color:#0a66c2;"></i> <span>LinkedIn Profile</span> <i class="bi bi-box-arrow-up-right" style="font-size:0.65rem;opacity:.6;"></i>
+        </a>
+      `;
+    }
+    if (secInsiderUrl) {
+      actionsHtml += `
+        <a href="${secInsiderUrl}" target="_blank" rel="noopener noreferrer" class="drawer-action-chip" title="SEC Form 4 Insider Stock Transactions">
+          <i class="bi bi-bank2 text-secondary"></i> <span>SEC Form 4</span> <i class="bi bi-box-arrow-up-right" style="font-size:0.65rem;opacity:.6;"></i>
+        </a>
+      `;
+    }
+    $("#drawerActionBar").html(actionsHtml);
+
+    // AI Call Prep & Strategic Angle
+    const icebreaker = p.icebreaker || (p.ai_call_prep && p.ai_call_prep.icebreakers && p.ai_call_prep.icebreakers[0]) || 
+      `Congratulations on driving strategic initiatives across ${lobName} at ${coName}.`;
+
+    const valueProp = p.value_proposition || (p.ai_call_prep && p.ai_call_prep.value_proposition) || 
+      `Empowering ${coName}'s ${p.department || lobName} team with high-velocity data automation and enterprise risk transparency.`;
+
+    const strategicAngle = p.strategic_angle || (p.ai_call_prep && p.ai_call_prep.strategic_angle) || p.decision_priorities ||
+      `Focuses on operational resilience, cost efficiency, and cross-functional leadership alignment.`;
+
+    // Coordinates
+    const locStr = p.city ? `${p.city}${p.state ? ', ' + p.state : ''}${p.country ? ', ' + p.country : ''}` : (p.country || "Corporate Headquarters");
+    const tenureStr = p.current_role_tenure_months ? 
+      `${Math.floor(p.current_role_tenure_months / 12)} yrs ${p.current_role_tenure_months % 12} mos` : "Active Executive";
+    const priorStr = p.prior_company || (Array.isArray(p.past_companies) && p.past_companies.length > 0 ? p.past_companies.join(', ') : "Enterprise Sector");
+    const eduStr = p.degree ? `${p.degree}${p.institution ? ' &bull; ' + p.institution : ''}` : (p.institution || "Higher Education / University");
+    const reportsTo = p.reports_to || "Executive Committee / Board";
+
+    let skillsHtml = "";
+    const skills = Array.isArray(p.skills) ? p.skills : (p.skills ? String(p.skills).split(",") : []);
+    if (skills.length) {
+      skillsHtml = `
+        <div style="margin-top:10px;">
+          <div class="drawer-field-label" style="margin-bottom:4px;">Core Competencies &amp; Skills</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;">
+            ${skills.slice(0, 10).map(s => `<span style="font-size:0.68rem;background:#f1f5f9;color:#334155;padding:2px 7px;border-radius:4px;border:1px solid #e2e8f0;">${esc(s.trim())}</span>`).join("")}
+          </div>
+        </div>
+      `;
+    }
+
+    $("#drawerBody").html(`
+      <!-- Section 1: AI Call Prep & Conversation Hooks -->
+      <div class="drawer-section-card">
+        <div class="drawer-section-title">
+          <i class="bi bi-stars"></i> AI Call Prep &amp; Executive Hook
+        </div>
+        <div class="drawer-ai-callout">
+          <div class="drawer-ai-label"><i class="bi bi-chat-quote-fill"></i> Conversation Opener / Icebreaker</div>
+          <div class="drawer-ai-text">${esc(icebreaker)}</div>
+        </div>
+        <div class="drawer-ai-callout" style="border-left-color:#10b981;">
+          <div class="drawer-ai-label" style="color:#059669;"><i class="bi bi-bullseye"></i> Tailored Value Proposition</div>
+          <div class="drawer-ai-text">${esc(valueProp)}</div>
+        </div>
+        <div class="drawer-ai-callout" style="border-left-color:#8b5cf6;margin-bottom:0;">
+          <div class="drawer-ai-label" style="color:#7c3aed;"><i class="bi bi-compass"></i> Strategic Priorities &amp; Decision Drivers</div>
+          <div class="drawer-ai-text">${esc(strategicAngle)}</div>
+        </div>
+      </div>
+
+      <!-- Section 2: Contact Coordinates & Office -->
+      <div class="drawer-section-card">
+        <div class="drawer-section-title">
+          <i class="bi bi-person-lines-fill"></i> Contact Coordinates &amp; Office
+        </div>
+        <div class="drawer-grid-2col">
+          <div class="drawer-field">
+            <span class="drawer-field-label">Verified Work Email</span>
+            <span class="drawer-field-val">
+              ${pEmail ? `<a href="mailto:${esc(pEmail)}" style="color:#0284c7;text-decoration:none;">${esc(pEmail)}</a>` : '<span style="color:#94a3b8;">Not captured</span>'}
+            </span>
+          </div>
+          <div class="drawer-field">
+            <span class="drawer-field-label">Direct / Mobile Phone</span>
+            <span class="drawer-field-val">
+              ${pPhone ? `<a href="tel:${esc(pPhone)}" style="color:#0284c7;text-decoration:none;">${esc(pPhone)}</a>` : '<span style="color:#94a3b8;">Not captured</span>'}
+            </span>
+          </div>
+          <div class="drawer-field">
+            <span class="drawer-field-label">Office Location</span>
+            <span class="drawer-field-val">${esc(locStr)}</span>
+          </div>
+          <div class="drawer-field">
+            <span class="drawer-field-label">Division / Department</span>
+            <span class="drawer-field-val">${esc(p.department || lobName)}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section 3: Professional Background & Seniority -->
+      <div class="drawer-section-card">
+        <div class="drawer-section-title">
+          <i class="bi bi-briefcase-fill"></i> Professional Career &amp; Experience
+        </div>
+        <div class="drawer-grid-2col">
+          <div class="drawer-field">
+            <span class="drawer-field-label">Role Tenure</span>
+            <span class="drawer-field-val">${esc(tenureStr)}</span>
+          </div>
+          <div class="drawer-field">
+            <span class="drawer-field-label">Reports To</span>
+            <span class="drawer-field-val">${esc(reportsTo)}</span>
+          </div>
+          <div class="drawer-field">
+            <span class="drawer-field-label">Prior Organization</span>
+            <span class="drawer-field-val">${esc(priorStr)}</span>
+          </div>
+          <div class="drawer-field">
+            <span class="drawer-field-label">Education / Credentials</span>
+            <span class="drawer-field-val">${esc(eduStr)}</span>
+          </div>
+        </div>
+        ${skillsHtml}
+      </div>
+    `);
+  }
+
+  function openExecutiveDossierDrawer(persona) {
+    if (!persona) return;
+    activePersona = persona;
+    renderExecutiveDossierDrawer(persona);
+    $("#executiveDrawerBackdrop").removeClass("d-none fade-out");
+    $("#executiveDossierDrawer").addClass("open").attr("aria-hidden", "false");
+    $("body").css("overflow", "hidden");
+  }
+
+  function closeExecutiveDossierDrawer() {
+    $("#executiveDossierDrawer").removeClass("open").attr("aria-hidden", "true");
+    $("#executiveDrawerBackdrop").addClass("fade-out");
+    setTimeout(() => {
+      $("#executiveDrawerBackdrop").addClass("d-none").removeClass("fade-out");
+      $("body").css("overflow", "");
+    }, 220);
+  }
+
+  $(document).on("click", "#closeExecutiveDrawerBtn, #drawerCloseFooterBtn, #executiveDrawerBackdrop", function () {
+    closeExecutiveDossierDrawer();
+  });
+
+  $(document).on("keydown", function (e) {
+    if (e.key === "Escape" && $("#executiveDossierDrawer").hasClass("open")) {
+      closeExecutiveDossierDrawer();
+    }
+  });
+
+  $(document).on("click", "#drawerOpenFullPageBtn", function () {
+    if (!activePersona) return;
+    closeExecutiveDossierDrawer();
 
     // Hide LOB detail view while viewing Persona
     $("#lobDetailViewContainer").addClass("d-none");
@@ -3750,6 +4632,105 @@ $(function () {
     if ($pC.length && $pC.offset()) {
       window.scrollTo({ top: Math.max(0, $pC.offset().top - 20), behavior: "smooth" });
     }
+  });
+
+  // ─── One-Click Account Directory Export (CSV / JSON) ───
+  $(document).on("click", "#btnExportPersonas", function (e) {
+    e.stopPropagation();
+    $("#personaExportMenu").toggleClass("d-none");
+  });
+
+  $(document).on("click", function (e) {
+    if (!$(e.target).closest(".persona-export-wrapper").length) {
+      $("#personaExportMenu").addClass("d-none");
+    }
+  });
+
+  function exportPersonasDirectory(format = "csv") {
+    $("#personaExportMenu").addClass("d-none");
+    const personas = (allPersonasDirectoryState && allPersonasDirectoryState.personas && allPersonasDirectoryState.personas.length) 
+      ? allPersonasDirectoryState.personas 
+      : ((activeAccount && activeAccount.personas) ? activeAccount.personas : []);
+
+    if (!personas.length) {
+      showToastNotification("No personas available to export", "bi-exclamation-triangle-fill text-warning");
+      return;
+    }
+
+    const coName = activeAccount ? (activeAccount.name || activeAccount.display_name || "enterprise") : "enterprise";
+    const dateStr = new Date().toISOString().split("T")[0];
+    const fileName = `${slugify(coName)}_executive_directory_${dateStr}.${format}`;
+
+    if (format === "csv") {
+      const headers = [
+        "Full Name",
+        "Job Title",
+        "Hierarchy Tier",
+        "Department",
+        "Company",
+        "Work Email",
+        "Direct Phone",
+        "LinkedIn URL",
+        "Office Location",
+        "Role Tenure",
+        "Alma Mater / Degree",
+        "Confidence Score",
+      ];
+
+      const rows = personas.map((p) => {
+        const tier = getPersonaTierCategory(p);
+        const comp = computePersonaCompleteness(p);
+        const loc = p.city ? `${p.city}${p.state ? ', ' + p.state : ''}${p.country ? ', ' + p.country : ''}` : (p.country || "");
+        const tenure = p.current_role_tenure_months ? `${Math.floor(p.current_role_tenure_months / 12)}y ${p.current_role_tenure_months % 12}m` : "";
+        const edu = p.degree ? `${p.degree}${p.institution ? ' - ' + p.institution : ''}` : (p.institution || "");
+
+        return [
+          p.name || "",
+          p.title || p.job_title || "",
+          tier,
+          p.department || "",
+          coName,
+          p.email || p.work_email || p.personal_email || "",
+          p.phone || p.direct_mobile_phone || "",
+          p.linkedin_url || p.linkedin || "",
+          loc,
+          tenure,
+          edu,
+          `${comp.score || 85}%`,
+        ].map((val) => `"${String(val).replace(/"/g, '""')}"`);
+      });
+
+      const csvContent = "\uFEFF" + [headers.join(","), ...rows.map((r) => r.join(","))].join("\r\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      showToastNotification(`Exported ${personas.length} contacts to CSV`, "bi-file-earmark-spreadsheet text-success");
+    } else if (format === "json") {
+      const jsonContent = JSON.stringify(personas, null, 2);
+      const blob = new Blob([jsonContent], { type: "application/json;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      showToastNotification(`Exported ${personas.length} contacts to JSON`, "bi-filetype-json text-primary");
+    }
+  }
+
+  $(document).on("click", ".persona-export-item", function () {
+    const format = $(this).data("format") || "csv";
+    exportPersonasDirectory(format);
   });
 
   // ══════════════════════════════════════════════════════════════════
@@ -3854,7 +4835,7 @@ $(function () {
     const $list = $btn.closest("#recentPipelineActivityList");
     const $extras = $list.find(".timeline-item-extra");
     const isExpanded = $btn.attr("data-expanded") === "true";
-    const totalCount = $list.find(".timeline-item").length;
+    const totalCount = $list.find(".pipeline-activity-card, .timeline-item").length;
     const extraCount = $extras.length;
 
     if (isExpanded) {
@@ -3891,21 +4872,190 @@ $(function () {
     }
   });
 
-  // Tab Live Search Box
-  $(document).on("input", "#tabSearchInput", function () {
-    const q = $(this).val().toLowerCase().trim();
+  // ─── Universal Tab Search Engine (Divisions, Personas, Fields) ───────────
+  function applyUniversalTabSearch(query) {
+    const q = (query || "").toLowerCase().trim();
+    const activeTab = $(".tab-pill-btn.active").data("nav-tab") || "overview";
+    const $clearBtn = $("#clearTabSearchBtn");
+
+    if (q) {
+      $clearBtn.show();
+    } else {
+      $clearBtn.hide();
+    }
+
     if (!q) {
-      $(".lob-card, .persona-card").show();
+      // 1. Restore sections according to current active tab
+      if (activeTab === "overview") {
+        $("#accountOverviewContainer").removeClass("d-none");
+        $("#lobSection").removeClass("d-none");
+        $("#allPersonasSection").removeClass("d-none");
+      } else if (activeTab === "lobs") {
+        $("#accountOverviewContainer").addClass("d-none");
+        $("#lobSection").removeClass("d-none");
+        $("#allPersonasSection").addClass("d-none");
+      } else if (activeTab === "personas") {
+        $("#accountOverviewContainer").addClass("d-none");
+        $("#lobSection").addClass("d-none");
+        $("#allPersonasSection").removeClass("d-none");
+      } else {
+        $("#accountOverviewContainer").removeClass("d-none");
+      }
+
+      // 2. Restore LOB cards to default limit (first 12 visible, extras hidden)
+      $(".lob-card").each(function () {
+        const isExtra = $(this).hasClass("lob-card-extra");
+        $(this).css("display", isExtra ? "none" : "");
+      });
+      $(".lob-toggle-footer").show();
+      $(".sublob-card").show();
+
+      // 3. Reset Personas directory
+      if (allPersonasDirectoryState.searchQuery) {
+        allPersonasDirectoryState.searchQuery = "";
+        allPersonasDirectoryState.visibleLimit = 30;
+        $("#allPersonasSearchInput").val("");
+        $("#clearAllPersonasSearch").hide();
+        renderFilteredPersonaCards();
+      }
+
+      // 4. Restore overview fields & clear search highlights
+      $(".snapshot-field-item, .intelligence-metric-item, .feed-status-row, .vault-field, .detail-field").each(function () {
+        $(this).css("display", "");
+        $(this).removeClass("search-field-match");
+      });
       return;
     }
+
+    // ─── A. SEARCH DIVISIONS (LOBs & Sub-LOBs) ─────────────────────────────
+    let lobMatchCount = 0;
     $(".lob-card").each(function () {
-      const txt = $(this).text().toLowerCase();
-      $(this).toggle(txt.includes(q));
+      const text = $(this).text().toLowerCase();
+      const cat = ($(this).data("category") || "").toLowerCase();
+      const match = text.includes(q) || cat.includes(q);
+      if (match) {
+        $(this).css("display", "flex").show();
+        lobMatchCount++;
+      } else {
+        $(this).hide();
+      }
     });
-    $(".persona-card").each(function () {
-      const txt = $(this).text().toLowerCase();
-      $(this).toggle(txt.includes(q));
+
+    // Also search Sub-LOBs if visible
+    $(".sublob-card").each(function () {
+      const text = $(this).text().toLowerCase();
+      const match = text.includes(q);
+      $(this).toggle(match);
+      if (match) lobMatchCount++;
     });
+
+    // Hide standard expander button during search so counts don't conflict
+    $(".lob-toggle-footer").hide();
+
+    // ─── B. SEARCH PERSONAS (Full Enterprise Directory) ────────────────────
+    let personaMatchCount = 0;
+    allPersonasDirectoryState.searchQuery = q;
+    allPersonasDirectoryState.visibleLimit = 60;
+    $("#allPersonasSearchInput").val(q);
+    $("#clearAllPersonasSearch").css("display", "inline-flex");
+    renderFilteredPersonaCards();
+
+    // Calculate actual persona matches
+    if (allPersonasDirectoryState.personas && allPersonasDirectoryState.personas.length) {
+      personaMatchCount = allPersonasDirectoryState.personas.filter(p => {
+        const matchName = (p.name || "").toLowerCase().includes(q);
+        const matchTitle = (p.title || "").toLowerCase().includes(q);
+        const matchHeadline = (p.headline || "").toLowerCase().includes(q);
+        const matchDept = (p.department || (Array.isArray(p.departments) ? p.departments.join(" ") : "")).toLowerCase().includes(q);
+        const matchSkills = (Array.isArray(p.skills) ? p.skills.join(" ") : "").toLowerCase().includes(q);
+        return matchName || matchTitle || matchHeadline || matchDept || matchSkills;
+      }).length;
+    }
+
+    // Also search LOB-specific persona cards if open in LOB detail panel
+    $("#personaCardsContainer .persona-card").each(function () {
+      const text = $(this).text().toLowerCase();
+      const match = text.includes(q);
+      $(this).toggle(match);
+      if (match) personaMatchCount++;
+    });
+
+    // ─── C. SEARCH FIELDS (Snapshot, Metrics, Vaults, Feeds) ───────────────
+    let fieldMatchCount = 0;
+    $(".snapshot-field-item").each(function () {
+      const label = $(this).find(".snapshot-field-label").text().toLowerCase();
+      const val = $(this).find(".snapshot-field-value").text().toLowerCase();
+      const fieldName = ($(this).data("field") || "").toLowerCase();
+      const match = label.includes(q) || val.includes(q) || fieldName.includes(q);
+      if (match) {
+        $(this).css("display", "block").addClass("search-field-match");
+        fieldMatchCount++;
+      } else {
+        $(this).css("display", "none").removeClass("search-field-match");
+      }
+    });
+
+    $(".intelligence-metric-item").each(function () {
+      const text = $(this).text().toLowerCase();
+      const match = text.includes(q);
+      $(this).toggle(match);
+      if (match) fieldMatchCount++;
+    });
+
+    $(".feed-status-row").each(function () {
+      const text = $(this).text().toLowerCase();
+      const match = text.includes(q);
+      $(this).toggle(match);
+      if (match) fieldMatchCount++;
+    });
+
+    $(".detail-field, .vault-field").each(function () {
+      const label = $(this).find(".detail-label, .vault-label").text().toLowerCase();
+      const val = $(this).find(".detail-val, .vault-val").text().toLowerCase();
+      const match = label.includes(q) || val.includes(q);
+      $(this).toggle(match);
+      if (match) fieldMatchCount++;
+    });
+
+    // ─── D. REVEAL SECTIONS DYNAMICALLY ────────────────────────────────────
+    // If divisions matched, make sure LOB section is visible
+    if (lobMatchCount > 0) {
+      $("#lobSection").removeClass("d-none");
+    } else if (activeTab === "personas" && personaMatchCount > 0) {
+      $("#lobSection").addClass("d-none");
+    }
+
+    // If personas matched, make sure Personas section is visible
+    if (personaMatchCount > 0) {
+      $("#allPersonasSection").removeClass("d-none");
+    } else if (activeTab === "lobs" && lobMatchCount > 0) {
+      $("#allPersonasSection").addClass("d-none");
+    }
+
+    // If fields matched, ensure Overview container is visible
+    if (fieldMatchCount > 0) {
+      $("#accountOverviewContainer").removeClass("d-none");
+    }
+  }
+
+  // Live input event on #tabSearchInput
+  $(document).on("input", "#tabSearchInput", function () {
+    applyUniversalTabSearch($(this).val());
+  });
+
+  // Clear button click
+  $(document).on("click", "#clearTabSearchBtn", function () {
+    $("#tabSearchInput").val("").focus();
+    applyUniversalTabSearch("");
+  });
+
+  // Sync #allPersonasSearchInput back to tab search when typed
+  $(document).on("input", "#allPersonasSearchInput", function () {
+    const val = $(this).val();
+    if ($("#tabSearchInput").length && $("#tabSearchInput").val() !== val) {
+      $("#tabSearchInput").val(val);
+      applyUniversalTabSearch(val);
+    }
   });
 
   // Vault Toggle Handlers (Lazy rendered for ultra-fast clicking response)
@@ -4766,15 +5916,54 @@ $(function () {
       const pRaw = encodeURIComponent(JSON.stringify(p));
       const tierCat = getPersonaTierCategory(p);
       const avatarClass = tierCat === "c_suite" ? "avatar-csuite" : (tierCat === "vp_head" ? "avatar-vp" : "");
+
+      const pEmail = p.email || p.sanitized_email || p.work_email || p.personal_email || "";
+      const pPhone = p.phone || p.phone_number || p.sanitized_phone || p.direct_mobile_phone || "";
+      const pLinkedIn = p.linkedin_url || p.linkedin || "";
+      const cik = (activeAccount && activeAccount.sec_cik) ? activeAccount.sec_cik : "";
+      const secInsiderUrl = cik ? `https://www.sec.gov/edgar/searchedgar/companysearch` : "";
+
+      let actionsHtml = "";
+      if (pEmail || pPhone || pLinkedIn || secInsiderUrl) {
+        actionsHtml = `
+          <div class="persona-card-actions">
+            ${pEmail ? `
+              <button type="button" class="persona-action-btn btn-copy-email" data-email="${esc(pEmail)}" title="Copy verified email (${esc(pEmail)})">
+                <i class="bi bi-envelope-fill"></i>
+              </button>
+            ` : ''}
+            ${pPhone ? `
+              <button type="button" class="persona-action-btn btn-copy-phone" data-phone="${esc(pPhone)}" title="Copy direct phone (${esc(pPhone)})">
+                <i class="bi bi-telephone-fill"></i>
+              </button>
+            ` : ''}
+            ${pLinkedIn ? `
+              <a href="${normalizeUrl(pLinkedIn)}" target="_blank" rel="noopener noreferrer" class="persona-action-btn btn-open-linkedin" title="Open verified LinkedIn Profile" onclick="event.stopPropagation();">
+                <i class="bi bi-linkedin"></i>
+              </a>
+            ` : ''}
+            ${secInsiderUrl ? `
+              <a href="${secInsiderUrl}" target="_blank" rel="noopener noreferrer" class="persona-action-btn btn-open-sec" title="SEC Form 4 Insider Filings" onclick="event.stopPropagation();">
+                <i class="bi bi-bank2"></i>
+              </a>
+            ` : ''}
+          </div>
+        `;
+      }
+
       $container.append(`
         <div class="compact-card persona-card fade-in"
              data-key="${pKey}"
              data-raw="${pRaw}"
-             title="Click to view AI call prep, email, and social signals for ${esc(p.name)}">
+             title="Inspect Executive Dossier for ${esc(p.name)}">
           <div class="compact-card-avatar ${avatarClass}">${esc(getInitials(p.name))}</div>
           <div class="compact-card-body">
-            <div class="compact-card-title">${esc(p.name)}</div>
+            <div class="compact-card-title-row">
+              <div class="compact-card-title">${esc(p.name)}</div>
+              ${p.department ? `<span class="persona-dept-tag">${esc(p.department)}</span>` : ""}
+            </div>
             <div class="compact-card-subtitle">${esc(p.title || "Executive")}</div>
+            ${actionsHtml}
           </div>
         </div>
       `);
@@ -6179,11 +7368,15 @@ $(function () {
 
   async function runBatchLobPipeline(action) {
     if (!activeAccount || lobBatchState.running) return;
+    setGlobalPipelineStatus(true, `L2: LOB ${action.toUpperCase()}`);
     const lobs = activeAccount.lobs || [];
 
     // ── Initial Discovery Case: When 0 LOBs exist yet for this account ──
     if (lobs.length === 0) {
-      if (action !== "pull") return;
+      if (action !== "pull") {
+        setGlobalPipelineStatus(false, "L2: LOB");
+        return;
+      }
       lobBatchState.running = true;
       $("#lobBatchProgress").removeClass("d-none");
       const $fill = $("#lobProgressFill");
@@ -6237,6 +7430,7 @@ $(function () {
       }
 
       lobBatchState.running = false;
+      setGlobalPipelineStatus(false, "L2: LOB Discovery");
       return;
     }
 
@@ -6374,6 +7568,7 @@ $(function () {
     }
 
     lobBatchState.running = false;
+    setGlobalPipelineStatus(false, `L2: LOB ${action.toUpperCase()}`);
     if (activeAccount && activeAccount.name) {
       refreshPipelineRuns(activeAccount.name);
     }
@@ -6383,6 +7578,7 @@ $(function () {
 
   async function runBatchPersonaPipeline(action) {
     if (!activeAccount || personaBatchState.running) return;
+    setGlobalPipelineStatus(true, `L3: Personas ${action.toUpperCase()}`);
 
     // Get current personas (could be filtered by LOB)
     let personas = activeLob
@@ -6394,7 +7590,10 @@ $(function () {
 
     // ── Initial Discovery Case: When 0 Personas exist yet ──
     if (personas.length === 0) {
-      if (action !== "pull") return;
+      if (action !== "pull") {
+        setGlobalPipelineStatus(false, "L3: Personas");
+        return;
+      }
       personaBatchState.running = true;
       $("#personaBatchProgress, #allPersonasBatchProgress").removeClass("d-none");
       const $fill = $("#personaProgressFill, #allPersonasProgressFill");
@@ -6448,6 +7647,7 @@ $(function () {
       }
 
       personaBatchState.running = false;
+      setGlobalPipelineStatus(false, "L3: Personas Discovery");
       return;
     }
 
@@ -6578,6 +7778,7 @@ $(function () {
     }
 
     personaBatchState.running = false;
+    setGlobalPipelineStatus(false, `L3: Personas ${action.toUpperCase()}`);
     if (activeAccount && activeAccount.name) {
       refreshPipelineRuns(activeAccount.name);
     }
@@ -7336,6 +8537,7 @@ $(function () {
     const $btn = $(this);
     const origHtml = $btn.html();
     $btn.prop("disabled", true).html('<i class="bi bi-hourglass-split"></i>&nbsp;<span>Running...</span>');
+    setGlobalPipelineStatus(true, "Composite Pipeline");
     showNotification(`🚀 Triggering composite pipeline for <strong>${esc(activeAccount.name)}</strong>...`, "info");
 
     try {
@@ -7357,6 +8559,7 @@ $(function () {
       showNotification(`❌ Pipeline execution failed: ${esc(e.message)}`, "error");
     } finally {
       $btn.prop("disabled", false).html(origHtml);
+      setGlobalPipelineStatus(false, "Composite Pipeline");
       if (activeAccount && activeAccount.name) {
         refreshPipelineRuns(activeAccount.name);
       }

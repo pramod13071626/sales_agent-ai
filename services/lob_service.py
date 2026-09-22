@@ -261,6 +261,7 @@ class LobCoalesceEngine:
         sub_lobs_data: Optional[List[Dict[str, Any]]] = None,
         tavily_data: Optional[Dict[str, Any]] = None,
         diffbot_data: Optional[Dict[str, Any]] = None,
+        firecrawl_data: Optional[Dict[str, Any]] = None,
         custom_metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
@@ -277,11 +278,13 @@ class LobCoalesceEngine:
         wiki = wiki_data or {}
         tav = tavily_data or {}
         diff = diffbot_data or {}
+        fc = firecrawl_data or {}
         meta = custom_metadata or {}
 
         # 1. Identity & Naming
         clean_name = cls.clean_text(
             meta.get("name")
+            or fc.get("name")
             or diff.get("name")
             or ap_li.get("name")
             or sec.get("subsidiary_name")
@@ -299,13 +302,15 @@ class LobCoalesceEngine:
         # 2. Domain & Web Presence
         resolved_domain = cls.clean_domain(
             lob_domain
+            or fc.get("domain")
             or diff.get("homepage_url")
             or ap_li.get("website_url")
             or serp.get("domain")
             or meta.get("domain")
         )
         website_url = cls.clean_text(
-            diff.get("homepage_url")
+            fc.get("website_url")
+            or diff.get("homepage_url")
             or ap_li.get("website_url")
             or (f"https://{resolved_domain}" if resolved_domain else None)
             or serp.get("website_url")
@@ -327,7 +332,8 @@ class LobCoalesceEngine:
 
         # 4. Description & Overview
         overview_text = cls.clean_text(
-            diff.get("description")
+            fc.get("overview")
+            or diff.get("description")
             or ap_li.get("description")
             or wiki.get("summary")
             or tav.get("summary")
@@ -488,6 +494,7 @@ class LobCoalesceEngine:
             "wikipedia": wiki,
             "tavily": tav,
             "diffbot": diff,
+            "firecrawl": fc,
             "sub_lobs_raw": raw_subs,
         }
 
@@ -623,11 +630,25 @@ class LobService:
         )
         LobRawDataLakeWriter.save_raw(wap_data, "wappalyzer", lob_name, parent_company, run_raw_dir)
 
-        ap_li_data = (
-            mock_connectors.get("apify_linkedin")
+        # Tier-1 Web Scraper: Firecrawl v1
+        fc_data = (
+            mock_connectors.get("firecrawl")
             if mock_connectors
-            else cls._fetch_apify_linkedin_company(lob_name, lob_domain)
+            else cls._fetch_firecrawl_lob(lob_name, lob_domain, parent_company)
         )
+        LobRawDataLakeWriter.save_raw(
+            fc_data, "firecrawl", lob_name, parent_company, run_raw_dir
+        )
+
+        # Fallback to Apify only if Firecrawl didn't return description/overview or if mock_connectors provides it
+        ap_li_data = {}
+        if mock_connectors and "apify_linkedin" in mock_connectors:
+            ap_li_data = mock_connectors["apify_linkedin"]
+        elif not fc_data or not fc_data.get("overview"):
+            ap_li_data = cls._fetch_apify_linkedin_company(lob_name, lob_domain)
+        else:
+            print(f"[*] Firecrawl provided division intel for '{lob_name}' - skipping Apify fallback to save credits.")
+
         LobRawDataLakeWriter.save_raw(
             ap_li_data, "apify_linkedin", lob_name, parent_company, run_raw_dir
         )
@@ -693,6 +714,7 @@ class LobService:
             sub_lobs_data=sub_lobs_data,
             tavily_data=tav_data,
             diffbot_data=diff_data,
+            firecrawl_data=fc_data,
         )
 
         # 3. Pre-DB Completeness Audit
@@ -1004,6 +1026,22 @@ class LobService:
         except Exception as e:
             print(f"[!] Apify LinkedIn LOB connector warning: {e}")
         return {}
+
+    @staticmethod
+    def _fetch_firecrawl_lob(
+        lob_name: str, lob_domain: Optional[str], parent_company: str
+    ) -> Dict[str, Any]:
+        """Tier-1 Web Scraper (Firecrawl v1) for LOB division website, overview, and products."""
+        if not getattr(config, "FIRECRAWL_API_KEY", None):
+            return {}
+        try:
+            from services.firecrawl_service import FirecrawlService
+            return FirecrawlService.scrape_division_overview(
+                lob_name=lob_name, domain=lob_domain, parent_company=parent_company
+            )
+        except Exception as e:
+            print(f"[!] Firecrawl LOB connector warning for '{lob_name}': {e}")
+            return {}
 
     @staticmethod
     def _fetch_serper_lob_patents(subsidiary_name: str) -> List[Dict[str, Any]]:

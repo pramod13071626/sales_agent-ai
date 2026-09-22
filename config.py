@@ -32,6 +32,8 @@ FIRECRAWL_API_KEY = os.getenv("FIRECRAWL_API_KEY", "")
 SERPER_API_KEY = os.getenv("SERPER_API_KEY", "")
 DATA_GOV_API_KEY = os.getenv("DATA_GOV_API_KEY", "")
 DIFFBOT_TOKEN = os.getenv("DIFFBOT_TOKEN", "")
+FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY", "")
+FULLENRICH_API_KEY = os.getenv("FULLENRICH_API_KEY", "")
 
 # LLM Gateway (Google Gemini AI Gateway - OpenAI-compatible)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")

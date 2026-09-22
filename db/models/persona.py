@@ -78,7 +78,7 @@ class Persona(Base):
     youtube_channel_id = Column(String(255))
 
     # ── Persona Dossier ──
-    degree = Column(String(100))
+    degree = Column(String(500))
     institution = Column(String(500))
     prior_company = Column(String(500))
     communication_style = Column(Text)

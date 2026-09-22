@@ -373,6 +373,7 @@ class AccountCoalesceEngine:
         serper_data: Optional[Dict[str, Any]] = None,
         wiki_data: Optional[Dict[str, Any]] = None,
         fec_data: Optional[Dict[str, Any]] = None,
+        firecrawl_data: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Executes field-by-field priority waterfall resolving all 94 columns.
@@ -391,6 +392,7 @@ class AccountCoalesceEngine:
         serp = serper_data or {}
         wiki = wiki_data or {}
         fec = fec_data or {}
+        fc = firecrawl_data or {}
 
         # 1. Identity & Legal
         legal_name = cls.clean_text(
@@ -955,6 +957,16 @@ class AccountService:
         )
         RawDataLakeWriter.save_raw(fec_data, "openfec", effective_name, run_raw_dir)
 
+        # Tier-1 Corporate Web Scraper (Firecrawl v1)
+        firecrawl_data = (
+            mock_connectors.get("firecrawl")
+            if mock_connectors
+            else _timed_fetch(
+                "firecrawl", lambda: cls._fetch_firecrawl_account(effective_domain, effective_name)
+            )
+        )
+        RawDataLakeWriter.save_raw(firecrawl_data, "firecrawl", effective_name, run_raw_dir)
+
         # 2. Field-Level Coalesce Waterfall
         account_dossier = AccountCoalesceEngine.coalesce(
             company_name=effective_name,
@@ -970,6 +982,7 @@ class AccountService:
             diffbot_data=diffbot_data,
             serper_data=serper_data,
             fec_data=fec_data,
+            firecrawl_data=firecrawl_data,
         )
 
         # 3. Deep Intelligence Connectors (SEC 10-K, Patents, Exhibit 21, GLEIF Ownership Tree)
@@ -1295,21 +1308,65 @@ class AccountService:
 
     @staticmethod
     def _fetch_finnhub(ticker: Optional[str]) -> Dict[str, Any]:
-        """Finnhub Market Sentiment & News API."""
+        """Finnhub Real-Time Market Data, Valuation & Company Profile API."""
         if not ticker:
             return {}
         api_key = os.getenv("FINNHUB_API_KEY")
         if not api_key:
             return {}
         session = AccountServiceHTTPClient.get_session()
+        result: Dict[str, Any] = {"symbol": ticker.upper()}
         try:
-            url = f"https://finnhub.io/api/v1/news-sentiment?symbol={ticker}&token={api_key}"
-            res = session.get(url, timeout=10)
-            if res.ok:
-                return res.json()
+            # 1. Company Profile 2 (Market Cap, Shares, Exchange, IPO, Logo, Industry) - 100% Free
+            p_res = session.get(
+                f"https://finnhub.io/api/v1/stock/profile2?symbol={ticker}&token={api_key}",
+                timeout=10,
+            )
+            if p_res.ok and p_res.json():
+                p_data = p_res.json()
+                result["profile"] = p_data
+                result["exchange"] = p_data.get("exchange")
+                result["market_capitalization"] = p_data.get("marketCapitalization")
+                result["share_outstanding"] = p_data.get("shareOutstanding")
+                result["ipo"] = p_data.get("ipo")
+                result["logo"] = p_data.get("logo")
+                result["finnhub_industry"] = p_data.get("finnhubIndustry")
+
+            # 2. Real-Time Stock Quote (Current Price, Day Change %, High, Low) - 100% Free
+            q_res = session.get(
+                f"https://finnhub.io/api/v1/quote?symbol={ticker}&token={api_key}",
+                timeout=10,
+            )
+            if q_res.ok and q_res.json():
+                q_data = q_res.json()
+                result["quote"] = q_data
+                result["current_price"] = q_data.get("c")
+                result["day_change"] = q_data.get("d")
+                result["day_change_percent"] = q_data.get("dp")
+
+            # 3. Industry Peers / Competitors - 100% Free
+            peers_res = session.get(
+                f"https://finnhub.io/api/v1/stock/peers?symbol={ticker}&token={api_key}",
+                timeout=10,
+            )
+            if peers_res.ok and peers_res.json():
+                result["peers"] = peers_res.json()
+
+            # 4. News Sentiment (optional premium endpoint - gracefully fallback if 403)
+            try:
+                s_res = session.get(
+                    f"https://finnhub.io/api/v1/news-sentiment?symbol={ticker}&token={api_key}",
+                    timeout=5,
+                )
+                if s_res.ok and s_res.json():
+                    result["sentiment"] = s_res.json()
+            except Exception:
+                pass
+
+            return result if len(result) > 1 else {}
         except Exception as e:
             print(f"[!] Finnhub connector warning: {e}")
-        return {}
+            return result if len(result) > 1 else {}
 
     @staticmethod
     def _fetch_fmp(ticker: Optional[str]) -> Dict[str, Any]:
@@ -1581,3 +1638,16 @@ class AccountService:
         except Exception as e:
             print(f"[!] OpenFEC connector warning: {e}")
         return {}
+
+    @staticmethod
+    def _fetch_firecrawl_account(domain: Optional[str], company_name: str) -> Dict[str, Any]:
+        """Tier-1 Web Scraper (Firecrawl v1) for corporate overview, metadata, and leadership links."""
+        if not getattr(config, "FIRECRAWL_API_KEY", None):
+            return {}
+        try:
+            from services.firecrawl_service import FirecrawlService
+            return FirecrawlService.scrape_account_overview(domain=domain, company_name=company_name)
+        except Exception as e:
+            print(f"[!] Firecrawl account connector warning: {e}")
+            return {}
+
