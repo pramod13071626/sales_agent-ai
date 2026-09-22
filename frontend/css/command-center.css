@@ -1490,6 +1490,13 @@
   text-decoration: none;
 }
 
+.cc-view-btn-chip {
+  padding: 2px 8px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  border-radius: 6px;
+}
+
 [data-theme="dark"] .cc-view-btn {
   background: rgba(99, 102, 241, 0.18);
   border-color: rgba(99, 102, 241, 0.35);

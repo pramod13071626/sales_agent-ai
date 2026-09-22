@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 from cryptography.fernet import Fernet
-from dotenv import load_dotenv
+from dotenv import load_dotenv, set_key
 from sqlalchemy.orm import Session
 
 import config
@@ -23,8 +23,11 @@ from db.models import AuditLog, SystemApiConfig
 
 logger = logging.getLogger("config_service")
 
+# Project root .env path
+ENV_FILE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+
 # Ensure .env is loaded
-load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"))
+load_dotenv(ENV_FILE_PATH)
 
 
 # ── Master Encryption Key Setup ─────────────────────────────────────
@@ -62,14 +65,14 @@ def decrypt_value(cipher_text: Optional[str]) -> Optional[str]:
 
 
 def mask_secret(value: Optional[str]) -> str:
-    """Masks secret keys (e.g. sk-proj-••••••••4a2f) for safe client transmission."""
+    """Masks secret keys (e.g. tvly-dev-••••••••3DCys) dynamically for safe client transmission."""
     if not value or not isinstance(value, str):
         return ""
     val = value.strip()
     if len(val) <= 8:
         return "••••••••"
-    if val.startswith("sk-") and len(val) > 12:
-        return f"{val[:7]}••••••••{val[-4:]}"
+    if len(val) >= 24:
+        return f"{val[:8]}••••••••••••••••{val[-4:]}"
     return f"{val[:4]}••••••••{val[-4:]}"
 
 
@@ -223,6 +226,14 @@ DEFAULT_CONFIG_SPECS: List[Dict[str, Any]] = [
         "default_val": os.getenv("DATA_GOV_API_KEY", ""),
         "extra_metadata": {"placeholder": "Enter Data.gov API key...", "docs_url": "https://data.gov"}
     },
+    {
+        "config_key": "FINNHUB_API_KEY",
+        "category": "enrichment",
+        "display_name": "Finnhub Financial Market API Key",
+        "is_secret": True,
+        "default_val": os.getenv("FINNHUB_API_KEY", ""),
+        "extra_metadata": {"placeholder": "Enter Finnhub API key...", "docs_url": "https://finnhub.io"}
+    },
 
     # 3. Email & Notifications (SMTP)
     {
@@ -332,8 +343,8 @@ def get_all_configs_dto(db: Session) -> List[Dict[str, Any]]:
     for item in items:
         raw_val = decrypt_value(item.encrypted_value) if item.is_secret else item.encrypted_value
         is_set = bool(raw_val and raw_val.strip())
-        # For secrets, do not send masked bullet strings into input values
         val_to_send = "" if item.is_secret else (raw_val or "")
+        masked = mask_secret(raw_val) if (item.is_secret and is_set) else ""
 
         result.append({
             "id": item.id,
@@ -341,6 +352,7 @@ def get_all_configs_dto(db: Session) -> List[Dict[str, Any]]:
             "category": item.category,
             "display_name": item.display_name,
             "value": val_to_send,
+            "masked_value": masked,
             "is_secret": item.is_secret,
             "is_configured": is_set,
             "extra_metadata": item.extra_metadata or {},
@@ -411,6 +423,26 @@ def update_configs(updates: Dict[str, Any], user_id: int, db: Session) -> Tuple[
         db.add(audit)
         db.commit()
         _LAST_CACHE_REFRESH = time.time()
+
+        # Write directly to physical .env file so it stays synchronized
+        try:
+            if not os.path.exists(ENV_FILE_PATH):
+                with open(ENV_FILE_PATH, "w", encoding="utf-8") as f:
+                    pass
+            for key in updated_keys:
+                val_to_write = _CONFIG_CACHE.get(key, "")
+                # Set in .env file
+                set_key(
+                    ENV_FILE_PATH,
+                    key,
+                    val_to_write,
+                    quote_mode="always" if (" " in val_to_write or "#" in val_to_write) else "auto"
+                )
+                # Sync process environment
+                os.environ[key] = val_to_write
+            logger.info(f"Updated {len(updated_keys)} keys in {ENV_FILE_PATH}")
+        except Exception as env_err:
+            logger.error(f"Failed to synchronize .env file: {env_err}")
 
         # Hot-reload runtime config attributes
         apply_runtime_hot_reload()
@@ -632,6 +664,18 @@ def test_provider_connection(provider: str, custom_params: Optional[Dict[str, An
                 return {"success": True, "latency_ms": latency, "message": "Exa Neural Search API authenticated successfully."}
             else:
                 return {"success": False, "latency_ms": latency, "error": f"Exa error (HTTP {resp.status_code}): {resp.text[:120]}"}
+
+        elif provider == "finnhub":
+            api_key = params.get("FINNHUB_API_KEY") or get_config_value("FINNHUB_API_KEY", "", db)
+            if not api_key:
+                return {"success": False, "error": "Finnhub API Key is not configured."}
+
+            resp = requests.get(f"https://finnhub.io/api/v1/quote?symbol=AAPL&token={api_key}", timeout=10)
+            latency = int((time.time() - start_time) * 1000)
+            if resp.status_code == 200 and resp.json().get("c", 0) > 0:
+                return {"success": True, "latency_ms": latency, "message": "Finnhub Market Data API authenticated successfully."}
+            else:
+                return {"success": False, "latency_ms": latency, "error": f"Finnhub error (HTTP {resp.status_code}): {resp.text[:120]}"}
 
         elif provider == "smtp":
             host = params.get("SMTP_HOST") or get_config_value("SMTP_HOST", "", db)

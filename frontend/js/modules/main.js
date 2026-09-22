@@ -82,7 +82,12 @@ async function loadAccounts(user) {
 
     const targetAccount = deepLinkAccountId
       ? state.accounts.find(a => a.id === deepLinkAccountId)
-      : (deepLinkAccountKey ? state.accounts.find(a => a.key === deepLinkAccountKey) : null);
+      : (deepLinkAccountKey ? state.accounts.find(a => 
+          a.key === deepLinkAccountKey || 
+          a.name === deepLinkAccountKey ||
+          (a.name && a.name.toLowerCase() === deepLinkAccountKey.toLowerCase()) ||
+          (a.display_name && a.display_name.toLowerCase() === deepLinkAccountKey.toLowerCase())
+        ) : null);
 
     if (wantsJobsView) {
       if (user.role !== 'super_admin' && user.has_dashboard_access === false) {

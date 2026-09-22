@@ -18,14 +18,45 @@ function loadObjectionsData() {
   return objectionsPromise;
 }
 
-function getViewUrl(item) {
-  const accounts = item.accounts || [];
+function getAccountList(item) {
   const personas = item.personas || [];
-  const topAccount = accounts[0] || (personas[0] && personas[0].account) || '';
-  if (topAccount) {
-    return `/?account_key=${encodeURIComponent(topAccount)}&tab=personas`;
-  }
-  return '/?tab=personas';
+  const accountMap = new Map();
+
+  personas.forEach(p => {
+    if (p.account && !accountMap.has(p.account)) {
+      let profileUrl = '';
+      if (p.account_id && p.id) {
+        profileUrl = `/profile?account=${encodeURIComponent(p.account_id)}&persona_id=${encodeURIComponent(p.id)}`;
+      } else if (p.account_id) {
+        profileUrl = `/?account=${encodeURIComponent(p.account_id)}&tab=personas`;
+      } else {
+        profileUrl = `/?account_key=${encodeURIComponent(p.account)}&tab=personas`;
+      }
+
+      accountMap.set(p.account, {
+        name: p.account,
+        accountId: p.account_id,
+        personaId: p.id,
+        personaName: p.name || 'Executive',
+        url: profileUrl,
+      });
+    }
+  });
+
+  // Fallback for accounts in item.accounts not in personas list
+  (item.accounts || []).forEach(name => {
+    if (!accountMap.has(name)) {
+      accountMap.set(name, {
+        name: name,
+        accountId: null,
+        personaId: null,
+        personaName: 'Executive',
+        url: `/?account_key=${encodeURIComponent(name)}&tab=personas`,
+      });
+    }
+  });
+
+  return Array.from(accountMap.values());
 }
 
 function groupPainPointsBySeverity(items) {
@@ -49,7 +80,7 @@ function groupPainPointsBySeverity(items) {
   return [
     {
       id: 'high',
-      title: 'High Urgency',
+      title: 'High Impact',
       subtitle: 'Critical blockers across accounts',
       dotClass: 'tier-dot-high',
       badgeClass: 'tier-badge-high',
@@ -101,7 +132,7 @@ function renderSeverityMatrix(items, emptyText) {
           <!-- Group Rows -->
           <ul class="cc-severity-list">
             ${group.items.map(item => {
-              const accounts = item.accounts || [];
+              const accountList = getAccountList(item);
 
               return `
                 <li class="cc-severity-row">
@@ -111,14 +142,24 @@ function renderSeverityMatrix(items, emptyText) {
                   </div>
 
                   <div class="cc-severity-row-meta">
-                    <div class="cc-severity-accounts">
-                      ${accounts.slice(0, 2).map(a => `<span class="cc-chip cc-chip-plain">${esc(a)}</span>`).join('')}
-                      ${accounts.length > 2 ? `<span class="cc-chip cc-chip-plain">+${accounts.length - 2}</span>` : ''}
-                    </div>
-
-                    <a href="${getViewUrl(item)}" class="cc-view-btn" title="View details in account view">
-                      View <i class="bi bi-arrow-up-right"></i>
-                    </a>
+                    ${accountList.length <= 1 ? `
+                      <div class="cc-severity-accounts">
+                        <span class="cc-chip cc-chip-plain">${esc(accountList[0] ? accountList[0].name : '')}</span>
+                      </div>
+                      ${accountList[0] ? `
+                        <a href="${accountList[0].url}" class="cc-view-btn" title="View Executive Profile Dossier at ${esc(accountList[0].name)}">
+                          View <i class="bi bi-arrow-up-right"></i>
+                        </a>
+                      ` : ''}
+                    ` : `
+                      <div class="cc-severity-accounts">
+                        ${accountList.slice(0, 3).map(acc => `
+                          <a href="${acc.url}" class="cc-view-btn cc-view-btn-chip" title="View Executive Profile Dossier at ${esc(acc.name)}">
+                            ${esc(acc.name)} <i class="bi bi-arrow-up-right"></i>
+                          </a>
+                        `).join('')}
+                      </div>
+                    `}
                   </div>
                 </li>
               `;
@@ -138,7 +179,7 @@ function renderCleanObjections(items, emptyText) {
   return `
     <ul class="cc-obj-category-list">
       ${items.map(item => {
-        const accounts = item.accounts || [];
+        const accountList = getAccountList(item);
 
         return `
           <li class="cc-obj-category-row">
@@ -148,14 +189,24 @@ function renderCleanObjections(items, emptyText) {
             </div>
 
             <div class="cc-obj-row-right">
-              <div class="cc-obj-accounts">
-                ${accounts.slice(0, 2).map(a => `<span class="cc-chip cc-chip-plain">${esc(a)}</span>`).join('')}
-                ${accounts.length > 2 ? `<span class="cc-chip cc-chip-plain">+${accounts.length - 2}</span>` : ''}
-              </div>
-
-              <a href="${getViewUrl(item)}" class="cc-view-btn" title="View details in account view">
-                View <i class="bi bi-arrow-up-right"></i>
-              </a>
+              ${accountList.length <= 1 ? `
+                <div class="cc-obj-accounts">
+                  <span class="cc-chip cc-chip-plain">${esc(accountList[0] ? accountList[0].name : '')}</span>
+                </div>
+                ${accountList[0] ? `
+                  <a href="${accountList[0].url}" class="cc-view-btn" title="View Executive Profile Dossier at ${esc(accountList[0].name)}">
+                    View <i class="bi bi-arrow-up-right"></i>
+                  </a>
+                ` : ''}
+              ` : `
+                <div class="cc-obj-accounts">
+                  ${accountList.slice(0, 3).map(acc => `
+                    <a href="${acc.url}" class="cc-view-btn cc-view-btn-chip" title="View Executive Profile Dossier at ${esc(acc.name)}">
+                      ${esc(acc.name)} <i class="bi bi-arrow-up-right"></i>
+                    </a>
+                  `).join('')}
+                </div>
+              `}
             </div>
           </li>
         `;

@@ -12,7 +12,7 @@ import { initDrawer } from './drawer.js';
 import { initAccountsNav } from './accounts-nav.js';
 import { renderDueSoon } from './due-soon.js';
 import { renderHiringSignals, renderStrategicInvestmentTracks } from './hiring-signals.js';
-import { renderCapitalEvents, renderCoverageGaps, renderCompetitorMentions, renderTechSignals } from './account-signals.js';
+import { renderCapitalEvents, renderCoverageGaps } from './account-signals.js';
 import { renderObjections } from './objections.js';
 import { renderNewsFeed } from './news.js';
 import { initWidgetGuides } from './widget-guide.js';
@@ -47,8 +47,6 @@ function renderAll() {
   renderStrategicInvestmentTracks();
   renderCapitalEvents();
   renderCoverageGaps();
-  renderCompetitorMentions();
-  renderTechSignals();
   renderObjections();
   renderNewsFeed();
 }

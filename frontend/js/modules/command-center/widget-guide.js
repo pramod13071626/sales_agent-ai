@@ -76,22 +76,6 @@ export const WIDGET_GUIDES = {
     actionTip: 'Multi-thread into accounts by identifying and prospecting missing committee roles before single-point-of-contact deals stall.',
     signals: 'Internal buying committee mapping, persona database coverage',
   },
-  competitor: {
-    title: 'Competitor Mentions',
-    icon: 'bi-shield-shaded',
-    badge: 'Competitive Intelligence',
-    summary: 'Scans filings, news, and job requirements for mentions of incumbent vendors and competing software or consulting firms.',
-    actionTip: 'Identify upcoming contract renewal windows and vendor dissatisfaction cues to position competitive displacement strategies.',
-    signals: 'Earnings call transcripts, RFPs, required tech certifications in job ads',
-  },
-  tech_signals: {
-    title: 'Tech & IP Signals',
-    icon: 'bi-cpu-fill',
-    badge: 'Architecture & Patents',
-    summary: 'Tracks patent filings, tech stack changes, framework modernizations, and cloud infrastructure investments.',
-    actionTip: 'Cite specific technologies and architectural initiatives in your outreach to build immediate technical credibility with engineering leaders.',
-    signals: 'Patent databases, tech stack disclosures, GitHub/open-source repos',
-  },
   pain_points: {
     title: 'Operational Pain Points',
     icon: 'bi-exclamation-triangle-fill',

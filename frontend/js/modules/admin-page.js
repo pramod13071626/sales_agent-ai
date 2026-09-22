@@ -487,13 +487,31 @@ function renderFieldInput(c) {
     let cleanPlaceholder = meta.placeholder || (c.is_configured ? 'Key configured — paste new key to replace...' : 'Enter API key...');
     cleanPlaceholder = cleanPlaceholder.replace(/[•*]+/g, '').trim() || 'Enter API key...';
 
+    // If dirty show user typed text, else if configured show masked dots
+    let displayVal = '';
+    if (dirtyConfigs[c.config_key] !== undefined) {
+      displayVal = dirtyConfigs[c.config_key];
+    } else if (c.is_configured) {
+      displayVal = '••••••••••••••••••••••••';
+    }
+
+    const maskedSnippet = c.masked_value || (c.is_configured ? '••••••••••••••••' : '');
+
     return `
       <div class="api-input-wrap">
-        <input type="password" class="api-input" data-config-key="${c.config_key}" value="${esc(currentVal)}" placeholder="${esc(cleanPlaceholder)}" autocomplete="off">
+        <input type="password" class="api-input api-secret-input" data-config-key="${c.config_key}" data-masked-val="${esc(maskedSnippet)}" data-is-configured="${c.is_configured ? 'true' : 'false'}" value="${esc(displayVal)}" placeholder="${esc(cleanPlaceholder)}" autocomplete="off" onfocus="if(this.value.includes('••••')) this.select();">
         <button type="button" class="api-input-toggle-btn" title="Toggle visibility" onclick="
           const input = this.previousElementSibling;
-          if (input.type === 'password') { input.type = 'text'; this.innerHTML = '<i class=\\'bi bi-eye-slash\\'></i>'; }
-          else { input.type = 'password'; this.innerHTML = '<i class=\\'bi bi-eye\\'></i>'; }
+          const masked = input.dataset.maskedVal || '';
+          if (input.type === 'password') {
+            input.type = 'text';
+            if (input.value.includes('••••') && masked) { input.value = masked; }
+            this.innerHTML = '<i class=\\'bi bi-eye-slash\\'></i>';
+          } else {
+            input.type = 'password';
+            if (input.value === masked) { input.value = '••••••••••••••••••••••••'; }
+            this.innerHTML = '<i class=\\'bi bi-eye\\'></i>';
+          }
         "><i class="bi bi-eye"></i></button>
       </div>
     `;
@@ -520,6 +538,7 @@ function renderApiConfigPanel() {
   const diffbot = findConfig('DIFFBOT_TOKEN');
   const fullenrich = findConfig('FULLENRICH_API_KEY');
   const dataGov = findConfig('DATA_GOV_API_KEY');
+  const finnhub = findConfig('FINNHUB_API_KEY');
 
   const smtpHost = findConfig('SMTP_HOST');
   const smtpPort = findConfig('SMTP_PORT');
@@ -866,6 +885,33 @@ function renderApiConfigPanel() {
             <div class="api-test-result d-none" id="testResult-data_gov"></div>
           </div>
 
+          <!-- Finnhub Financial Market Card -->
+          <div class="api-config-card">
+            <div class="api-config-card-header">
+              <div class="api-config-card-title-wrap">
+                <div class="api-config-card-icon amber"><i class="bi bi-graph-up"></i></div>
+                <div>
+                  <div class="api-config-card-title">Finnhub Market Data</div>
+                  <div class="api-config-card-desc">Real-time stock quotes, institutional sentiment &amp; company news.</div>
+                </div>
+              </div>
+              <span class="api-status-badge ${finnhub.is_configured ? 'configured' : 'not-configured'}">
+                <i class="bi bi-circle-fill" style="font-size:0.45rem;"></i> ${finnhub.is_configured ? 'Active' : 'Unset'}
+              </span>
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">Finnhub API Key</label>
+              ${renderFieldInput(finnhub)}
+            </div>
+            <div class="api-card-actions">
+              <span style="font-size:0.72rem; color:var(--text-muted);">finnhub.io</span>
+              <button type="button" class="api-test-btn" data-test-provider="finnhub">
+                <i class="bi bi-lightning-charge"></i> Test Finnhub
+              </button>
+            </div>
+            <div class="api-test-result d-none" id="testResult-finnhub"></div>
+          </div>
+
         </div>
       </div>
 
@@ -1060,7 +1106,11 @@ function wireEvents() {
   main.querySelectorAll('.api-input').forEach(input => {
     const handleInput = () => {
       const key = input.dataset.configKey;
-      dirtyConfigs[key] = input.value;
+      if (input.value.includes('••••') && input.dataset.isConfigured === 'true' && (input.value === '••••••••••••••••••••••••' || input.value === input.dataset.maskedVal)) {
+        delete dirtyConfigs[key];
+      } else {
+        dirtyConfigs[key] = input.value;
+      }
       const bar = document.getElementById('apiStickySaveBar');
       const text = document.getElementById('apiDirtyCountText');
       const dirtyCount = Object.keys(dirtyConfigs).length;
@@ -1093,7 +1143,7 @@ function wireEvents() {
       try {
         const credentials = {};
         main.querySelectorAll('.api-config-card .api-input').forEach(inp => {
-          if (inp.dataset.configKey) {
+          if (inp.dataset.configKey && !inp.value.includes('••••')) {
             credentials[inp.dataset.configKey] = inp.value;
           }
         });

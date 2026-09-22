@@ -3258,6 +3258,7 @@ if FASTAPI_AVAILABLE:
                         "title": p.title,
                         "tier": p.tier,
                         "account": acct_name,
+                        "account_id": p.account_id,
                     })
 
             for p in personas:
