@@ -3243,26 +3243,39 @@ if FASTAPI_AVAILABLE:
             pain_points: Dict[str, Dict[str, Any]] = {}
             objections: Dict[str, Dict[str, Any]] = {}
 
-            def _tally(bucket: Dict[str, Dict[str, Any]], text: Optional[str], acct_name: Optional[str]):
+            def _tally(bucket: Dict[str, Dict[str, Any]], text: Optional[str], acct_name: Optional[str], p: Optional[Persona] = None):
                 text = (text or "").strip()
                 if not text:
                     return
-                entry = bucket.setdefault(text, {"count": 0, "accounts": set()})
+                entry = bucket.setdefault(text, {"count": 0, "accounts": set(), "personas": []})
                 entry["count"] += 1
                 if acct_name:
                     entry["accounts"].add(acct_name)
+                if p and len(entry["personas"]) < 6:
+                    entry["personas"].append({
+                        "id": p.id,
+                        "name": p.full_name,
+                        "title": p.title,
+                        "tier": p.tier,
+                        "account": acct_name,
+                    })
 
             for p in personas:
                 acct_name = (p.account.display_name or p.account.legal_name) if p.account else None
                 for text in (p.operational_pain_points or []):
-                    _tally(pain_points, text, acct_name)
+                    _tally(pain_points, text, acct_name, p)
                 for text in (p.key_objections or []):
-                    _tally(objections, text, acct_name)
+                    _tally(objections, text, acct_name, p)
 
             def _top(bucket: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
                 ranked = sorted(bucket.items(), key=lambda kv: kv[1]["count"], reverse=True)[:limit]
                 return [
-                    {"text": text, "count": v["count"], "accounts": sorted(v["accounts"])}
+                    {
+                        "text": text,
+                        "count": v["count"],
+                        "accounts": sorted(v["accounts"]),
+                        "personas": v.get("personas", [])
+                    }
                     for text, v in ranked
                 ]
 

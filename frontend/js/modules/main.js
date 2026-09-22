@@ -98,13 +98,14 @@ async function loadAccounts(user) {
         await openAllJobsPage();
       }
     } else {
+      const normalizedTab = (deepLinkTab === 'personas' || deepLinkTab === 'persona') ? 'committee' : deepLinkTab;
       if (targetAccount) {
-        if (deepLinkTab) state.activeSalesTab = deepLinkTab;
+        if (normalizedTab) state.activeSalesTab = normalizedTab;
         if (deepLinkLobId) state.activeLobId = deepLinkLobId;
         jumpToAccount(targetAccount.id);
       } else if (user.role !== 'super_admin' && user.has_dashboard_access === false) {
         // User has no global digest access, but has assigned accounts: default to their first account dossier
-        if (deepLinkTab) state.activeSalesTab = deepLinkTab;
+        if (normalizedTab) state.activeSalesTab = normalizedTab;
         if (state.accounts.length > 0) {
           jumpToAccount(state.accounts[0].id);
         } else {
