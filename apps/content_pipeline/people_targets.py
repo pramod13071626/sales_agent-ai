@@ -72,6 +72,18 @@ ALIASES: Dict[str, str] = {
 for _key in custom_targets.load_section("people"):
     ALIASES.setdefault(_key, _key)
 
+# People known only to Postgres — mirrored there by engine.py's
+# upsert_target on every scrape (or imported with the DB) but never written
+# to this file or custom_targets.json. Without this, a person with hundreds
+# of captured posts still fails resolve() as "unknown", which blocked the
+# main app's on-demand profile generation for everyone but the two people
+# above. Entries defined above win; db.list_targets() returns [] when no
+# DATABASE_URL is configured, so this stays optional.
+for _row in db.list_targets("person"):
+    _config = {k: v for k, v in (_row["config"] or {}).items() if k != "key"}
+    PEOPLE_TARGETS.setdefault(_row["key"], _config)
+    ALIASES.setdefault(_row["key"], _row["key"])
+
 
 def resolve(person: str) -> Dict[str, Any]:
     """Look up a person target by key or alias (case/spacing insensitive)."""

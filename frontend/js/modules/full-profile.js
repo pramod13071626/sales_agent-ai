@@ -6,8 +6,10 @@ import {
   renderDossierTabs,
   renderFullPersonalityProfile,
   renderFullPsychologicalProfile,
+  renderProfileDownloadBtn,
   renderTabbedSignalsWidget
 } from './profile-render.js';
+import { renderCallPrepButton } from './callprep-generate.js';
 
 function renderHeroCard(p) {
   const isCSuite = (p.tier === 'c_suite') || (p.hierarchy_level === 1);
@@ -48,9 +50,10 @@ function renderCallPrepWidget(persona) {
     <div class="profile-widget">
       <div class="profile-widget-header">
         <div class="profile-widget-title"><i class="fa-solid fa-comment"></i> Sales Call-Prep &amp; Battlecards</div>
-        <span class="profile-widget-tag">Active Mandates</span>
+        ${renderCallPrepButton(persona)}
       </div>
-      ${renderDossierTabs(persona)}
+      <div id="callPrepStatus" class="dossier-text" style="font-size:.8rem;"></div>
+      <div data-callprep-body>${renderDossierTabs(persona)}</div>
     </div>
   `;
 }
@@ -98,7 +101,7 @@ function renderPersonalityProfileWidget(digestEntry, persona) {
     <div class="profile-widget">
       <div class="profile-widget-header">
         <div class="profile-widget-title"><i class="fa-solid fa-address-card"></i> Executive Personality Profile</div>
-        <button type="button" class="profile-action-btn btn-primary" id="drawerDownloadPdfBtn" style="padding: 5px 12px; font-size: .8rem; font-weight: 600;"><i class="fa-solid fa-file-pdf"></i> Download Personality Report</button>
+        <span data-profile-download="personality">${renderProfileDownloadBtn('personality', digestEntry)}</span>
       </div>
       <div data-profile-widget="personality">${renderFullPersonalityProfile(digestEntry, persona)}</div>
     </div>
@@ -111,7 +114,7 @@ function renderPsychologicalProfileWidget(digestEntry, persona) {
     <div class="profile-widget">
       <div class="profile-widget-header">
         <div class="profile-widget-title"><i class="fa-solid fa-heart-pulse"></i> Executive Psychological Profile</div>
-        <button type="button" class="profile-action-btn btn-primary" id="downloadPsychologicalPdfBtn" style="padding: 5px 12px; font-size: .8rem; font-weight: 600;"><i class="fa-solid fa-file-pdf"></i> Download Psychological Report</button>
+        <span data-profile-download="psychological">${renderProfileDownloadBtn('psychological', digestEntry)}</span>
       </div>
       <div data-profile-widget="psychological">${renderFullPsychologicalProfile(digestEntry, persona)}</div>
     </div>

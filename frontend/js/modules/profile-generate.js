@@ -7,7 +7,7 @@
 // refreshes both widgets in place.
 import { state } from './state.js';
 import { resolvePersonaTargetKey } from './utils.js';
-import { renderFullPersonalityProfile, renderFullPsychologicalProfile } from './profile-render.js';
+import { renderFullPersonalityProfile, renderFullPsychologicalProfile, renderProfileDownloadBtn } from './profile-render.js';
 
 const PROFILE_KINDS = {
   generatePersonalityProfileBtn: {
@@ -23,7 +23,16 @@ const PROFILE_KINDS = {
 };
 
 function friendlyGenerateError(status, detail) {
-  if (status === 400 || /isn.t registered/i.test(detail || '')) {
+  if (status === 429) {
+    // OpenRouter's free-tier quota resets at 00:00 UTC — show that in local time.
+    const reset = new Date();
+    reset.setUTCHours(24, 0, 0, 0);
+    return `The AI service's daily request limit has been reached — please try again after ${reset.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}. Your captured content below is fine.`;
+  }
+  if (/isn.t registered/i.test(detail || '')) {
+    return "This contact isn't tracked for content capture yet — see the checklist below.";
+  }
+  if (status === 400) {
     return "No captured content is connected for this contact yet — please add/connect their social activity (LinkedIn, X, News) before generating this profile.";
   }
   if (status === 500 || /produced no/i.test(detail || '')) {
@@ -98,6 +107,11 @@ export async function handleGenerateProfileClick(e, container, persona) {
 
     const psychWrap = container.querySelector('[data-profile-widget="psychological"]');
     if (psychWrap) psychWrap.innerHTML = renderFullPsychologicalProfile(digestEntry, persona);
+
+    // Download buttons only render once their profile exists — show them now.
+    container.querySelectorAll('[data-profile-download]').forEach(slot => {
+      slot.innerHTML = renderProfileDownloadBtn(slot.dataset.profileDownload, digestEntry);
+    });
   } catch (err) {
     console.error('Profile generation failed', err);
     setButtonBusy(btn, false);

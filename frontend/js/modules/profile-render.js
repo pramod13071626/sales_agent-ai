@@ -47,17 +47,48 @@ export function renderDossier(p) {
   `;
 }
 
+// Call-prep specific (unlike hasDossier, background fields alone don't count —
+// otherwise the tabs below would render with every pane empty).
+export function hasCallPrep(p) {
+  return !!(p.personalized_icebreaker || p.value_proposition ||
+    (p.target_kpis && p.target_kpis.length) || (p.operational_pain_points && p.operational_pain_points.length) ||
+    (p.key_objections && p.key_objections.length));
+}
+
+const CALLPREP_CONFIDENCE = {
+  high: 'Personal evidence: career history + recent posts',
+  medium: 'Partial personal evidence',
+  low: 'Role-based: little personal data, built from role + account context',
+};
+
+function renderCallPrepMeta(meta) {
+  if (!meta || !meta.generated_at) return '';
+  const when = new Date(meta.generated_at);
+  const whenText = isNaN(when) ? '' : when.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  const conf = meta.confidence || 'low';
+  const group = (meta.method || '').startsWith('llm_group') ? ` · shared with ${meta.group_size || 'similar'} similar contacts` : '';
+  return `<div class="dossier-text" style="font-size:.75rem; color:var(--text-muted); margin-bottom:8px;">
+      <i class="fa-solid fa-circle-info"></i> ${esc(conf.charAt(0).toUpperCase() + conf.slice(1))} confidence — ${esc(CALLPREP_CONFIDENCE[conf] || '')}${esc(group)}${whenText ? ` · generated ${esc(whenText)}` : ''}
+    </div>`;
+}
+
 // Interactive tabbed version of the call-prep dossier for the full profile page
 export function renderDossierTabs(p) {
-  if (!hasDossier(p)) {
+  if (!hasCallPrep(p)) {
     return `<div class="dossier-empty">No AI call-prep dossier generated yet for ${esc(p.name || 'this contact')}.</div>`;
   }
 
   const kpis = p.target_kpis || [];
   const pains = p.operational_pain_points || [];
-  const objections = p.key_objections || [];
+  const meta = (p.extended_profile && p.extended_profile.callprep) || null;
+  // Newer generations keep objection + counter pairs in extended_profile.callprep;
+  // older rows only have the plain key_objections strings.
+  const objections = (meta && Array.isArray(meta.objections) && meta.objections.length)
+    ? meta.objections
+    : (p.key_objections || []).map(o => ({ objection: o, counter: '' }));
 
   return `
+    ${renderCallPrepMeta(meta)}
     <div class="profile-tabs-header">
       <button type="button" class="profile-tab-btn active" data-tab-target="tab-pitch"><i class="fa-solid fa-bolt"></i> Pitch &amp; Icebreaker</button>
       <button type="button" class="profile-tab-btn" data-tab-target="tab-pains"><i class="fa-solid fa-crosshairs"></i> Pain Points &amp; KPIs</button>
@@ -109,7 +140,11 @@ export function renderDossierTabs(p) {
           ${objections.map(obj => `
             <div class="battlecard-item">
               <div class="battlecard-header"><i class="fa-solid fa-shield-halved"></i> Potential Objection</div>
-              <div class="battlecard-body">${esc(obj)}</div>
+              <div class="battlecard-body">${esc(obj.objection)}</div>
+              ${obj.counter ? `
+                <div class="battlecard-header" style="margin-top:6px; color:var(--success);"><i class="fa-solid fa-reply"></i> Suggested Response</div>
+                <div class="battlecard-body">${esc(obj.counter)}</div>
+              ` : ''}
             </div>
           `).join('')}
         </div>
@@ -164,6 +199,22 @@ export function renderProfileSubsection(title, icon, section) {
 // No fabricated fallback content: if this contact's digest hasn't produced
 // a real personality_profile yet, say so plainly (renderPlaceholderProfile)
 // instead of showing plausible-looking canned text as if it were synthesized.
+const PROFILE_DOWNLOADS = {
+  personality: { digestKey: 'personality_profile', btnId: 'drawerDownloadPdfBtn', label: 'Download Personality Report' },
+  psychological: { digestKey: 'psychological_profile', btnId: 'downloadPsychologicalPdfBtn', label: 'Download Psychological Report' },
+};
+
+// The PDF download button for a profile widget header — empty until that
+// profile has actually been generated (there's nothing to put in the report
+// before then). profile-generate.js re-renders this after a successful
+// "Generate now" so the button appears without a page reload.
+export function renderProfileDownloadBtn(kind, digestEntry) {
+  const cfg = PROFILE_DOWNLOADS[kind];
+  const profile = (digestEntry && digestEntry.digest) ? digestEntry.digest[cfg.digestKey] : null;
+  if (!profile) return '';
+  return `<button type="button" class="profile-action-btn btn-primary" id="${cfg.btnId}" style="padding: 5px 12px; font-size: .8rem; font-weight: 600;"><i class="fa-solid fa-file-pdf"></i> ${cfg.label}</button>`;
+}
+
 export function renderFullPersonalityProfile(digestEntry, persona) {
   const profile = (digestEntry && digestEntry.digest) ? digestEntry.digest.personality_profile : null;
   if (!profile) {
@@ -215,6 +266,7 @@ export function renderPlaceholderProfile(reason, opts = {}) {
             <i class="fa-solid fa-wand-magic-sparkles"></i> Generate now
           </button>
           <div class="profile-generate-status" id="${generateBtnId}Status" style="margin-top:10px; font-size:.8rem; color:var(--text-muted); max-width:400px; margin-left:auto; margin-right:auto;"></div>
+          <div data-profile-readiness style="margin:14px auto 0; max-width:420px; text-align:left;"></div>
         </div>
       ` : ''}
     </div>

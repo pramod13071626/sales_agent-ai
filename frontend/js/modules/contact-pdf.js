@@ -81,10 +81,12 @@ export async function triggerPsychologicalPdfDownload(persona) {
 // Convenience for pages (full-profile.js) that render the button into a
 // container they control directly, rather than through contact-drawer.js's
 // own delegated click listener.
+// Delegated, because the buttons only exist once their profile is generated
+// and can be added after this runs (see renderProfileDownloadBtn). Call once
+// per container.
 export function wireProfilePdfDownload(container, persona) {
-  const btn = container.querySelector('#drawerDownloadPdfBtn');
-  if (btn) btn.addEventListener('click', () => triggerPersonaPdfDownload(persona));
-
-  const psychBtn = container.querySelector('#downloadPsychologicalPdfBtn');
-  if (psychBtn) psychBtn.addEventListener('click', () => triggerPsychologicalPdfDownload(persona));
+  container.addEventListener('click', (e) => {
+    if (e.target.closest('#drawerDownloadPdfBtn')) triggerPersonaPdfDownload(persona);
+    else if (e.target.closest('#downloadPsychologicalPdfBtn')) triggerPsychologicalPdfDownload(persona);
+  });
 }

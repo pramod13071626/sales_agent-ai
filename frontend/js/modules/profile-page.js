@@ -8,6 +8,8 @@ import { el } from './dom.js';
 import { renderFullProfile } from './full-profile.js';
 import { wireProfilePdfDownload } from './contact-pdf.js';
 import { wireProfileGeneration } from './profile-generate.js';
+import { wireCallPrepGeneration } from './callprep-generate.js';
+import { loadProfileReadiness } from './profile-readiness.js';
 import { renderPostCard } from './profile-render.js';
 import { resolvePersonaTargetKey } from './utils.js';
 import { initThemeToggle } from './theme.js';
@@ -216,6 +218,8 @@ async function init() {
     wireInteractiveWidgets(main, persona);
     wireProfilePdfDownload(main, persona);
     wireProfileGeneration(main, persona);
+    wireCallPrepGeneration(main, persona);
+    loadProfileReadiness(main, persona);
   } catch (err) {
     console.error('Failed to load contact profile', err);
     main.innerHTML = `<div class="profile-page-error">Could not load this profile — ${err.message}. Try reopening it from the dashboard.</div>`;

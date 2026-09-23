@@ -51,7 +51,7 @@ from collectors.validator import DataQualityValidator
 from serializer import MasterSerializer
 from serializers.account_serializer import slugify
 
-from sqlalchemy import or_
+from sqlalchemy import or_, text as sql_text
 from sqlalchemy.orm import selectinload
 from db.connection import get_session
 from db.models import (
@@ -82,6 +82,7 @@ from services.account_service import AccountService
 from services.lob_service import LobService, LobValidator
 from services.persona_service import PersonaService, PersonaValidator
 from services.pipeline_run_logger import PipelineRunLogger
+from services import callprep_service
 from pdf_export import build_persona_profile_pdf, build_psychological_profile_pdf
 import auth
 import email_sender
@@ -3927,6 +3928,13 @@ if FASTAPI_AVAILABLE:
             # shows the same "please connect content for this contact"
             # message instead of a generic "something went wrong" retry
             # prompt — a real subprocess crash still falls through to 502.
+            # Checked first: when the LLM quota is exhausted every channel call
+            # fails, and older pipeline builds then reported that as "no posts".
+            if re.search(r"free-models-per-day|rate limit exceeded|HTTP 429", output or "", re.I):
+                raise HTTPException(
+                    status_code=429,
+                    detail="The AI service's daily request limit has been reached — try again after it resets.",
+                )
             if re.search(r"no posts in scope|nothing to summarise", output or "", re.I):
                 raise HTTPException(
                     status_code=400,
@@ -3994,6 +4002,98 @@ if FASTAPI_AVAILABLE:
                 "status": "success",
                 "persona_id": p.id,
                 "profile": personality
+            }
+        finally:
+            session.close()
+
+    # Per-channel post caps the digest applies — mirrors cap=25 and
+    # _HIGH_VOLUME_CAP in apps/content_pipeline/digest/selection.py (not
+    # imported: that app's `db` module collides with ours, see
+    # _generate_persona_profiles).
+    _PROFILE_DIGEST_CAP = 25
+    _PROFILE_DIGEST_CHANNEL_CAP = {"news": 12, "blog": 12, "sec_mentions": 10, "sec": 10}
+
+    @app.get("/api/personas/{persona_id}/profile-readiness", tags=["3. Personas & Buying Committee"])
+    def get_persona_profile_readiness(persona_id: int, user: User = Depends(auth.require_persona_account_access)):
+        """What the Personality/Psychological "Generate now" button has to work
+        with: whether the contact is a tracked target, captured posts per
+        channel (and how many the digest would use), and which background
+        fields exist. Read-only — no LLM calls."""
+        session = get_session()
+        try:
+            p = session.query(Persona).filter_by(id=persona_id).first()
+            if not p:
+                raise HTTPException(status_code=404, detail="Persona not found.")
+
+            existing = _resolve_persona_digest(session, p)
+            candidates = [existing.target_key] if existing else []
+            candidates += [p.key, slugify(p.full_name or ""), _slugify_dropping_initials(p.full_name or "")]
+            candidates = [c for c in candidates if c]
+            registered = {
+                r[0] for r in session.execute(
+                    sql_text("SELECT key FROM targets WHERE kind = 'person' AND key = ANY(:keys)"),
+                    {"keys": candidates},
+                ).fetchall()
+            }
+            target_key = next((c for c in candidates if c in registered), None)
+
+            channels = []
+            if target_key:
+                rows = session.execute(
+                    sql_text("SELECT channel, count(*) FROM posts WHERE target_key = :k GROUP BY channel ORDER BY 2 DESC"),
+                    {"k": target_key},
+                ).fetchall()
+                for channel, n in rows:
+                    cap = min(_PROFILE_DIGEST_CAP, _PROFILE_DIGEST_CHANNEL_CAP.get(channel, _PROFILE_DIGEST_CAP))
+                    channels.append({"channel": channel, "captured": n, "used": min(n, cap)})
+
+            location = ", ".join(x for x in (p.city, p.state, p.country) if x)
+            background = [
+                {"field": "title", "label": "Job title", "present": bool(p.title)},
+                {"field": "education", "label": "Education", "present": bool(p.degree or p.institution)},
+                {"field": "prior_company", "label": "Prior company", "present": bool(p.prior_company)},
+                {"field": "skills", "label": "Skills", "present": bool(p.skills)},
+                {"field": "location", "label": "Location", "present": bool(location)},
+            ]
+            total_captured = sum(c["captured"] for c in channels)
+            return {
+                "persona_id": p.id,
+                "target_key": target_key,
+                "registered": bool(target_key),
+                "channels": channels,
+                "total_captured": total_captured,
+                "total_used": sum(c["used"] for c in channels),
+                "background": background,
+                # one summary call per channel with posts + personality + psychological
+                "llm_requests": len(channels) + 2 if channels else 0,
+                "ready": bool(target_key) and total_captured > 0,
+            }
+        finally:
+            session.close()
+
+    @app.post("/api/personas/{persona_id}/callprep/generate", tags=["3. Personas & Buying Committee"])
+    def generate_persona_callprep(
+        persona_id: int, force: bool = False, user: User = Depends(auth.require_persona_account_access)
+    ):
+        """On-demand Sales Call-Prep & Battlecards for one persona (services/callprep_service.py).
+        Skips the LLM and returns status "unchanged" when the persona's inputs haven't changed,
+        unless force=true."""
+        session = get_session()
+        try:
+            try:
+                out = callprep_service.generate_persona(session, persona_id, force=force)
+            except ValueError as e:
+                raise HTTPException(status_code=404, detail=str(e))
+            except callprep_service.QuotaExceeded as e:
+                raise HTTPException(status_code=429, detail=f"LLM daily quota reached: {e}")
+            except callprep_service.LLMError as e:
+                raise HTTPException(status_code=502, detail=f"Call-prep generation failed: {e}")
+            return {
+                "status": out["status"],
+                "persona_id": persona_id,
+                "level": out["level"],
+                "usage": out["usage"],
+                "persona": _serialize_persona_full(out["persona"]),
             }
         finally:
             session.close()
