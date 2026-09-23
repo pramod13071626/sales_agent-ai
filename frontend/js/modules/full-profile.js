@@ -39,6 +39,7 @@ function renderHeroCard(p) {
         <a class="profile-action-btn ${p.email ? '' : 'disabled'}" ${p.email ? `href="mailto:${esc(p.email)}"` : ''}><i class="fa-solid fa-envelope"></i> Email</a>
         <a class="profile-action-btn ${p.phone ? '' : 'disabled'}" ${p.phone ? `href="tel:${esc(p.phone)}"` : ''}><i class="fa-solid fa-phone"></i> Call</a>
         <a class="profile-action-btn ${p.linkedin_url ? '' : 'disabled'}" ${p.linkedin_url ? `href="${esc(p.linkedin_url)}" target="_blank" rel="noopener"` : ''}><i class="fa-brands fa-linkedin"></i> LinkedIn</a>
+        <a class="profile-action-btn btn-primary" href="/copilot?persona_id=${encodeURIComponent(p.id)}&account_id=${encodeURIComponent(p.account_id || '')}" title="Ask the Sales Copilot about ${esc(p.name || 'this contact')}"><i class="fa-solid fa-wand-magic-sparkles"></i> Ask Copilot</a>
       </div>
     </div>
   `;

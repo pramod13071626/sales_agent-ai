@@ -34,3 +34,8 @@ reportlab>=4.0.0
 # Authentication (JWT + password hashing) — required by auth.py
 PyJWT>=2.8.0
 argon2-cffi>=23.1.0
+
+# Sales Copilot (apps/sales_copilot) - local embeddings + vector store
+chromadb==1.5.9
+fastembed==0.8.1
+openpyxl==3.1.5

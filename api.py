@@ -3150,6 +3150,10 @@ if FASTAPI_AVAILABLE:
     app.include_router(lobs_router)
     app.include_router(personas_router)
 
+    # Sales Copilot (RAG chat) — own module, own tables; see apps/sales_copilot/README.md
+    from apps.sales_copilot.api import install as install_copilot
+    install_copilot(app)
+
     # ══════════════════════════════════════════════════════
     # SOLID REST API ENDPOINTS
     # ══════════════════════════════════════════════════════
@@ -3819,6 +3823,31 @@ if FASTAPI_AVAILABLE:
                 return row
         return None
 
+    def _resolve_person_target_key(session, p: "Persona"):
+        """The content-pipeline person target this persona's profiles are
+        generated from: its existing digest's key, else p.key / name slugs —
+        whichever is registered either in people_targets.py's hardcoded or
+        custom_targets.json entries (PEOPLE_ALIASES) or in Postgres' targets
+        table. The DB is checked here directly because people_targets'
+        own DB merge can't run in this process (its `import db` resolves to
+        this app's db package). Returns (target_key or None, candidates)."""
+        content_pipeline_dir = Path(__file__).resolve().parent / "apps" / "content_pipeline"
+        sys.path.insert(0, str(content_pipeline_dir))
+        from apps.content_pipeline.people_targets import ALIASES as PEOPLE_ALIASES
+
+        existing = _resolve_persona_digest(session, p)
+        candidates = [existing.target_key] if existing else []
+        candidates += [p.key, slugify(p.full_name or ""), _slugify_dropping_initials(p.full_name or "")]
+        candidates = [c for c in candidates if c]
+        in_db = {
+            r[0] for r in session.execute(
+                sql_text("SELECT key FROM targets WHERE kind = 'person' AND key = ANY(:keys)"),
+                {"keys": candidates},
+            ).fetchall()
+        }
+        target_key = next((c for c in candidates if c in PEOPLE_ALIASES or c in in_db), None)
+        return target_key, candidates
+
     @app.get("/api/personas/{persona_id}/psychological-profile", tags=["3. Personas & Buying Committee"])
     def get_persona_psychological_profile(persona_id: int, user: User = Depends(auth.require_persona_account_access)):
         """Retrieve the compiled Psychological & Leadership Profile for a persona.
@@ -3870,12 +3899,7 @@ if FASTAPI_AVAILABLE:
         # a human would run it — sidesteps the collision entirely
         # instead of fighting Python's module cache for it.
         sys.path.insert(0, str(content_pipeline_dir))
-        from apps.content_pipeline.people_targets import ALIASES as PEOPLE_ALIASES
-
-        existing = _resolve_persona_digest(session, p)
-        candidates = [existing.target_key] if existing else []
-        candidates += [p.key, slugify(p.full_name or ""), _slugify_dropping_initials(p.full_name or "")]
-        target_key = next((c for c in candidates if c and c in PEOPLE_ALIASES), None)
+        target_key, candidates = _resolve_person_target_key(session, p)
         if not target_key:
             raise HTTPException(
                 status_code=400,
@@ -4025,17 +4049,7 @@ if FASTAPI_AVAILABLE:
             if not p:
                 raise HTTPException(status_code=404, detail="Persona not found.")
 
-            existing = _resolve_persona_digest(session, p)
-            candidates = [existing.target_key] if existing else []
-            candidates += [p.key, slugify(p.full_name or ""), _slugify_dropping_initials(p.full_name or "")]
-            candidates = [c for c in candidates if c]
-            registered = {
-                r[0] for r in session.execute(
-                    sql_text("SELECT key FROM targets WHERE kind = 'person' AND key = ANY(:keys)"),
-                    {"keys": candidates},
-                ).fetchall()
-            }
-            target_key = next((c for c in candidates if c in registered), None)
+            target_key, _ = _resolve_person_target_key(session, p)
 
             channels = []
             if target_key:
@@ -5548,6 +5562,13 @@ if FASTAPI_AVAILABLE:
             movements timeline. Currently runs on mock seed data; see
             frontend/js/modules/command-center/data.js."""
             return templates.TemplateResponse(request, "command-center.html", headers=_NO_CACHE_HEADERS)
+
+        @app.get("/copilot", response_class=HTMLResponse, include_in_schema=False)
+        async def copilot_page(request: Request):
+            """Sales Copilot workspace — RAG chat over the sales DB
+            (apps/sales_copilot/README.md §19). Accepts ?persona_id= / ?account_id=
+            to open a chat pre-scoped to that contact or account."""
+            return templates.TemplateResponse(request, "copilot.html", headers=_NO_CACHE_HEADERS)
 
         @app.get("/tasks", response_class=HTMLResponse, include_in_schema=False)
         async def tasks_page(request: Request):

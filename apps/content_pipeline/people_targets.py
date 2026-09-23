@@ -79,7 +79,12 @@ for _key in custom_targets.load_section("people"):
 # main app's on-demand profile generation for everyone but the two people
 # above. Entries defined above win; db.list_targets() returns [] when no
 # DATABASE_URL is configured, so this stays optional.
-for _row in db.list_targets("person"):
+#
+# getattr: when this module is imported inside the main app's API process,
+# `db` resolves to the main app's own db package (same top-level name, see
+# api.py's _generate_persona_profiles), which has no list_targets. The API
+# checks the targets table itself; the CLI/subprocess gets the real db.py.
+for _row in (getattr(db, "list_targets", None) or (lambda _kind: []))("person"):
     _config = {k: v for k, v in (_row["config"] or {}).items() if k != "key"}
     PEOPLE_TARGETS.setdefault(_row["key"], _config)
     ALIASES.setdefault(_row["key"], _row["key"])
