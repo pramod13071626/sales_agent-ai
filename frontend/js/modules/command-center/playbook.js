@@ -1,6 +1,19 @@
 import { playbookActions, accountById } from './data.js';
 import { esc } from './utils.js';
 import { pushToCrm } from './actions.js';
+import { ccState } from './state.js';
+
+function matchesAccount(accountId) {
+  if (!ccState.activeAccountId) return true;
+  if (accountId === ccState.activeAccountId) return true;
+  const mockAcct = accountById(accountId);
+  if (mockAcct && ccState.selectedAccountName) {
+    const sName = ccState.selectedAccountName.toLowerCase();
+    const mName = mockAcct.name.toLowerCase();
+    if (sName.includes(mName) || mName.includes(sName)) return true;
+  }
+  return false;
+}
 
 function itemHtml(item) {
   const acct = accountById(item.accountId);
@@ -24,14 +37,21 @@ function itemHtml(item) {
 export function renderPlaybook() {
   const list = document.getElementById('ccPlaybookList');
   if (!list) return;
-  list.innerHTML = playbookActions.map(itemHtml).join('');
+
+  const actions = playbookActions.filter(p => matchesAccount(p.accountId));
+  if (!actions.length) {
+    list.innerHTML = '<li class="cc-drawer-empty">No plays currently generated for the selected account.</li>';
+    return;
+  }
+
+  list.innerHTML = actions.map(itemHtml).join('');
   list.querySelectorAll('button[data-rank]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const item = playbookActions.find(p => p.rank === Number(btn.dataset.rank));
       if (!item || item.crmSynced) return;
       const acct = accountById(item.accountId);
       btn.disabled = true;
-      const ok = await pushToCrm(acct.name, item.title, { description: item.rationale, priority: item.impact });
+      const ok = await pushToCrm(acct ? acct.name : 'Account', item.title, { description: item.rationale, priority: item.impact });
       if (ok) {
         item.crmSynced = true;
         renderPlaybook();
@@ -41,3 +61,4 @@ export function renderPlaybook() {
     });
   });
 }
+

@@ -5,6 +5,7 @@
 import { loadRealAccounts, resolveRealAccount } from './real-accounts.js';
 import { esc } from './utils.js';
 import { renderSkeleton } from '../skeleton.js';
+import { createTask } from './actions.js';
 
 // Cache for lightweight summaries
 const summaryCache = new Map();
@@ -136,6 +137,73 @@ function generateNewsBulletin(summary, account) {
   };
 }
 
+function generateSalesActionStep(summary, account) {
+  const name = getOrgShortName(account);
+  const total = summary.total_roles || 0;
+  const leadership = summary.leadership_count || 0;
+  const contract = summary.contract_count || 0;
+  const topCat = summary.top_category?.name || 'Engineering';
+  const aiCount = summary.track_counts?.ai || 0;
+
+  if (aiCount >= 10 || /bny|mellon/i.test(name)) {
+    return {
+      actionTitle: `Pitch AI Platform & LLMOps Staff-Aug`,
+      targetRole: 'VP / Head of Enterprise AI',
+      recommendation: `High AI hiring detected (${leadership} leadership roles). Pitch StradIT AI Governance Advisory & LLMOps squads before headcount closes.`,
+      taskTitle: `Pitch AI Governance & Staff-Augmentation to ${name}`,
+      taskDescription: `Target: VP of AI Engineering & Architecture.\nContext: ${total} open roles (${leadership} leadership in AI/ML).\nAction: Schedule briefing on enterprise AI governance & LLMOps team augmentation.`,
+    };
+  }
+
+  if (/blackrock/i.test(name)) {
+    return {
+      actionTitle: `Position Aladdin Platform Decoupling`,
+      targetRole: 'Director of Aladdin Wealth Tech',
+      recommendation: `Aladdin engineering scaling (${total} live roles). Pitch specialized quantitative squads and legacy platform decoupling services.`,
+      taskTitle: `Aladdin Platform Decoupling Outreach for ${name}`,
+      taskDescription: `Target: Director of Aladdin Wealth Tech.\nContext: ${total} live requisitions in platform engineering.\nAction: Share StradIT quantitative architecture decoupling case study.`,
+    };
+  }
+
+  if (/northern\s*trust/i.test(name)) {
+    return {
+      actionTitle: `Propose Asset Servicing Modernization`,
+      targetRole: 'Head of Core Banking Technology',
+      recommendation: `Core banking tech hiring active. Pitch asset servicing migration advisory & contract engineering squads to bridge hiring lag.`,
+      taskTitle: `Core Banking Modernization Outreach for ${name}`,
+      taskDescription: `Target: Head of Core Banking Tech.\nContext: ${total} open roles in asset servicing & core banking.\nAction: Propose legacy refactoring sprints and squad augmentation.`,
+    };
+  }
+
+  if (/vanguard/i.test(name)) {
+    return {
+      actionTitle: `Pitch DevSecOps & Cloud Acceleration`,
+      targetRole: 'Head of Cloud & DevSecOps',
+      recommendation: `Cloud infrastructure & DevSecOps expanding. Propose automated security pipeline & multi-cloud consolidation services.`,
+      taskTitle: `DevSecOps & Cloud Consolidation Outreach for ${name}`,
+      taskDescription: `Target: Head of Cloud Infrastructure & DevSecOps.\nContext: ${total} active roles across quantitative & cloud engineering.\nAction: Share cloud security & DevSecOps accelerator case studies.`,
+    };
+  }
+
+  if (contract > 0) {
+    return {
+      actionTitle: `Submit Contingent Squad Proposal`,
+      targetRole: 'VP of Engineering / TAM Lead',
+      recommendation: `${contract} contractor roles open. Submit pre-vetted senior squads for rapid onboarding to unblock deliverable timelines.`,
+      taskTitle: `Contingent Squad Proposal for ${name}`,
+      taskDescription: `Target: VP of Engineering / TAM.\nContext: ${contract} open contractor roles across tech hubs.\nAction: Submit StradIT rate cards & pre-vetted squad profiles for immediate interview.`,
+    };
+  }
+
+  return {
+    actionTitle: `Target Incoming Leaders on ${topCat}`,
+    targetRole: `Director / VP of ${topCat}`,
+    recommendation: `${leadership} open leadership roles in ${topCat}. Reach out during onboarding to position advisory consulting and team scaling.`,
+    taskTitle: `Leadership Outreach on ${topCat} for ${name}`,
+    taskDescription: `Target: Director / VP of ${topCat}.\nContext: ${total} open requisitions with active executive hiring in ${topCat}.\nAction: Schedule discovery call on project roadmap and engineering scaling needs.`,
+  };
+}
+
 export async function renderHiringSignals() {
   const list = document.getElementById('ccHiringList');
   if (!list) return;
@@ -176,13 +244,13 @@ export async function renderHiringSignals() {
       panelNote.textContent = `Multi-Organization Executive Flash Intel · ${totalJobsAll.toLocaleString()} live roles across ${activeOrgs.length} accounts`;
     }
 
-    // 3. Render as a KPI-tile grid — one compact card per account instead of
-    // a scrolling list of narrative rows, for a faster cross-account scan.
+    // 3. Render as an actionable tile grid with clear next action steps for sales reps
     list.classList.add('hs-tile-grid');
     list.innerHTML = activeOrgs.map(({ account, summary }) => {
       const shortName = getOrgShortName(account);
       const tickerTag = getOrgTickerTag(summary, account);
       const bulletin = generateNewsBulletin(summary, account);
+      const actionStep = generateSalesActionStep(summary, account);
       const totalRoles = summary.total_roles || 0;
       const leadershipCount = summary.leadership_count || 0;
       const contractCount = summary.contract_count || 0;
@@ -192,7 +260,7 @@ export async function renderHiringSignals() {
         : { num: topHubsCount, label: 'Hubs', highlight: false };
 
       return `
-        <li class="hs-tile cc-clickable-row" data-account-id="${account.id}" title="Click to open Hiring Trend Radar for ${esc(shortName)}">
+        <li class="hs-tile" data-account-id="${account.id}">
           <div class="hs-tile-head">
             <div class="hs-bulletin-avatar ${bulletin.avatarClass}">
               <i class="${bulletin.iconClass}"></i>
@@ -224,16 +292,44 @@ export async function renderHiringSignals() {
               <div class="hs-tile-kpi-label">${thirdKpi.label}</div>
             </div>
           </div>
+
+          <!-- Action Step Box -->
+          <div class="hs-action-box">
+            <div class="hs-action-head">
+              <span class="hs-action-pill"><i class="fa-solid fa-bolt"></i> NEXT ACTION</span>
+              <span class="hs-action-target" title="Target Role: ${esc(actionStep.targetRole)}"><i class="fa-solid fa-user-check"></i> ${esc(actionStep.targetRole)}</span>
+            </div>
+            <div class="hs-action-text">${esc(actionStep.recommendation)}</div>
+            <div class="hs-action-footer">
+              <button type="button" class="cc-btn cc-btn-primary cc-btn-xs hs-task-btn" data-account-name="${esc(shortName)}" data-task-title="${esc(actionStep.taskTitle)}" data-task-desc="${esc(actionStep.taskDescription)}" title="Create assigned task in My Tasks">
+                <i class="fa-solid fa-plus"></i> Create Action Task
+              </button>
+              <a class="hs-explore-link" href="/?account=${account.id}&tab=jobs" title="View all open requisitions">
+                Requisitions <i class="fa-solid fa-arrow-right"></i>
+              </a>
+            </div>
+          </div>
         </li>
       `;
     }).join('');
 
-    // 4. Click handler: Direct drill-down to Account Level Hiring Trend Radar tab
-    list.querySelectorAll('.hs-tile').forEach(tile => {
-      tile.addEventListener('click', () => {
-        const accountId = tile.dataset.accountId;
-        if (accountId) {
-          window.location.href = `/?account=${accountId}&tab=jobs`;
+    // 4. Click handler: Create real task from action step
+    list.querySelectorAll('.hs-task-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const accountName = btn.dataset.accountName;
+        const taskTitle = btn.dataset.taskTitle;
+        const taskDesc = btn.dataset.taskDesc;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Creating…';
+        const ok = await createTask(accountName, taskTitle, { description: taskDesc, priority: 'high' });
+        if (ok) {
+          btn.classList.remove('cc-btn-primary');
+          btn.classList.add('cc-btn-done');
+          btn.innerHTML = '<i class="fa-solid fa-check"></i> Task Created';
+        } else {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="fa-solid fa-plus"></i> Create Action Task';
         }
       });
     });
@@ -361,4 +457,13 @@ export async function renderStrategicInvestmentTracks() {
       </div>
     </div>
   `;
+
+  // Click handler to open account view
+  container.querySelectorAll('.cc-track-card').forEach(card => {
+    card.style.cursor = 'pointer';
+    card.title = 'Click to view Strategic Personas and Account Details';
+    card.addEventListener('click', () => {
+      window.location.href = `/?account=${accountId}&tab=personas`;
+    });
+  });
 }

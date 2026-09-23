@@ -3,11 +3,24 @@ import { esc, relativeTime, ageInDays } from './utils.js';
 import { ccState } from './state.js';
 import { createTask } from './actions.js';
 
+function matchesAccount(sigAccountId) {
+  if (!ccState.activeAccountId) return true;
+  if (sigAccountId === ccState.activeAccountId) return true;
+  const mockAcct = accountById(sigAccountId);
+  if (mockAcct && ccState.selectedAccountName) {
+    const sName = ccState.selectedAccountName.toLowerCase();
+    const mName = mockAcct.name.toLowerCase();
+    if (sName.includes(mName) || mName.includes(sName)) return true;
+    if (mockAcct.ticker && (mockAcct.ticker === ccState.selectedAccountObj?.ticker || mockAcct.ticker === ccState.selectedAccountObj?.stock_symbol)) return true;
+  }
+  return false;
+}
+
 function visibleSignals() {
   return signals
     .filter(s => ageInDays(s.detectedAt) <= 7) // drop out of the feed after 7 days
     .filter(s => ccState.activeDomainFilters.size === 0 || ccState.activeDomainFilters.has(s.domain))
-    .filter(s => !ccState.activeAccountId || s.accountId === ccState.activeAccountId)
+    .filter(s => matchesAccount(s.accountId))
     .sort((a, b) => b.score - a.score); // composite score desc, never raw signal count
 }
 
@@ -32,27 +45,40 @@ function renderAccountFilterPill() {
   const wrap = document.getElementById('ccFeedAccountFilter');
   if (!wrap) return;
   if (!ccState.activeAccountId) { wrap.innerHTML = ''; return; }
-  const acct = accountById(ccState.activeAccountId);
-  wrap.innerHTML = `<button type="button" class="cc-chip cc-chip-brand cc-chip-removable" id="ccClearAccountFilter">Filtered: ${esc(acct ? acct.name : '')} <i class="fa-solid fa-xmark"></i></button>`;
-  document.getElementById('ccClearAccountFilter').addEventListener('click', () => {
-    ccState.activeAccountId = null;
-    renderFeed();
-  });
+  const acctName = ccState.selectedAccountName || accountById(ccState.activeAccountId)?.name || 'Account';
+  wrap.innerHTML = `<button type="button" class="cc-chip cc-chip-brand cc-chip-removable" id="ccClearAccountFilter">Filtered: ${esc(acctName)} <i class="fa-solid fa-xmark"></i></button>`;
+  const clearBtn = document.getElementById('ccClearAccountFilter');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      const sel = document.getElementById('ccGlobalAccountSelect');
+      if (sel) {
+        sel.value = '';
+        sel.dispatchEvent(new Event('change'));
+      } else {
+        ccState.activeAccountId = null;
+        ccState.selectedAccountName = null;
+        ccState.selectedAccountObj = null;
+        renderFeed();
+      }
+    });
+  }
 }
 
 function rowHtml(sig) {
   const acct = accountById(sig.accountId);
+  const isNew = ageInDays(sig.detectedAt) <= 1.5;
+  const newBadge = isNew
+    ? `<span class="cc-badge cc-badge-new"><span class="cc-pulse-dot"></span>NEW</span>`
+    : '';
+
   return `
-    <li class="cc-feed-row" data-signal-id="${esc(sig.id)}">
-      <div class="cc-feed-score">
-        <div class="cc-feed-score-num">${sig.score}</div>
-        <div class="cc-feed-score-bar"><div class="cc-feed-score-fill" style="width:${sig.score}%"></div></div>
-      </div>
+    <li class="cc-feed-row ${isNew ? 'is-new' : 'is-old'}" data-signal-id="${esc(sig.id)}">
       <div class="cc-feed-body">
         <div class="cc-feed-title-row">
           <span class="cc-feed-title">${esc(sig.title)}</span>
+          ${newBadge}
         </div>
-        <div class="cc-feed-meta">${esc(acct ? acct.name : '')} &middot; ${esc(relativeTime(sig.detectedAt))} &middot; <span class="cc-domain-tag">${esc(sig.domain)}</span></div>
+        <div class="cc-feed-meta">${esc(acct ? acct.name : '')} &middot; <span class="${isNew ? 'cc-time-new' : ''}">${esc(relativeTime(sig.detectedAt))}</span> &middot; <span class="cc-domain-tag">${esc(sig.domain)}</span></div>
         <div class="cc-feed-summary">${esc(sig.summary)}</div>
       </div>
       <div class="cc-feed-actions">

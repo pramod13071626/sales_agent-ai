@@ -1,16 +1,9 @@
-// Common Objections & Pain Points widget — ranks Persona.operational_pain_points
-// and Persona.key_objections (real AI-dossier fields, not fabricated) by how
-// many personas across the user's accounts mention them. Aggregation happens
-// server-side (GET /api/objections) rather than shipping every persona's raw
-// fields to the client just to count them here.
-//
-// Rendered as two horizontal bar charts (Chart.js — already loaded for the
-// Account Priority Matrix on this page, no new library needed) rather than
-// plain ranked lists: bar length makes the frequency gap between the #1
-// objection and the rest immediately visible, which a list of equal-height
-// rows doesn't convey. The per-account breakdown that a list row could show
-// inline moves to the tooltip instead (see renderTooltipLines below).
+// Common Objections & Pain Points widgets — separate parallel panels ranking
+// Persona.operational_pain_points and Persona.key_objections (real AI-dossier fields)
+// by how many personas across the user's accounts mention them.
+// Aggregation happens server-side (GET /api/objections) with client-side account filtering.
 import { renderSkeleton } from '../skeleton.js';
+import { ccState } from './state.js';
 
 let objectionsPromise = null;
 let painChart = null;
@@ -18,28 +11,31 @@ let objectionChart = null;
 
 function loadObjectionsData() {
   if (!objectionsPromise) {
-    objectionsPromise = fetch('/api/objections?limit=6')
-      .then(res => { if (!res.ok) throw new Error(`Failed to load objections (${res.status})`); return res.json(); });
+    objectionsPromise = fetch('/api/objections?limit=10')
+      .then(res => {
+        if (!res.ok) throw new Error(`Failed to load objections (${res.status})`);
+        return res.json();
+      });
   }
   return objectionsPromise;
 }
 
-function truncate(text, max = 46) {
+function truncate(text, max = 40) {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
 function renderTooltipLines(item) {
-  const accounts = item.accounts.slice(0, 6);
-  const extra = item.accounts.length - accounts.length;
+  const accounts = (item.accounts || []).slice(0, 6);
+  const extra = (item.accounts || []).length - accounts.length;
   return [
-    `${item.count} mention${item.count !== 1 ? 's' : ''}`,
+    `${item.count} persona mention${item.count !== 1 ? 's' : ''}`,
     ...accounts.map(a => `• ${a}`),
     ...(extra > 0 ? [`+${extra} more account${extra !== 1 ? 's' : ''}`] : []),
   ];
 }
 
 function buildChart(canvas, items, barColor) {
-  const data = [...items].reverse(); // Chart.js horizontal bars render bottom-up — reverse so #1 lands on top
+  const data = [...items].slice(0, 6).reverse(); // Chart.js horizontal bars render bottom-up — reverse so #1 lands on top
   return new Chart(canvas.getContext('2d'), {
     type: 'bar',
     data: {
@@ -48,17 +44,24 @@ function buildChart(canvas, items, barColor) {
         data: data.map(i => i.count),
         backgroundColor: barColor,
         borderRadius: 4,
-        maxBarThickness: 22,
+        maxBarThickness: 20,
       }],
     },
     options: {
       indexAxis: 'y',
       responsive: true,
       maintainAspectRatio: false,
-      layout: { padding: { right: 10 } },
+      layout: { padding: { right: 12, top: 4, bottom: 4 } },
       scales: {
-        x: { beginAtZero: true, ticks: { precision: 0, font: { size: 10 } }, grid: { color: 'rgba(148,163,184,.12)' } },
-        y: { ticks: { font: { size: 11 } }, grid: { display: false } },
+        x: {
+          beginAtZero: true,
+          ticks: { precision: 0, font: { size: 10 } },
+          grid: { color: 'rgba(148,163,184,.12)' },
+        },
+        y: {
+          ticks: { font: { size: 11 } },
+          grid: { display: false },
+        },
       },
       plugins: {
         legend: { display: false },
@@ -78,28 +81,33 @@ function buildChart(canvas, items, barColor) {
   });
 }
 
-function renderGroup(container, canvasId, title, items, emptyText, barColor) {
-  if (!items.length) {
-    container.innerHTML = `<div class="cc-subhead">${title}</div><div class="cc-drawer-empty">${emptyText}</div>`;
+function renderPanel(containerId, canvasId, items, emptyText, barColor) {
+  const container = document.getElementById(containerId);
+  if (!container) return null;
+  if (!items || !items.length) {
+    container.innerHTML = `<div class="cc-drawer-empty" style="padding:24px 16px;">${emptyText}</div>`;
     return null;
   }
-  const height = Math.max(90, items.length * 30);
-  container.innerHTML = `
-    <div class="cc-subhead">${title}</div>
-    <div style="height:${height}px;"><canvas id="${canvasId}"></canvas></div>`;
-  return buildChart(document.getElementById(canvasId), items, barColor);
+  const height = Math.max(160, Math.min(240, items.length * 34));
+  container.innerHTML = `<div style="height:${height}px; width:100%;"><canvas id="${canvasId}"></canvas></div>`;
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return null;
+  return buildChart(canvas, items, barColor);
 }
 
 export async function renderObjections() {
-  const body = document.getElementById('ccObjectionsBody');
-  if (!body) return;
-  body.innerHTML = renderSkeleton('lines');
+  const painContainer = document.getElementById('ccPainBody');
+  const objectionContainer = document.getElementById('ccObjectionBody');
+
+  if (painContainer) painContainer.innerHTML = renderSkeleton('lines');
+  if (objectionContainer) objectionContainer.innerHTML = renderSkeleton('lines');
 
   if (painChart) { painChart.destroy(); painChart = null; }
   if (objectionChart) { objectionChart.destroy(); objectionChart = null; }
 
   if (typeof Chart === 'undefined') {
-    body.innerHTML = '<div class="cc-drawer-empty">Chart library not loaded.</div>';
+    if (painContainer) painContainer.innerHTML = '<div class="cc-drawer-empty">Chart library not loaded.</div>';
+    if (objectionContainer) objectionContainer.innerHTML = '<div class="cc-drawer-empty">Chart library not loaded.</div>';
     return;
   }
 
@@ -108,20 +116,31 @@ export async function renderObjections() {
     data = await loadObjectionsData();
   } catch (err) {
     console.error(err);
-    body.innerHTML = '<div class="cc-drawer-empty">Could not load objections data.</div>';
+    if (painContainer) painContainer.innerHTML = '<div class="cc-drawer-empty">Could not load pain points data.</div>';
+    if (objectionContainer) objectionContainer.innerHTML = '<div class="cc-drawer-empty">Could not load objections data.</div>';
     return;
   }
 
-  body.innerHTML = `
-    <div class="cc-objections-group" id="ccPainGroup"></div>
-    <div class="cc-objections-group" id="ccObjectionGroup" style="margin-top:14px;"></div>`;
+  let painPoints = data.pain_points || [];
+  let objections = data.objections || [];
 
-  painChart = renderGroup(
-    document.getElementById('ccPainGroup'), 'ccPainChart', 'Top pain points',
-    data.pain_points || [], 'No pain points captured yet for your accounts.', '#FFB822'
+  // Account filter
+  const selAcct = ccState.selectedAccountName;
+  if (selAcct) {
+    const selLower = selAcct.toLowerCase();
+    painPoints = painPoints.filter(p => (p.accounts || []).some(a => a.toLowerCase().includes(selLower) || selLower.includes(a.toLowerCase())));
+    objections = objections.filter(o => (o.accounts || []).some(a => a.toLowerCase().includes(selLower) || selLower.includes(a.toLowerCase())));
+  }
+
+  painChart = renderPanel(
+    'ccPainBody', 'ccPainCanvas', painPoints,
+    selAcct ? `No pain points recorded for ${selAcct}.` : 'No pain points captured yet for your accounts.',
+    '#f59e0b'
   );
-  objectionChart = renderGroup(
-    document.getElementById('ccObjectionGroup'), 'ccObjectionChart', 'Top objections',
-    data.objections || [], 'No objections captured yet for your accounts.', '#F5325C'
+
+  objectionChart = renderPanel(
+    'ccObjectionBody', 'ccObjectionCanvas', objections,
+    selAcct ? `No objections recorded for ${selAcct}.` : 'No objections captured yet for your accounts.',
+    '#ef4444'
   );
 }

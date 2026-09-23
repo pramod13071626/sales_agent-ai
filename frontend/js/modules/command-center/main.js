@@ -3,7 +3,7 @@ import { initThemeToggle } from '../theme.js';
 import { initTopbarAuth } from '../topbar-auth.js';
 import { showToast } from '../toast.js';
 import { ccState } from './state.js';
-import { renderKpiStrip } from './kpi.js';
+import { renderKpiStrip, bindKpiListeners } from './kpi.js';
 import { renderMatrix } from './matrix.js';
 import { renderFeed } from './feed.js';
 import { renderPlaybook } from './playbook.js';
@@ -12,11 +12,12 @@ import { initDrawer } from './drawer.js';
 import { initAccountsNav } from './accounts-nav.js';
 import { renderDueSoon } from './due-soon.js';
 import { renderHiringSignals, renderStrategicInvestmentTracks } from './hiring-signals.js';
-import { renderCapitalEvents, renderCoverageGaps, renderCompetitorMentions, renderTechSignals } from './account-signals.js';
+import { renderCapitalEvents, renderCoverageGaps } from './account-signals.js';
 import { renderObjections } from './objections.js';
-import { renderDecisionMakers } from './decision-makers.js';
 import { renderNewsFeed } from './news.js';
 import { initWidgetGuides } from './widget-guide.js';
+import { initAccountFilter } from './account-filter.js';
+import { initWidgetCustomizer } from './widget-customizer.js';
 import { kpiBase } from './data.js';
 
 function weekRangeLabel() {
@@ -31,14 +32,24 @@ function weekRangeLabel() {
 
 function renderSubtitle() {
   const el = document.getElementById('ccSubtitle');
-  if (el) el.textContent = `${weekRangeLabel()} · ${kpiBase.playsInMotion} open plays`;
+  if (!el) return;
+  if (ccState.selectedAccountName) {
+    el.innerHTML = `<span class="cc-filtered-subtitle"><i class="fa-solid fa-filter"></i> Showing intelligence filtered for <strong>${esc(ccState.selectedAccountName)}</strong></span>`;
+  } else {
+    el.textContent = `${weekRangeLabel()} · ${kpiBase.playsInMotion} open plays`;
+  }
 }
 
 async function renderKpi() {
-  document.getElementById('ccKpiStrip').innerHTML = await renderKpiStrip(ccState.activeRole);
+  const container = document.getElementById('ccKpiStrip');
+  if (!container) return;
+  const { html, data } = await renderKpiStrip();
+  container.innerHTML = html;
+  bindKpiListeners(container, data);
 }
 
 function renderAll() {
+  renderSubtitle();
   renderKpi();
   renderFeed();
   renderPlaybook();
@@ -48,10 +59,7 @@ function renderAll() {
   renderStrategicInvestmentTracks();
   renderCapitalEvents();
   renderCoverageGaps();
-  renderCompetitorMentions();
-  renderTechSignals();
   renderObjections();
-  renderDecisionMakers();
   renderNewsFeed();
 }
 
@@ -64,12 +72,16 @@ function checkDashboardAccessNotice() {
   history.replaceState(null, '', window.location.pathname + (rest ? `?${rest}` : ''));
 }
 
-function init() {
+async function init() {
   initThemeToggle();
   checkDashboardAccessNotice();
-  renderSubtitle();
   initDrawer();
   initAccountsNav();
+  initWidgetCustomizer();
+  await initAccountFilter((accountId, accountObj) => {
+    renderAll();
+    renderMatrix();
+  });
   renderAll();
   renderMatrix();
   initWidgetGuides();
