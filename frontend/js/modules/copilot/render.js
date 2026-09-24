@@ -25,6 +25,27 @@ const TYPE_ICON = {
   cxo_move: 'fa-user-tie', patent: 'fa-lightbulb', job: 'fa-briefcase', job_theme: 'fa-chart-column',
 };
 
+// Scraped text is sometimes double-encoded (UTF-8 read as Windows-1252): "Wealthâ€™s".
+const MOJIBAKE = [['â€™', '’'], ['â€˜', '‘'], ['â€œ', '“'], ['â€\u009d', '”'], ['â€"', '—'], ['â€“', '–'],
+  ['â€”', '—'], ['â€¦', '…'], ['â€¢', '•'], ['Â ', ' '], ['Â·', '·'], ['Ã©', 'é'], ['Ã¨', 'è'], ['Ã¼', 'ü'], ['Ã¶', 'ö']];
+export function fixText(s) {
+  let out = String(s == null ? '' : s);
+  if (!/[âÃÂ]/.test(out)) return out;
+  MOJIBAKE.forEach(([bad, good]) => { out = out.split(bad).join(good); });
+  // Latin-1 variant ("â\u0080\u0099"): re-decode each UTF-8 byte run
+  out = out.replace(/[Â-ô][\u0080-¿]{1,3}/g, (run) => {
+    try { return decodeURIComponent(run.split('').map(ch => `%${ch.charCodeAt(0).toString(16).padStart(2, '0')}`).join('')); }
+    catch { return run; }
+  });
+  return out.replace(/â€[\u0080-¿]?/g, '’');
+}
+
+// "Name — Title | Tagline | …" → "Name — Title" (headline taglines make titles unreadably long)
+export function shortTitle(t, max = 70) {
+  const s = fixText(t || 'Untitled').split(/\s[|•]\s/)[0].trim();
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+}
+
 export function typeLabel(t) { return TYPE_LABEL[t] || (t || '').replace(/_/g, ' '); }
 export function typeIcon(t) {
   const i = TYPE_ICON[t] || 'fa-file-lines';
@@ -54,7 +75,7 @@ function inline(s, nCites) {
 }
 
 export function renderMarkdown(text, nCites = 0) {
-  const lines = String(text || '').replace(/\r/g, '').split('\n');
+  const lines = fixText(text || '').replace(/\r/g, '').split('\n');
   const out = [];
   let list = null;
   const closeList = () => { if (list) { out.push(`</${list}>`); list = null; } };
@@ -112,7 +133,7 @@ function renderContacts(contacts) {
       <span class="cp-contact-avatar">${esc((c.name || '?').split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase())}</span>
       <div class="cp-contact-main">
         <strong>${href ? `<a href="${href}" target="_blank" rel="noopener">${esc(c.name)}</a>` : esc(c.name)}</strong>
-        <span class="cp-muted">${esc(c.title || '')}${c.account ? ` · ${esc(c.account)}` : ''}</span>
+        <span class="cp-muted" title="${esc(fixText(c.title || ''))}">${esc(shortTitle(c.title || '', 90))}${c.account ? ` · ${esc(c.account)}` : ''}</span>
       </div>
       <div class="cp-contact-links">
         ${c.email ? `<a href="mailto:${esc(c.email)}" title="${esc(c.email)}"><i class="fa-solid fa-envelope"></i> Email</a>` : ''}
@@ -127,6 +148,57 @@ function renderFollowups(list) {
   if (!list || !list.length) return '';
   return `<div class="cp-followups" aria-label="Suggested follow-ups">${list.map(f =>
     `<button type="button" class="cp-suggestion cp-followup" data-followup="${esc(f)}"><i class="fa-solid fa-arrow-turn-down fa-rotate-270"></i> ${esc(f)}</button>`).join('')}</div>`;
+}
+
+// Drafted email (intent "draft", guardrails applied server-side): "**Subject:** …\n\nbody\n\n_Based on sources …_"
+// Plain-text email body for the clipboard / mail apps: bold markers removed, bullets as "•".
+export function draftPlain(body) {
+  return (body || '').replace(/\*\*(.+?)\*\*/g, '$1').replace(/^\s*[-*]\s+/gm, '• ');
+}
+
+export function parseDraft(content) {
+  const text = fixText(content || '');
+  const m = text.match(/^\s*\**\s*Subject\s*:?\**\s*:?\s*(.+)\n([\s\S]*)$/i);
+  if (!m) return null;
+  let body = m[2].trim();
+  let basedOn = '';
+  const b = body.match(/\n\s*_?Based on sources?[^\n]*_?\s*$/i);
+  if (b) { basedOn = b[0].trim(); body = body.slice(0, b.index).trim(); }
+  return { subject: m[1].replace(/\*+/g, '').trim(), body, basedOn };
+}
+
+const CHECK_ICON = { pass: 'fa-circle-check', fixed: 'fa-wrench', warn: 'fa-triangle-exclamation' };
+
+function renderGuardrails(checks) {
+  if (!checks || !checks.length) return '';
+  const fixed = checks.filter(c => c.status === 'fixed').length;
+  const warn = checks.filter(c => c.status === 'warn').length;
+  const summary = warn ? `${warn} to review` : (fixed ? `${fixed} auto-fixed` : 'all passed');
+  return `<details class="cp-guard${warn ? ' has-warn' : ''}">
+    <summary><i class="fa-solid fa-shield-halved"></i> Guardrail checks · ${esc(summary)}</summary>
+    <ul>${checks.map(c => `<li class="cp-guard-${esc(c.status)}"><i class="fa-solid ${CHECK_ICON[c.status] || 'fa-circle'}"></i>
+      <strong>${esc(c.check)}</strong> ${esc(c.detail)}</li>`).join('')}</ul>
+  </details>`;
+}
+
+function renderDraft(msg, nCites) {
+  const d = parseDraft(msg.content);
+  if (!d) return null;
+  const to = (msg.extras && msg.extras.draft_to) || '';
+  const mailto = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(d.subject)}&body=${encodeURIComponent(draftPlain(d.body))}`;
+  const paras = renderMarkdown(d.body, 0);   // keeps paragraphs, **bold** labels and bullet lists
+  return `<div class="cp-email">
+      <div class="cp-email-head"><span class="cp-email-label">Subject</span><strong>${esc(d.subject)}</strong></div>
+      ${to ? `<div class="cp-email-head cp-email-to"><span class="cp-email-label">To</span><span>${esc(to)}</span></div>` : ''}
+      <div class="cp-email-body">${paras}</div>
+      <div class="cp-email-actions">
+        <button type="button" class="cp-btn cp-btn-primary" data-action="copy-email"><i class="fa-regular fa-copy"></i> Copy email</button>
+        <a class="cp-btn" href="${esc(mailto)}"><i class="fa-regular fa-envelope"></i> Open in mail app</a>
+        <span class="cp-muted cp-small">Review before sending — replace [Your name].</span>
+      </div>
+    </div>
+    ${d.basedOn ? `<div class="cp-md cp-small">${renderMarkdown(d.basedOn, nCites)}</div>` : ''}
+    ${renderGuardrails(msg.extras && msg.extras.guardrails)}`;
 }
 
 export function renderMessage(msg, opts = {}) {
@@ -154,11 +226,11 @@ export function renderMessage(msg, opts = {}) {
         <span class="cp-time">${esc(timeLabel(msg.created_at))}</span>
       </div>
       ${msg.status && streaming ? `<div class="cp-status"><span class="cp-dot"></span><span class="cp-dot"></span><span class="cp-dot"></span> ${esc(msg.status)}</div>` : ''}
-      <div class="cp-md">${renderMarkdown(msg.content, cites.length)}${streaming && msg.content ? '<span class="cp-caret" aria-hidden="true"></span>' : ''}</div>
+      ${(!streaming && extras.draft && renderDraft(msg, cites.length)) || `<div class="cp-md">${renderMarkdown(msg.content, cites.length)}${streaming && msg.content ? '<span class="cp-caret" aria-hidden="true"></span>' : ''}</div>`}
       ${renderTable(extras.table)}
       ${renderContacts(extras.contacts)}
-      ${cites.length && !opts.compact ? `<div class="cp-cite-row">${cites.slice(0, 8).map(c =>
-        `<button type="button" class="cp-src-pill" data-cite="${c.n}" title="${esc(c.snippet || '')}"><span class="cp-cite">${c.n}</span><i class="${typeIcon(c.doc_type)}"></i> ${esc((c.title || '').slice(0, 42))}</button>`).join('')}</div>` : ''}
+      ${cites.length && !opts.compact ? `<div class="cp-cite-row" aria-label="Sources">${cites.slice(0, 5).map(c =>
+        `<button type="button" class="cp-src-pill" data-cite="${c.n}" title="${esc(shortTitle(c.title, 200))}${c.snippet ? ' — ' + esc(fixText(c.snippet).slice(0, 160)) : ''}"><span class="cp-cite">${c.n}</span><i class="${typeIcon(c.doc_type)}"></i><span class="cp-pill-text">${esc(shortTitle(c.title, 38))}</span></button>`).join('')}${cites.length > 5 ? `<span class="cp-more-sources">+${cites.length - 5} more in Sources</span>` : ''}</div>` : ''}
       ${!streaming && msg.id ? `<div class="cp-msg-actions">
         <button type="button" class="cp-icon-btn ${fb === 1 ? 'on' : ''}" data-action="fb-up" title="Helpful" aria-label="Helpful"><i class="fa-solid fa-thumbs-up"></i></button>
         <button type="button" class="cp-icon-btn ${fb === -1 ? 'on' : ''}" data-action="fb-down" title="Not helpful" aria-label="Not helpful"><i class="fa-solid fa-thumbs-down"></i></button>
@@ -185,9 +257,9 @@ export function renderSources(citations) {
   if (!citations.length) return '<span class="cp-muted cp-small">Sources cited in answers appear here.</span>';
   return citations.map(c => {
     const date = c.published_at ? new Date(c.published_at).toLocaleDateString() : '';
-    const inner = `<div class="cp-source-title"><i class="${typeIcon(c.doc_type)}"></i><span>${esc(c.title || 'Untitled')}</span></div>
+    const inner = `<div class="cp-source-title"><i class="${typeIcon(c.doc_type)}"></i><span title="${esc(fixText(c.title || ''))}">${esc(shortTitle(c.title, 90))}</span></div>
       <div class="cp-source-meta">${esc(typeLabel(c.doc_type))}${date ? ` · ${esc(date)}` : ''}</div>
-      ${c.snippet ? `<div class="cp-source-snippet">${esc(c.snippet.slice(0, 160))}…</div>` : ''}`;
+      ${c.snippet ? `<div class="cp-source-snippet">${esc(fixText(c.snippet).slice(0, 180))}</div>` : ''}`;
     return c.url
       ? `<a class="cp-source" id="cpSrc-${esc(c.key)}" href="${esc(c.url)}" target="_blank" rel="noopener">${inner}</a>`
       : `<div class="cp-source" id="cpSrc-${esc(c.key)}">${inner}</div>`;

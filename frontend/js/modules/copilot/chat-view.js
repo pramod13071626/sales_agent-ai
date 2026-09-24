@@ -2,7 +2,7 @@
 // (main.js) and the dock on every other page (dock.js). Owns: message list,
 // streaming, composer (@mentions, /commands, ↑ to edit), answer actions.
 import { api, download, streamChat } from './client.js';
-import { renderEmpty, renderMentionList, renderMessage } from './render.js';
+import { draftPlain, parseDraft, renderEmpty, renderMentionList, renderMessage } from './render.js';
 import { showToast } from '../toast.js';
 
 const SAVE_HINT = /\b(meeting|call|demo|lunch|visit)\b.*\b(on|at|next|tomorrow|monday|tuesday|wednesday|thursday|friday|\d{1,2})\b|\b(we (already|pitched|proposed|sent|met)|they (said|told|mentioned|want|prefer)|prefers?|budget is|decision (by|in))\b/i;
@@ -319,6 +319,10 @@ export class ChatView {
       } else if (action === 'copy') {
         await navigator.clipboard.writeText(plain(msg.content));
         showToast('Answer copied');
+      } else if (action === 'copy-email') {
+        const d = parseDraft(msg.content);
+        await navigator.clipboard.writeText(d ? `Subject: ${d.subject}\n\n${draftPlain(d.body)}` : plain(msg.content));
+        showToast('Email copied — paste it into your mail app');
       } else if (action === 'email') {
         const who = (msg.extras && msg.extras.entities && msg.extras.entities.persona) ? msg.extras.entities.persona.name.split(' ')[0] : 'there';
         await navigator.clipboard.writeText(`Hi ${who},\n\n${plain(msg.content)}\n\nBest regards,\n`);

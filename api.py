@@ -83,6 +83,8 @@ from services.lob_service import LobService, LobValidator
 from services.persona_service import PersonaService, PersonaValidator
 from services.pipeline_run_logger import PipelineRunLogger
 from services import callprep_service
+# Contact privacy: work email/phone only — personal email & direct mobile never reach the browser
+from apps.sales_copilot import privacy as contact_privacy
 from pdf_export import build_persona_profile_pdf, build_psychological_profile_pdf
 import auth
 import email_sender
@@ -1144,11 +1146,9 @@ if FASTAPI_AVAILABLE:
             "tier": p.tier,
             "seniority_raw": p.seniority_raw,
             "departments": p.departments or ["Executive"],
-            "email": p.email,
+            "email": contact_privacy.safe_email(p.email),
             "email_status": p.email_status or ("Verified" if p.email else None),
-            "phone": p.phone,
-            "personal_email": p.personal_email,
-            "direct_mobile_phone": p.direct_mobile_phone,
+            "phone": contact_privacy.safe_phone(p.phone, p.direct_mobile_phone),
             "linkedin_url": p.linkedin_url,
             "crunchbase_permalink": p.crunchbase_permalink,
             "city": p.city,
@@ -1206,8 +1206,8 @@ if FASTAPI_AVAILABLE:
             "osint_feed_manifest": p.osint_feed_manifest or {},
             "is_manually_verified": bool(getattr(p, "is_manually_verified", False)),
             "manually_verified_at": p.manually_verified_at.isoformat() if getattr(p, "manually_verified_at", None) else None,
-            "extended_profile": getattr(p, "extended_profile", None) or {},
-            "raw_data": p.raw_data,
+            "extended_profile": contact_privacy.scrub_extended_profile(getattr(p, "extended_profile", None) or {}),
+            "raw_data": contact_privacy.scrub_raw(p.raw_data, p.personal_email, p.direct_mobile_phone),
         }
 
     def _serialize_persona_summary(p: Persona) -> Dict[str, Any]:
@@ -3154,6 +3154,10 @@ if FASTAPI_AVAILABLE:
     from apps.sales_copilot.api import install as install_copilot
     install_copilot(app)
 
+    # Deals pipeline (Intro → Discovery → Proposal → Pilot → Contract) — apps/sales_copilot/README.md §21
+    from apps.sales_deals.api import install as install_deals
+    install_deals(app)
+
     # ══════════════════════════════════════════════════════
     # SOLID REST API ENDPOINTS
     # ══════════════════════════════════════════════════════
@@ -3408,8 +3412,8 @@ if FASTAPI_AVAILABLE:
                         "tier": p.tier,
                         "seniority_tier": p.tier,
                         "seniority_raw": p.seniority_raw,
-                        "email": p.email,
-                        "phone": p.phone,
+                        "email": contact_privacy.safe_email(p.email),
+                        "phone": contact_privacy.safe_phone(p.phone, p.direct_mobile_phone),
                         "city": p.city,
                         "state": p.state,
                         "country": p.country,
@@ -3432,7 +3436,7 @@ if FASTAPI_AVAILABLE:
                         "social_platform": p.social_platform,
                         "social_profile_url": p.social_profile_url,
                         "social_presence_level": p.social_presence_level,
-                        "raw_data": p.raw_data,
+                        "raw_data": contact_privacy.scrub_raw(p.raw_data, p.personal_email, p.direct_mobile_phone),
                     }
                 )
             return {"account_id": account_id, "total_personas": len(result), "personas": result}
@@ -3454,8 +3458,8 @@ if FASTAPI_AVAILABLE:
                 "name": p.full_name or p.display_name or "Executive",
                 "title": p.title,
                 "tier": p.tier,
-                "email": p.email,
-                "phone": p.phone,
+                "email": contact_privacy.safe_email(p.email),
+                "phone": contact_privacy.safe_phone(p.phone, p.direct_mobile_phone),
                 "location": f"{p.city or ''}, {p.country or ''}".strip(", "),
                 "decision_authority": p.decision_authority,
                 "budget_authority": p.budget_authority,
@@ -3468,7 +3472,7 @@ if FASTAPI_AVAILABLE:
                 "value_proposition": p.value_proposition,
                 "operational_pain_points": p.operational_pain_points or [],
                 "target_kpis": p.target_kpis or [],
-                "raw_data": p.raw_data,
+                "raw_data": contact_privacy.scrub_raw(p.raw_data, p.personal_email, p.direct_mobile_phone),
             }
         finally:
             session.close()
@@ -3745,8 +3749,8 @@ if FASTAPI_AVAILABLE:
             persona_dict = {
                 "name": p.full_name or p.display_name or "Executive",
                 "title": p.title,
-                "email": p.email,
-                "phone": p.phone,
+                "email": contact_privacy.safe_email(p.email),
+                "phone": contact_privacy.safe_phone(p.phone, p.direct_mobile_phone),
                 "linkedin_url": p.linkedin_url,
                 "city": p.city,
                 "state": p.state,
@@ -3878,7 +3882,7 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
-    def _generate_persona_profiles(session, p: "Persona"):
+    def _generate_persona_profiles(session, p: "Persona", user_id: Optional[int] = None):
         """Runs the person digest subprocess that synthesizes BOTH the
         Personality and Psychological profiles in one pass (--profiles-only
         always builds both, see apps/content_pipeline/digest/pipeline.py)
@@ -3926,8 +3930,22 @@ if FASTAPI_AVAILABLE:
         # all session for this app's own Windows-console encoding issue
         # (main.py's banner prints a Unicode box-drawing character).
         proc_env = dict(os.environ, PYTHONIOENCODING="utf-8")
+
+        # Shared OpenRouter quota (apps/sales_copilot/README.md §10.4): one request per
+        # channel with posts + personality + psychological. Reserve up front so a click
+        # can't start a run the team's remaining budget can't finish.
+        from apps.sales_copilot import llm as quota
+        n_channels = session.execute(
+            sql_text("SELECT count(DISTINCT channel) FROM posts WHERE target_key = :k"), {"k": target_key}
+        ).scalar() or 0
+        try:
+            usage_ids = quota.reserve(session, "profiles", user_id, est_tokens=30000, requests_=max(1, n_channels) + 2)
+        except quota.QuotaExceeded as e:
+            raise HTTPException(status_code=429, detail=str(e))
+
         log_fd, log_path = tempfile.mkstemp(suffix=".log", prefix="profile_gen_")
         os.close(log_fd)
+        output = ""
         try:
             with open(log_path, "w", encoding="utf-8") as log_fh:
                 result = subprocess.run(
@@ -3942,6 +3960,15 @@ if FASTAPI_AVAILABLE:
                 os.remove(log_path)
             except OSError:
                 pass
+            # Settle the reservations with what the pipeline actually sent ([llm-usage] lines).
+            sent = re.findall(r"\[llm-usage\] status=(\d+) in=(\d+) out=(\d+)", output or "")
+            for uid, (st, tin, tout) in zip(usage_ids, sent):
+                quota.finalize(session, uid, ok=st == "200", status_code=int(st), model=None,
+                               tokens_in=int(tin), tokens_out=int(tout))
+            quota.release(session, usage_ids[len(sent):])
+            for st, tin, tout in sent[len(usage_ids):]:
+                quota.record(session, "profiles", user_id, ok=st == "200", status_code=int(st),
+                             tokens_in=int(tin), tokens_out=int(tout))
 
         if result.returncode != 0:
             # "No posts in scope" isn't a pipeline failure — it means this
@@ -4014,7 +4041,7 @@ if FASTAPI_AVAILABLE:
             if not p:
                 raise HTTPException(status_code=404, detail="Persona not found.")
 
-            digest_row, output = _generate_persona_profiles(session, p)
+            digest_row, output = _generate_persona_profiles(session, p, user.id)
             personality = (digest_row.digest or {}).get("personality_profile") if digest_row else None
             if not personality:
                 raise HTTPException(
@@ -4095,7 +4122,7 @@ if FASTAPI_AVAILABLE:
         session = get_session()
         try:
             try:
-                out = callprep_service.generate_persona(session, persona_id, force=force)
+                out = callprep_service.generate_persona(session, persona_id, force=force, user_id=user.id)
             except ValueError as e:
                 raise HTTPException(status_code=404, detail=str(e))
             except callprep_service.QuotaExceeded as e:
@@ -4121,7 +4148,7 @@ if FASTAPI_AVAILABLE:
             if not p:
                 raise HTTPException(status_code=404, detail="Persona not found.")
 
-            digest_row, output = _generate_persona_profiles(session, p)
+            digest_row, output = _generate_persona_profiles(session, p, user.id)
             psych = (digest_row.digest or {}).get("psychological_profile") if digest_row else None
             if not psych:
                 raise HTTPException(
@@ -4773,6 +4800,63 @@ if FASTAPI_AVAILABLE:
             return {"action_items": results}
         finally:
             session.close()
+
+    _XLSX_MEDIA = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+    def _xlsx_response(content: bytes, filename: str):
+        from fastapi import Response
+        return Response(content, media_type=_XLSX_MEDIA,
+                        headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+    @app.get("/api/me/action-items/export", tags=["8. Action Items"])
+    def export_my_action_items(status: Optional[str] = None, account_id: Optional[int] = None,
+                               priority: Optional[str] = None, user: User = Depends(auth.get_current_user)):
+        """My Tasks as Excel — same access rules and filters as the /tasks page."""
+        from apps.sales_copilot import exports
+        items = list_my_action_items(status=status, user=user)["action_items"]
+        if account_id:
+            items = [i for i in items if i.get("account_id") == account_id]
+        if priority:
+            items = [i for i in items if i.get("priority") == priority]
+        headers = ["Title", "Status", "Priority", "Due", "Account", "Contact", "Description", "Created"]
+        rows = [[i.get("title"), i.get("status"), i.get("priority"), (i.get("due_date") or "")[:10],
+                 i.get("account_name"), (i.get("persona") or {}).get("name") if isinstance(i.get("persona"), dict) else i.get("persona_name"),
+                 i.get("description"), (i.get("created_at") or "")[:10]] for i in items]
+        content = exports.rows_xlsx("My tasks", headers, rows, [48, 12, 10, 12, 22, 24, 60, 12],
+                                    about=[["Exported for", user.full_name or user.email], ["Exported at", exports._now()],
+                                           ["Filters", f"status={status or 'all'}, priority={priority or 'all'}, account={account_id or 'all'}"],
+                                           ["Rows", len(rows)]])
+        return _xlsx_response(content, "my-tasks.xlsx")
+
+    @app.get("/api/accounts/{account_id}/people/export", tags=["3. Personas & Buying Committee"])
+    def export_account_people(account_id: int, user: User = Depends(auth.require_account_access)):
+        """Buying committee / contact list for one account as Excel. Business contact
+        fields only (work email/phone) — personal email/mobile are never exported."""
+        from apps.sales_copilot import exports
+        session = get_session()
+        try:
+            acct = session.query(Account).filter_by(id=account_id).first()
+            if not acct:
+                raise HTTPException(status_code=404, detail="Account not found.")
+            from apps.sales_copilot import privacy
+            rows = session.execute(sql_text(f"""
+                SELECT coalesce(p.full_name, p.display_name), p.title, p.tier, l.lob_name, p.decision_authority,
+                       p.budget_authority, {privacy.SAFE_EMAIL_SQL}, {privacy.SAFE_PHONE_SQL}, p.linkedin_url,
+                       concat_ws(', ', p.city, p.country), (p.value_proposition IS NOT NULL), p.id
+                FROM personas p LEFT JOIN lobs l ON l.id = p.lob_id
+                WHERE p.account_id = :a
+                ORDER BY p.hierarchy_level NULLS LAST, 1"""), {"a": account_id}).fetchall()
+        finally:
+            session.close()
+        name = acct.display_name or acct.legal_name or acct.key
+        headers = ["Name", "Title", "Tier", "Line of business", "Decision authority", "Budget authority",
+                   "Work email", "Phone", "LinkedIn", "Location", "Call-prep ready", "Profile link"]
+        data = [[r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9], "yes" if r[10] else "",
+                 f"/profile?account={account_id}&persona_id={r[11]}"] for r in rows]
+        content = exports.rows_xlsx("Contacts", headers, data, [26, 40, 14, 24, 22, 18, 30, 18, 40, 22, 12, 34],
+                                    about=[["Account", name], ["Exported for", user.full_name or user.email],
+                                           ["Exported at", exports._now()], ["Contacts", len(data)]])
+        return _xlsx_response(content, exports.safe_filename(f"{name}-contacts", "xlsx"))
 
     @app.get("/api/content", tags=["4. Content Intelligence"])
     def get_content_intelligence():
@@ -5562,6 +5646,12 @@ if FASTAPI_AVAILABLE:
             movements timeline. Currently runs on mock seed data; see
             frontend/js/modules/command-center/data.js."""
             return templates.TemplateResponse(request, "command-center.html", headers=_NO_CACHE_HEADERS)
+
+        @app.get("/deals", response_class=HTMLResponse, include_in_schema=False)
+        async def deals_page(request: Request):
+            """Deals pipeline board + deal room (apps/sales_copilot/README.md §21).
+            ?deal=ID opens a deal; ?account_id= filters the board."""
+            return templates.TemplateResponse(request, "deals.html", headers=_NO_CACHE_HEADERS)
 
         @app.get("/copilot", response_class=HTMLResponse, include_in_schema=False)
         async def copilot_page(request: Request):

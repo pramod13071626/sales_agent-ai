@@ -9,7 +9,7 @@ import { showToast } from '../toast.js';
 import { esc } from '../utils.js';
 import { api, download } from './client.js';
 import { ChatView } from './chat-view.js';
-import { renderSources } from './render.js';
+import { fixText, renderSources, shortTitle } from './render.js';
 
 const $ = (id) => document.getElementById(id);
 let view;
@@ -83,7 +83,7 @@ function renderContext(v) {
     const p = ents.persona;
     items.push(`<div class="cp-focus-item"><i class="fa-solid fa-user"></i>
       <a href="/profile?account=${p.account_id}&persona_id=${p.id}" target="_blank" rel="noopener">${esc(p.name)}</a>
-      <span class="cp-muted cp-small">${esc(p.title || '')}</span></div>`);
+      ${p.title ? `<span class="cp-focus-sub" title="${esc(fixText(p.title))}">${esc(shortTitle(p.title, 120))}</span>` : ''}</div>`);
   }
   ((ents && ents.accounts) || []).forEach(a => items.push(
     `<div class="cp-focus-item"><i class="fa-solid fa-building"></i> <a href="/?account=${a.id}">${esc(a.name)}</a></div>`));

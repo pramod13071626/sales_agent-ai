@@ -41,6 +41,7 @@
           <h1 class="tp-title">My Tasks</h1>
           <p class="tp-subtitle" id="tpSubtitle">Loading…</p>
         </div>
+        <button type="button" class="action-btn" id="tpExport" title="Download the tasks shown (with your current filters) as Excel" style="align-self:center;"><i class="fa-regular fa-file-excel"></i> Export to Excel</button>
       </header>
 
       <div class="panel">
@@ -75,5 +76,6 @@
 {% include "partials/drawer.html" %}
 
 <script type="module" src="js/modules/tasks-page/main.js?v=4.0"></script>
+{% include "partials/copilot-dock.html" %}
 </body>
 </html>

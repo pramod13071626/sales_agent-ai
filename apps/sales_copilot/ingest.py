@@ -65,8 +65,32 @@ BOILERPLATE = [
 # ── Normalization / hashing ───────────────────────────────────────────────────
 
 
+_MOJIBAKE = {"â€™": "’", "â€˜": "‘", "â€œ": "“", "â€\x9d": "”", "â€“": "–", "â€”": "—", "â€¦": "…",
+             "â€¢": "•", "Â ": " ", "Â·": "·", "Ã©": "é", "Ã¨": "è", "Ã¼": "ü", "Ã¶": "ö"}
+
+
+def fix_mojibake(s: str) -> str:
+    """Repair UTF-8 text that was decoded as Windows-1252 somewhere upstream ("Wealthâ€™s")."""
+    if not any(ch in s for ch in "âÃÂ"):
+        return s
+    try:
+        return s.encode("cp1252").decode("utf-8")        # whole-string repair when it round-trips cleanly
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        pass
+    for bad, good in _MOJIBAKE.items():
+        s = s.replace(bad, good)
+
+    # Latin-1 variant: "â\x80\x99" — repair each UTF-8 byte run on its own
+    def _run(m):
+        try:
+            return m.group(0).encode("latin-1").decode("utf-8")
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            return m.group(0)
+    return re.sub(r"[\xc2-\xf4][\x80-\xbf]{1,3}", _run, s)
+
+
 def normalize(text: Any) -> str:
-    s = unicodedata.normalize("NFKC", str(text or ""))
+    s = unicodedata.normalize("NFKC", fix_mojibake(str(text or "")))
     s = re.sub(r"[​-‏﻿]", "", s)
     s = re.sub(r"https?://\S+", "", s)
     s = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", s)          # markdown images

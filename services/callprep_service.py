@@ -246,6 +246,31 @@ def call_llm(system: str, user: str, max_tokens: int) -> Tuple[Dict[str, Any], D
     raise LLMError(f"OpenRouter failed after retries: {last_err}")
 
 
+def governed_llm(session, feature: str, user_id: Optional[int], system: str, user: str, max_tokens: int,
+                 allow_daytime: bool = False) -> Tuple[Dict[str, Any], Dict[str, int]]:
+    """call_llm under the copilot's shared OpenRouter quota governor, so call-prep,
+    profiles and the copilot draw on ONE team budget (apps/sales_copilot/README.md §10.4).
+    feature: "callprep" (the profile-page button, per-user) or "callprep_batch" (script:
+    leftovers only, night window unless allow_daytime)."""
+    from apps.sales_copilot import llm as governor
+    est = (len(system) + len(user)) // 4 + max_tokens
+    try:
+        (usage_id,) = governor.reserve(session, feature, user_id, est, allow_daytime=allow_daytime)
+    except governor.QuotaExceeded as e:
+        raise QuotaExceeded(str(e)) from e
+    ok, status, usage = False, None, {}
+    try:
+        result, usage = call_llm(system, user, max_tokens)
+        ok, status = True, 200
+        return result, usage
+    except QuotaExceeded:
+        status = 429
+        raise
+    finally:
+        governor.finalize(session, usage_id, ok=ok, status_code=status, model=CALLPREP_MODEL,
+                          tokens_in=usage.get("prompt_tokens", 0), tokens_out=usage.get("completion_tokens", 0))
+
+
 # ── Account brief (one LLM call per account, cached on disk) ─────────────────
 
 def _account_brief_input(session, account: Account) -> str:
@@ -312,7 +337,9 @@ def _account_brief_input(session, account: Account) -> str:
     return "\n".join(lines)[:ACCOUNT_INPUT_CHARS]
 
 
-def get_account_brief(session, account: Account, force: bool = False, dry_run: bool = False) -> Dict[str, Any]:
+def get_account_brief(session, account: Account, force: bool = False, dry_run: bool = False,
+                      feature: str = "callprep_batch", user_id: Optional[int] = None,
+                      allow_daytime: bool = False) -> Dict[str, Any]:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     user = _account_brief_input(session, account)
     h = _hash(PROMPT_VERSION, CALLPREP_MODEL, user)
@@ -323,7 +350,7 @@ def get_account_brief(session, account: Account, force: bool = False, dry_run: b
             return {**cached, "cached": True}
     if dry_run:
         return {"brief": {"summary": "(dry run)"}, "input_hash": h, "est_input_tokens": len(user) // 4, "cached": False}
-    brief, usage = call_llm(SYSTEM_ACCOUNT, user, MAX_TOKENS_ACCOUNT)
+    brief, usage = governed_llm(session, feature, user_id, SYSTEM_ACCOUNT, user, MAX_TOKENS_ACCOUNT, allow_daytime)
     out = {
         "brief": brief, "input_hash": h, "model": CALLPREP_MODEL, "usage": usage,
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -541,6 +568,7 @@ def generate_account(
     limit: Optional[int] = None,
     only_keys: Optional[List[str]] = None,
     log=print,
+    allow_daytime: bool = False,
 ) -> Dict[str, Any]:
     account = session.query(Account).filter_by(key=account_key).first()
     if not account:
@@ -551,7 +579,7 @@ def generate_account(
         personas = [p for p in personas if p.key in only_keys]
     lob_names = dict(session.execute(text("select id, lob_name from lobs where account_id=:i"), {"i": account.id}).fetchall())
 
-    brief_info = get_account_brief(session, account, force=force, dry_run=dry_run)
+    brief_info = get_account_brief(session, account, force=force, dry_run=dry_run, allow_daytime=allow_daytime)
     brief_block = _brief_block(brief_info["brief"])
     log(f"[callprep] account brief: {'cached' if brief_info.get('cached') else 'generated'} "
         f"(~{len(brief_block) // 4} tokens reused per call)")
@@ -605,7 +633,7 @@ def generate_account(
         if dry_run:
             continue
         try:
-            result, usage = call_llm(SYSTEM_GROUP, prompt, MAX_TOKENS_PERSON)
+            result, usage = governed_llm(session, "callprep_batch", None, SYSTEM_GROUP, prompt, MAX_TOKENS_PERSON, allow_daytime)
         except QuotaExceeded as e:
             return _stop(e)
         except LLMError as e:
@@ -635,7 +663,7 @@ def generate_account(
         if dry_run:
             continue
         try:
-            result, usage = call_llm(SYSTEM_PERSON, prompt, MAX_TOKENS_PERSON)
+            result, usage = governed_llm(session, "callprep_batch", None, SYSTEM_PERSON, prompt, MAX_TOKENS_PERSON, allow_daytime)
         except QuotaExceeded as e:
             return _stop(e)
         except LLMError as e:
@@ -654,7 +682,7 @@ def generate_account(
     return stats
 
 
-def generate_persona(session, persona_id: int, force: bool = False) -> Dict[str, Any]:
+def generate_persona(session, persona_id: int, force: bool = False, user_id: Optional[int] = None) -> Dict[str, Any]:
     """On-demand call-prep for ONE persona (profile page "Generate" button).
 
     Always an individual call, whatever the evidence level: a rep asking for
@@ -667,7 +695,7 @@ def generate_persona(session, persona_id: int, force: bool = False) -> Dict[str,
         raise ValueError(f"Persona {persona_id} not found")
     account = session.query(Account).filter_by(id=p.account_id).first()
 
-    brief_info = get_account_brief(session, account)
+    brief_info = get_account_brief(session, account, feature="callprep", user_id=user_id)
     ev = _collect_person_evidence(session, p)
     level = classify_level(p, ev)
     lob_name = None
@@ -680,7 +708,7 @@ def generate_persona(session, persona_id: int, force: bool = False) -> Dict[str,
     if not force and existing.get("input_hash") == h and existing.get("method") == "llm_individual":
         return {"status": "unchanged", "persona": p, "level": level, "usage": {}}
 
-    result, usage = call_llm(SYSTEM_PERSON, prompt, MAX_TOKENS_PERSON)
+    result, usage = governed_llm(session, "callprep", user_id, SYSTEM_PERSON, prompt, MAX_TOKENS_PERSON)
     _apply(p, result, result.get("personalized_icebreaker", ""), {
         "level": level, "method": "llm_individual",
         "confidence": {"A": "high", "B": "medium"}.get(level, "low"),

@@ -274,3 +274,15 @@ def notes_xlsx(notes: List[Dict[str, Any]]) -> bytes:
 def safe_filename(s: str, ext: str) -> str:
     base = re.sub(r"[^A-Za-z0-9._-]+", "-", (s or "copilot").strip())[:60].strip("-") or "copilot"
     return f"{base}.{ext}"
+
+
+def rows_xlsx(sheet_title: str, headers: List[str], rows: List[List[Any]], widths: Optional[List[int]] = None,
+              about: Optional[List[List[Any]]] = None) -> bytes:
+    """Generic styled sheet — used by app-wide exports (people lists, tasks)."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = sheet_title[:31]
+    _sheet(ws, headers, rows, widths)
+    if about:
+        _sheet(wb.create_sheet("About"), ["Field", "Value"], about, [16, 80])
+    return _xlsx(wb)

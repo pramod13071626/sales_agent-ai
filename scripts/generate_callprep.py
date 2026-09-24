@@ -27,6 +27,8 @@ def main() -> None:
     parser.add_argument("--force", action="store_true", help="regenerate even when inputs are unchanged")
     parser.add_argument("--limit", type=int, help="max individual calls and max group calls (for a trial run)")
     parser.add_argument("--persona", action="append", dest="personas", help="persona key(s) to restrict to")
+    parser.add_argument("--daytime", action="store_true",
+                        help="run outside the 21:00-05:30 IST batch window (still only uses requests the team left unused)")
     args = parser.parse_args()
 
     print(f"[callprep] model={callprep_service.CALLPREP_MODEL} "
@@ -35,7 +37,7 @@ def main() -> None:
     try:
         stats = callprep_service.generate_account(
             session, args.account, dry_run=args.dry_run, force=args.force,
-            limit=args.limit, only_keys=args.personas,
+            limit=args.limit, only_keys=args.personas, allow_daytime=args.daytime,
         )
     finally:
         session.close()

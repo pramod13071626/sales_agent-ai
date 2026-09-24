@@ -11,6 +11,7 @@ import { getCurrentUser } from '../auth-client.js';
 import { showToast } from '../toast.js';
 import { renderList, renderFilterChips } from '../action-items.js';
 import { initAccountsNav } from '../command-center/accounts-nav.js';
+import { downloadFile } from '../download.js';
 
 function el(id) { return document.getElementById(id); }
 
@@ -159,6 +160,22 @@ function init() {
   initListDelegation();
   refetchAndRender();
 }
+
+function wireExport() {
+  const btn = el('tpExport');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    const params = new URLSearchParams();
+    if (tp.activeStatus && tp.activeStatus !== 'all') params.set('status', tp.activeStatus);
+    if (tp.accountFilter) params.set('account_id', tp.accountFilter);
+    if (tp.priorityFilter) params.set('priority', tp.priorityFilter);
+    try {
+      await downloadFile(`/api/me/action-items/export?${params}`, 'my-tasks.xlsx');
+      showToast('Tasks downloaded');
+    } catch (err) { showToast(err.message); }
+  });
+}
+wireExport();
 
 initTopbarAuth().then((user) => {
   if (!user) {

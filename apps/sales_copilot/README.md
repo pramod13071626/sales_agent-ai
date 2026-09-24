@@ -1522,20 +1522,41 @@ requests**, which matters on the free tier.
 
 ## 22. Implementation status (2026-09-24)
 
-**Built and verified (first version):**
+**Built and verified.** Checks run: the golden set (`cli eval`), API tests through FastAPI's
+TestClient, and a live check on the dev server (port 8003).
 
 | Area | Where | Verified |
 |---|---|---|
-| Tables | `apps/sales_copilot/schema.sql` (idempotent; auto-applied at API start) | ✓ |
-| Indexing: renderers, normalization, L0–L4 dedup, attribution rules, chunking, SCD-2 versions, Chroma ledger sync | `ingest.py`, `cli.py sync` | 5,326 docs → 6,099 chunks → 6,099 vectors (= ledger); re-sync 4.4 s with 0 re-embeds |
-| Local embeddings (bge-small, fastembed) | `embed.py` | ~8 chunks/s on this laptop; model warmed at API start |
-| Chroma (embedded; `COPILOT_CHROMA_URL` for server mode) | `store.py` | cosine space, idempotent upserts, account filter |
-| Hybrid search + verify + person boost + ACL | `retrieve.py` | a user without access gets 0/8 hits from other accounts |
-| Router, tools, 1-request answers, answer cache, sources-only fallback, contact cards | `chat.py` | all intents exercised end to end |
-| Quota governor (team split + 90 k tokens/user + 15 req/user) | `llm.py` | provider 429 → whole team switched to sources-only for the day |
-| Memory: "remember that …", 📌 save, recall in prompts (masked), notes tab, prefs | `chat.py`, `api.py`, UI | notes attach to the person in focus |
-| `/copilot` page, nav link, profile "Ask Copilot" | `templates/copilot.html`, `css/copilot.css`, `js/modules/copilot/` | page 200; ESLint clean |
+| Tables + change-capture triggers (24, content-column aware) | `schema.sql` (applied only when its fingerprint changes) | A `last_seen`-only scrape queues 0 rows; a real persona edit queues 1 |
+| Indexing: renderers (people, call-prep, accounts, LOBs, signals, digests, profiles, leadership moves, posts, **jobs + weekly hiring summaries**), L0–L5 dedup (SimHash near-dup), attribution rules, SCD-2 versions | `ingest.py` | 6,491 docs → 7,263 vectors = ledger; re-sync with no changes ≈ 4 s, 0 re-embeds |
+| Background worker: drains the outbox every 5 min; full diff + retention GC every 24 h; advisory lock (one runner) | `sync.py`, started by `api.install()` | GC ran; admin `POST /api/copilot/admin/sync` |
+| Retention per §8.1.1 (13-month history, quarterly snapshots, 30-day event/tombstone windows, 12-month chats, chat-cited versions pinned) | `sync.gc()` | – |
+| Hybrid search (Chroma + Postgres FTS, RRF), ACL inside the query, person boost, SimHash collapse, sales-phrasing query expansion | `retrieve.py`, `chat.py` | Recall@10 = 1.0 on the golden set; 0 ACL leaks |
+| Router: person brief, draft, lists (incl. decision-makers), what-changed, remember, account brief, hiring | `chat.py` | Intent accuracy = 1.0 |
+| **Streaming** answers (SSE) with progress steps; Stop saves the partial answer and settles quota | `chat.stream_message`, `POST /chat/stream` | Event order, stop mid-stream, citation/contact scrubbing |
+| Quota governor shared by **copilot + call-prep button + profile button + batch** (reserve → finalize; batch uses leftovers 21:00–05:30 IST) | `llm.py`, `services/callprep_service.py`, `api.py` profiles, pipeline `[llm-usage]` lines | Exhausted day: both buttons return 429 instantly, 0 requests sent |
+| Memory: explicit + suggested saves, meaning-based recall (local embeddings, per user), extractive long-chat summary, export, clear-all | `chat.py`, `api.py`, UI | Notes attach to the person in focus |
+| Contact privacy enforced by **value** everywhere, including the main app's persona APIs (profile page, contact drawer, people list, battlecard copy, profile PDF): a phone equal to the person's own direct mobile is hidden (last-10-digit match; a number recorded as the "mobile" of 3+ people is a company switchboard and stays), free-mail addresses are hidden, `personal_email`/`direct_mobile_phone` are no longer sent to the browser, and `extended_profile` home address, political and age fields and personal values in `raw_data` are stripped | `privacy.py`, `api.py` serializers | 0 leaks across 22 persona/account endpoints; eval gate |
+| Downloads: answer PDF, table/sources Excel, chat PDF/Excel/Markdown, notes Excel, my-data JSON, **account contacts Excel**, **My Tasks Excel** | `exports.py`, endpoints | All return valid files |
+| UI: `/copilot` workspace + **dock on every main page** (Ctrl/⌘+K); @mentions, /commands, ↑ edit, Stop, regenerate, follow-up chips, source pills, sortable tables, download menus, help panel, quota meter, chat search/rename/pin, jump-to-latest, dark mode, mobile | `templates/copilot.html`, `partials/copilot-dock.html`, `js/modules/copilot/*`, `css/copilot.css` | ESLint clean; all 42 named imports resolve; all template IDs exist |
+| Evaluation (no LLM): intents, entities, recall@10, ACL leaks, personal-contact leaks | `eval/golden.jsonl`, `eval/run_eval.py`, `cli eval` | Passed |
+| Model availability check | `cli models` | All 3 configured free models listed and free |
 
-**Not built yet:** outbox triggers (§7.1; for now run `cli sync` or the admin "sync" endpoint on a
-schedule), streaming (answers return whole), SimHash near-dup (L5), jobs/job-themes, copilot dock on
-other pages, suggested-save prompts, memory export/clear-all, deals (§21).
+**Not yet verified:**
+- A real AI-written answer end to end. The free quota was exhausted all day, so streaming was tested
+  against a simulated OpenRouter stream. Re-check after 05:30 IST.
+- A click-through in a browser (no browser automation was available).
+
+**Added 2026-09-24:**
+
+| Area | Where | Verified |
+|---|---|---|
+| **Outreach guardrails** for drafted emails: structure, citation removal, unsupported figures removed, no unearned personal credit, no implied client track record (the ask is replaced, not dropped), no guarantees or spam wording, contact details stripped, length 80–190 words. Checks are shown under each draft | `guardrails.py`, `chat.DRAFT_INSTRUCTION` | Real Nemotron draft: all 8 checks pass; the user's problem email: every issue caught |
+| Draft email card (subject, body with bold-labelled bullets, **Copy email** / **Open in mail app**), guardrail panel | `render.js` | ESLint clean |
+| One retry on the next free model when a provider is overloaded before the first token | `chat.stream_message`, `llm.is_transient` | Nvidia 503 observed live |
+| UTF-8 fix for the OpenRouter stream (garbled "â€™"), text repair at ingest and display | `llm.py`, `ingest.fix_mojibake`, `render.fixText` | Stored answer repaired |
+| Malformed work emails (7 of 1,527) never offered as links or draft recipients | `privacy.py` | 1,520 shown |
+| **Deals pipeline D1 + D2**: tables, API, board with drag-and-drop (Alt+←/→ from the keyboard), deal room with stage stepper, editable fields, health ring (score, gaps, reasons), stage exit checklist (auto-ticks from committee and offerings), buying committee with roles, sentiment, gap warnings and recent-leadership-change flags, activity notes, tasks linked to My Tasks, Excel export, soft stage gate with warnings, lost reason required | `apps/sales_deals/`, `templates/deals.html`, `js/modules/deals/main.js`, `css/deals.css` | API end to end via TestClient; page and assets 200 on the live server |
+
+**Next:** deals D3 (stage toolkits: why-now, discovery questions + MEDDICC, value map + battlecard, pilot plan,
+close plan) and D4 (copilot `deal_card` indexing, deal-scoped chats, weekly pipeline digest).

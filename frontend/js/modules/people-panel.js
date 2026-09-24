@@ -4,6 +4,7 @@ import { esc, initials, getPersonasFor, getTechFor } from './utils.js';
 import { showToast } from './toast.js';
 import { hasDossier, openContactDrawer } from './contact-drawer.js';
 import { renderSelection } from './selection.js';
+import { downloadFile } from './download.js';
 
 export function renderContactsList(personas) {
   state.currentPersonas = personas;
@@ -55,7 +56,10 @@ export function renderPeople(account, lob) {
     <!-- Key Contacts Section -->
     <div class="panel-title" style="margin-top:2px;">
       <span><i class="fa-solid fa-address-card"></i> Key Contacts</span>
-      <span class="context-badge live">${personas.length} mapped</span>
+      <span style="display:flex; gap:6px; align-items:center;">
+        <span class="context-badge live">${personas.length} mapped</span>
+        ${personas.length ? `<button type="button" class="context-badge export-btn" data-export-people="${account.id}" title="Download these contacts as Excel"><i class="fa-regular fa-file-excel"></i> Excel</button>` : ''}
+      </span>
     </div>
     <p class="section-desc" style="margin-bottom:8px;">Executive stakeholders &amp; decision makers. Click any card to open the AI Call-Prep Dossier.</p>
 
@@ -99,6 +103,14 @@ dashPeople.addEventListener('input', function (e) {
 });
 
 dashPeople.addEventListener('click', async function (e) {
+  const exportBtn = e.target.closest('[data-export-people]');
+  if (exportBtn) {
+    try {
+      await downloadFile(`/api/accounts/${exportBtn.dataset.exportPeople}/people/export`, 'contacts.xlsx');
+      showToast('Contacts downloaded');
+    } catch (err) { showToast(err.message); }
+    return;
+  }
   const contactBtn = e.target.closest('[data-contact-idx]');
   if (contactBtn) {
     const p = state.currentPersonas[Number(contactBtn.dataset.contactIdx)];

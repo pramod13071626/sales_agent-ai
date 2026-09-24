@@ -87,11 +87,12 @@ def _room(status: Dict[str, Any], feature: str) -> int:
     return max(0, min(left_total, own + pool_left))
 
 
-def _check(status: Dict[str, Any], feature: str, est_tokens: int, requests_: int = 1, user_id: Optional[int] = None) -> None:
+def _check(status: Dict[str, Any], feature: str, est_tokens: int, requests_: int = 1, user_id: Optional[int] = None,
+           allow_daytime: bool = False) -> None:
     team, me = status["team"], status["me"]
     if team["provider_exhausted"] or team["requests_used"] >= team["requests_limit"]:
         raise QuotaExceeded("team", "The team's AI requests for today are used up.")
-    if feature.endswith("_batch"):
+    if feature.endswith("_batch") and not allow_daytime:
         hour = datetime.now(timezone.utc).hour + datetime.now(timezone.utc).minute / 60
         if not (BATCH_WINDOW_UTC[0] <= hour < BATCH_WINDOW_UTC[1]):
             raise QuotaExceeded("batch_window", "Batch jobs only run 21:00–05:30 IST, on requests the team didn't use.")
@@ -113,10 +114,10 @@ def remaining_user_tokens(session, user_id: Optional[int]) -> int:
 
 
 def reserve(session, feature: str, user_id: Optional[int], est_tokens: int, requests_: int = 1,
-            model: Optional[str] = None) -> List[int]:
+            model: Optional[str] = None, allow_daytime: bool = False) -> List[int]:
     """Check the governor and reserve `requests_` llm_usage rows atomically."""
     session.execute(text("SELECT pg_advisory_xact_lock(hashtext('copilot_llm_usage'))"))
-    _check(quota_status(session, user_id), feature, est_tokens, requests_, user_id)
+    _check(quota_status(session, user_id), feature, est_tokens, requests_, user_id, allow_daytime)
     per = est_tokens // max(requests_, 1)
     ids = [session.execute(text("""
         INSERT INTO llm_usage (feature, model, user_id, ok, reserved_tokens)
@@ -136,6 +137,16 @@ def finalize(session, usage_id: int, *, ok: bool, status_code: Optional[int], mo
     session.commit()
 
 
+def record(session, feature: str, user_id: Optional[int], *, ok: bool, status_code: Optional[int],
+           tokens_in: int = 0, tokens_out: int = 0, model: Optional[str] = None) -> None:
+    """Log a request that was sent without a prior reservation (e.g. a subprocess made more calls than estimated)."""
+    session.execute(text("""INSERT INTO llm_usage (feature, model, user_id, ok, status_code, tokens_in, tokens_out)
+                            VALUES (:f, :m, :u, :ok, :sc, :ti, :to)"""),
+                    {"f": feature, "m": model or settings.LLM_MODELS[0], "u": user_id, "ok": ok, "sc": status_code,
+                     "ti": tokens_in, "to": tokens_out})
+    session.commit()
+
+
 def release(session, usage_ids: List[int]) -> None:
     """Drop reservations that were never sent (e.g. a multi-request job that stopped early)."""
     if usage_ids:
@@ -143,16 +154,18 @@ def release(session, usage_ids: List[int]) -> None:
         session.commit()
 
 
-def _body(system: str, user: str, max_tokens: int, stream: bool) -> Dict[str, Any]:
+def _body(system: str, user: str, max_tokens: int, stream: bool, model: Optional[str] = None) -> Dict[str, Any]:
+    model = model or settings.LLM_MODELS[0]
     body: Dict[str, Any] = {
-        "model": settings.LLM_MODELS[0],
+        "model": model,
         "max_tokens": max_tokens,
         "temperature": 0.2,
         "reasoning": {"enabled": False},   # reasoning cost 3-6x tokens on nemotron (README §10.2)
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
     }
-    if len(settings.LLM_MODELS) > 1:
-        body["models"] = settings.LLM_MODELS        # OpenRouter-side fallback within the same request
+    others = [m for m in settings.LLM_MODELS if m != model]
+    if others:
+        body["models"] = [model] + others           # OpenRouter-side fallback (only before a stream starts)
     if stream:
         body["stream"] = True
         body["usage"] = {"include": True}          # final chunk carries token usage
@@ -206,24 +219,33 @@ def chat(session, *, feature: str, user_id: Optional[int], system: str, user: st
                  tokens_in=u.get("prompt_tokens") or 0, tokens_out=u.get("completion_tokens") or 0)
 
 
+def is_transient(err: Exception) -> bool:
+    """Provider hiccups worth one retry on another free model (overloaded / 5xx / timeouts)."""
+    m = str(err).lower()
+    return any(k in m for k in ("overloaded", "503", "502", "504", "timed out", "timeout", "temporarily", "unavailable"))
+
+
 def chat_stream(session, *, feature: str, user_id: Optional[int], system: str, user: str,
-                max_tokens: int = settings.LLM_MAX_TOKENS) -> Iterator[Dict[str, Any]]:
+                max_tokens: int = settings.LLM_MAX_TOKENS, model: Optional[str] = None) -> Iterator[Dict[str, Any]]:
     """Streamed OpenRouter request under the governor. Yields {"token": str} items,
     then one {"done": usage-info}. The usage row is finalized even if the consumer
     stops early (the rep pressed Stop)."""
     if not settings.OPENROUTER_API_KEY:
         raise LLMError("OPENROUTER_API_KEY is not configured")
     est = (len(system) + len(user)) // 4 + max_tokens
-    (usage_id,) = reserve(session, feature, user_id, est)
+    (usage_id,) = reserve(session, feature, user_id, est, model=model)
     t0 = time.time()
-    status_code, got, u, model_used = None, [], {}, settings.LLM_MODELS[0]
+    status_code, got, u, model_used = None, [], {}, model or settings.LLM_MODELS[0]
     try:
         try:
-            res = requests.post(settings.OPENROUTER_URL, json=_body(system, user, max_tokens, True),
+            res = requests.post(settings.OPENROUTER_URL, json=_body(system, user, max_tokens, True, model),
                                 timeout=120, headers=_headers(), stream=True)
         except requests.RequestException as e:
             raise LLMError(str(e)) from e
         status_code = res.status_code
+        # OpenRouter's event stream has no charset, so requests would decode it as ISO-8859-1
+        # and turn "’" into "â\x80\x99". The body is UTF-8.
+        res.encoding = "utf-8"
         if res.status_code != 200:
             _raise_for(res.status_code, res.text)
         for raw in res.iter_lines(decode_unicode=True):

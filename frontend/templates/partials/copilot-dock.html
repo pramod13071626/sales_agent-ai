@@ -1,0 +1,30 @@
+{# Sales Copilot dock — floating button + side panel on every main page (README §19.1 B).
+   Knows the page context: the open profile, the selected account, or the open contact drawer. #}
+<link rel="stylesheet" href="css/copilot.css?v=2.2">
+<button type="button" class="cpd-fab" id="cpdFab" title="Ask the Sales Copilot (Ctrl+K)" aria-label="Open Sales Copilot" aria-controls="cpdPanel" aria-expanded="false">
+  <i class="fa-solid fa-wand-magic-sparkles"></i><span class="cpd-fab-label">Ask Copilot</span>
+</button>
+<aside class="cpd-panel" id="cpdPanel" role="dialog" aria-modal="false" aria-label="Sales Copilot" hidden>
+  <header class="cpd-head">
+    <div class="cpd-head-main">
+      <div class="cpd-title"><i class="fa-solid fa-wand-magic-sparkles"></i> Copilot</div>
+      <div class="cp-scope" id="cpdScope"></div>
+    </div>
+    <div class="cpd-head-actions">
+      <button type="button" class="cp-icon-btn" id="cpdNew" title="New chat" aria-label="New chat"><i class="fa-solid fa-plus"></i></button>
+      <a class="cp-icon-btn" id="cpdExpand" href="/copilot" title="Open full workspace" aria-label="Open full workspace"><i class="fa-solid fa-up-right-and-down-left-from-center"></i></a>
+      <button type="button" class="cp-icon-btn" id="cpdClose" title="Close (Esc)" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+  </header>
+  <div class="cpd-quota" id="cpdQuota"></div>
+  <div class="cp-messages-wrap">
+    <div class="cp-messages cpd-messages" id="cpdMessages" aria-live="polite"></div>
+    <button type="button" class="cp-jump" id="cpdJump" hidden aria-label="Jump to latest"><i class="fa-solid fa-arrow-down"></i></button>
+  </div>
+  <form class="cp-composer cpd-composer" id="cpdComposer" autocomplete="off">
+    <div class="cp-mention" id="cpdMention" role="listbox" hidden></div>
+    <textarea id="cpdInput" rows="1" placeholder="Ask… (@ mention, / commands)" aria-label="Ask the copilot"></textarea>
+    <button type="submit" class="cp-send" id="cpdSend" title="Send (Enter)" aria-label="Send"><i class="fa-solid fa-paper-plane"></i></button>
+  </form>
+</aside>
+<script type="module" src="js/modules/copilot/dock.js?v=1.2"></script>

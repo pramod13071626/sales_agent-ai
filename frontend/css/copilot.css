@@ -346,3 +346,120 @@ kbd {
   .cp-quota { min-width: 0; font-size: .66rem; }
   .cp-contact { flex-wrap: wrap; }
 }
+
+.cp-contact-main .cp-muted { margin-left: 0; }
+
+/* ── Dock (partials/copilot-dock.html) ─────────────────────────────────── */
+.cpd-fab {
+  position: fixed; right: 22px; bottom: 22px; z-index: 900; display: inline-flex; align-items: center; gap: 8px;
+  padding: 11px 16px; border: 0; border-radius: var(--radius-xl); background: var(--brand); color: #fff;
+  font-size: .85rem; font-weight: 600; box-shadow: 0 6px 18px rgba(111, 106, 248, .35); cursor: pointer; transition: var(--transition);
+}
+.cpd-fab:hover { background: var(--brand-hover); transform: translateY(-1px); }
+.cpd-fab:focus-visible { outline: 3px solid var(--brand-light); outline-offset: 2px; }
+body.cpd-open .cpd-fab { opacity: 0; pointer-events: none; }
+.cpd-panel {
+  position: fixed; top: var(--topbar-height, 56px); right: 0; bottom: 0; z-index: 950; width: 440px; max-width: 100vw;
+  display: flex; flex-direction: column; background: var(--content-bg); border-left: 1px solid var(--border-color);
+  box-shadow: var(--shadow-modal); animation: cpd-in .18s ease-out;
+}
+.cpd-panel[hidden] { display: none; }
+@keyframes cpd-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+.cpd-head {
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; padding: 12px 14px;
+  background: var(--panel-bg); border-bottom: 1px solid var(--border-color);
+}
+.cpd-title { font-weight: 700; font-size: .95rem; color: var(--text-primary); }
+.cpd-title i { color: var(--brand); }
+.cpd-head-actions { display: flex; gap: 2px; }
+.cpd-head-actions .cp-icon-btn { font-size: .9rem; padding: 4px 6px; text-decoration: none; }
+.cpd-quota { font-size: .7rem; color: var(--text-muted); padding: 5px 14px; background: var(--panel-bg); border-bottom: 1px solid var(--border-color); }
+.cpd-quota.cp-warn { color: var(--warning); }
+.cpd-messages { padding: 14px; gap: 12px; }
+.cpd-messages .cp-msg { max-width: none; }
+.cpd-messages .cp-avatar { display: none; }
+.cpd-messages .cp-bubble { font-size: .84rem; }
+.cpd-messages .cp-empty h2 { font-size: 1rem; }
+.cpd-messages .cp-tips, .cpd-messages .cp-recent { display: none; }
+.cpd-composer { width: calc(100% - 20px); margin: 8px auto 10px; }
+
+@media (max-width: 600px) {
+  .cpd-panel { width: 100vw; top: 0; }
+  .cpd-fab .cpd-fab-label { display: none; }
+  .cpd-fab { padding: 14px; border-radius: 50%; }
+}
+@media (prefers-reduced-motion: reduce) { .cpd-panel { animation: none; } }
+
+/* ── v2.1 layout fixes: nothing may force the conversation wider than its column ── */
+.cp-main, .cp-messages-wrap, .cp-messages { min-width: 0; }
+.cp-messages { overflow-x: hidden; }
+.cp-msg { min-width: 0; }
+.cp-msg-bot .cp-bubble { min-width: 0; max-width: 100%; box-sizing: border-box; }
+.cp-md { overflow-wrap: anywhere; }
+.cp-md p { margin: 0 0 6px; }
+.cp-md > p:last-child { display: block; }
+.cp-md > p:last-child::after { content: none; }
+.cp-md .cp-cite { font-size: .62rem; min-width: 15px; height: 15px; }
+
+/* Contact card: wraps instead of forcing width */
+.cp-contact { flex-wrap: wrap; min-width: 0; }
+.cp-contact-main { min-width: 0; flex: 1 1 220px; }
+.cp-contact-main span {
+  white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+
+/* Source pills: wrap, cap width, never overflow */
+.cp-cite-row { min-width: 0; }
+.cp-src-pill { max-width: 100%; flex: 0 1 auto; min-width: 0; }
+.cp-src-pill > i { flex-shrink: 0; }
+.cp-src-pill { display: inline-flex; }
+.cp-src-pill span.cp-pill-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.cp-more-sources { font-size: .72rem; color: var(--text-muted); align-self: center; }
+
+/* Follow-up chips wrap cleanly */
+.cp-followups { min-width: 0; }
+.cp-followup { max-width: 100%; text-align: left; white-space: normal; }
+
+/* Right panel: name on its own line, title clamped underneath */
+.cp-focus-item { display: grid; grid-template-columns: 16px 1fr; column-gap: 8px; row-gap: 1px; align-items: start; margin-bottom: 10px; }
+.cp-focus-item > i { margin-top: 3px; color: var(--brand); }
+.cp-focus-item a { word-break: normal; }
+.cp-focus-item .cp-focus-sub {
+  grid-column: 2; font-size: .72rem; color: var(--text-muted); line-height: 1.35;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.cp-source-title span {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-weight: 600;
+}
+.cp-source-title { font-weight: 400; }
+.cp-source-snippet { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.cp-context { overflow-x: hidden; }
+.cp-context section { min-width: 0; }
+
+/* Header: quota block shouldn't push the title */
+.cp-title-wrap { min-width: 0; }
+.cp-scope .cp-chip { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Composer sits flush with the message column */
+.cp-composer { box-sizing: border-box; }
+
+/* ── Drafted email card + guardrail checks ── */
+.cp-email { border: 1px solid var(--border-mid); border-radius: var(--radius-lg); overflow: hidden; margin-top: 4px; background: var(--panel-bg); }
+.cp-email-head { display: flex; gap: 10px; align-items: baseline; padding: 9px 14px; border-bottom: 1px solid var(--border-color); background: var(--content-bg); font-size: .85rem; }
+.cp-email-to { font-size: .8rem; color: var(--text-secondary); }
+.cp-email-label { width: 56px; flex-shrink: 0; font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); font-weight: 700; }
+.cp-email-body { padding: 14px 16px 6px; font-size: .88rem; line-height: 1.6; color: var(--text-primary); }
+.cp-email-body p { margin: 0 0 12px; }
+.cp-email-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 14px; border-top: 1px solid var(--border-color); background: var(--content-bg); }
+.cp-email-actions .cp-btn { padding: 6px 12px; font-size: .78rem; text-decoration: none; display: inline-flex; gap: 6px; align-items: center; }
+.cp-email-actions .cp-muted { margin-left: auto; }
+.cp-guard { margin-top: 8px; font-size: .76rem; color: var(--text-secondary); }
+.cp-guard summary { cursor: pointer; color: var(--success); font-weight: 600; list-style: none; }
+.cp-guard summary::-webkit-details-marker { display: none; }
+.cp-guard.has-warn summary { color: var(--warning); }
+.cp-guard ul { list-style: none; padding: 6px 0 0; margin: 0; display: grid; gap: 3px; }
+.cp-guard li i { width: 14px; }
+.cp-guard-pass i { color: var(--success); }
+.cp-guard-fixed i { color: var(--brand); }
+.cp-guard-warn i { color: var(--warning); }
+.cp-guard strong { text-transform: capitalize; color: var(--text-primary); margin-right: 4px; }

@@ -2,6 +2,7 @@
 api.py under /api/copilot. Every endpoint is scoped to the calling user."""
 
 import json
+import re
 import threading
 from typing import Any, Dict, Optional
 
@@ -228,12 +229,15 @@ def entities(q: str = "", user: User = Depends(auth.get_current_user), s=Depends
         return []
     acl = retrieve.acl_account_ids(s, user)
     like, starts = f"%{q}%", f"{q}%"
+    # A whole-word match ranks first: "vince" -> Robin Vince before Vincelle B.
+    wordre = r"\m" + re.escape(q) + r"\M"
     people = s.execute(text("""
         SELECT p.id, coalesce(p.full_name, p.display_name), p.title, a.display_name, p.account_id
         FROM personas p JOIN accounts a ON a.id = p.account_id
         WHERE p.account_id = ANY(:acl) AND coalesce(p.full_name, p.display_name) ILIKE :like
-        ORDER BY (coalesce(p.full_name, p.display_name) ILIKE :starts) DESC, p.hierarchy_level NULLS LAST, 2
-        LIMIT 7"""), {"acl": acl, "like": like, "starts": starts}).fetchall()
+        ORDER BY (coalesce(p.full_name, p.display_name) ~* :wordre) DESC,
+                 (coalesce(p.full_name, p.display_name) ILIKE :starts) DESC, p.hierarchy_level NULLS LAST, 2
+        LIMIT 7"""), {"acl": acl, "like": like, "starts": starts, "wordre": wordre}).fetchall()
     accts = s.execute(text("""
         SELECT id, display_name FROM accounts
         WHERE id = ANY(:acl) AND (display_name ILIKE :like OR legal_name ILIKE :like
@@ -374,4 +378,9 @@ def install(app) -> None:
         print(f"[copilot] schema check failed: {e}")
     app.include_router(router)
     embed.warm_up_in_background()
+    try:
+        from apps.sales_copilot import privacy
+        privacy.shared_lines()   # warm the switchboard cache at startup, not inside a request
+    except Exception:
+        pass
     sync.start_background()      # drains the trigger outbox every few minutes (COPILOT_AUTOSYNC=0 to disable)
