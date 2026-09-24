@@ -51,7 +51,7 @@ from collectors.validator import DataQualityValidator
 from serializer import MasterSerializer
 from serializers.account_serializer import slugify
 
-from sqlalchemy import or_, text as sql_text
+from sqlalchemy import func as sa_func, or_, text as sql_text
 from sqlalchemy.orm import selectinload
 from db.connection import get_session
 from db.models import (
@@ -331,8 +331,8 @@ if FASTAPI_AVAILABLE:
         background_tasks: BackgroundTasks,
         current: User = Depends(auth.require_role("super_admin")),
     ):
-        if body.role not in ("super_admin", "user"):
-            raise HTTPException(status_code=400, detail="role must be 'super_admin' or 'user'")
+        if body.role not in auth.ROLES:
+            raise HTTPException(status_code=400, detail="role must be one of " + ", ".join(auth.ROLES))
         session = get_session()
         try:
             email = body.email.strip().lower()
@@ -442,12 +442,14 @@ if FASTAPI_AVAILABLE:
                     target.email = new_email
 
             if body.role is not None and body.role != target.role:
-                if body.role not in ("super_admin", "user"):
-                    raise HTTPException(status_code=400, detail="role must be 'super_admin' or 'user'")
+                if body.role not in auth.ROLES:
+                    raise HTTPException(status_code=400, detail="role must be one of " + ", ".join(auth.ROLES))
                 if target.id == current.id and body.role != "super_admin":
                     raise HTTPException(status_code=400, detail="You cannot demote your own account from super_admin")
                 details["role"] = {"old": target.role, "new": body.role}
                 target.role = body.role
+                from apps.sales_crm.permissions import forget_role
+                forget_role(target.id)
 
             if body.is_active is not None and body.is_active != target.is_active:
                 details["is_active"] = {"old": target.is_active, "new": body.is_active}
@@ -514,7 +516,7 @@ if FASTAPI_AVAILABLE:
             target = session.query(User).filter_by(id=user_id).first()
             if not target:
                 raise HTTPException(status_code=404, detail="User not found")
-            granted_ids = set(auth.get_accessible_account_ids(session, user_id))
+            granted_ids = set(auth.get_granted_account_ids(session, user_id))
             accounts = session.query(Account).order_by(Account.display_name).all()
             is_sa = target.role == "super_admin"
             return {
@@ -829,7 +831,7 @@ if FASTAPI_AVAILABLE:
     # ══════════════════════════════════════════════════════
     account_router = APIRouter(prefix="/api/account", tags=["1. Account Level"])
 
-    @account_router.post("/create")
+    @account_router.post("/create", dependencies=[Depends(auth.require_role("super_admin"))])
     def create_account_stub(req: AccountCreateRequest):
         """[Tab 1 - Add Account Modal]: Creates or fetches an Account row in PostgreSQL with an official ID."""
         session = get_session()
@@ -899,7 +901,7 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
-    @account_router.post("/fetch")
+    @account_router.post("/fetch", dependencies=[Depends(auth.require_role("super_admin"))])
     def fetch_account_data(req: AccountFetchRequest):
         """[Tab 1 - Fetch Button]: Enterprise 11-source account intelligence collection.
         Uses AccountService.collect() with: SEC EDGAR, GLEIF, OpenCorporates, FMP, CourtListener,
@@ -1019,7 +1021,7 @@ if FASTAPI_AVAILABLE:
             )
             raise HTTPException(status_code=500, detail=f"Account fetch failed: {str(e)}")
 
-    @account_router.post("/validate")
+    @account_router.post("/validate", dependencies=[Depends(auth.require_role("super_admin"))])
     def validate_account_data(account_data: Dict[str, Any] = Body(...)):
         """[Tab 1 - Validate Button]: Validates staged account data."""
         t0 = datetime.now(timezone.utc)
@@ -1069,7 +1071,7 @@ if FASTAPI_AVAILABLE:
             )
             raise HTTPException(status_code=500, detail=f"Account validation failed: {str(e)}")
 
-    @account_router.post("/dump-db")
+    @account_router.post("/dump-db", dependencies=[Depends(auth.require_role("super_admin"))])
     def dump_account_to_db(req: AccountDumpRequest):
         """[Tab 1 - Dump DB Button]: Commits validated account data into PostgreSQL `accounts` table."""
         t0 = datetime.now(timezone.utc)
@@ -1703,8 +1705,8 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
-    @account_router.patch("/{account_id}")
-    @app.patch("/api/accounts/{account_id}", tags=["1. Account Level"])
+    @account_router.patch("/{account_id}", dependencies=[Depends(auth.require_role("super_admin"))])
+    @app.patch("/api/accounts/{account_id}", tags=["1. Account Level"], dependencies=[Depends(auth.require_account_access), Depends(auth.require_editor)])
     def update_account(account_id: int, payload: Dict[str, Any] = Body(...)):
         """
         [Universal & Inline Edit]: Updates account fields directly in PostgreSQL.
@@ -2240,7 +2242,7 @@ if FASTAPI_AVAILABLE:
             session.close()
 
     @lobs_router.patch("/{lob_id}")
-    @app.patch("/api/lob/{lob_id}", tags=["2. LOB & Sub-LOB Level"])
+    @app.patch("/api/lob/{lob_id}", tags=["2. LOB & Sub-LOB Level"], dependencies=[Depends(auth.require_lob_account_access), Depends(auth.require_editor)])
     def update_lob(lob_id: int, payload: Dict[str, Any] = Body(...)):
         """
         [Universal & Inline Edit]: Updates LOB fields directly in PostgreSQL.
@@ -2300,7 +2302,7 @@ if FASTAPI_AVAILABLE:
             session.close()
 
     @lobs_router.get("/sub/{sub_lob_id}")
-    @app.get("/api/sub-lobs/{sub_lob_id}", tags=["2. LOB & Sub-LOB Level"])
+    @app.get("/api/sub-lobs/{sub_lob_id}", tags=["2. LOB & Sub-LOB Level"], dependencies=[Depends(auth.require_sub_lob_account_access)])
     def get_sub_lob_record(sub_lob_id: int):
         """Retrieves a single Sub-LOB by ID with all 19 enterprise columns."""
         session = get_session()
@@ -2313,7 +2315,7 @@ if FASTAPI_AVAILABLE:
             session.close()
 
     @lobs_router.patch("/sub/{sub_lob_id}")
-    @app.patch("/api/sub-lobs/{sub_lob_id}", tags=["2. LOB & Sub-LOB Level"])
+    @app.patch("/api/sub-lobs/{sub_lob_id}", tags=["2. LOB & Sub-LOB Level"], dependencies=[Depends(auth.require_sub_lob_account_access), Depends(auth.require_editor)])
     def update_sub_lob(sub_lob_id: int, payload: Dict[str, Any] = Body(...)):
         """
         [Sub-LOB Universal & Inline Edit]: Updates Sub-LOB fields directly in PostgreSQL.
@@ -2810,8 +2812,8 @@ if FASTAPI_AVAILABLE:
             session.close()
 
     @personas_router.patch("/{persona_id}")
-    @app.patch("/api/persona/{persona_id}", tags=["3. Personas Level"])
-    @app.patch("/api/personas/{persona_id}", tags=["3. Personas Level"])
+    @app.patch("/api/persona/{persona_id}", tags=["3. Personas Level"], dependencies=[Depends(auth.require_persona_account_access), Depends(auth.require_editor)])
+    @app.patch("/api/personas/{persona_id}", tags=["3. Personas Level"], dependencies=[Depends(auth.require_persona_account_access), Depends(auth.require_editor)])
     def update_persona(persona_id: int, payload: Dict[str, Any] = Body(...)):
         """
         [Universal & Inline Edit]: Updates persona fields directly in PostgreSQL.
@@ -2869,7 +2871,7 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
-    @app.post("/api/verify/{entity_type}/{entity_id}", tags=["0. Verification Engine"])
+    @app.post("/api/verify/{entity_type}/{entity_id}", tags=["0. Verification Engine"], dependencies=[Depends(auth.require_entity_account_access), Depends(auth.require_editor)])
     def toggle_manual_verification(entity_type: str, entity_id: int, payload: Optional[Dict[str, Any]] = Body(default=None)):
         """
         [Manual Verification Toggle]: Sets or toggles is_manually_verified flag on Account, LOB, or Persona in PostgreSQL.
@@ -3145,10 +3147,15 @@ if FASTAPI_AVAILABLE:
             session.close()
 
     # Include all sub-routers
-    app.include_router(pipeline_router)
-    app.include_router(account_router)
-    app.include_router(lobs_router)
-    app.include_router(personas_router)
+    # Access (apps/sales_crm/README.md §5.2, M5 hardening): the pipeline / bulk LOB / bulk persona
+    # routers run paid enrichment and database dumps -> super admin only. The account router's
+    # enrichment helpers are used by reps on account pages -> any signed-in editor; its bulk
+    # create / fetch / validate / dump / patch routes are super admin only (per-route below).
+    _admin_only = [Depends(auth.require_role("super_admin"))]
+    app.include_router(pipeline_router, dependencies=_admin_only)
+    app.include_router(account_router, dependencies=[Depends(auth.require_editor)])
+    app.include_router(lobs_router, dependencies=_admin_only)
+    app.include_router(personas_router, dependencies=_admin_only)
 
     # Sales Copilot (RAG chat) — own module, own tables; see apps/sales_copilot/README.md
     from apps.sales_copilot.api import install as install_copilot
@@ -3157,6 +3164,9 @@ if FASTAPI_AVAILABLE:
     # Deals pipeline (Intro → Discovery → Proposal → Pilot → Contract) — apps/sales_copilot/README.md §21
     from apps.sales_deals.api import install as install_deals
     install_deals(app)
+    # CRM core (apps/sales_crm/README.md): roles guard, business lines, team
+    from apps.sales_crm.api import install as install_crm
+    install_crm(app)
 
     # ══════════════════════════════════════════════════════
     # SOLID REST API ENDPOINTS
@@ -3256,7 +3266,7 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
-    @app.get("/api/lobs/{lob_id}", tags=["2. Lines of Business"])
+    @app.get("/api/lobs/{lob_id}", tags=["2. Lines of Business"], dependencies=[Depends(auth.require_lob_account_access)])
     def get_single_line_of_business(lob_id: int):
         """Retrieve details for a single Line of Business by its ID."""
         session = get_session()
@@ -3479,7 +3489,7 @@ if FASTAPI_AVAILABLE:
 
     # ── Enterprise Record Updating & Verification Endpoints ────────────────────
 
-    @app.patch("/api/accounts/{account_id}", tags=["1. Accounts"])
+    @app.patch("/api/accounts/{account_id}", tags=["1. Accounts"], dependencies=[Depends(auth.require_account_access), Depends(auth.require_editor)])
     def update_account_record(account_id: int, updates: Dict[str, Any]):
         """Directly updates Account fields in PostgreSQL, sets is_manually_verified=True, and logs audit run."""
         session = get_session()
@@ -3528,7 +3538,7 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
-    @app.patch("/api/lobs/{lob_id}", tags=["2. Lines of Business"])
+    @app.patch("/api/lobs/{lob_id}", tags=["2. Lines of Business"], dependencies=[Depends(auth.require_lob_account_access), Depends(auth.require_editor)])
     def update_lob_record(lob_id: int, updates: Dict[str, Any]):
         """Directly updates LOB fields in PostgreSQL, sets is_manually_verified=True, and logs audit run."""
         session = get_session()
@@ -3592,7 +3602,7 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
-    @app.patch("/api/personas/{persona_id}", tags=["3. Personas & Buying Committee"])
+    @app.patch("/api/personas/{persona_id}", tags=["3. Personas & Buying Committee"], dependencies=[Depends(auth.require_persona_account_access), Depends(auth.require_editor)])
     def update_persona_record(persona_id: int, updates: Dict[str, Any]):
         """Directly updates Persona fields in PostgreSQL, sets is_manually_verified=True, and logs audit run."""
         session = get_session()
@@ -3645,7 +3655,7 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
-    @app.post("/api/verify/{entity_type}/{entity_id}", tags=["0. Verification"])
+    @app.post("/api/verify/{entity_type}/{entity_id}", tags=["0. Verification"], dependencies=[Depends(auth.require_entity_account_access), Depends(auth.require_editor)])
     def toggle_entity_verification(entity_type: str, entity_id: int):
         """Toggles manual verification flag directly in DB and appends audit trail."""
         session = get_session()
@@ -4858,14 +4868,32 @@ if FASTAPI_AVAILABLE:
                                            ["Exported at", exports._now()], ["Contacts", len(data)]])
         return _xlsx_response(content, exports.safe_filename(f"{name}-contacts", "xlsx"))
 
+    def _allowed_target_keys(session, user) -> Optional[set]:
+        """Content target keys this user may see (None = everything). An account's keys follow
+        _build_target_key_to_account_map; a person's follow the frontend's resolvePersonaTargetKey
+        (persona key, slug of the name, slug without middle initials). apps/sales_crm README §5, M5."""
+        if not auth.AUTH_ENFORCED or getattr(user, "role", None) == "super_admin":
+            return None
+        ids = set(auth.get_accessible_account_ids(session, user.id))
+        keys = {k for k, a in _build_target_key_to_account_map(session).items() if a.id in ids}
+        if ids:
+            for pkey, full, disp in session.query(Persona.key, Persona.full_name, Persona.display_name).filter(Persona.account_id.in_(ids)):
+                name = full or disp or ""
+                no_initials = " ".join(w for w in name.split() if len(re.sub(r"[^a-zA-Z0-9]", "", w)) > 1)
+                keys.update(k for k in (pkey, slugify(name) if name else None, slugify(no_initials) if no_initials else None) if k)
+        return keys
+
     @app.get("/api/content", tags=["4. Content Intelligence"])
-    def get_content_intelligence():
-        """Retrieve aggregated social listening posts and LLM channel digests."""
+    def get_content_intelligence(user: User = Depends(auth.get_current_user)):
+        """Retrieve aggregated social listening posts and LLM channel digests (scoped to the user's accounts)."""
         session = get_session()
         try:
+            allowed = _allowed_target_keys(session, user)
             digests_by_key = {}
             try:
                 for d in session.query(Digest).all():
+                    if allowed is not None and d.target_key not in allowed:
+                        continue
                     digests_by_key[d.target_key] = {
                         "target_key": d.target_key,
                         "kind": d.kind,
@@ -4880,7 +4908,10 @@ if FASTAPI_AVAILABLE:
 
             posts_by_key = {}
             try:
-                for p in session.query(Post).order_by(Post.target_key, Post.channel, Post.rank).all():
+                post_q = session.query(Post).order_by(Post.target_key, Post.channel, Post.rank)
+                if allowed is not None:
+                    post_q = post_q.filter(Post.target_key.in_(list(allowed) or [""]))
+                for p in post_q.all():
                     posts_by_key.setdefault(p.target_key, []).append(
                         {
                             "id": p.id,
@@ -4906,6 +4937,8 @@ if FASTAPI_AVAILABLE:
                 jobs_query = session.query(LinkedInJob).order_by(
                     LinkedInJob.target_key, LinkedInJob.first_seen.desc().nullslast()
                 )
+                if allowed is not None:
+                    jobs_query = jobs_query.filter(LinkedInJob.target_key.in_(list(allowed) or [""]))
                 for j in jobs_query.all():
                     jobs_by_key.setdefault(j.target_key, []).append(
                         {
@@ -5022,6 +5055,7 @@ if FASTAPI_AVAILABLE:
         sort: str = "newest",
         page: int = 1,
         page_size: int = 24,
+        user: User = Depends(auth.get_current_user),
     ):
         """Retrieve scraped LinkedIn job postings across all accounts, each resolved to its
         owning account and tagged with a heuristic job category. Supports free-text search,
@@ -5037,6 +5071,10 @@ if FASTAPI_AVAILABLE:
 
             key_to_account = _build_target_key_to_account_map(session)
             jobs_query = session.query(LinkedInJob).order_by(LinkedInJob.first_seen.desc().nullslast())
+            if auth.AUTH_ENFORCED and user.role != "super_admin":
+                allowed_ids = set(auth.get_accessible_account_ids(session, user.id))
+                allowed_keys = [k for k, a in key_to_account.items() if a.id in allowed_ids]
+                jobs_query = jobs_query.filter(LinkedInJob.target_key.in_(allowed_keys or [""]))
 
             employment_types_set, workplace_types_set = set(), set()
             # Matches every account/search/employment/workplace filter but NOT category,
@@ -5100,7 +5138,7 @@ if FASTAPI_AVAILABLE:
             session.close()
 
     @app.get("/api/linkedin-jobs/{job_id}", tags=["5. LinkedIn Jobs"])
-    def get_linkedin_job_detail(job_id: int):
+    def get_linkedin_job_detail(job_id: int, user: User = Depends(auth.get_current_user)):
         """Retrieve the full detail (including description) for a single LinkedIn job posting."""
         session = get_session()
         try:
@@ -5108,6 +5146,9 @@ if FASTAPI_AVAILABLE:
             if not j:
                 raise HTTPException(status_code=404, detail="Job posting not found")
             acct = _build_target_key_to_account_map(session).get(j.target_key)
+            if auth.AUTH_ENFORCED and user.role != "super_admin" and (
+                    not acct or acct.id not in auth.get_accessible_account_ids(session, user.id)):
+                raise HTTPException(status_code=404, detail="Job posting not found")
             job_category = categorize_job_title(j.title)
             detail = _job_summary_dict(j, acct, job_category)
             detail["description"] = j.description
@@ -5115,7 +5156,7 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
-    @app.get("/api/accounts/{account_id}/hiring-summary", tags=["5. LinkedIn Jobs"])
+    @app.get("/api/accounts/{account_id}/hiring-summary", tags=["5. LinkedIn Jobs"], dependencies=[Depends(auth.require_account_access)])
     def get_account_hiring_summary(account_id: int):
         """Retrieve aggregated lightweight hiring metrics & strategic track stats for an account.
         Designed for instant page-load performance across millions of rows."""
@@ -5226,7 +5267,7 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
-    @app.get("/api/accounts/{account_id}/jobs", tags=["5. LinkedIn Jobs"])
+    @app.get("/api/accounts/{account_id}/jobs", tags=["5. LinkedIn Jobs"], dependencies=[Depends(auth.require_account_access)])
     def get_account_jobs(
         account_id: int,
         sort: str = "newest",
@@ -5328,6 +5369,7 @@ if FASTAPI_AVAILABLE:
         event_type: Optional[str] = None,
         q: Optional[str] = None,
         limit: int = 100,
+        user: User = Depends(auth.get_current_user),
     ):
         """Retrieve executive transitions (joined, resigned, retired, promoted) across accounts."""
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
@@ -5336,6 +5378,16 @@ if FASTAPI_AVAILABLE:
         session = get_session()
         try:
             query = session.query(CxoMovement)
+            if auth.AUTH_ENFORCED and user.role != "super_admin":
+                # Scope to the user's accounts: by target key, or by company name / alias
+                # (movement target keys don't always equal accounts.key, e.g. blackrock_inc).
+                ids = set(auth.get_accessible_account_ids(session, user.id))
+                keys = [k for k, a in _build_target_key_to_account_map(session).items() if a.id in ids]
+                names = set()
+                for a in session.query(Account).filter(Account.id.in_(ids or [-1])):
+                    names.update(n.lower() for n in [a.display_name, a.legal_name, *(a.aliases or [])] if n)
+                query = query.filter(CxoMovement.target_key.in_(keys or [""])
+                                     | sa_func.lower(CxoMovement.company_name).in_(list(names) or [""]))
             if target_key:
                 query = query.filter(CxoMovement.target_key == target_key)
             if event_type and event_type.lower() != "all":
@@ -5563,8 +5615,8 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
-    @app.get("/api/database/download", tags=["7. Database Operations"])
-    @app.get("/api/database/download/sql", tags=["7. Database Operations"])
+    @app.get("/api/database/download", tags=["7. Database Operations"], dependencies=[Depends(auth.require_role("super_admin"))])
+    @app.get("/api/database/download/sql", tags=["7. Database Operations"], dependencies=[Depends(auth.require_role("super_admin"))])
     def download_database_sql():
         """Download the complete PostgreSQL SQL database dump file."""
         sql_path = PIPELINE_ROOT / "sales_ai_database_export.sql"
@@ -5580,7 +5632,7 @@ if FASTAPI_AVAILABLE:
             path=str(sql_path), filename="sales_ai_database_export.sql", media_type="application/sql"
         )
 
-    @app.get("/api/database/download/json", tags=["7. Database Operations"])
+    @app.get("/api/database/download/json", tags=["7. Database Operations"], dependencies=[Depends(auth.require_role("super_admin"))])
     def download_database_json():
         """Download the complete database in JSON format."""
         json_path = PIPELINE_ROOT / "sales_ai_database_export.json"
@@ -5652,6 +5704,28 @@ if FASTAPI_AVAILABLE:
             """Deals pipeline board + deal room (apps/sales_copilot/README.md §21).
             ?deal=ID opens a deal; ?account_id= filters the board."""
             return templates.TemplateResponse(request, "deals.html", headers=_NO_CACHE_HEADERS)
+
+        @app.get("/partner", response_class=HTMLResponse, include_in_schema=False)
+        async def partner_page(request: Request):
+            """Partner / advisor portal: their own introductions only (apps/sales_crm/README.md §5.3).
+            Admins can preview a connector's view with ?connector_id=."""
+            return templates.TemplateResponse(request, "partner.html", headers=_NO_CACHE_HEADERS)
+
+        @app.get("/email-sync", response_class=HTMLResponse, include_in_schema=False)
+        async def capture_settings_page(request: Request):
+            """Connect Microsoft 365 email + calendar for automatic activity capture (apps/sales_crm/README.md §4)."""
+            return templates.TemplateResponse(request, "capture.html", headers=_NO_CACHE_HEADERS)
+
+        @app.get("/forecast", response_class=HTMLResponse, include_in_schema=False)
+        async def forecast_page(request: Request):
+            """Quarterly forecast roll-up, targets and week-over-week changes (apps/sales_crm/README.md §3)."""
+            return templates.TemplateResponse(request, "forecast.html", headers=_NO_CACHE_HEADERS)
+
+        @app.get("/introductions", response_class=HTMLResponse, include_in_schema=False)
+        async def introductions_page(request: Request):
+            """Warm introductions board, connectors and attribution (apps/sales_crm/README.md §2.2).
+            ?intro=ID opens one introduction."""
+            return templates.TemplateResponse(request, "introductions.html", headers=_NO_CACHE_HEADERS)
 
         @app.get("/copilot", response_class=HTMLResponse, include_in_schema=False)
         async def copilot_page(request: Request):

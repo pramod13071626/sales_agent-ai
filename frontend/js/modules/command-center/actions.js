@@ -20,6 +20,10 @@ async function createRealActionItem({ accountName, title, description, priority 
     showToast('Your session expired — sign in again to create tasks.');
     return false;
   }
+  if (user.role === 'viewer') {
+    showToast('Your role is read-only — ask a sales rep or manager to create this task.');
+    return false;
+  }
   const account = await resolveRealAccount(accountName).catch(() => null);
   if (!account) {
     showToast(`"${accountName}" isn't in the database (or isn't shared with you yet) — task not created.`);

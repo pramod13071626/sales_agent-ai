@@ -5,6 +5,7 @@ import { showToast } from './toast.js';
 import { hasDossier, openContactDrawer } from './contact-drawer.js';
 import { renderSelection } from './selection.js';
 import { downloadFile } from './download.js';
+import { openContactEditor } from './crm-extras.js';
 
 export function renderContactsList(personas) {
   state.currentPersonas = personas;
@@ -58,6 +59,7 @@ export function renderPeople(account, lob) {
       <span><i class="fa-solid fa-address-card"></i> Key Contacts</span>
       <span style="display:flex; gap:6px; align-items:center;">
         <span class="context-badge live">${personas.length} mapped</span>
+        <button type="button" class="context-badge export-btn cx-add-btn" data-add-contact="${account.id}" title="Add a contact by hand"><i class="fa-solid fa-user-plus"></i> Add</button>
         ${personas.length ? `<button type="button" class="context-badge export-btn" data-export-people="${account.id}" title="Download these contacts as Excel"><i class="fa-regular fa-file-excel"></i> Excel</button>` : ''}
       </span>
     </div>
@@ -103,6 +105,21 @@ dashPeople.addEventListener('input', function (e) {
 });
 
 dashPeople.addEventListener('click', async function (e) {
+  const addBtn = e.target.closest('[data-add-contact]');
+  if (addBtn) {
+    const account = state.accounts.find(a => a.id === Number(addBtn.dataset.addContact));
+    if (!account) return;
+    openContactEditor({
+      accountId: account.id, accountName: account.name,
+      onSaved: (c) => {
+        if (!c) return;
+        (account.personas = account.personas || []).push({ id: c.id, account_id: c.account_id, name: c.name, title: c.title,
+          email: c.email, phone: c.phone, linkedin_url: c.linkedin_url, source: 'manual' });
+        renderSelection();
+      },
+    });
+    return;
+  }
   const exportBtn = e.target.closest('[data-export-people]');
   if (exportBtn) {
     try {

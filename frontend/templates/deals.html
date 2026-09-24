@@ -9,7 +9,8 @@
   <link rel="stylesheet" href="css/tokens.css?v=3.0">
   <link rel="stylesheet" href="css/base.css?v=3.0">
   <link rel="stylesheet" href="css/shell.css?v=3.0">
-  <link rel="stylesheet" href="css/deals.css?v=1.1">
+  <link rel="stylesheet" href="css/deals.css?v=1.3">
+  <link rel="stylesheet" href="css/activity-timeline.css?v=1.0">
 </head>
 <body>
 
@@ -28,10 +29,13 @@
         <div class="dl-tools">
           <div class="dl-search"><i class="fa-solid fa-magnifying-glass"></i><input id="dlSearch" type="search" placeholder="Search deals or accounts" aria-label="Search deals"></div>
           <select id="dlAccount" class="dl-select" aria-label="Filter by account"><option value="">All accounts</option></select>
+          <select id="dlBusinessLine" class="dl-select" aria-label="Filter by business line"><option value="">All business lines</option></select>
           <label class="dl-toggle"><input type="checkbox" id="dlMine"> My deals</label>
           <button type="button" class="dl-btn dl-btn-primary" id="dlNew"><i class="fa-solid fa-plus"></i> New deal</button>
         </div>
       </header>
+
+      <section class="dl-digest" id="dlDigest" aria-label="Pipeline digest"></section>
 
       <div class="dl-board" id="dlBoard" aria-label="Pipeline stages"></div>
 
@@ -49,6 +53,7 @@
   <form class="dl-modal" id="dlNewForm" role="dialog" aria-modal="true" aria-labelledby="dlNewTitle" autocomplete="off">
     <header><h2 id="dlNewTitle">New deal</h2><button type="button" class="dl-icon" data-close-modal aria-label="Close"><i class="fa-solid fa-xmark"></i></button></header>
     <label>Account<select id="dlNewAccount" required></select></label>
+    <label>Business line<select id="dlNewBusinessLine"></select></label>
     <label>Deal name<input id="dlNewName" required maxlength="200" placeholder="e.g. BNY — Applied AI governance pilot"></label>
     <div class="dl-row">
       <label>Value<input id="dlNewValue" type="number" min="0" step="1000" placeholder="250000"></label>
@@ -68,6 +73,6 @@
 <div class="toast" id="toast"></div>
 
 {% include "partials/copilot-dock.html" %}
-<script type="module" src="js/modules/deals/main.js?v=1.1"></script>
+<script type="module" src="js/modules/deals/main.js?v=1.6"></script>
 </body>
 </html>

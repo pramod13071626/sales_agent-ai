@@ -29,7 +29,11 @@ document.getElementById('myTasksDrawerClose')?.addEventListener('click', closeMy
 document.getElementById('myTasksDrawerBackdrop')?.addEventListener('click', closeMyTasksDrawer);
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMyTasksDrawer(); });
 
+const ROLE_NAMES = { super_admin: 'Super Administrator', sales_manager: 'Sales Manager', user: 'Sales Rep',
+  viewer: 'Viewer (read-only)', partner: 'Partner / Advisor' };
+
 function formatUserRole(role) {
+  if (ROLE_NAMES[role]) return ROLE_NAMES[role];
   if (!role) return 'Standard User';
   const r = String(role).toLowerCase().replace(/_/g, ' ');
   if (r === 'super admin') return 'Super Administrator';
@@ -182,6 +186,21 @@ window.addEventListener('pageshow', async (event) => {
 
 export async function initTopbarAuth() {
   await refreshAccessToken(); // silent — restores a session from the refresh cookie on page load
+  const user = getCurrentUser();
+  // Partners only ever see the partner portal (the API refuses everything else anyway).
+  if (user && user.role === 'partner' && location.pathname !== '/partner') {
+    document.body.style.display = 'none';
+    location.replace('/partner');
+    return null;
+  }
+  // Viewers: CSS hides edit controls app-wide (shell.css `.role-viewer`), pages can check the class.
+  document.body.classList.toggle('role-viewer', !!(user && user.role === 'viewer'));
   render();
-  return getCurrentUser();
+  if (user && user.role === 'viewer') {
+    const w = document.getElementById('topbarAuthWidget');
+    if (w && !w.querySelector('.topbar-readonly')) {
+      w.insertAdjacentHTML('afterbegin', '<span class="topbar-readonly" title="Your role can view but not change data"><i class="fa-solid fa-eye"></i> Read-only</span>');
+    }
+  }
+  return user;
 }

@@ -53,6 +53,8 @@ loginForm.addEventListener('submit', async (e) => {
     // reaches "/" directly while already signed in as one.
     if (user && user.role === 'super_admin') {
       window.location.replace('/admin');
+    } else if (user && user.role === 'partner') {
+      window.location.replace('/partner');
     } else {
       const params = new URLSearchParams(window.location.search);
       window.location.replace(params.get('next') || '/');

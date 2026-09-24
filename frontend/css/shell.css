@@ -340,3 +340,20 @@
 .global-loading-bar.active { opacity: 1; width: 70%; }
 .global-loading-bar.done { width: 100%; transition: width 0.2s ease, opacity 0.3s ease 0.15s; opacity: 0; }
 
+
+
+/* ── Viewer role (read-only): hide edit controls app-wide (apps/sales_crm README §5, M5).
+   The API refuses writes regardless; this just keeps the UI honest. ── */
+.topbar-readonly { display: inline-flex; align-items: center; gap: 5px; font-size: .72rem; font-weight: 700; color: #B7800F;
+  background: rgba(255, 184, 34, .16); border-radius: 21px; padding: 3px 10px; margin-right: 8px; white-space: nowrap; }
+.role-viewer #dlNew, .role-viewer .dl-close-btns, .role-viewer [data-delete], .role-viewer #dlNoteForm, .role-viewer #dlTaskForm,
+.role-viewer .dl-add-row, .role-viewer [data-remove-person], .role-viewer [data-tk-add], .role-viewer [data-tk-check],
+.role-viewer [data-med-use], .role-viewer [data-reopen], .role-viewer #fcTargetsBtn, .role-viewer #fcFxBtn,
+.role-viewer .add-action-item-btn, .role-viewer [data-action="add-task"], .role-viewer [data-action="delete-task"],
+.role-viewer [data-action="take"], .role-viewer [data-action="complete"], .role-viewer [data-action="delete"],
+.role-viewer [data-action="approve"], .role-viewer [data-action="reject"], .role-viewer [data-action="remind"],
+.role-viewer #personaActionItemQuickAdd, .role-viewer #personaActionItemFormWrap, .role-viewer #fetchDiffbotBtn,
+.role-viewer #fetchSecBtn, .role-viewer #generateCallPrepBtn, .role-viewer [data-generate-profile] { display: none !important; }
+.role-viewer [data-action="set-status"] { pointer-events: none; opacity: .75; }
+.role-viewer .dl-room input, .role-viewer .dl-room select, .role-viewer .dl-room textarea, .role-viewer .dl-step,
+.role-viewer .dl-chip, .role-viewer .dl-check-item input, .role-viewer .fc-cat-select { pointer-events: none; opacity: .75; }
