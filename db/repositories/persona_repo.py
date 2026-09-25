@@ -1,5 +1,6 @@
 """Persona Repository — UPSERT operations for the personas table."""
 
+import re
 from typing import Dict, List, Optional, Any
 from sqlalchemy.orm import Session
 from db.models.persona import Persona
@@ -204,6 +205,9 @@ class PersonaRepository:
             if current_val is None or current_val == "" or current_val == [] or current_val == {}:
                 if hasattr(master, field):
                     setattr(master, field, val)
+                    if field in ("osint_feed_manifest", "extended_profile", "raw_data", "employment_history", "education_history", "target_kpis", "operational_pain_points", "key_objections", "skills", "past_companies", "previous_titles"):
+                        from sqlalchemy.orm.attributes import flag_modified
+                        flag_modified(master, field)
                 continue
 
             # Special field rules
@@ -266,6 +270,13 @@ class PersonaRepository:
                     flag_modified(master, "osint_feed_manifest")
                 continue
 
+            if field == "extended_profile":
+                if val and isinstance(val, dict):
+                    master.extended_profile = val
+                    from sqlalchemy.orm.attributes import flag_modified
+                    flag_modified(master, "extended_profile")
+                continue
+
             if field == "raw_data":
                 if val and isinstance(val, dict):
                     master.raw_data = val
@@ -277,18 +288,53 @@ class PersonaRepository:
                 "degree", "institution", "headline", "value_proposition", "personalized_icebreaker",
                 "tier", "seniority_raw", "city", "state", "country", "phone", "direct_mobile_phone",
                 "personal_email", "sec_cik", "crunchbase_permalink", "crunchbase_url", "youtube_channel_id",
-                "reddit_query", "news_query", "patents_query", "career_trajectory_score", "current_role_tenure_months"
+                "reddit_query", "news_query", "patents_query", "career_trajectory_score", "current_role_tenure_months",
+                "prior_company"
             ):
                 if val and (current_val is None or current_val == "" or len(str(val)) > len(str(current_val))):
                     setattr(master, field, val)
                 continue
 
             if field in (
-                "skills", "past_companies", "previous_titles", "employment_history",
-                "education_history", "target_kpis", "operational_pain_points", "key_objections"
+                "skills", "past_companies", "previous_titles", "target_kpis",
+                "operational_pain_points", "key_objections"
             ):
-                if val and (not current_val or len(val) > len(current_val)):
-                    setattr(master, field, val)
+                if val:
+                    if isinstance(current_val, list) and isinstance(val, list):
+                        # Additive non-destructive merge: preserve existing, append newly discovered unique items
+                        merged_list = list(current_val)
+                        for item in val:
+                            if item and item not in merged_list:
+                                merged_list.append(item)
+                        setattr(master, field, merged_list)
+                    else:
+                        setattr(master, field, val or current_val)
+                    from sqlalchemy.orm.attributes import flag_modified
+                    flag_modified(master, field)
+                continue
+
+            if field in ("employment_history", "education_history"):
+                if val:
+                    if isinstance(current_val, list) and isinstance(val, list):
+                        # Non-destructive merge of career records by company/institution/role
+                        merged_records = list(current_val)
+                        existing_keys = {
+                            (str(r.get("company") or r.get("institution") or r.get("school") or r.get("title") or "")).strip().lower()
+                            for r in current_val if isinstance(r, dict)
+                        }
+                        for r in val:
+                            if isinstance(r, dict):
+                                r_key = (str(r.get("company") or r.get("institution") or r.get("school") or r.get("title") or "")).strip().lower()
+                                if r_key and r_key not in existing_keys:
+                                    merged_records.append(r)
+                                    existing_keys.add(r_key)
+                            elif r not in merged_records:
+                                merged_records.append(r)
+                        setattr(master, field, merged_records)
+                    else:
+                        setattr(master, field, val or current_val)
+                    from sqlalchemy.orm.attributes import flag_modified
+                    flag_modified(master, field)
                 continue
 
             if field.endswith("_url"):

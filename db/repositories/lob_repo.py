@@ -240,9 +240,17 @@ class LobRepository:
             if clean_name.lower() in seen_names:
                 continue
             # Avoid generic words falsely parsed as names
-            if any(w in clean_name.lower() for w in ["unknown", "none", "n/a", "corporation", "limited", "group", "holdings", "company", "llc", "inc"]):
+            name_lower = clean_name.lower()
+            generic_blacklist = [
+                "unknown", "none", "n/a", "corporation", "limited", "group", "holdings",
+                "company", "llc", "inc", "chief", "officer", "executive", "global", "head",
+                "director", "manager", "services", "delivery", "distribution", "relationship",
+                "innovation", "leadership", "operating", "solutions", "management", "meet ",
+                "about ", "contact ", "team", "board"
+            ]
+            if any(w in name_lower for w in generic_blacklist):
                 continue
-            seen_names.add(clean_name.lower())
+            seen_names.add(name_lower)
 
             title = cand.get("title") or f"Head of {lob.lob_name}"
             payload = {

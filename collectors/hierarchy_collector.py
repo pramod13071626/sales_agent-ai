@@ -463,7 +463,7 @@ def query_tinyfish_search_via_monid(query: str, max_results: int = 5) -> Dict[st
         return {}
 
     try:
-        input_payload = {"query": query, "max_results": max_results}
+        input_payload = {"queryParams": {"query": query}}
         data = run_monid_endpoint("tinyfish", "/search", input_payload)
         output_obj = data.get("output", {})
         results = []

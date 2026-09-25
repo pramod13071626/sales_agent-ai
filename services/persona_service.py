@@ -27,16 +27,24 @@ class PersonaServiceHTTPClient:
         if cls._session is None:
             session = requests.Session()
             retries = Retry(
-                total=3,
-                backoff_factor=0.5,
-                status_forcelist=[429, 500, 502, 503, 504],
+                total=2,
+                backoff_factor=0.3,
+                status_forcelist=[500, 502, 503, 504],  # NEVER retry 429 - Retry-After can be hours (e.g. OpenAlex)
                 allowed_methods=["GET", "POST"],
+                raise_on_status=False,
             )
             adapter = HTTPAdapter(max_retries=retries, pool_connections=20, pool_maxsize=40)
             session.mount("https://", adapter)
             session.mount("http://", adapter)
             cls._session = session
         return cls._session
+
+    @classmethod
+    def reset_session(cls) -> None:
+        """Force-reset the singleton session (e.g. after config changes)."""
+        if cls._session:
+            cls._session.close()
+        cls._session = None
 
 
 class PersonaRawDataLakeWriter:
@@ -162,30 +170,28 @@ class ExecutiveOsintUrlEngine:
         eff_tier = str(tier or "").lower()
         title_lower = str(title or "").lower()
         is_exec = (
-            hierarchy_level <= 2
-            or eff_tier in ["c_suite", "tier1_csuite_and_officers", "vp_level", "tier2_global_and_division_heads"]
+            hierarchy_level <= 3
+            or eff_tier in [
+                "c_suite", "tier1_csuite_and_officers", "vp_level", "tier2_global_and_division_heads",
+                "executive", "tier3_functional_leads", "director_level", "director", "leadership"
+            ]
             or any(k in title_lower for k in [
                 "chief", "ceo", "cfo", "coo", "cto", "cio", "cro", "cmo", "ciso",
                 "president", "executive vice president", "senior vice president",
                 "evp", "svp", "managing director", "partner", "general counsel",
-                "board", "chair", "officer", "head of"
+                "board", "chair", "officer", "head of", "director", "executive", "lead", "leadership"
             ])
-        ) and not any(m in title_lower for m in ["manager", "team lead", "supervisor", "analyst", "associate", "specialist"])
+            or not any(m in title_lower for m in ["intern", "student", "assistant"])
+        )
 
-        # SEC & Insider Trading: Only for reporting executives
-        if is_exec:
-            if sec_cik:
-                sec_insider = f"https://www.sec.gov/edgar/searchedgar/companysearch?CIK={sec_cik}&type=4"
-            else:
-                sec_insider = f"https://www.sec.gov/edgar/searchedgar/companysearch?companyName={q_name}"
-            secform4 = f"https://www.secform4.com/insider-trading/{clean_cik}.htm" if clean_cik else None
-            openinsider = f"http://openinsider.com/{ticker.upper()}" if ticker else f"http://openinsider.com/search?q={q_name}"
-            quiver = f"https://www.quiverquant.com/insiders/{person_slug}"
+        # SEC & Insider Trading: High-precision regulatory search endpoints
+        if sec_cik:
+            sec_insider = f"https://www.sec.gov/edgar/searchedgar/companysearch?CIK={sec_cik}&type=4"
         else:
-            sec_insider = None
-            secform4 = None
-            openinsider = None
-            quiver = None
+            sec_insider = f"https://www.sec.gov/edgar/searchedgar/companysearch?companyName={q_name}"
+        secform4 = f"https://www.secform4.com/insider-trading/{clean_cik}.htm" if clean_cik else None
+        openinsider = f"http://openinsider.com/{ticker.upper()}" if ticker else f"http://openinsider.com/search?q={q_name}"
+        quiver = f"https://www.quiverquant.com/insiders/{person_slug}"
 
         if raw_intel.get("sec_insider_trades_url"):
             sec_insider = raw_intel.get("sec_insider_trades_url")
@@ -196,37 +202,30 @@ class ExecutiveOsintUrlEngine:
         if raw_intel.get("quiver_insider_url"):
             quiver = raw_intel.get("quiver_insider_url")
 
-        # 6. Financial Media Coverage (Bloomberg & WSJ focused on corporate leadership)
-        bloomberg = raw_intel.get("bloomberg_url") or (f"https://www.bloomberg.com/search?query={q_name}+{q_company}" if is_exec else None)
-        wsj = raw_intel.get("wsj_article_url") or (f"https://www.wsj.com/search?query={q_name}+{q_company}" if is_exec else None)
+        # 6. Financial Media Coverage (Bloomberg & WSJ live executive search)
+        bloomberg = raw_intel.get("bloomberg_url") or f"https://www.bloomberg.com/search?query={q_name}+{q_company}"
+        wsj = raw_intel.get("wsj_article_url") or f"https://www.wsj.com/search?query={q_name}+{q_company}"
 
-        # 7. Transcripts & Institutional Research (Only executives speak on earnings calls)
-        if is_exec:
-            seeking_alpha = (
-                raw_intel.get("seeking_alpha_url")
-                or (f"https://seekingalpha.com/symbol/{ticker.upper()}/transcripts" if ticker else f"https://seekingalpha.com/search?q={q_company}")
-            )
-        else:
-            seeking_alpha = raw_intel.get("seeking_alpha_url")
+        # 7. Transcripts & Institutional Research (Earnings calls & company transcripts)
+        seeking_alpha = (
+            raw_intel.get("seeking_alpha_url")
+            or (f"https://seekingalpha.com/symbol/{ticker.upper()}/transcripts" if ticker else f"https://seekingalpha.com/search?q={q_company}")
+        )
 
-        # 8. Corporate Bio & Annual Report (Corporate leadership pages only feature executives)
-        if is_exec:
-            corp_bio = (
-                raw_intel.get("corporate_bio_url")
-                or (f"https://www.{clean_domain}/corporate/about-us/leadership" if clean_domain else None)
-            )
-            annual_report = (
-                raw_intel.get("annual_report_url")
-                or (f"https://www.sec.gov/edgar/browse/?CIK={sec_cik}" if sec_cik else None)
-            )
-        else:
-            corp_bio = raw_intel.get("corporate_bio_url")
-            annual_report = raw_intel.get("annual_report_url")
+        # 8. Corporate Bio & Annual Report (Corporate leadership pages & SEC 10-K browse)
+        corp_bio = (
+            raw_intel.get("corporate_bio_url")
+            or (f"https://www.{clean_domain}/corporate/about-us/leadership" if clean_domain else None)
+        )
+        annual_report = (
+            raw_intel.get("annual_report_url")
+            or (f"https://www.sec.gov/edgar/browse/?CIK={sec_cik}" if sec_cik else None)
+        )
 
-        # 9. Real-Time Alert Feeds & Media (Podcasts & Keynotes only for leadership unless explicitly verified)
+        # 9. Real-Time Alert Feeds & Media (YouTube, Apple Podcasts, News RSS)
         rss = raw_intel.get("rss_url") or f"https://news.google.com/search?q=%22{q_name}%22+{q_company}&hl=en-US&gl=US&ceid=US:en"
-        youtube = raw_intel.get("youtube_url") or raw_intel.get("youtube_interviews_url") or (f"https://www.youtube.com/results?search_query={q_name}+{q_company}" if is_exec else None)
-        podcast = raw_intel.get("podcast_url") or raw_intel.get("podcast_search_url") or (f"https://podcasts.apple.com/us/search?term={q_name}+{q_company}" if is_exec else None)
+        youtube = raw_intel.get("youtube_url") or raw_intel.get("youtube_interviews_url") or f"https://www.youtube.com/results?search_query={q_name}+{q_company}"
+        podcast = raw_intel.get("podcast_url") or raw_intel.get("podcast_search_url") or f"https://podcasts.apple.com/us/search?term={q_name}+{q_company}"
 
         tw_live = (
             raw_intel.get("twitter_live_url")
@@ -472,6 +471,12 @@ class PersonaCoalesceEngine:
         serper_data: Optional[Dict[str, Any]] = None,
         ai_dossier_data: Optional[Dict[str, Any]] = None,
         openfec_data: Optional[Dict[str, Any]] = None,
+        exa_data: Optional[Dict[str, Any]] = None,
+        diffbot_data: Optional[Dict[str, Any]] = None,
+        patentsview_data: Optional[Dict[str, Any]] = None,
+        sec_form4_data: Optional[Dict[str, Any]] = None,
+        courtlistener_data: Optional[Dict[str, Any]] = None,
+        wikidata_data: Optional[Dict[str, Any]] = None,
         custom_metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
@@ -488,7 +493,14 @@ class PersonaCoalesceEngine:
         serp = serper_data or {}
         ai = ai_dossier_data or {}
         fec = openfec_data or {}
+        exa = exa_data or {}
+        diffbot  = diffbot_data        or {}
+        ptv      = patentsview_data    or {}
+        sec_f4   = sec_form4_data      or {}
+        cl_exec  = courtlistener_data  or {}
+        wikidata = wikidata_data       or {}
         meta = custom_metadata or {}
+
 
         # 1. Identity & Names
         display_name = cls.clean_text(
@@ -581,10 +593,11 @@ class PersonaCoalesceEngine:
         employment_history = (
             li.get("experience")
             or li.get("experiences")
+            or exa.get("employment_history")
             or fe.get("employment_history")
             or ap.get("employment_history")
-            or ai.get("employment_history")
             or meta.get("employment_history")
+            or ai.get("employment_history")
             or []
         )
 
@@ -650,43 +663,81 @@ class PersonaCoalesceEngine:
         education_history = (
             li.get("education")
             or li.get("educations")
+            or exa.get("education_history")
             or fe.get("education_history")
             or alex.get("education")
             or ap.get("education_history")
-            or ai.get("education_history")
             or meta.get("education_history")
+            or ai.get("education_history")
             or []
         )
         degrees_list = []
         institutions_list = []
+        clean_edu_history = []
         for edu in education_history:
             if isinstance(edu, dict):
                 d = edu.get("degree") or edu.get("degreeName")
-                f = edu.get("fieldOfStudy") or edu.get("field")
-                s = edu.get("schoolName") or edu.get("school") or edu.get("institution")
-                if d and f:
+                f = edu.get("fieldOfStudy") or edu.get("field") or edu.get("field_of_study")
+                s_raw = edu.get("schoolName") or edu.get("school") or edu.get("institution")
+                if isinstance(s_raw, dict):
+                    s = s_raw.get("name") or s_raw.get("display_name")
+                else:
+                    s = str(s_raw).strip() if s_raw else None
+
+                # Clean placeholder institutions
+                if s and s.strip().lower() in ["university", "college", "school", "none", "n/a", "undefined"]:
+                    s = None
+                if d and str(d).strip().lower() in ["none", "n/a", "undefined"]:
+                    d = None
+
+                norm_edu = dict(edu)
+                if s:
+                    norm_edu["institution"] = s
+                    norm_edu["schoolName"] = s
+                    norm_edu["school"] = s
+                if d:
+                    norm_edu["degree"] = d
+                    norm_edu["degreeName"] = d
+
+                if d and f and f.lower() not in str(d).lower():
                     degrees_list.append(f"{d} in {f}")
                 elif d:
                     degrees_list.append(str(d))
+                elif f:
+                    degrees_list.append(f"Study in {f}")
+
                 if s and str(s).strip() not in institutions_list:
                     institutions_list.append(str(s).strip())
 
+                clean_edu_history.append(norm_edu)
+
+        if clean_edu_history:
+            education_history = clean_edu_history
+
+        if len(institutions_list) == 0 and len(degrees_list) == 0:
+            education_history = []
+
         degree = cls.clean_text(
-            alex.get("degree")
-            or (" | ".join(degrees_list) if degrees_list else None)
+            (" | ".join(degrees_list) if degrees_list else None)
+            or (alex.get("degree") if alex.get("degree") and alex.get("degree").lower() not in ["none", "n/a"] else None)
             or fe.get("degree")
             or li.get("degree")
-            or ai.get("degree")
             or meta.get("degree")
+            or ai.get("degree")
         )
         institution = cls.clean_text(
-            alex.get("institution")
-            or (" | ".join(institutions_list) if institutions_list else None)
+            (" | ".join(institutions_list) if institutions_list else None)
+            or (alex.get("institution") if alex.get("institution") and alex.get("institution").lower() not in ["none", "n/a"] else None)
             or fe.get("institution")
             or li.get("institution")
-            or ai.get("institution")
             or meta.get("institution")
+            or ai.get("institution")
         )
+
+        if degree and degree.strip().lower() in ["degree", "none", "n/a", "bachelor of arts"] and not institutions_list:
+            degree = None
+        if institution and institution.strip().lower() in ["university", "college", "school", "none", "n/a"]:
+            institution = None
 
         # 7. AI Sales Dossier Synthesis
         value_prop = cls.clean_text(ai.get("value_proposition"))
@@ -756,6 +807,13 @@ class PersonaCoalesceEngine:
             "serper": serp,
             "ai_dossier": ai,
             "openfec": fec,
+            "exa": exa,
+            # ── Extended Platform Raw Data ──────────────────────────────────
+            "diffbot":            diffbot,
+            "patentsview":        ptv,
+            "sec_form4_exec":     sec_f4,
+            "courtlistener_exec": cl_exec,
+            "wikidata_person":    wikidata,
         }
 
         # Normalize skills into clean string list
@@ -819,8 +877,21 @@ class PersonaCoalesceEngine:
             "news_query": meta.get("news_query"),
             "patents_query": meta.get("patents_query"),
             "extended_profile": {
-                "political_donations": fec.get("donations", []) if isinstance(fec, dict) else [],
-                "fec_query_names": fec.get("query_names", []) if isinstance(fec, dict) else [],
+                "political_donations":       fec.get("donations", []) if isinstance(fec, dict) else [],
+                "fec_query_names":           fec.get("query_names", []) if isinstance(fec, dict) else [],
+                # ── Extended Platform Intelligence ─────────────────────────
+                "diffbot_board_memberships": diffbot.get("board_memberships", []),
+                "diffbot_skills":            diffbot.get("skills", []),
+                "patents_granted":           ptv.get("patents", []),
+                "patents_count":             ptv.get("total_patents", 0),
+                "sec_form4_transactions":    sec_f4.get("transactions", []),
+                "sec_form4_ownership_url":   sec_f4.get("ownership_url"),
+                "litigation_cases":          cl_exec.get("cases", []),
+                "litigation_count":          cl_exec.get("total_cases", 0),
+                "wikidata_qid":              wikidata.get("qid"),
+                "wikidata_alma_mater":       wikidata.get("alma_mater"),
+                "wikidata_honors":           wikidata.get("honors", []),
+                "wikidata_boards_served":    wikidata.get("boards_served", []),
             },
             "raw_data": raw_payload,
         }
@@ -902,13 +973,28 @@ class PersonaService:
                         ticker = ticker or acct.stock_symbol
                         sec_cik = sec_cik or acct.sec_cik
                         company_name = company_name or acct.legal_name or acct.display_name or acct.key
+                        yt_channel = getattr(acct, "youtube_channel_id", None)
+                        if not yt_channel:
+                            try:
+                                from db.models import Persona
+                                sibling_p = session.query(Persona.youtube_channel_id).filter(
+                                    Persona.account_id == account_id,
+                                    Persona.youtube_channel_id.isnot(None)
+                                ).first()
+                                if sibling_p and sibling_p[0]:
+                                    yt_channel = sibling_p[0]
+                                    acct.youtube_channel_id = yt_channel
+                                    session.commit()
+                            except Exception:
+                                pass
+
                         acct_meta = {
                             "account_phone": acct.sanitized_phone or acct.phone_number,
                             "account_city": acct.city,
                             "account_state": acct.state,
                             "account_country": acct.country,
                             "account_sec_cik": acct.sec_cik,
-                            "account_youtube_channel_id": getattr(acct, "youtube_channel_id", None),
+                            "account_youtube_channel_id": yt_channel,
                             "account_twitter_handle": acct.twitter_handle,
                             "account_twitter_live_url": acct.twitter_live_url or acct.twitter_url,
                         }
@@ -948,7 +1034,7 @@ class PersonaService:
         tw_data = (
             mock_connectors.get("apify_twitter")
             if mock_connectors
-            else cls._fetch_apify_executive_twitter(full_name)
+            else cls._fetch_apify_executive_twitter(full_name, company_name)
         )
         PersonaRawDataLakeWriter.save_raw(tw_data, "apify_twitter", full_name, company_name, run_raw_dir)
 
@@ -994,6 +1080,48 @@ class PersonaService:
             else cls._fetch_openfec_donations(full_name, company_name)
         )
         PersonaRawDataLakeWriter.save_raw(fec_data, "openfec", full_name, company_name, run_raw_dir)
+
+        # ── Extended Platform Block (5 new connectors — additive, zero harm to existing) ──
+
+        # Diffbot Knowledge Graph — Person API (cross-referenced employment, board memberships, skills)
+        diffbot_data = (
+            mock_connectors.get("diffbot")
+            if mock_connectors
+            else cls._fetch_diffbot_person(full_name, company_name)
+        )
+        PersonaRawDataLakeWriter.save_raw(diffbot_data, "diffbot", full_name, company_name, run_raw_dir)
+
+        # USPTO PatentsView — Inventor API (granted patents by person name, free)
+        patentsview_data = (
+            mock_connectors.get("patentsview")
+            if mock_connectors
+            else cls._fetch_patentsview_inventor(full_name, company_name)
+        )
+        PersonaRawDataLakeWriter.save_raw(patentsview_data, "patentsview", full_name, company_name, run_raw_dir)
+
+        # SEC EDGAR Form 4 — Executive-specific full-text search by person name
+        sec_form4_data = (
+            mock_connectors.get("sec_form4_exec")
+            if mock_connectors
+            else cls._fetch_sec_form4_executive(full_name, company_name, sec_cik)
+        )
+        PersonaRawDataLakeWriter.save_raw(sec_form4_data, "sec_form4_exec", full_name, company_name, run_raw_dir)
+
+        # CourtListener RECAP — Federal litigation / docket search for executive as named party
+        courtlistener_data = (
+            mock_connectors.get("courtlistener_exec")
+            if mock_connectors
+            else cls._fetch_courtlistener_executive(full_name, company_name)
+        )
+        PersonaRawDataLakeWriter.save_raw(courtlistener_data, "courtlistener_exec", full_name, company_name, run_raw_dir)
+
+        # Wikidata SPARQL — Notable executive QID, verified alma mater, honors, board roles
+        wikidata_data = (
+            mock_connectors.get("wikidata_person")
+            if mock_connectors
+            else cls._fetch_wikidata_person(full_name, company_name)
+        )
+        PersonaRawDataLakeWriter.save_raw(wikidata_data, "wikidata_person", full_name, company_name, run_raw_dir)
 
         # On-Demand Completeness Gate for FullEnrich Escalation:
         # Check if existing base sources already provided verified contact and career history
@@ -1062,6 +1190,12 @@ class PersonaService:
             serper_data=serp_data,
             ai_dossier_data=ai_data,
             openfec_data=fec_data,
+            exa_data=exa_data,
+            diffbot_data=diffbot_data,
+            patentsview_data=patentsview_data,
+            sec_form4_data=sec_form4_data,
+            courtlistener_data=courtlistener_data,
+            wikidata_data=wikidata_data,
             custom_metadata={"linkedin_url": effective_linkedin, "sec_cik": sec_cik, **acct_meta},
         )
 
@@ -1205,7 +1339,10 @@ class PersonaService:
                     f"api_key={api_key}&contributor_name={enc_name}"
                     f"&sort=-contribution_receipt_date&per_page={max_records}"
                 )
-                res = session.get(url, timeout=10)
+                res = session.get(url, timeout=5)
+                if res.status_code == 429:
+                    print(f"[!] OpenFEC rate-limited (429) — skipping query '{q}'")
+                    break
                 if res.status_code == 200:
                     data = res.json()
                     for r in data.get("results", []):
@@ -1245,61 +1382,180 @@ class PersonaService:
     def _fetch_apify_linkedin_profile(
         linkedin_url: Optional[str], full_name: str, company_name: str
     ) -> Dict[str, Any]:
-        """Apify harvestapi/linkedin-profile-scraper for authentic career experience and education."""
-        if not config.APIFY_TOKEN:
+        """Apify harvestapi/linkedin-profile-scraper for authentic career experience and education.
+        Equipped with multi-token auto-failover: if Token 1 reaches limit, rotates seamlessly to backup token.
+        """
+        tokens = config.get_apify_tokens()
+        if not tokens:
             return {}
-        try:
 
-            client = ApifyClient(config.APIFY_TOKEN)
-            profile_url = (
-                linkedin_url
-                or f"https://www.linkedin.com/in/{re.sub(r'[^a-z0-9]+', '-', full_name.lower())}"
-            )
-            run = client.actor("harvestapi/linkedin-profile-scraper").call(
-                run_input={"urls": [profile_url]}
-            )
-            dataset_id = getattr(run, "default_dataset_id", None) or (
-                run.get("defaultDatasetId") if isinstance(run, dict) else None
-            )
-            if not dataset_id:
-                return {}
-            items = client.dataset(dataset_id).list_items().items
-            return items[0] if items else {}
-        except Exception as e:
-            print(f"[!] Apify LinkedIn Profile warning: {e}")
+        # Validate incoming linkedin_url
+        def _is_clean_linkedin_url(u: Optional[str]) -> bool:
+            if not u or not isinstance(u, str):
+                return False
+            u_clean = u.strip().lower()
+            if "linkedin.com/in/" not in u_clean:
+                return False
+            m = re.search(r"linkedin\.com/in/([^/?#\s]+)", u_clean)
+            if not m:
+                return False
+            handle = m.group(1).rstrip("/")
+            if handle.endswith("-") or "***" in handle or len(handle.split("-")[-1]) == 1:
+                return False
+            return True
+
+        profile_url = None
+        if _is_clean_linkedin_url(linkedin_url):
+            profile_url = linkedin_url.strip()
+        else:
+            # Check if full_name is an authentic unmasked full name (has first and full last name)
+            clean_name = re.sub(r"^(mr\.|mrs\.|ms\.|dr\.)\s+", "", full_name.strip(), flags=re.IGNORECASE)
+            tokens_name = clean_name.split()
+            # If last name is an initial (e.g. 'D.', 'P.') or obfuscated ('Ga***i'), DO NOT fabricate a dummy URL
+            if len(tokens_name) >= 2 and len(tokens_name[-1].replace(".", "")) > 1 and "***" not in clean_name:
+                slug_handle = re.sub(r"[^a-z0-9]+", "-", clean_name.lower()).strip("-")
+                if slug_handle and not slug_handle.endswith("-"):
+                    profile_url = f"https://www.linkedin.com/in/{slug_handle}"
+
+        if not profile_url:
+            print(f"[*] [Apify LinkedIn] Skipping scrape for '{full_name}': No verified LinkedIn URL and name is masked/abbreviated.")
+            return {}
+
+        for i, token in enumerate(tokens):
+            try:
+                client = ApifyClient(token)
+                run = client.actor("harvestapi/linkedin-profile-scraper").call(
+                    run_input={"urls": [profile_url]}
+                )
+                
+                # Check statusMessage inside successful run response (e.g. "free user run limit exceeded")
+                status_msg = str(
+                    getattr(run, "status_message", "")
+                    or (run.get("statusMessage") if isinstance(run, dict) else "")
+                    or ""
+                ).lower()
+                
+                if "limit" in status_msg or "exceeded" in status_msg or "upgrade" in status_msg:
+                    print(f"[*] [Apify Token Pool] Run returned limit notice: '{status_msg}'. Auto-rotating to backup token...")
+                    config.rotate_apify_token(token)
+                    continue
+
+                dataset_id = getattr(run, "default_dataset_id", None) or (
+                    run.get("defaultDatasetId") if isinstance(run, dict) else None
+                )
+                if not dataset_id:
+                    continue
+                items = client.dataset(dataset_id).list_items().items
+                if items:
+                    first_item = items[0]
+                    if isinstance(first_item, dict) and (first_item.get("status") == 404 or first_item.get("error") == "Profile not found"):
+                        print(f"[*] [Apify LinkedIn] Profile not found on LinkedIn for URL '{profile_url}'.")
+                        return {}
+                    return first_item
+                else:
+                    # Dataset empty - if there are more tokens, try the next token
+                    if i + 1 < len(tokens):
+                        print(f"[*] [Apify Token Pool] Token {i+1} returned 0 items. Trying next token...")
+                        continue
+            except Exception as e:
+                err_str = str(e).lower()
+                print(f"[!] Apify LinkedIn Profile warning (token {i+1}/{len(tokens)}): {e}")
+                if "limit" in err_str or "exceeded" in err_str or "quota" in err_str or "permission" in err_str:
+                    print(f"[*] [Apify Token Pool] Active token hit limit. Auto-rotating to backup token...")
+                    config.rotate_apify_token(token)
+                    continue
+                break
         return {}
 
-    @staticmethod
-    def _fetch_apify_executive_twitter(full_name: str) -> Dict[str, Any]:
-        """Apify apidojo/twitter-scraper-lite for executive thoughts & handle."""
-        if not config.APIFY_TOKEN:
-            return {}
-        try:
 
-            client = ApifyClient(config.APIFY_TOKEN)
-            run = client.actor("apidojo/twitter-scraper-lite").call(
-                run_input={"searchTerms": [full_name], "maxTweets": 3}
-            )
-            dataset_id = getattr(run, "default_dataset_id", None) or (
-                run.get("defaultDatasetId") if isinstance(run, dict) else None
-            )
-            if not dataset_id:
-                return {}
-            items = client.dataset(dataset_id).list_items().items
-            return items[0] if items else {}
-        except Exception as e:
-            print(f"[!] Apify Twitter Profile warning: {e}")
+    @staticmethod
+    def _fetch_apify_executive_twitter(
+        full_name: str, company_name: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Executive Twitter / X OSINT Profile Resolver.
+        Bypasses dead/paywalled Apify twitter actor to conserve 100% of Apify runs for LinkedIn profiles.
+        Uses Serper Google OSINT (0 Apify runs) to safely extract verified personal X/Twitter handle.
+        """
+        if not full_name:
+            return {}
+
+        # Optional override: If user explicitly enables Apify Twitter via env
+        if os.getenv("ENABLE_APIFY_TWITTER", "false").lower() in ("true", "1") and config.APIFY_TOKEN:
+            try:
+                client = ApifyClient(config.APIFY_TOKEN)
+                run = client.actor("apidojo/twitter-scraper-lite").call(
+                    run_input={"searchTerms": [full_name], "maxTweets": 3}
+                )
+                dataset_id = getattr(run, "default_dataset_id", None) or (
+                    run.get("defaultDatasetId") if isinstance(run, dict) else None
+                )
+                if dataset_id:
+                    items = client.dataset(dataset_id).list_items().items
+                    if items:
+                        return items[0]
+            except Exception as e:
+                print(f"[!] Apify Twitter Profile warning: {e}")
+
+        # Default fast & zero-Apify OSINT resolution via Serper (conserves Apify runs)
+        if config.SERPER_API_KEY:
+            try:
+                session = PersonaServiceHTTPClient.get_session()
+                query = f'site:x.com OR site:twitter.com "{full_name}"'
+                if company_name:
+                    query += f' "{company_name}"'
+
+                headers = {"X-API-KEY": config.SERPER_API_KEY, "Content-Type": "application/json"}
+                res = session.post(
+                    "https://google.serper.dev/search",
+                    json={"q": query, "num": 3},
+                    headers=headers,
+                    timeout=6,
+                )
+                if res.ok:
+                    organic = res.json().get("organic", [])
+                    for item in organic:
+                        link = item.get("link", "")
+                        match = re.search(r"(?:twitter\.com|x\.com)/([A-Za-z0-9_]{1,25})", link)
+                        if match:
+                            handle = match.group(1)
+                            reserved = [
+                                "home", "search", "share", "intent",
+                                "explore", "hashtag", "i", "privacy", "tos", "login"
+                            ]
+                            if handle.lower() not in reserved:
+                                return {
+                                    "twitter_handle": f"@{handle}",
+                                    "userName": handle,
+                                    "twitter_url": f"https://x.com/{handle}",
+                                    "url": f"https://x.com/{handle}",
+                                    "title": item.get("title"),
+                                    "snippet": item.get("snippet"),
+                                    "source": "serper_x_osint",
+                                }
+            except Exception as e:
+                print(f"[!] Serper X/Twitter OSINT notice for '{full_name}': {e}")
+
         return {}
 
     @staticmethod
     def _fetch_openalex_academic_profile(full_name: str, company_name: str) -> Dict[str, Any]:
-        """Free OpenAlex REST API for Academic Degrees with Affiliation Verification Gate."""
-        session = PersonaServiceHTTPClient.get_session()
+        """Free OpenAlex REST API for Academic Degrees with Affiliation Verification Gate.
+        Uses a plain requests.get() (NO retry adapter) to avoid urllib3 2.x honoring
+        Retry-After: 53128s (14h) on 429 responses which would hang the pipeline.
+        """
         try:
             url = f"https://api.openalex.org/authors?search={urllib.parse.quote_plus(full_name)}"
-            res = session.get(
-                url, headers={"User-Agent": "SalesAIAgentResearch admin@salesai.com"}, timeout=8
+            # CRITICAL: Use bare requests.get, NOT the shared session (which has retry adapter
+            # that in urllib3 2.x respects Retry-After headers even for non-forcelist codes)
+            res = requests.get(
+                url,
+                headers={"User-Agent": "SalesAIAgentResearch admin@salesai.com"},
+                timeout=4,
             )
+            if res.status_code == 429:
+                print(f"[!] OpenAlex rate-limited (429) — skipping. Retry-After: {res.headers.get('Retry-After', 'unknown')}s")
+                return {}
             if res.ok:
                 results = res.json().get("results", [])
                 if results:
@@ -1328,14 +1584,19 @@ class PersonaService:
 
     @staticmethod
     def _fetch_orcid_registry(full_name: str, company_name: Optional[str] = None) -> Dict[str, Any]:
-        """Free ORCID Researcher Registry API with Affiliation Verification."""
-        session = PersonaServiceHTTPClient.get_session()
+        """Free ORCID Researcher Registry API with Affiliation Verification.
+        Uses bare requests.get() (NO retry adapter) to avoid urllib3 2.x Retry-After hang.
+        """
         try:
             q = f'"{full_name}"'
             if company_name:
                 q += f' AND "{company_name}"'
             url = f"https://pub.orcid.org/v3.0/search/?q={urllib.parse.quote_plus(q)}"
-            res = session.get(url, headers={"Accept": "application/json"}, timeout=8)
+            # CRITICAL: bare requests.get, NOT shared session (avoids urllib3 2.x Retry-After hang)
+            res = requests.get(url, headers={"Accept": "application/json"}, timeout=4)
+            if res.status_code == 429:
+                print(f"[!] ORCID rate-limited (429) — skipping. Retry-After: {res.headers.get('Retry-After', 'unknown')}s")
+                return {}
             if res.ok:
                 data = res.json()
                 results = data.get("result", [])
@@ -1461,7 +1722,10 @@ class PersonaService:
         queries = [
             f'"{full_name}" "{company_name}"',
             f'"{full_name}" {company_name} executive biography profile',
+            f'"{full_name}" "{company_name}" education OR degree OR biography',
         ]
+        all_organic = []
+        linkedin_url = None
         for q in queries:
             if config.SERPER_API_KEY:
                 try:
@@ -1473,14 +1737,16 @@ class PersonaService:
                     )
                     if res.ok:
                         organic = res.json().get("organic", [])
-                        if organic:
-                            linkedin_url = None
-                            for o in organic:
-                                if "linkedin.com/in/" in o.get("link", "") and not linkedin_url:
-                                    linkedin_url = o.get("link")
-                            return {"organic_results": organic, "linkedin_url": linkedin_url}
+                        for o in organic:
+                            link = o.get("link", "")
+                            if "linkedin.com/in/" in link and not linkedin_url:
+                                linkedin_url = link
+                            if not any(x.get("link") == link for x in all_organic):
+                                all_organic.append(o)
                 except Exception as e:
                     print(f"[!] Serper search notice: {e}")
+        if all_organic:
+            return {"organic_results": all_organic, "linkedin_url": linkedin_url}
 
         # Monid TinyFish fallback ($0/call)
         if config.MONID_API_KEY:
@@ -1592,7 +1858,7 @@ Source Intel Snippets:
 
     @classmethod
     def _fetch_exa_person(cls, full_name: str, company_name: str) -> Dict[str, Any]:
-        """Queries Exa AI for executive professional footprint and extracts verified LinkedIn URL."""
+        """Queries Exa AI for executive professional footprint and extracts verified LinkedIn URL, work history, and education."""
         if not config.EXA_API_KEY:
             return {}
         headers = {"x-api-key": config.EXA_API_KEY, "content-type": "application/json"}
@@ -1611,12 +1877,392 @@ Source Intel Snippets:
                 data = res.json()
                 results = data.get("results", [])
                 linkedin_url = None
+
+                # Executive name tokens for strict identity verification
+                name_parts = [p.strip() for p in full_name.split() if p.strip()]
+                target_first = name_parts[0].lower() if name_parts else ""
+                target_last = name_parts[-1].lower() if len(name_parts) > 1 else target_first
+                company_token = re.sub(r"[^a-z0-9]", "", company_name.lower().split(",")[0].replace("inc", ""))
+
                 for r in results:
                     url = r.get("url", "")
-                    if "linkedin.com/in/" in url and not linkedin_url:
-                        linkedin_url = url
+                    r_title = (r.get("title") or "").lower()
+                    r_text = (r.get("text") or "").lower()
+
+                    entities = r.get("entities", [])
+                    for ent in entities:
+                        if not (isinstance(ent, dict) and ent.get("type") == "person"):
+                            continue
+                        props = ent.get("properties", {})
+                        p_name = (props.get("name") or "").lower()
+                        p_last = (props.get("lastName") or "").lower()
+                        p_first = (props.get("firstName") or "").lower()
+
+                        # Strict Identity Verification: Last name and first name must match
+                        last_match = bool(target_last and (target_last == p_last or target_last in p_name or target_last in r_title))
+                        first_match = bool(target_first and (target_first == p_first or target_first in p_name or target_first in r_title))
+
+                        if not (last_match and first_match):
+                            continue
+
+                        # Strict Corporate Verification: Ensure person actually worked at or is associated with the company
+                        wh_comps = []
+                        for wh in props.get("workHistory", []):
+                            if isinstance(wh, dict):
+                                c_obj = wh.get("company")
+                                c_name = c_obj.get("name") if isinstance(c_obj, dict) else (str(c_obj) if c_obj else "")
+                                wh_comps.append(re.sub(r"[^a-z0-9]", "", c_name.lower()))
+
+                        corp_match = bool(
+                            not company_token
+                            or any(company_token in c for c in wh_comps)
+                            or (company_token in r_text)
+                            or (company_token in r_title)
+                        )
+                        if not corp_match:
+                            continue
+
+                        if "linkedin.com/in/" in url and not linkedin_url:
+                            linkedin_url = url
+
+                        if props.get("educationHistory") and not data.get("education_history"):
+                            edu_list = []
+                            for eh in props.get("educationHistory", []):
+                                if not isinstance(eh, dict):
+                                    continue
+                                inst_obj = eh.get("institution")
+                                inst_name = (
+                                    inst_obj.get("name")
+                                    if isinstance(inst_obj, dict)
+                                    else (str(inst_obj).strip() if inst_obj else None)
+                                )
+                                deg = eh.get("degree")
+                                dts = eh.get("dates") or {}
+                                from_yr = str(dts.get("from") or "")[:4] if isinstance(dts, dict) and dts.get("from") else ""
+                                to_yr = str(dts.get("to") or "")[:4] if isinstance(dts, dict) and dts.get("to") else ""
+                                if inst_name or deg:
+                                    edu_list.append({
+                                        "degree": deg or "Fellowship / Study",
+                                        "degreeName": deg or "Fellowship / Study",
+                                        "schoolName": inst_name,
+                                        "school": inst_name,
+                                        "institution": inst_name,
+                                        "field_of_study": deg,
+                                        "dates": dts,
+                                        "startDate": {"year": from_yr} if from_yr else None,
+                                        "endDate": {"year": to_yr} if to_yr else None,
+                                    })
+                            if edu_list:
+                                data["education_history"] = edu_list
+
+                        if props.get("workHistory") and not data.get("employment_history"):
+                            work_list = []
+                            for wh in props.get("workHistory", []):
+                                if not isinstance(wh, dict):
+                                    continue
+                                comp_obj = wh.get("company")
+                                comp_name = (
+                                    comp_obj.get("name")
+                                    if isinstance(comp_obj, dict)
+                                    else (str(comp_obj).strip() if comp_obj else None)
+                                )
+                                tit = wh.get("title")
+                                loc = wh.get("location")
+                                dts = wh.get("dates") or {}
+                                from_dt = dts.get("from") if isinstance(dts, dict) else None
+                                to_dt = dts.get("to") if isinstance(dts, dict) else None
+                                is_curr = to_dt is None
+                                end_str = to_dt or "Present"
+                                if comp_name or tit:
+                                    work_list.append({
+                                        "company": comp_name,
+                                        "companyName": comp_name,
+                                        "title": tit,
+                                        "position": tit,
+                                        "location": loc,
+                                        "start_date": from_dt,
+                                        "end_date": end_str,
+                                        "is_current": is_curr,
+                                        "startDate": {"text": from_dt, "year": str(from_dt)[:4] if from_dt else ""},
+                                        "endDate": {"text": end_str, "year": str(to_dt)[:4] if to_dt else ("Present" if is_curr else "")},
+                                        "description": f"{tit} at {comp_name}" if tit and comp_name else (tit or comp_name),
+                                    })
+                            if work_list:
+                                data["employment_history"] = work_list
+
+                        if props.get("location") and not data.get("location"):
+                            data["location"] = props.get("location")
+
                 data["verified_linkedin_url"] = linkedin_url
                 return data
         except Exception as e:
             print(f"[!] Exa connector warning for '{full_name}': {e}")
         return {}
+
+    # ══════════════════════════════════════════════════════════════════
+    # EXTENDED PLATFORM CONNECTORS (Phase 2 additions — zero harm)
+    # ══════════════════════════════════════════════════════════════════
+
+    @staticmethod
+    def _fetch_diffbot_person(full_name: str, company_name: str) -> Dict[str, Any]:
+        """Diffbot Knowledge Graph Person API — cross-referenced employment, board memberships, skills."""
+        try:
+            key = getattr(config, "DIFFBOT_TOKEN", None) or getattr(config, "DIFFBOT_API_KEY", None)
+            if not key:
+                return {"_skipped": "DIFFBOT_TOKEN not configured"}
+            enc_name = urllib.parse.quote_plus(full_name)
+            enc_company = urllib.parse.quote_plus(company_name)
+            url = (
+                f"https://kg.diffbot.com/kg/v3/enhance"
+                f"?token={key}&type=Person&name={enc_name}&employer={enc_company}"
+                f"&refresh=false&size=1"
+            )
+            session = PersonaServiceHTTPClient.get_session()
+            res = session.get(url, timeout=15)
+            if not res.ok:
+                return {"_error": f"Diffbot HTTP {res.status_code}"}
+            data = res.json()
+            entities = data.get("data", [])
+            if not entities:
+                return {"_no_match": True}
+            entity = entities[0].get("entity", {})
+            return {
+                "name":               entity.get("name"),
+                "description":        entity.get("description"),
+                "summary":            entity.get("summary"),
+                "skills":             [s.get("name") for s in entity.get("skills", []) if s.get("name")],
+                "board_memberships":  entity.get("boardMemberships", []),
+                "employment_history": [
+                    {
+                        "title":      e.get("title"),
+                        "company":    (e.get("employer") or {}).get("name"),
+                        "start":      (e.get("from") or {}).get("str"),
+                        "end":        (e.get("to") or {}).get("str") or "Present",
+                        "is_current": e.get("isCurrent", False),
+                    }
+                    for e in entity.get("employments", [])
+                ],
+                "education_history": [
+                    {
+                        "degree": e.get("degree"),
+                        "school": (e.get("institution") or {}).get("name"),
+                        "year":   (e.get("to") or {}).get("str"),
+                    }
+                    for e in entity.get("educations", [])
+                ],
+                "image_url":         entity.get("image"),
+                "diffbot_entity_id": entity.get("id"),
+            }
+        except Exception as e:
+            print(f"[!] [PersonaService] Diffbot Person notice for '{full_name}': {e}")
+            return {}
+
+    @staticmethod
+    def _fetch_patentsview_inventor(full_name: str, company_name: str) -> Dict[str, Any]:
+        """PatentsView Inventor API (api.patentsview.org) — granted USPTO patents by inventor name. Free."""
+        try:
+            parts = full_name.strip().split()
+            if len(parts) < 2:
+                return {}
+            first, last = parts[0], parts[-1]
+            payload = {
+                "q": {"_and": [{"inventor_last_name": last}, {"inventor_first_name": first}]},
+                "f": ["patent_number", "patent_title", "patent_date", "patent_abstract",
+                      "assignee_organization", "cpc_category"],
+                "o": {"per_page": 10},
+            }
+            session = PersonaServiceHTTPClient.get_session()
+            res = session.post(
+                "https://api.patentsview.org/patents/query",
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=12,
+            )
+            if not res.ok:
+                return {"_error": f"PatentsView HTTP {res.status_code}"}
+            # Guard: API sometimes returns HTTP 200 with empty body on no-match
+            raw_text = res.text.strip()
+            if not raw_text:
+                return {"inventor_name": full_name, "company_filter": company_name, "total_patents": 0, "patents": [], "_note": "PatentsView returned empty body (no match)"}
+            data = res.json()
+            patents = data.get("patents") or []
+            return {
+                "inventor_name":  full_name,
+                "company_filter": company_name,
+                "total_patents":  data.get("total_patent_count", len(patents)),
+                "patents": [
+                    {
+                        "patent_number": p.get("patent_number"),
+                        "title":         p.get("patent_title"),
+                        "date":          p.get("patent_date"),
+                        "abstract":      (p.get("patent_abstract") or "")[:300],
+                        "assignee":      (p.get("assignees") or [{}])[0].get("assignee_organization"),
+                        "category":      (p.get("cpcs") or [{}])[0].get("cpc_category"),
+                    }
+                    for p in patents
+                ],
+                "patentsview_search_url": (
+                    f"https://patentsview.org/search/real/inventor"
+                    f"?inventor_last_name={urllib.parse.quote_plus(last)}"
+                    f"&inventor_first_name={urllib.parse.quote_plus(first)}"
+                ),
+            }
+        except Exception as e:
+            print(f"[!] [PersonaService] PatentsView notice for '{full_name}': {e}")
+            return {}
+
+    @staticmethod
+    def _fetch_sec_form4_executive(
+        full_name: str, company_name: str, sec_cik: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        SEC EDGAR EFTS full-text search for Form 4 filings by executive name.
+        Complements _fetch_sec_insider_trades (CIK-based) by searching by person name.
+        """
+        try:
+            session = PersonaServiceHTTPClient.get_session()
+            enc = urllib.parse.quote_plus(f'"{full_name}"')
+            efts_url = (
+                f"https://efts.sec.gov/LATEST/search-index?q={enc}"
+                f"&dateRange=custom&startdt=2015-01-01&forms=4,4%2FA"
+            )
+            ownership_url = (
+                f"https://www.sec.gov/cgi-bin/browse-edgar"
+                f"?action=getcompany&company={urllib.parse.quote_plus(full_name)}"
+                f"&type=4&dateb=&owner=include&count=10"
+            )
+            res = session.get(
+                efts_url,
+                headers={"User-Agent": "SalesAIAgentResearch admin@salesai.com"},
+                timeout=10,
+            )
+            hits = []
+            if res.ok:
+                data = res.json()
+                for h in (data.get("hits", {}).get("hits") or [])[:10]:
+                    src = h.get("_source", {})
+                    hits.append({
+                        "form":        src.get("form_type"),
+                        "filing_date": src.get("file_date"),
+                        "company":     (src.get("display_names") or [company_name])[0],
+                        "edgar_url":   f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={src.get('entity_id','')}&type=4",
+                    })
+            return {
+                "reported_officer": full_name,
+                "company_name":     company_name,
+                "ownership_url":    ownership_url,
+                "transactions":     hits,
+                "total_found":      len(hits),
+            }
+        except Exception as e:
+            print(f"[!] [PersonaService] SEC Form4 Executive notice for '{full_name}': {e}")
+            return {}
+
+    @staticmethod
+    def _fetch_courtlistener_executive(full_name: str, company_name: str) -> Dict[str, Any]:
+        """CourtListener RECAP — Search federal court dockets for executive as named party. Free."""
+        try:
+            session = PersonaServiceHTTPClient.get_session()
+            res = session.get(
+                "https://www.courtlistener.com/api/rest/v3/dockets/",
+                params={
+                    "q":         f'"{full_name}"',
+                    "order_by":  "score desc",
+                    "page_size": 5,
+                },
+                headers={"User-Agent": "SalesAIAgentResearch/1.0 admin@salesai.com"},
+                timeout=10,
+            )
+            cases = []
+            if res.ok:
+                data = res.json()
+                for item in (data.get("results") or [])[:5]:
+                    cases.append({
+                        "case_name":     item.get("case_name"),
+                        "court":         item.get("court"),
+                        "date_filed":    item.get("date_filed"),
+                        "docket_number": item.get("docket_number"),
+                        "nature":        item.get("nature_of_suit"),
+                        "pacer_url":     item.get("absolute_url"),
+                    })
+            return {
+                "person_name":  full_name,
+                "company_name": company_name,
+                "total_cases":  len(cases),
+                "cases":        cases,
+                "search_url":   f"https://www.courtlistener.com/?q={urllib.parse.quote_plus(full_name)}&type=p",
+            }
+        except Exception as e:
+            print(f"[!] [PersonaService] CourtListener Executive notice for '{full_name}': {e}")
+            return {}
+
+    @staticmethod
+    def _fetch_wikidata_person(full_name: str, company_name: str) -> Dict[str, Any]:
+        """Wikidata SPARQL — QID, verified alma mater, honors, board roles for notable executives. Free."""
+        try:
+            session = PersonaServiceHTTPClient.get_session()
+            search_res = session.get(
+                "https://www.wikidata.org/w/api.php",
+                params={
+                    "action":   "wbsearchentities",
+                    "search":   full_name,
+                    "language": "en",
+                    "type":     "item",
+                    "limit":    3,
+                    "format":   "json",
+                },
+                headers={"User-Agent": "SalesAIAgentResearch/1.0 admin@salesai.com"},
+                timeout=10,
+            )
+            if not search_res.ok:
+                return {}
+            candidates = search_res.json().get("search", [])
+            if not candidates:
+                return {"_no_match": True}
+
+            qid   = candidates[0].get("id")
+            label = candidates[0].get("label", full_name)
+            desc  = candidates[0].get("description", "")
+
+            sparql = f"""
+SELECT ?almaMaterLabel ?honorLabel ?employerLabel WHERE {{
+  OPTIONAL {{ wd:{qid} wdt:P69 ?almaMater. }}
+  OPTIONAL {{ wd:{qid} wdt:P166 ?honor. }}
+  OPTIONAL {{ wd:{qid} wdt:P108 ?employer. }}
+  SERVICE wikibase:label {{ bd:serviceParam wikibase:language "en". }}
+}}
+LIMIT 20
+"""
+            sparql_res = session.get(
+                "https://query.wikidata.org/sparql",
+                params={"query": sparql, "format": "json"},
+                headers={"User-Agent": "SalesAIAgentResearch/1.0 admin@salesai.com"},
+                timeout=12,
+            )
+            alma_mater, honors, employers = [], [], []
+            if sparql_res.ok:
+                seen_a, seen_h, seen_e = set(), set(), set()
+                for b in sparql_res.json().get("results", {}).get("bindings", []):
+                    val_a = (b.get("almaMaterLabel") or {}).get("value")
+                    val_h = (b.get("honorLabel") or {}).get("value")
+                    val_e = (b.get("employerLabel") or {}).get("value")
+                    if val_a and val_a not in seen_a:
+                        seen_a.add(val_a); alma_mater.append(val_a)
+                    if val_h and val_h not in seen_h:
+                        seen_h.add(val_h); honors.append(val_h)
+                    if val_e and val_e not in seen_e:
+                        seen_e.add(val_e); employers.append(val_e)
+
+            return {
+                "qid":           qid,
+                "label":         label,
+                "description":   desc,
+                "alma_mater":    alma_mater[0] if alma_mater else None,
+                "alma_mater_all":alma_mater,
+                "honors":        honors,
+                "boards_served": employers,
+                "wikidata_url":  f"https://www.wikidata.org/wiki/{qid}",
+            }
+        except Exception as e:
+            print(f"[!] [PersonaService] Wikidata Person notice for '{full_name}': {e}")
+            return {}

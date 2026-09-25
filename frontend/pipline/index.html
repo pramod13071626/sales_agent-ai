@@ -7,7 +7,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="css/styles.css?v=3.18.0">
+  <link rel="stylesheet" href="css/styles.css?v=3.39.0">
 </head>
 <body>
 
@@ -44,6 +44,11 @@
             style="background:linear-gradient(135deg,#0ea5e9,#6366f1);margin-top:2px;"
             title="Add New Account">
       <i class="bi bi-plus-circle"></i>&nbsp;<span>Add New Account</span>
+    </button>
+    <!-- Batch Console button -->
+    <button type="button" class="run-pipeline-nav batch-console-nav-btn" id="sidebarBatchConsoleBtn"
+            title="Launch Batch Multi-Tier Intelligence Console">
+      <i class="bi bi-stack"></i>&nbsp;<span>Batch Console</span>
     </button>
 
     <div class="sidebar-label-row">
@@ -144,21 +149,68 @@
           </div>
         </div>
 
-        <!-- Live Intelligence Feeds & OSINT Channels (Account Info Style) -->
+        <!-- Section 2: Enterprise Portfolio & Outreach Readiness Matrix -->
         <div class="pipeline-section-card fade-in" style="margin-top:20px;">
           <div class="section-title-row">
             <div class="section-title-left">
               <span class="section-title-dot"></span>
-              <span>Live Intelligence Feeds &amp; OSINT Channels</span>
-              <span class="badge-feed-count" id="hubActiveConnectorsBadge">8 Active</span>
+              <span>Enterprise Portfolio &amp; Outreach Readiness</span>
+              <span class="badge-feed-count" id="hubPortfolioAccountsCountBadge">5 Accounts</span>
             </div>
             <div style="display:flex;align-items:center;gap:12px;">
-              <span class="section-subtitle-hint" id="hubConnectorsFreshnessHint"><i class="bi bi-arrow-repeat"></i> Verified Multi-Source Gateways</span>
+              <span class="section-subtitle-hint"><i class="bi bi-shield-check text-success"></i> PostgreSQL Ground Truth</span>
             </div>
           </div>
+          <div class="hub-portfolio-grid" id="hubPortfolioGrid">
+            <!-- Dynamically populated from live accounts in renderEmptyStateHub() -->
+          </div>
+        </div>
 
-          <div class="osint-channel-tile-grid" id="hubConnectorsGrid">
-            <!-- Dynamically populated from /api/system/health in osint-channel-tile style -->
+        <!-- Section 3: Multi-Tier Resource Architecture & Data Lineage (Two-Tier Filter Grid) -->
+        <div class="pipeline-section-card fade-in" style="margin-top:20px;">
+          <div class="section-title-row">
+            <div class="section-title-left">
+              <span class="section-title-dot"></span>
+              <span>Pipeline Resource Architecture &amp; Data Lineage</span>
+              <span class="badge-feed-count" id="hubActiveConnectorsBadge">23 Platforms (27+ Tools)</span>
+            </div>
+            <!-- Two-Tier Split Filters -->
+            <div class="hub-lineage-controls-wrap">
+              <!-- Tier 1: Scope Layer Filter -->
+              <div class="hub-lineage-filter-pills" id="hubLineageScopePills">
+                <button type="button" class="hub-lineage-pill active" data-layer="all">All Layers</button>
+                <button type="button" class="hub-lineage-pill" data-layer="account">Account Layer</button>
+                <button type="button" class="hub-lineage-pill" data-layer="lob">Division / LOB</button>
+                <button type="button" class="hub-lineage-pill" data-layer="persona">Persona Layer</button>
+              </div>
+
+              <!-- Tier 2: Cost Filter Toggle -->
+              <div class="hub-lineage-cost-toggle" id="hubLineageCostToggle">
+                <button type="button" class="hub-cost-toggle-btn active" data-cost="all">All Costs</button>
+                <button type="button" class="hub-cost-toggle-btn" data-cost="free"><i class="bi bi-gift-fill" style="color:#059669;"></i> Free Only</button>
+                <button type="button" class="hub-cost-toggle-btn" data-cost="metered"><i class="bi bi-lightning-fill" style="color:#d97706;"></i> Metered</button>
+              </div>
+            </div>
+          </div>
+          <div class="hub-lineage-container" id="hubLineageGrid">
+            <!-- Dynamically populated cross-filtered cards -->
+          </div>
+        </div>
+
+        <!-- Section 4: Live Pipeline Execution Audit (Recent Runs Feed) -->
+        <div class="pipeline-section-card fade-in" style="margin-top:20px;">
+          <div class="section-title-row">
+            <div class="section-title-left">
+              <span class="section-title-dot"></span>
+              <span>Recent Pipeline Execution Audit</span>
+              <span class="badge-feed-count" id="hubRecentRunsBadge">PostgreSQL Run Audit</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;">
+              <span class="section-subtitle-hint"><i class="bi bi-activity text-info"></i> Real-time Execution Telemetry</span>
+            </div>
+          </div>
+          <div id="hubRecentRunsContainer">
+            <!-- Dynamically populated from /api/pipeline/runs?limit=5 -->
           </div>
         </div>
       </div>
@@ -179,6 +231,7 @@
           <!-- Data Completeness Section -->
           <div id="completenessContainer" class="modern-view-card fade-in"></div>
 
+
           <!-- Tabs Strip Bar (Overview, LOBs, Personas, Feeds, Activity) -->
           <div id="tabsContainer" class="pipeline-tabs-bar"></div>
 
@@ -195,16 +248,8 @@
             <span><i class="bi bi-folder2-open"></i>&nbsp; Lines of Business (LOB)</span>
             <div class="batch-pipeline-actions" id="lobBatchActions">
               <button type="button" class="batch-btn batch-btn-pull" id="lobBatchPull"
-                      title="Step 1: Sequentially pull live data for all LOBs">
-                <i class="bi bi-cloud-arrow-down"></i> Pull All
-              </button>
-              <button type="button" class="batch-btn batch-btn-validate" id="lobBatchValidate" disabled
-                      title="Step 2: Sequentially validate all pulled LOBs">
-                <i class="bi bi-shield-check"></i> Validate All
-              </button>
-              <button type="button" class="batch-btn batch-btn-dump" id="lobBatchDump" disabled
-                      title="Step 3: Sequentially dump all validated LOBs to database">
-                <i class="bi bi-database-check"></i> Dump All
+                      title="Open Batch Console — discover and enrich Lines of Business">
+                <i class="bi bi-grid-3x3-gap-fill"></i> Batch Console
               </button>
             </div>
             <span class="text-muted" style="font-size: .75rem; font-weight: normal;" id="lobCountBadge"></span>
@@ -234,16 +279,8 @@
             </span>
             <div class="batch-pipeline-actions" id="personaBatchActions">
               <button type="button" class="batch-btn batch-btn-pull" id="personaBatchPull"
-                      title="Step 1: Sequentially pull live data for all personas">
-                <i class="bi bi-cloud-arrow-down"></i> Pull All
-              </button>
-              <button type="button" class="batch-btn batch-btn-validate" id="personaBatchValidate" disabled
-                      title="Step 2: Sequentially validate all pulled personas">
-                <i class="bi bi-shield-check"></i> Validate All
-              </button>
-              <button type="button" class="batch-btn batch-btn-dump" id="personaBatchDump" disabled
-                      title="Step 3: Sequentially dump all validated personas to database">
-                <i class="bi bi-database-check"></i> Dump All
+                      title="Open Batch Console to discover and enrich personas for this LOB">
+                <i class="bi bi-grid-3x3-gap-fill"></i> Batch Console
               </button>
             </div>
             <span class="text-muted" style="font-size: .75rem; font-weight: normal;" id="personaCountBadge"></span>
@@ -272,16 +309,8 @@
             <div class="d-flex align-items-center gap-2 flex-wrap">
               <div class="batch-pipeline-actions" id="allPersonasBatchActions">
                 <button type="button" class="batch-btn batch-btn-pull" id="allPersonasBatchPull"
-                        title="Step 1: Discover and pull live 4-tier hierarchy for all personas">
-                  <i class="bi bi-cloud-arrow-down"></i> Pull All
-                </button>
-                <button type="button" class="batch-btn batch-btn-validate" id="allPersonasBatchValidate" disabled
-                        title="Step 2: Validate all discovered personas">
-                  <i class="bi bi-shield-check"></i> Validate All
-                </button>
-                <button type="button" class="batch-btn batch-btn-dump" id="allPersonasBatchDump" disabled
-                        title="Step 3: Save all validated personas to PostgreSQL database">
-                  <i class="bi bi-database-check"></i> Dump All
+                        title="Open Batch Console to discover and enrich all personas for this account">
+                  <i class="bi bi-grid-3x3-gap-fill"></i> Batch Console
                 </button>
               </div>
               <!-- Live Search Bar -->
@@ -441,7 +470,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/app.js?v=3.18.0"></script>
+<script src="js/app.js?v=3.39.0"></script>
 <script src="js/chatbot.js?v=2.3.6"></script>
 
 <!-- ── Enhanced Add New Account Modal ──────────────────────── -->
@@ -1215,6 +1244,425 @@
     </button>
   </div>
 </aside>
+
+<!-- Enterprise Batch Multi-Enrichment Console Modal -->
+<div id="batchEnrichmentBackdrop" class="batch-console-backdrop d-none"></div>
+<div id="batchEnrichmentModal" class="batch-console-modal d-none" aria-modal="true" role="dialog">
+  <!-- Console Header -->
+  <div class="batch-console-header">
+    <div class="batch-console-header-left">
+      <div class="batch-console-icon" id="batchConsoleHeaderIcon">
+        <i class="bi bi-people-fill"></i>
+      </div>
+      <div>
+        <div class="batch-console-title-row">
+          <h2 class="batch-console-title" id="batchConsoleTitle">Batch People Enrichment Console</h2>
+        </div>
+        <div class="batch-company-meta">
+          <label for="batchCompanySelector" class="batch-company-label">
+            <i class="bi bi-building-check text-primary"></i> Target Enterprise:
+          </label>
+          <div class="batch-company-select-wrap">
+            <select id="batchCompanySelector" class="batch-company-dropdown" aria-label="Select Target Enterprise Account">
+              <!-- Dynamically populated with accounts -->
+            </select>
+            <i class="bi bi-chevron-down batch-dropdown-caret"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3-Way Entity Switcher (Accounts / LOBs / People) - Switch without closing! -->
+    <div class="batch-entity-switcher" id="batchEntitySwitcher" role="tablist">
+      <button type="button" class="batch-entity-tab" data-entity="account" title="Switch to Accounts Console">
+        <i class="bi bi-building"></i> <span>Accounts</span> <span class="batch-entity-badge" id="batchEntityAccountBadge">1</span>
+      </button>
+      <button type="button" class="batch-entity-tab" data-entity="lob" title="Switch to Lines of Business Console">
+        <i class="bi bi-diagram-3-fill"></i> <span>LOBs</span> <span class="batch-entity-badge" id="batchEntityLobBadge">0</span>
+      </button>
+      <button type="button" class="batch-entity-tab active" data-entity="persona" title="Switch to People / Executive Directory Console">
+        <i class="bi bi-people-fill"></i> <span>People</span> <span class="batch-entity-badge" id="batchEntityPersonaBadge">0</span>
+      </button>
+    </div>
+
+    <!-- Dual Screen Navigation Tabs (from Screenshot 1 & 3) -->
+    <div class="batch-screen-tabs">
+      <button type="button" class="batch-screen-tab active" id="batchTabDirectoryBtn">
+        <i class="bi bi-people-fill"></i> Directory &amp; Batch Queue
+      </button>
+      <button type="button" class="batch-screen-tab" id="batchTabHistoryBtn">
+        <i class="bi bi-clock-history"></i> Recent Runs History
+      </button>
+    </div>
+
+    <div class="batch-console-header-right">
+      <button type="button" class="batch-console-btn-icon" id="batchConsoleFullscreenBtn" title="Toggle Fullscreen">
+        <i class="bi bi-arrows-fullscreen"></i>
+      </button>
+      <button type="button" class="batch-close-btn" id="closeBatchConsoleBtn" title="Close Console (Esc)">
+        <i class="bi bi-x-lg"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- SCREEN 1: Directory & Batch Execution Queue (from Screenshot 1 & 2) -->
+  <div id="batchScreenDirectory" class="batch-screen-view">
+    <!-- Telemetry / KPI Cards Row -->
+    <div class="batch-kpi-strip">
+      <div class="batch-kpi-card">
+        <div class="batch-kpi-icon text-primary"><i class="bi bi-people-fill"></i></div>
+        <div class="batch-kpi-data">
+          <div class="batch-kpi-val" id="batchKpiTotal">0</div>
+          <div class="batch-kpi-label" id="batchKpiTotalLabel">Total People</div>
+        </div>
+      </div>
+      <div class="batch-kpi-card">
+        <div class="batch-kpi-icon text-success"><i class="bi bi-check-circle-fill"></i></div>
+        <div class="batch-kpi-data">
+          <div class="batch-kpi-val text-success" id="batchKpiEnriched">0</div>
+          <div class="batch-kpi-label">Already Enriched</div>
+        </div>
+      </div>
+      <div class="batch-kpi-card">
+        <div class="batch-kpi-icon text-warning"><i class="bi bi-hourglass-split"></i></div>
+        <div class="batch-kpi-data">
+          <div class="batch-kpi-val text-warning" id="batchKpiPending">0</div>
+          <div class="batch-kpi-label" id="batchKpiPendingLabel">Pending Stubs</div>
+        </div>
+      </div>
+      <div class="batch-kpi-card">
+        <div class="batch-kpi-icon text-info"><i class="bi bi-shield-check"></i></div>
+        <div class="batch-kpi-data">
+          <div class="batch-kpi-val text-info" id="batchKpiSpeed">1-by-1</div>
+          <div class="batch-kpi-label">Sequential Safe Mode</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Filter & Search Toolbar -->
+    <div class="batch-toolbar">
+      <div class="batch-search-wrap">
+        <i class="bi bi-search"></i>
+        <input type="text" id="batchSearchInput" class="batch-search-input" placeholder="Search by name, title, department..." autocomplete="off">
+      </div>
+      <div class="batch-filter-group">
+        <select id="batchStatusFilter" class="batch-filter-select">
+          <option value="pending">Pending Stubs Only</option>
+          <option value="all">All Records</option>
+          <option value="enriched">Already Enriched</option>
+        </select>
+        <select id="batchTierFilter" class="batch-filter-select">
+          <option value="all">All Seniority Tiers</option>
+          <option value="c_suite">C-Suite (Tier 1)</option>
+          <option value="vp">VP / Managing Director (Tier 2)</option>
+          <option value="director">Director (Tier 3)</option>
+          <option value="manager">Manager / Lead (Tier 4)</option>
+        </select>
+        <button type="button" class="batch-btn-icon" id="batchRefreshTableBtn" title="Refresh Table">
+          <i class="bi bi-arrow-clockwise"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Floating Sticky Action Bar -->
+    <div class="batch-action-bar">
+      <div class="batch-action-left">
+        <div class="batch-checkbox-wrap">
+          <input type="checkbox" id="batchMasterCheckbox" class="batch-custom-checkbox">
+          <label for="batchMasterCheckbox" id="batchSelectLabel">Select All Visible</label>
+        </div>
+        <button type="button" class="btn-batch-action btn-batch-quick-select" id="batchSelectPendingBtn">
+          Select Unenriched
+        </button>
+        <button type="button" class="btn-batch-action btn-batch-quick-select-enriched" id="batchSelectEnrichedBtn" title="Select all already-enriched records for additive re-enrichment">
+          <i class="bi bi-arrow-repeat"></i> Select Enriched
+        </button>
+        <!-- Quick Select First N Records -->
+        <div class="batch-select-n-wrap" title="Enter a number (e.g. 5, 10, 20, 33) to select the first N records">
+          <span class="batch-select-n-label"><i class="bi bi-list-ol"></i> First:</span>
+          <input type="number" id="batchSelectCountInput" class="batch-select-count-input" min="1" max="1000" placeholder="Qty" aria-label="Number of records to select">
+          <button type="button" class="btn-batch-action btn-batch-select-n-btn" id="batchSelectCountBtn" title="Select first N records">
+            Select
+          </button>
+          <div class="batch-preset-chips">
+            <button type="button" class="batch-preset-pill btn-batch-preset-n" data-n="10" title="Select first 10">10</button>
+            <button type="button" class="batch-preset-pill btn-batch-preset-n" data-n="20" title="Select first 20">20</button>
+            <button type="button" class="batch-preset-pill btn-batch-preset-n" data-n="50" title="Select first 50">50</button>
+          </div>
+        </div>
+        <span class="batch-selected-count-badge" id="batchSelectedBadge">0 selected</span>
+      </div>
+
+      <div class="batch-action-right">
+        <button type="button" class="btn-batch-action btn-batch-run" id="batchRunEnrichmentBtn" disabled>
+          <i class="bi bi-play-fill"></i> Run Enrichment (<span id="batchRunCountText">0</span>)
+        </button>
+        <button type="button" class="btn-batch-action btn-batch-stop d-none" id="batchStopBtn">
+          <i class="bi bi-stop-circle-fill"></i> Stop Queue
+        </button>
+        <button type="button" class="btn-batch-action btn-batch-clear" id="batchClearSelectionBtn">
+          Clear selection
+        </button>
+      </div>
+    </div>
+
+    <!-- Real-Time Execution Ticker & Progress Bar -->
+    <div class="batch-progress-section d-none" id="batchLiveProgressWrap">
+      <div class="batch-progress-header">
+        <div class="batch-progress-title">
+          <span class="pulse-dot-green"></span>
+          <span id="batchLiveStatusText">Running sequential pipeline...</span>
+        </div>
+        <div class="batch-progress-metrics" id="batchProgressMetrics">0 / 0 completed (0%)</div>
+      </div>
+      <div class="batch-progress-track">
+        <div class="batch-progress-bar-fill" id="batchProgressBarFill" style="width: 0%"></div>
+      </div>
+    </div>
+
+    <!-- Interactive Data Table with Expanded Columns -->
+    <div class="batch-table-container">
+      <table class="batch-table" id="batchDataTable">
+        <thead>
+          <tr>
+            <th style="width: 40px; text-align: center;"></th>
+            <th style="min-width: 180px;" id="batchColThName">NAME &amp; EXECUTIVE</th>
+            <th style="min-width: 140px;" id="batchColThCompany">COMPANY</th>
+            <th style="min-width: 180px;" id="batchColThTitle">TITLE &amp; DEPT</th>
+            <th style="min-width: 90px;" id="batchColThTier">TIER</th>
+            <th style="min-width: 120px;">LAST RUN</th>
+            <th style="min-width: 170px;">CHANNELS / SOURCES</th>
+            <th style="min-width: 130px;">DB COLS FILLED</th>
+            <th style="min-width: 110px;">STATUS</th>
+            <th style="min-width: 100px; text-align: right;">ACTION</th>
+          </tr>
+        </thead>
+        <tbody id="batchTableBody">
+          <!-- Rendered dynamically -->
+        </tbody>
+      </table>
+      <div id="batchTableEmpty" class="batch-table-empty d-none">
+        <i class="bi bi-inbox"></i>
+        <p>No records match your filter criteria.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN 2: Recent Runs & Telemetry History (from Screenshot 3) -->
+  <div id="batchScreenHistory" class="batch-screen-view d-none">
+    <!-- Telemetry History KPI Strip -->
+    <div class="batch-kpi-strip">
+      <div class="batch-kpi-card">
+        <div class="batch-kpi-icon text-primary"><i class="bi bi-cpu-fill"></i></div>
+        <div class="batch-kpi-data">
+          <div class="batch-kpi-val" id="historyKpiTotal">0</div>
+          <div class="batch-kpi-label">Total Runs Recorded</div>
+        </div>
+      </div>
+      <div class="batch-kpi-card">
+        <div class="batch-kpi-icon text-success"><i class="bi bi-check2-circle"></i></div>
+        <div class="batch-kpi-data">
+          <div class="batch-kpi-val text-success" id="historyKpiSuccessRate">100%</div>
+          <div class="batch-kpi-label">Success Rate</div>
+        </div>
+      </div>
+      <div class="batch-kpi-card">
+        <div class="batch-kpi-icon text-info"><i class="bi bi-stopwatch"></i></div>
+        <div class="batch-kpi-data">
+          <div class="batch-kpi-val text-info" id="historyKpiAvgDuration">0.0s</div>
+          <div class="batch-kpi-label">Avg Run Duration</div>
+        </div>
+      </div>
+      <div class="batch-kpi-card">
+        <div class="batch-kpi-icon text-purple" style="color:#8b5cf6;"><i class="bi bi-broadcast"></i></div>
+        <div class="batch-kpi-data">
+          <div class="batch-kpi-val" style="color:#8b5cf6;" id="historyKpiProviders">6 Sources</div>
+          <div class="batch-kpi-label">Active Data Connectors</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- History Toolbar -->
+    <div class="batch-toolbar">
+      <div class="batch-search-wrap">
+        <i class="bi bi-search"></i>
+        <input type="text" id="batchHistorySearchInput" class="batch-search-input" placeholder="Search history by persona name, company, or action..." autocomplete="off">
+      </div>
+      <div class="batch-filter-group">
+        <select id="batchHistoryLevelFilter" class="batch-filter-select">
+          <option value="all">All Levels (Persona, LOB, Account)</option>
+          <option value="persona">Personas Only</option>
+          <option value="lob">LOBs Only</option>
+          <option value="account">Accounts Only</option>
+        </select>
+        <select id="batchHistoryStatusFilter" class="batch-filter-select">
+          <option value="all">All Statuses</option>
+          <option value="success">Success Only</option>
+          <option value="failed">Failed Only</option>
+        </select>
+        <button type="button" class="batch-btn-icon" id="batchHistoryRefreshBtn" title="Refresh Recent Runs">
+          <i class="bi bi-arrow-clockwise"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- History Table -->
+    <div class="batch-table-container">
+      <table class="batch-table" id="batchHistoryTable">
+        <thead>
+          <tr>
+            <th style="min-width: 140px;">WHEN</th>
+            <th style="min-width: 90px;">KIND</th>
+            <th style="min-width: 220px;">TARGET / ENTITY</th>
+            <th style="min-width: 180px;">SOURCES / CHANNELS</th>
+            <th style="min-width: 120px;">DB QUALITY</th>
+            <th style="min-width: 80px;">DURATION</th>
+            <th style="min-width: 90px;">STATUS</th>
+            <th style="min-width: 80px; text-align: right;">ACTION</th>
+          </tr>
+        </thead>
+        <tbody id="batchHistoryTableBody">
+          <!-- Rendered dynamically from PostgreSQL pipeline_runs -->
+        </tbody>
+      </table>
+      <div id="batchHistoryEmpty" class="batch-table-empty d-none">
+        <i class="bi bi-clock-history"></i>
+        <p>No recent pipeline executions recorded yet for this account.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Console Footer -->
+  <div class="batch-console-footer">
+    <div class="batch-footer-note">
+      <i class="bi bi-shield-check text-success"></i> Each selected record executes sequentially: <strong>Live Multi-Source Extraction &rarr; Schema Validation &rarr; Database Upsert</strong>.
+    </div>
+    <button type="button" class="btn btn-sm btn-secondary" id="batchConsoleFooterCloseBtn">Close</button>
+  </div>
+</div>
+
+<!-- ── Telemetry Run Audit Details Modal ────────────────────────────── -->
+<div id="batchRunDetailsBackdrop" class="batch-details-backdrop d-none">
+  <div id="batchRunDetailsModal" class="batch-details-modal" role="dialog" aria-modal="true" aria-labelledby="batchRunDetailsTitle">
+    <!-- Header -->
+    <div class="batch-details-header">
+      <div class="batch-details-header-title">
+        <div class="batch-details-icon"><i class="bi bi-file-earmark-code"></i></div>
+        <div>
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <h5 id="batchRunDetailsTitle" class="m-0" style="font-weight:700;font-size:1.05rem;">Telemetry Execution Audit</h5>
+            <span id="batchRunDetailsStatusBadge"></span>
+            <span id="batchRunDetailsLevelBadge"></span>
+            <span id="batchRunDetailsActionBadge"></span>
+          </div>
+          <div class="d-flex align-items-center gap-2 mt-1 flex-wrap" style="font-size:0.75rem;color:var(--text-muted);">
+            <span>Run ID: <code id="batchRunDetailsRunId" style="color:var(--primary);font-size:0.75rem;"></code></span>
+            <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-1" id="copyRunIdBtn" title="Copy Run ID" style="font-size:0.65rem;">
+              <i class="bi bi-clipboard"></i> Copy
+            </button>
+            <span>&bull;</span>
+            <span id="batchRunDetailsTime"></span>
+          </div>
+        </div>
+      </div>
+      <button type="button" class="batch-console-close-btn" id="closeBatchRunDetailsBtn" title="Close Details">&times;</button>
+    </div>
+
+    <!-- Modal Body -->
+    <div class="batch-details-body">
+      <!-- Error Banner (shown if failed or error_message present) -->
+      <div id="batchRunDetailsErrorBanner" class="batch-details-error-banner d-none">
+        <i class="bi bi-exclamation-triangle-fill" style="font-size:1.2rem;flex-shrink:0;"></i>
+        <div>
+          <strong style="display:block;font-size:0.85rem;">Execution Failure Telemetry:</strong>
+          <div id="batchRunDetailsErrorMessage" style="font-size:0.80rem;margin-top:2px;"></div>
+        </div>
+      </div>
+
+      <!-- Quick Metrics Grid -->
+      <div class="batch-details-metrics-grid">
+        <div class="batch-details-metric-card">
+          <div class="metric-label">Execution Duration</div>
+          <div class="metric-value" id="batchRunDetailsDuration">0.0s</div>
+          <div class="metric-sub" id="batchRunDetailsDurationSub">Wall-clock elapsed</div>
+        </div>
+        <div class="batch-details-metric-card">
+          <div class="metric-label">Quality Score &amp; Grade</div>
+          <div class="metric-value text-success" id="batchRunDetailsQualityScore">--</div>
+          <div class="metric-sub" id="batchRunDetailsQualityGrade">Data integrity score</div>
+        </div>
+        <div class="batch-details-metric-card">
+          <div class="metric-label">Billable Credits</div>
+          <div class="metric-value text-info" id="batchRunDetailsCredits">0 cr</div>
+          <div class="metric-sub">Metered API consumption</div>
+        </div>
+        <div class="batch-details-metric-card">
+          <div class="metric-label">Target Entity</div>
+          <div class="metric-value" id="batchRunDetailsTargetName" style="font-size:0.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">--</div>
+          <div class="metric-sub" id="batchRunDetailsTargetSub" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">--</div>
+        </div>
+      </div>
+
+      <!-- Tab Navigation -->
+      <div class="batch-details-tabs">
+        <button type="button" class="batch-details-tab-btn active" data-tab="entities">
+          <i class="bi bi-diagram-2"></i> Entities Extracted (<span id="batchRunDetailsEntitiesCount">0</span>)
+        </button>
+        <button type="button" class="batch-details-tab-btn" data-tab="credits">
+          <i class="bi bi-coin"></i> Credit Breakdown
+        </button>
+        <button type="button" class="batch-details-tab-btn" data-tab="logs">
+          <i class="bi bi-journal-text"></i> Execution Chronology (<span id="batchRunDetailsLogsCount">0</span>)
+        </button>
+        <button type="button" class="batch-details-tab-btn" data-tab="raw">
+          <i class="bi bi-code-slash"></i> Full Raw JSON
+        </button>
+      </div>
+
+      <!-- Tab Content Panels -->
+      <div class="batch-details-tab-content">
+        <!-- Tab 1: Entities Extracted -->
+        <div id="batchTabEntities" class="batch-details-pane active">
+          <div id="batchRunDetailsEntitiesContainer" class="batch-details-entities-list"></div>
+        </div>
+
+        <!-- Tab 2: Credits Breakdown -->
+        <div id="batchTabCredits" class="batch-details-pane d-none">
+          <div id="batchRunDetailsCreditsContainer"></div>
+        </div>
+
+        <!-- Tab 3: Execution Chronology Logs -->
+        <div id="batchTabLogs" class="batch-details-pane d-none">
+          <div id="batchRunDetailsLogsContainer" class="batch-details-logs-list"></div>
+        </div>
+
+        <!-- Tab 4: Raw JSON -->
+        <div id="batchTabRaw" class="batch-details-pane d-none">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span style="font-size:0.75rem;color:var(--text-muted);">Direct PostgreSQL audit row from <code>pipeline_runs</code></span>
+            <button type="button" class="btn btn-xs btn-outline-secondary" id="copyRunRawJsonBtn" style="font-size:0.70rem;">
+              <i class="bi bi-clipboard"></i> Copy JSON
+            </button>
+          </div>
+          <pre id="batchRunDetailsRawJson" class="batch-details-raw-code"></pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Footer -->
+    <div class="batch-details-footer">
+      <div style="font-size:0.72rem;color:var(--text-muted);">
+        <i class="bi bi-shield-check text-success"></i> Telemetry synchronized in real-time from PostgreSQL <code>pipeline_runs</code>.
+      </div>
+      <div class="d-flex gap-2">
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="batchDetailsCopyAllBtn">
+          <i class="bi bi-clipboard"></i> Copy Full Audit
+        </button>
+        <button type="button" class="btn btn-sm btn-primary" id="batchDetailsDismissBtn">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- Floating Notification Toast Container -->
 <div id="toastNotificationContainer"

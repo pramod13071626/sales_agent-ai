@@ -1,7 +1,128 @@
 import datetime
 import urllib.parse
-from typing import Any, Dict, List, Optional
+import re as _re
+from typing import Any, Callable, Dict, List, Optional
 from pydantic import BaseModel
+
+
+# ── Inline Path Resolver (replaces a separate path_resolver.py) ──────────────
+
+def _tokenize_path(path: str) -> list:
+    """Tokenize 'a.b.c[0].d' → ['a', 'b', 'c', 0, 'd']"""
+    tokens = []
+    for segment in path.split("."):
+        match = _re.match(r'^([^\[]+)(\[(\d+)\])?$', segment)
+        if match:
+            tokens.append(match.group(1))
+            if match.group(3) is not None:
+                tokens.append(int(match.group(3)))
+    return tokens
+
+
+def _walk_path(data: Any, path: str) -> Any:
+    """Walk a dot-notation path with optional [n] array indexing. Returns None on any error."""
+    parts = _tokenize_path(path)
+    current = data
+    for part in parts:
+        if current is None:
+            return None
+        if isinstance(part, int):
+            if isinstance(current, (list, tuple)):
+                try:
+                    current = current[part]
+                except IndexError:
+                    return None
+            else:
+                return None
+        else:
+            if isinstance(current, dict):
+                current = current.get(part)
+            else:
+                return None
+    return current
+
+
+def resolve_field(
+    data: dict,
+    paths: List[str],
+    transform: Optional[Callable] = None,
+    default: Any = None
+) -> Any:
+    """
+    Return the first non-null, non-empty value found across ordered dot-notation
+    fallback paths within a nested data dictionary.
+    Supports array indexing: 'raw_data.apify_linkedin.education[0].degreeName'
+    """
+    for path in paths:
+        value = _walk_path(data, path)
+        if value is None or value == "" or value == [] or value == {}:
+            continue
+        if transform:
+            value = transform(value)
+        if value is None or value == "" or value == [] or value == {}:
+            continue
+        return value
+    return default
+
+
+def normalize_edu_history(raw_edu: Any) -> Optional[list]:
+    """
+    Normalize vendor-specific education arrays into canonical schema list.
+    Handles: Apify LinkedIn ('degreeName'/'schoolName'), FullEnrich ('degree'/'school').
+    """
+    if not raw_edu or not isinstance(raw_edu, list):
+        return None
+    normalized = []
+    for item in raw_edu:
+        if not isinstance(item, dict):
+            continue
+        degree = (
+            item.get("degreeName")           # Apify LinkedIn
+            or item.get("degree")            # FullEnrich / Apollo
+            or item.get("field_of_study")
+        )
+        school = (
+            item.get("schoolName")           # Apify LinkedIn
+            or item.get("school")            # FullEnrich
+            or item.get("institution")       # OpenAlex
+            or item.get("organization")
+        )
+        date_range = item.get("dateRange") if isinstance(item.get("dateRange"), dict) else {}
+        year = (
+            (date_range.get("end") or {}).get("year")
+            or item.get("end_date")
+            or item.get("graduated_year")
+        )
+        if degree or school:
+            normalized.append({"degree": degree, "school": school, "year": year})
+    return normalized if normalized else None
+
+
+def normalize_emp_history(raw_emp: Any) -> Optional[list]:
+    """
+    Normalize vendor-specific employment arrays into canonical schema list.
+    Handles: Apify LinkedIn positions ('positions'/'experience'), FullEnrich, Apollo.
+    """
+    if not raw_emp or not isinstance(raw_emp, list):
+        return None
+    normalized = []
+    for item in raw_emp:
+        if not isinstance(item, dict):
+            continue
+        title = item.get("title") or item.get("role") or item.get("position_title")
+        company = (
+            item.get("companyName")          # Apify LinkedIn
+            or item.get("company")
+            or item.get("company_name")
+            or item.get("organization_name")
+            or item.get("organization")
+        )
+        date_range = item.get("dateRange") if isinstance(item.get("dateRange"), dict) else {}
+        start = (date_range.get("start") or {}).get("year") or item.get("start_date")
+        end = (date_range.get("end") or {}).get("year") or item.get("end_date") or "Present"
+        if title or company:
+            normalized.append({"title": title, "company": company, "start": start, "end": end})
+    return normalized if normalized else None
 
 
 class PersonaSchema(BaseModel):
@@ -91,6 +212,7 @@ class PersonaSchema(BaseModel):
     personal_email: Optional[str] = None
     direct_mobile_phone: Optional[str] = None
     osint_feed_manifest: Optional[Any] = None
+    extended_profile: Optional[Any] = None
 
     @classmethod
     def from_enriched_json(cls, person: Dict[str, Any], tree_info: Optional[Dict[str, Any]] = None) -> "PersonaSchema":
@@ -128,6 +250,17 @@ class PersonaSchema(BaseModel):
         elif not isinstance(emp_hist, list):
             emp_hist = []
 
+        # ── Vendor fallback: Apify LinkedIn uses "positions" or "experience" ──
+        if not emp_hist:
+            _apify_li = raw.get("apify_linkedin") or {}
+            _raw_emp = (
+                _apify_li.get("positions")
+                or _apify_li.get("experience")
+                or (raw.get("fullenrich") or {}).get("employment_history")
+                or []
+            )
+            emp_hist = normalize_emp_history(_raw_emp) or []
+
         past_comps = person.get("past_companies") or [
             e.get("company") or e.get("company_name") or e.get("organization_name")
             for e in emp_hist
@@ -151,6 +284,17 @@ class PersonaSchema(BaseModel):
             edu_hist = [edu_hist]
         elif not isinstance(edu_hist, list):
             edu_hist = []
+
+        # ── Vendor fallback: Apify LinkedIn uses "education", FullEnrich uses "education_history" ──
+        if not edu_hist:
+            _apify_li = raw.get("apify_linkedin") or {}
+            _raw_edu = (
+                _apify_li.get("education")
+                or (raw.get("fullenrich") or {}).get("education_history")
+                or []
+            )
+            edu_hist = normalize_edu_history(_raw_edu) or []
+
 
         fname = person.get("first_name") or raw.get("first_name") or ""
         lname = person.get("last_name") or raw.get("last_name") or ""
@@ -224,7 +368,7 @@ class PersonaSchema(BaseModel):
             }
 
         raw_id = person.get("id")
-        valid_id = raw_id if isinstance(raw_id, int) else None
+        valid_id = int(raw_id) if isinstance(raw_id, (int, str)) and str(raw_id).isdigit() else None
         ext_id = str(person.get("external_id") or raw.get("id") or raw.get("apollo_id") or "") or (str(raw_id) if raw_id and not isinstance(raw_id, int) else None)
         if ext_id == "":
             ext_id = None
@@ -340,8 +484,20 @@ class PersonaSchema(BaseModel):
             news_query=person.get("news_query") or rpd.get("news_query"),
             patents_query=person.get("patents_query") or rpd.get("patents_query"),
             youtube_channel_id=person.get("youtube_channel_id") or rpd.get("youtube_channel_id"),
-            degree=person.get("degree") or l1.get("degree") or raw.get("degree"),
-            institution=person.get("institution") or l1.get("institution") or raw.get("institution"),
+            degree=resolve_field(person, [
+                "degree",
+                "level_1_intelligence.degree",
+                "raw_data.apify_linkedin.education[0].degreeName",
+                "raw_data.fullenrich.education_history[0].degree",
+                "raw_data.apollo.education[0].degree",
+            ]) or l1.get("degree") or raw.get("degree"),
+            institution=resolve_field(person, [
+                "institution",
+                "level_1_intelligence.institution",
+                "raw_data.apify_linkedin.education[0].schoolName",
+                "raw_data.fullenrich.education_history[0].school",
+                "raw_data.apollo.education[0].school",
+            ]) or l1.get("institution") or raw.get("institution"),
             prior_company=person.get("prior_company") or l1.get("prior_company"),
             communication_style=person.get("communication_style") or l3.get("communication_style"),
             engagement_rate=(
@@ -413,11 +569,21 @@ class PersonaSchema(BaseModel):
             career_trajectory_score=person.get("career_trajectory_score"),
             headline=person.get("headline") or person.get("title"),
             education_history=edu_hist if edu_hist else None,
-            personal_email=person.get("personal_email") or raw.get("personal_email"),
-            direct_mobile_phone=(
-                person.get("direct_mobile_phone")
-                or raw.get("direct_mobile_phone")
-                or person.get("phone")
-            ),
-            osint_feed_manifest=osint_manifest
+            personal_email=resolve_field(person, [
+                "personal_email",
+                "raw_data.personal_email",
+                "raw_data.fullenrich.personal_emails[0]",
+                "raw_data.apollo.personal_emails[0]",
+                "raw_data.apollo.personal_email",
+            ]),
+            direct_mobile_phone=resolve_field(person, [
+                "direct_mobile_phone",
+                "raw_data.direct_mobile_phone",
+                "raw_data.apollo.mobile_phone",
+                "raw_data.fullenrich.mobile_phone",
+                "raw_data.fullenrich.direct_phone",
+                "phone",
+            ]),
+            osint_feed_manifest=osint_manifest,
+            extended_profile=person.get("extended_profile") or raw.get("extended_profile")
         )
