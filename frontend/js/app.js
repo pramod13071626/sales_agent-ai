@@ -1,21 +1,21 @@
-$(function () {
+﻿$(function () {
   
-  // ─── Theme Toggle ───────────────────────────────────────────────────────
+  // ΓöÇΓöÇΓöÇ Theme Toggle ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   let savedTheme = null;
   try { savedTheme = localStorage.getItem('scraperTheme'); } catch(e) {}
   if (savedTheme) {
     $('html').attr('data-theme', savedTheme);
-    $('#themeToggle').text(savedTheme === 'dark' ? '☀️' : '🌙');
+    $('#themeToggle').text(savedTheme === 'dark' ? 'ΓÿÇ∩╕Å' : '≡ƒîÖ');
   }
 
   $('#themeToggle').on('click', function () {
     const next = $('html').attr('data-theme') === 'dark' ? 'light' : 'dark';
     $('html').attr('data-theme', next);
-    $(this).text(next === 'dark' ? '☀️' : '🌙');
+    $(this).text(next === 'dark' ? 'ΓÿÇ∩╕Å' : '≡ƒîÖ');
     try { localStorage.setItem('scraperTheme', next); } catch(e) {}
   });
 
-  // ─── Mobile Sidebar ─────────────────────────────────────────────────────
+  // ΓöÇΓöÇΓöÇ Mobile Sidebar ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   function closeSidebar() {
     $('#sidebar').removeClass('open');
     $('#sidebarOverlay').removeClass('open');
@@ -27,7 +27,7 @@ $(function () {
   $('#sidebarOverlay').on('click', closeSidebar);
 
 
-  // ─── Fetch Live Data ──────────────────────────────────────────────────
+  // ΓöÇΓöÇΓöÇ Fetch Live Data ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   let MOCK_DATA = { accounts: [] };
   let activeAccount = null;
   let activeLob = null;
@@ -71,7 +71,7 @@ $(function () {
     }
   }
 
-  // ─── UI Rendering Logic ─────────────────────────────────────────────────
+  // ΓöÇΓöÇΓöÇ UI Rendering Logic ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
   const BRAND_ICONS = {
     google_news: `<svg width="26" height="26" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="5" fill="#FFFFFF"/><path d="M4 6h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z" fill="#4285F4"/><path d="M5 9h6v6H5z" fill="#EA4335"/><path d="M13 9h6M13 12h6M13 15h4" stroke="#FFFFFF" stroke-width="1.6" stroke-linecap="round"/></svg>`,
@@ -185,9 +185,9 @@ $(function () {
             <div class="compact-card-avatar" style="position:relative;overflow:hidden;background:#fff;border:1px solid #e2e8f0;display:flex;align-items:center;justify-content:center;">
               ${logoUrl ? `
                 <img src="${esc(logoUrl)}" alt="${esc(lob.name)}" style="width:100%;height:100%;object-fit:contain;padding:3px;" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
-                <i class="fa-solid fa-folder" style="display:none;font-size:1.1rem;color:var(--brand);"></i>
+                <i class="bi bi-folder2" style="display:none;font-size:1.1rem;color:var(--brand);"></i>
               ` : `
-                <i class="fa-solid fa-folder" style="font-size:1.1rem;color:var(--brand);"></i>
+                <i class="bi bi-folder2" style="font-size:1.1rem;color:var(--brand);"></i>
               `}
             </div>
             <div class="compact-card-body">
@@ -202,14 +202,14 @@ $(function () {
     $('#lobSection').removeClass('d-none');
     
     // Render Complete Enterprise Hierarchy at Account Level
-    renderPersonaCards(activeAccount.personas || [], `${activeAccount.name} — Enterprise Leadership Hierarchy`);
+    renderPersonaCards(activeAccount.personas || [], `${activeAccount.name} ΓÇö Enterprise Leadership Hierarchy`);
   });
 
   window._PERSONA_MAP = window._PERSONA_MAP || {};
 
   function renderPersonaCards(personas, title) {
     const $personaCards = $('#personaCardsContainer').empty();
-    $('#personaSectionTitle').html(`<i class="fa-solid fa-users"></i> ${esc(title || 'Organizational Hierarchy')}`);
+    $('#personaSectionTitle').html(`<i class="bi bi-people-fill"></i> ${esc(title || 'Organizational Hierarchy')}`);
     $('#personaCountBadge').text(`(${personas.length} contact${personas.length !== 1 ? 's' : ''})`);
 
     if (!personas || personas.length === 0) {
@@ -261,7 +261,7 @@ $(function () {
       }
     });
 
-    renderPersonaCards(allPersonas, `${activeLob.name} — Division Hierarchy`);
+    renderPersonaCards(allPersonas, `${activeLob.name} ΓÇö Division Hierarchy`);
 
     // Render LOB Detail Panel
     renderLobDetailPanel(activeLob);
@@ -297,7 +297,7 @@ $(function () {
     activePersona = null;
     $('#detailPanelContainer').addClass('d-none').empty();
     $('#crumbs').html(`<li class="breadcrumb-item active">${esc(activeAccount.name)}</li>`);
-    renderPersonaCards(activeAccount.personas || [], `${activeAccount.name} — Enterprise Leadership Hierarchy`);
+    renderPersonaCards(activeAccount.personas || [], `${activeAccount.name} ΓÇö Enterprise Leadership Hierarchy`);
   });
 
   $(document).on('click', '.crumb-lob', function () {
@@ -305,7 +305,7 @@ $(function () {
     $(`.lob-card[data-lob-id="${activeLob.id}"]`).click();
   });
 
-  // ─── Render Functions for Categorized Detail Panels ─────────────────────
+  // ΓöÇΓöÇΓöÇ Render Functions for Categorized Detail Panels ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
   function renderLobDetailPanel(lob) {
     const lobKey = `lob_${lob.id}`;
@@ -317,7 +317,7 @@ $(function () {
 
     const subLobsHtml = (lob.subLobs && lob.subLobs.length) ? `
       <div class="detail-section">
-        <div class="detail-section-heading"><i class="fa-solid fa-folder-tree"></i> Sub-Divisions &amp; Operating Groups (${lob.subLobs.length})</div>
+        <div class="detail-section-heading"><i class="bi bi-folder-symlink"></i> Sub-Divisions &amp; Operating Groups (${lob.subLobs.length})</div>
         <p class="section-desc">Nested subsidiaries, specialized business lines, and operational branches mapped under this division.</p>
         <div class="detail-grid">
           ${lob.subLobs.map(s => `
@@ -338,15 +338,15 @@ $(function () {
             <img src="${esc(lob.logo_url)}" alt="${esc(lob.name)}" style="width:48px;height:48px;border-radius:10px;object-fit:contain;background:#fff;border:1px solid #e2e8f0;padding:3px;flex-shrink:0;" onerror="this.style.display='none';" />
           ` : ''}
           <div style="flex:1;">
-            <span class="pill pill-brand detail-panel-badge"><i class="fa-solid fa-diagram-project"></i> Line of Business Deep Dive</span>
+            <span class="pill pill-brand detail-panel-badge"><i class="bi bi-diagram-2"></i> Line of Business Deep Dive</span>
             <h2 class="detail-panel-title">${esc(lob.name)}</h2>
             <p class="detail-panel-subtitle">${esc(lob.desc || lob.overview || 'Division Overview & Intelligence Hub')}</p>
           </div>
           <div class="detail-panel-actions-wrapper">
             <div class="detail-panel-actions">
-              <button type="button" class="panel-btn panel-btn-pull" ${pullBtnDisabled ? 'disabled' : ''} title="Step 1: Pull live public feeds (News, Social, Filings, Patents) for this LOB"><i class="fa-solid fa-cloud-arrow-down"></i> Pull</button>
-              <button type="button" class="panel-btn panel-btn-validate" ${validateBtnDisabled ? 'disabled' : ''} title="Step 2: AI cleans, verifies, and extracts strategic intent from scraped signals"><i class="fa-solid fa-shield-halved"></i> Validate</button>
-              <button type="button" class="panel-btn panel-btn-dump" ${dumpBtnDisabled ? 'disabled' : ''} title="Step 3: Save verified structured intelligence into NeonDB"><i class="fa-solid fa-database"></i> Dump</button>
+              <button type="button" class="panel-btn panel-btn-pull" ${pullBtnDisabled ? 'disabled' : ''} title="Step 1: Pull live public feeds (News, Social, Filings, Patents) for this LOB"><i class="bi bi-cloud-arrow-down"></i> Pull</button>
+              <button type="button" class="panel-btn panel-btn-validate" ${validateBtnDisabled ? 'disabled' : ''} title="Step 2: AI cleans, verifies, and extracts strategic intent from scraped signals"><i class="bi bi-shield-check"></i> Validate</button>
+              <button type="button" class="panel-btn panel-btn-dump" ${dumpBtnDisabled ? 'disabled' : ''} title="Step 3: Save verified structured intelligence into NeonDB"><i class="bi bi-database-check"></i> Dump</button>
             </div>
             <div class="panel-status-msg" id="panelStatusMsg">${state.message || 'Ready for data ingestion cycle.'}</div>
           </div>
@@ -361,7 +361,7 @@ $(function () {
 
         <!-- Categorized Section 1: Overview & Structure -->
         <div class="detail-section">
-          <div class="detail-section-heading"><i class="fa-solid fa-building"></i> Overview &amp; Corporate Structure</div>
+          <div class="detail-section-heading"><i class="bi bi-building"></i> Overview &amp; Corporate Structure</div>
           <p class="section-desc">Operating scope, relationship taxonomy, primary web domains, and commercial registry listings.</p>
           <div class="detail-grid">
             <div class="detail-field span-2">
@@ -374,22 +374,22 @@ $(function () {
             </div>
             <div class="detail-field" title="Dedicated digital domain for this business unit">
               <div class="detail-label">Primary Domain</div>
-              <div class="detail-val">${lob.domain ? `<a href="https://${esc(lob.domain)}" target="_blank">${esc(lob.domain)} <i class="fa-solid fa-arrow-up-right-from-square"></i></a>` : '<span class="text-muted">Not specified</span>'}</div>
+              <div class="detail-val">${lob.domain ? `<a href="https://${esc(lob.domain)}" target="_blank">${esc(lob.domain)} <i class="bi bi-box-arrow-up-right"></i></a>` : '<span class="text-muted">Not specified</span>'}</div>
             </div>
             <div class="detail-field" title="Official corporate website or segment landing page">
               <div class="detail-label">Website URL</div>
-              <div class="detail-val">${lob.website_url ? `<a href="${esc(lob.website_url)}" target="_blank">${esc(lob.website_url)} <i class="fa-solid fa-arrow-up-right-from-square"></i></a>` : '<span class="text-muted">Not specified</span>'}</div>
+              <div class="detail-val">${lob.website_url ? `<a href="${esc(lob.website_url)}" target="_blank">${esc(lob.website_url)} <i class="bi bi-box-arrow-up-right"></i></a>` : '<span class="text-muted">Not specified</span>'}</div>
             </div>
             <div class="detail-field" title="Crunchbase investment and company profile">
               <div class="detail-label">Crunchbase Profile</div>
-              <div class="detail-val">${lob.crunchbase_url ? `<a href="${esc(lob.crunchbase_url)}" target="_blank">View Profile <i class="fa-solid fa-arrow-up-right-from-square"></i></a>` : '<span class="text-muted">Not specified</span>'}</div>
+              <div class="detail-val">${lob.crunchbase_url ? `<a href="${esc(lob.crunchbase_url)}" target="_blank">View Profile <i class="bi bi-box-arrow-up-right"></i></a>` : '<span class="text-muted">Not specified</span>'}</div>
             </div>
           </div>
         </div>
 
         <!-- Categorized Section 2: Segment Metrics -->
         <div class="detail-section">
-          <div class="detail-section-heading"><i class="fa-solid fa-chart-line"></i> Segment Financials &amp; Operational Scale</div>
+          <div class="detail-section-heading"><i class="bi bi-bar-chart-line"></i> Segment Financials &amp; Operational Scale</div>
           <p class="section-desc">Reported segment revenues, organizational headcount, leadership structure, and mapped executive count.</p>
           <div class="detail-grid">
             <div class="detail-field" title="Annual financial revenue attributed to this segment">
@@ -413,12 +413,12 @@ $(function () {
 
         <!-- Categorized Section 3: Intelligence Feeds -->
         <div class="detail-section">
-          <div class="detail-section-heading"><i class="fa-solid fa-tower-broadcast"></i> Live Intelligence Feeds &amp; Public Signals</div>
+          <div class="detail-section-heading"><i class="bi bi-broadcast"></i> Live Intelligence Feeds &amp; Public Signals</div>
           <p class="section-desc">Click any platform card below to view recent scraped post activity, AI sentiment analysis, and source citations.</p>
           <div class="detail-grid">
             <div class="feed-btn-card">
               <button type="button" class="feed-title-btn" data-platform="linkedin" data-title="LinkedIn Intelligence Summary" data-entity="${esc(lob.name)}" data-url="${lob.linkedin_url ? esc(lob.linkedin_url) : `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(lob.name + ' ' + (activeAccount ? activeAccount.name : ''))}`}" title="Click to view LinkedIn activity summary and extracted posts">
-                <span class="feed-title"><i class="fa-brands fa-linkedin" style="color:#0077b5;"></i> LinkedIn Intelligence <i class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+                <span class="feed-title"><i class="bi bi-linkedin" style="color:#0077b5;"></i> LinkedIn Intelligence <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${lob.linkedin_url ? esc(lob.linkedin_url) : `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(lob.name + ' ' + (activeAccount ? activeAccount.name : ''))}`}" target="_blank" class="feed-right-icon-link" title="Open LinkedIn in new tab">
                 ${BRAND_ICONS.linkedin}
@@ -427,7 +427,7 @@ $(function () {
 
             <div class="feed-btn-card">
               <button type="button" class="feed-title-btn" data-platform="x_twitter" data-title="Twitter / X Intelligence Summary" data-entity="${esc(lob.name)}" data-url="${lob.twitter_live_url ? esc(lob.twitter_live_url) : `https://x.com/search?q=${encodeURIComponent(lob.name + ' ' + (activeAccount ? activeAccount.name : ''))}&f=live`}" title="Click to view Twitter/X live feed summary and sentiment">
-                <span class="feed-title"><i class="fa-brands fa-x-twitter"></i> Twitter / X Feed <i class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+                <span class="feed-title"><i class="bi bi-twitter-x"></i> Twitter / X Feed <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${lob.twitter_live_url ? esc(lob.twitter_live_url) : `https://x.com/search?q=${encodeURIComponent(lob.name + ' ' + (activeAccount ? activeAccount.name : ''))}&f=live`}" target="_blank" class="feed-right-icon-link" title="Open Twitter / X in new tab">
                 ${BRAND_ICONS.x_twitter}
@@ -436,7 +436,7 @@ $(function () {
 
             <div class="feed-btn-card">
               <button type="button" class="feed-title-btn" data-platform="reddit" data-title="Reddit Community Intelligence" data-entity="${esc(lob.name)}" data-url="${lob.reddit_rss_url ? esc(lob.reddit_rss_url) : `https://www.reddit.com/search/?q=${encodeURIComponent(lob.name)}`}" title="Click to view Reddit discussions and public sentiment">
-                <span class="feed-title"><i class="fa-brands fa-reddit" style="color:#ff4500;"></i> Reddit Community <i class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+                <span class="feed-title"><i class="bi bi-reddit" style="color:#ff4500;"></i> Reddit Community <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${lob.reddit_rss_url ? esc(lob.reddit_rss_url) : `https://www.reddit.com/search/?q=${encodeURIComponent(lob.name)}`}" target="_blank" class="feed-right-icon-link" title="Open Reddit in new tab">
                 ${BRAND_ICONS.reddit}
@@ -445,7 +445,7 @@ $(function () {
 
             <div class="feed-btn-card">
               <button type="button" class="feed-title-btn" data-platform="youtube" data-title="YouTube Video & Media Intelligence" data-entity="${esc(lob.name)}" data-url="${lob.youtube_search_url ? esc(lob.youtube_search_url) : `https://www.youtube.com/results?search_query=${encodeURIComponent(lob.name)}`}" title="Click to view YouTube interviews, keynote presentations, and webinars">
-                <span class="feed-title"><i class="fa-brands fa-youtube" style="color:#ff0000;"></i> YouTube Media <i class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+                <span class="feed-title"><i class="bi bi-youtube" style="color:#ff0000;"></i> YouTube Media <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${lob.youtube_search_url ? esc(lob.youtube_search_url) : `https://www.youtube.com/results?search_query=${encodeURIComponent(lob.name)}`}" target="_blank" class="feed-right-icon-link" title="Open YouTube in new tab">
                 ${BRAND_ICONS.youtube}
@@ -454,7 +454,7 @@ $(function () {
 
             <div class="feed-btn-card">
               <button type="button" class="feed-title-btn" data-platform="google_news" data-title="Google News Feed Intelligence" data-entity="${esc(lob.name)}" data-url="${lob.google_news_rss_url ? esc(lob.google_news_rss_url) : `https://news.google.com/rss/search?q=${encodeURIComponent(lob.name)}`}" title="Click to view Google News headlines and press coverage">
-                <span class="feed-title"><i class="fa-solid fa-newspaper" style="color:#4285f4;"></i> Google News RSS <i class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+                <span class="feed-title"><i class="bi bi-newspaper" style="color:#4285f4;"></i> Google News RSS <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${lob.google_news_rss_url ? esc(lob.google_news_rss_url) : `https://news.google.com/rss/search?q=${encodeURIComponent(lob.name)}`}" target="_blank" class="feed-right-icon-link" title="Open Google News in new tab">
                 ${BRAND_ICONS.google_news}
@@ -463,7 +463,7 @@ $(function () {
 
             <div class="feed-btn-card">
               <button type="button" class="feed-title-btn" data-platform="google_patents" data-title="Patent & IP Intelligence" data-entity="${esc(lob.name)}" data-url="${lob.google_patents_url ? esc(lob.google_patents_url) : `https://patents.google.com/?q=${encodeURIComponent(lob.name)}`}" title="Click to view patent filings, R&D innovations, and IP portfolio">
-                <span class="feed-title"><i class="fa-solid fa-lightbulb" style="color:#34a853;"></i> Patents Explorer <i class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+                <span class="feed-title"><i class="bi bi-lightbulb" style="color:#34a853;"></i> Patents Explorer <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${lob.google_patents_url ? esc(lob.google_patents_url) : `https://patents.google.com/?q=${encodeURIComponent(lob.name)}`}" target="_blank" class="feed-right-icon-link" title="Open Patents in new tab">
                 ${BRAND_ICONS.google_patents}
@@ -472,7 +472,7 @@ $(function () {
 
             <div class="feed-btn-card">
               <button type="button" class="feed-title-btn" data-platform="google_trends" data-title="Google Search Trends Analytics" data-entity="${esc(lob.name)}" data-url="${lob.google_trends_url ? esc(lob.google_trends_url) : `https://trends.google.com/trends/explore?q=${encodeURIComponent(lob.name)}`}" title="Click to view search term momentum and keyword interest">
-                <span class="feed-title"><i class="fa-solid fa-arrow-trend-up" style="color:#ea4335;"></i> Search Trends <i class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+                <span class="feed-title"><i class="bi bi-graph-up" style="color:#ea4335;"></i> Search Trends <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${lob.google_trends_url ? esc(lob.google_trends_url) : `https://trends.google.com/trends/explore?q=${encodeURIComponent(lob.name)}`}" target="_blank" class="feed-right-icon-link" title="Open Google Trends in new tab">
                 ${BRAND_ICONS.google_trends}
@@ -496,24 +496,24 @@ $(function () {
     const validateBtnDisabled = !state.pulled;
     const dumpBtnDisabled = !state.validated;
 
-    const skillsHtml = (p.skills && p.skills.length) ? p.skills.map(s => `<span class="data-tag" title="Verified skill area"><i class="fa-solid fa-check"></i> ${esc(s)}</span>`).join('') : '<span class="text-muted" style="font-size:.8rem;">No skills mapped</span>';
-    const kpisHtml = (p.target_kpis && p.target_kpis.length) ? p.target_kpis.map(k => `<span class="data-tag data-tag-success" title="Target KPI priority"><i class="fa-solid fa-bullseye"></i> ${esc(k)}</span>`).join('') : '<span class="text-muted" style="font-size:.8rem;">No KPIs mapped</span>';
-    const painPointsHtml = (p.operational_pain_points && p.operational_pain_points.length) ? p.operational_pain_points.map(pain => `<span class="data-tag data-tag-warning" title="Critical operational challenge"><i class="fa-solid fa-circle-exclamation"></i> ${esc(pain)}</span>`).join('') : '<span class="text-muted" style="font-size:.8rem;">None recorded</span>';
-    const objectionsHtml = (p.key_objections && p.key_objections.length) ? p.key_objections.map(obj => `<span class="data-tag" title="Anticipated sales objection"><i class="fa-solid fa-shield"></i> ${esc(obj)}</span>`).join('') : '<span class="text-muted" style="font-size:.8rem;">None recorded</span>';
+    const skillsHtml = (p.skills && p.skills.length) ? p.skills.map(s => `<span class="data-tag" title="Verified skill area"><i class="bi bi-check2"></i> ${esc(s)}</span>`).join('') : '<span class="text-muted" style="font-size:.8rem;">No skills mapped</span>';
+    const kpisHtml = (p.target_kpis && p.target_kpis.length) ? p.target_kpis.map(k => `<span class="data-tag data-tag-success" title="Target KPI priority"><i class="bi bi-bullseye"></i> ${esc(k)}</span>`).join('') : '<span class="text-muted" style="font-size:.8rem;">No KPIs mapped</span>';
+    const painPointsHtml = (p.operational_pain_points && p.operational_pain_points.length) ? p.operational_pain_points.map(pain => `<span class="data-tag data-tag-warning" title="Critical operational challenge"><i class="bi bi-exclamation-circle"></i> ${esc(pain)}</span>`).join('') : '<span class="text-muted" style="font-size:.8rem;">None recorded</span>';
+    const objectionsHtml = (p.key_objections && p.key_objections.length) ? p.key_objections.map(obj => `<span class="data-tag" title="Anticipated sales objection"><i class="bi bi-shield"></i> ${esc(obj)}</span>`).join('') : '<span class="text-muted" style="font-size:.8rem;">None recorded</span>';
 
     const panelHtml = `
       <div class="detail-panel fade-in" data-entity-type="persona" data-key="${pKey}">
         <div class="detail-panel-header">
           <div class="detail-panel-title-area">
-            <span class="pill pill-brand detail-panel-badge"><i class="fa-solid fa-id-badge"></i> Executive Persona Call Prep</span>
+            <span class="pill pill-brand detail-panel-badge"><i class="bi bi-person-badge"></i> Executive Persona Call Prep</span>
             <h2 class="detail-panel-title">${esc(p.name)}</h2>
-            <p class="detail-panel-subtitle">${esc(p.title || 'Executive')} • <span class="pill pill-success" style="font-size:.72rem;">${esc(p.tier || 'Target Tier')}</span> • ${esc(activeAccount.name)}</p>
+            <p class="detail-panel-subtitle">${esc(p.title || 'Executive')} ΓÇó <span class="pill pill-success" style="font-size:.72rem;">${esc(p.tier || 'Target Tier')}</span> ΓÇó ${esc(activeAccount.name)}</p>
           </div>
           <div class="detail-panel-actions-wrapper">
             <div class="detail-panel-actions">
-              <button type="button" class="panel-btn panel-btn-pull" ${pullBtnDisabled ? 'disabled' : ''} title="Step 1: Pull live social posts, press interviews, and author records for this executive"><i class="fa-solid fa-cloud-arrow-down"></i> Pull</button>
-              <button type="button" class="panel-btn panel-btn-validate" ${validateBtnDisabled ? 'disabled' : ''} title="Step 2: AI parses communication style, icebreakers, and objection readiness"><i class="fa-solid fa-shield-halved"></i> Validate</button>
-              <button type="button" class="panel-btn panel-btn-dump" ${dumpBtnDisabled ? 'disabled' : ''} title="Step 3: Save validated executive persona profile into NeonDB"><i class="fa-solid fa-database"></i> Dump</button>
+              <button type="button" class="panel-btn panel-btn-pull" ${pullBtnDisabled ? 'disabled' : ''} title="Step 1: Pull live social posts, press interviews, and author records for this executive"><i class="bi bi-cloud-arrow-down"></i> Pull</button>
+              <button type="button" class="panel-btn panel-btn-validate" ${validateBtnDisabled ? 'disabled' : ''} title="Step 2: AI parses communication style, icebreakers, and objection readiness"><i class="bi bi-shield-check"></i> Validate</button>
+              <button type="button" class="panel-btn panel-btn-dump" ${dumpBtnDisabled ? 'disabled' : ''} title="Step 3: Save validated executive persona profile into NeonDB"><i class="bi bi-database-check"></i> Dump</button>
             </div>
             <div class="panel-status-msg" id="panelStatusMsg">${state.message || 'Ready for data ingestion cycle.'}</div>
           </div>
@@ -528,7 +528,7 @@ $(function () {
 
         <!-- Categorized Section 1: Executive Profile & Demographics -->
         <div class="detail-section">
-          <div class="detail-section-heading"><i class="fa-solid fa-address-card"></i> Executive Profile &amp; Demographics</div>
+          <div class="detail-section-heading"><i class="bi bi-person-vcard"></i> Executive Profile &amp; Demographics</div>
           <p class="section-desc">Corporate title, verified contact information, geographic base, academic background, and organizational seniority level.</p>
           <div class="detail-grid">
             <div class="detail-field">
@@ -541,11 +541,11 @@ $(function () {
             </div>
             <div class="detail-field">
               <div class="detail-label">Corporate Email</div>
-              <div class="detail-val">${p.email ? `<a href="mailto:${esc(p.email)}">${esc(p.email)} <i class="fa-solid fa-envelope-circle-check"></i></a>` : '<span class="text-muted">Not discovered</span>'}</div>
+              <div class="detail-val">${p.email ? `<a href="mailto:${esc(p.email)}">${esc(p.email)} <i class="bi bi-envelope-check"></i></a>` : '<span class="text-muted">Not discovered</span>'}</div>
             </div>
             <div class="detail-field">
               <div class="detail-label">Email Status / Phone</div>
-              <div class="detail-val">${esc(p.email_status || 'Verified')} ${p.phone ? `• ${esc(p.phone)}` : ''}</div>
+              <div class="detail-val">${esc(p.email_status || 'Verified')} ${p.phone ? `ΓÇó ${esc(p.phone)}` : ''}</div>
             </div>
             <div class="detail-field">
               <div class="detail-label">Location / Base</div>
@@ -553,7 +553,7 @@ $(function () {
             </div>
             <div class="detail-field">
               <div class="detail-label">Education / Alma Mater</div>
-              <div class="detail-val">${esc(p.degree ? `${p.degree} — ${p.institution || ''}` : p.institution || 'Standard Executive Profile')}</div>
+              <div class="detail-val">${esc(p.degree ? `${p.degree} ΓÇö ${p.institution || ''}` : p.institution || 'Standard Executive Profile')}</div>
             </div>
             <div class="detail-field">
               <div class="detail-label">Prior Company Experience</div>
@@ -568,7 +568,7 @@ $(function () {
 
         <!-- Categorized Section 2: Behavior & Strategic KPIs -->
         <div class="detail-section">
-          <div class="detail-section-heading"><i class="fa-solid fa-bullseye"></i> Strategic Priorities &amp; Operational Pain Points</div>
+          <div class="detail-section-heading"><i class="bi bi-bullseye"></i> Strategic Priorities &amp; Operational Pain Points</div>
           <p class="section-desc">Key performance metrics the executive is evaluated on, top operational blockers, and anticipated sales objections.</p>
           <div class="detail-grid">
             <div class="detail-field span-2">
@@ -592,11 +592,11 @@ $(function () {
 
         <!-- Categorized Section 3: Personalized Messaging & Pitch -->
         <div class="detail-section">
-          <div class="detail-section-heading"><i class="fa-solid fa-comment-dots"></i> Personalized Engagement &amp; Pitch Strategy</div>
+          <div class="detail-section-heading"><i class="bi bi-chat-quote-fill"></i> Personalized Engagement &amp; Pitch Strategy</div>
           <p class="section-desc">AI-tailored opening icebreaker based on recent initiatives, targeted value proposition, and communication style.</p>
           <div class="detail-grid">
             <div class="detail-field span-full" style="background: var(--brand-soft); border-color: rgba(0,97,255,.25);">
-              <div class="detail-label" style="color:var(--brand);"><i class="fa-solid fa-star"></i> Tailored Call Icebreaker</div>
+              <div class="detail-label" style="color:var(--brand);"><i class="bi bi-stars"></i> Tailored Call Icebreaker</div>
               <div class="detail-val" style="font-size:.9rem; color:var(--text-primary); font-weight:600;">
                 "${esc(p.personalized_icebreaker || `Congratulations on your leadership initiatives at ${activeAccount.name}.`)}"
               </div>
@@ -611,7 +611,7 @@ $(function () {
             </div>
             <div class="detail-field">
               <div class="detail-label">Authority &amp; Influence</div>
-              <div class="detail-val">Decision: ${esc(p.decision_authority || 'Primary')} • Budget: ${esc(p.budget_authority || 'Sign-off')}</div>
+              <div class="detail-val">Decision: ${esc(p.decision_authority || 'Primary')} ΓÇó Budget: ${esc(p.budget_authority || 'Sign-off')}</div>
             </div>
           </div>
         </div>
@@ -620,12 +620,10 @@ $(function () {
         <div class="detail-section">
           <div class="detail-section-heading"><i class="bi bi-broadcast-pin"></i> Executive Online Footprint &amp; Discourse</div>
           <p class="section-desc">Click any platform card to inspect the executive's real posts, interview quotes, and public commentary, or click the external icon to open directly.</p>
-          <div class="detail-section-heading"><i class="fa-solid fa-tower-broadcast"></i> Executive Online Footprint &amp; Discourse</div>
-          <p class="section-desc">Click any platform card to inspect the executive's real posts, interview quotes, and public commentary.</p>
           <div class="detail-grid">
             <div class="feed-btn-card">
               <button type="button" class="feed-title-btn" data-platform="linkedin" data-title="LinkedIn Executive Intelligence" data-entity="${esc(p.name)}" data-url="${p.linkedin_url ? esc(p.linkedin_url) : `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(p.name + ' ' + activeAccount.name)}`}" title="Click to view executive LinkedIn activity and recent posts">
-                <span class="feed-title"><i class="fa-brands fa-linkedin" style="color:#0077b5;"></i> LinkedIn Profile <i class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+                <span class="feed-title"><i class="bi bi-linkedin" style="color:#0077b5;"></i> LinkedIn Profile <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${p.linkedin_url ? esc(p.linkedin_url) : `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(p.name + ' ' + activeAccount.name)}`}" target="_blank" class="feed-right-icon-link" title="Open LinkedIn profile in new tab">
                 ${BRAND_ICONS.linkedin}
@@ -664,7 +662,7 @@ $(function () {
 
             <div class="feed-btn-card">
               <button type="button" class="feed-title-btn" data-platform="x_twitter" data-title="Twitter / X Executive Intelligence" data-entity="${esc(p.name)}" data-url="${p.twitter_live_url ? esc(p.twitter_live_url) : `https://x.com/search?q=${encodeURIComponent(p.name)}&f=live`}" title="Click to view executive Twitter/X timeline and discourse">
-                <span class="feed-title"><i class="fa-brands fa-x-twitter"></i> Twitter / X Feed <i class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+                <span class="feed-title"><i class="bi bi-twitter-x"></i> Twitter / X Feed <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${p.twitter_live_url ? esc(p.twitter_live_url) : `https://x.com/search?q=${encodeURIComponent(p.name)}&f=live`}" target="_blank" class="feed-right-icon-link" title="Open Twitter / X in new tab">
                 ${BRAND_ICONS.x_twitter}
@@ -763,7 +761,7 @@ $(function () {
 
             <div class="feed-btn-card">
               <button type="button" class="feed-title-btn" data-platform="reddit" data-title="Reddit Community Discussions" data-entity="${esc(p.name)}" data-url="${p.reddit_rss_url ? esc(p.reddit_rss_url) : `https://www.reddit.com/search/?q=${encodeURIComponent(p.name)}`}" title="Click to view Reddit discussions and industry mentions">
-                <span class="feed-title"><i class="fa-brands fa-reddit" style="color:#ff4500;"></i> Reddit Mentions <i class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+                <span class="feed-title"><i class="bi bi-reddit" style="color:#ff4500;"></i> Reddit Mentions <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${p.reddit_rss_url ? esc(p.reddit_rss_url) : `https://www.reddit.com/search/?q=${encodeURIComponent(p.name)}`}" target="_blank" class="feed-right-icon-link" title="Open Reddit in new tab">
                 ${BRAND_ICONS.reddit}
@@ -773,8 +771,6 @@ $(function () {
             <div class="feed-btn-card">
               <button type="button" class="feed-title-btn" data-platform="youtube" data-title="YouTube Media & Keynotes" data-entity="${esc(p.name)}" data-url="${(p.youtube_url || p.youtube_interviews_url) ? esc(p.youtube_url || p.youtube_interviews_url) : `https://www.youtube.com/results?search_query=${encodeURIComponent(p.name + ' ' + activeAccount.name)}`}" title="Click to view executive interviews, keynote videos, and media appearances">
                 <span class="feed-title"><i class="bi bi-youtube" style="color:#ff0000;"></i> YouTube Keynotes <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
-              <button type="button" class="feed-title-btn" data-platform="youtube" data-title="YouTube Media & Keynotes" data-entity="${esc(p.name)}" data-url="${p.youtube_interviews_url ? esc(p.youtube_interviews_url) : `https://www.youtube.com/results?search_query=${encodeURIComponent(p.name + ' interview')}`}" title="Click to view executive interviews, keynote videos, and media appearances">
-                <span class="feed-title"><i class="fa-brands fa-youtube" style="color:#ff0000;"></i> YouTube Keynotes <i class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${(p.youtube_url || p.youtube_interviews_url) ? esc(p.youtube_url || p.youtube_interviews_url) : `https://www.youtube.com/results?search_query=${encodeURIComponent(p.name + ' ' + activeAccount.name)}`}" target="_blank" class="feed-right-icon-link" title="Open YouTube in new tab">
                 ${BRAND_ICONS.youtube}
@@ -783,7 +779,7 @@ $(function () {
 
             <div class="feed-btn-card">
               <button type="button" class="feed-title-btn" data-platform="google_news" data-title="Google News Executive Coverage" data-entity="${esc(p.name)}" data-url="${p.rss_url ? esc(p.rss_url) : `https://news.google.com/rss/search?q=${encodeURIComponent(p.name)}`}" title="Click to view Google News articles and press mentions">
-                <span class="feed-title"><i class="fa-solid fa-newspaper" style="color:#4285f4;"></i> Google News <i class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+                <span class="feed-title"><i class="bi bi-newspaper" style="color:#4285f4;"></i> Google News <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${p.rss_url ? esc(p.rss_url) : `https://news.google.com/rss/search?q=${encodeURIComponent(p.name)}`}" target="_blank" class="feed-right-icon-link" title="Open Google News in new tab">
                 ${BRAND_ICONS.google_news}
@@ -792,7 +788,7 @@ $(function () {
 
             <div class="feed-btn-card">
               <button type="button" class="feed-title-btn" data-platform="google_patents" data-title="Inventor Patent Portfolio" data-entity="${esc(p.name)}" data-url="${p.google_patents_url ? esc(p.google_patents_url) : `https://patents.google.com/?inventor=${encodeURIComponent(p.name)}`}" title="Click to view patent filings and inventor IP portfolio">
-                <span class="feed-title"><i class="fa-solid fa-lightbulb" style="color:#34a853;"></i> Patents Explorer <i class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+                <span class="feed-title"><i class="bi bi-lightbulb" style="color:#34a853;"></i> Patents Explorer <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${p.google_patents_url ? esc(p.google_patents_url) : `https://patents.google.com/?inventor=${encodeURIComponent(p.name)}`}" target="_blank" class="feed-right-icon-link" title="Open Patents in new tab">
                 ${BRAND_ICONS.google_patents}
@@ -802,8 +798,6 @@ $(function () {
             <div class="feed-btn-card">
               <button type="button" class="feed-title-btn" data-platform="podcast" data-title="Podcasts & Media Intelligence" data-entity="${esc(p.name)}" data-url="${(p.podcast_url || p.podcast_search_url) ? esc(p.podcast_url || p.podcast_search_url) : `https://podcasts.apple.com/us/search?term=${encodeURIComponent(p.name + ' ' + activeAccount.name)}`}" title="Click to view podcast episodes and audio interviews">
                 <span class="feed-title"><i class="bi bi-mic" style="color:#8743d6;"></i> Podcasts &amp; Media <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
-              <button type="button" class="feed-title-btn" data-platform="podcast" data-title="Podcasts & Media Intelligence" data-entity="${esc(p.name)}" data-url="${p.podcast_search_url ? esc(p.podcast_search_url) : `https://www.google.com/search?q=${encodeURIComponent(p.name + ' podcast')}`}" title="Click to view podcast episodes and audio interviews">
-                <span class="feed-title"><i class="fa-solid fa-microphone" style="color:#8743d6;"></i> Podcasts &amp; Media <i class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${(p.podcast_url || p.podcast_search_url) ? esc(p.podcast_url || p.podcast_search_url) : `https://podcasts.apple.com/us/search?term=${encodeURIComponent(p.name + ' ' + activeAccount.name)}`}" target="_blank" class="feed-right-icon-link" title="Open Podcasts in new tab">
                 ${BRAND_ICONS.podcast}
@@ -847,7 +841,7 @@ $(function () {
     $('#detailPanelContainer').html(panelHtml).removeClass('d-none');
   }
 
-  // ─── Action Center Handlers (Sequential: Pull -> Validate -> Dump) ───────
+  // ΓöÇΓöÇΓöÇ Action Center Handlers (Sequential: Pull -> Validate -> Dump) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
   // Helper to ensure live data is staged
   async function fetchAndStageEntity(entityType, key, rawData) {
@@ -903,13 +897,13 @@ $(function () {
       await fetchAndStageEntity(entityType, key, targetData);
 
       state.pulled = true;
-      state.message = '<span style="color:#10b981;">✔ Data pulled & staged</span>';
+      state.message = '<span style="color:#10b981;">Γ£ö Data pulled & staged</span>';
 
-      $btn.text('📥 Pulled ✔').prop('disabled', false);
+      $btn.text('≡ƒôÑ Pulled Γ£ö').prop('disabled', false);
       $panel.find('.panel-btn-validate').prop('disabled', false);
       $status.html(state.message);
     } catch (e) {
-      $btn.text('📥 Pull').prop('disabled', false);
+      $btn.text('≡ƒôÑ Pull').prop('disabled', false);
       state.message = '<span style="color:#ef4444;">Error pulling data</span>';
       $status.html(state.message);
     }
@@ -951,11 +945,11 @@ $(function () {
       }
       state.message = msg;
 
-      $btn.text('🔍 Validated ✔').prop('disabled', false);
+      $btn.text('≡ƒöì Validated Γ£ö').prop('disabled', false);
       $panel.find('.panel-btn-dump').prop('disabled', false);
       $status.html(state.message);
     } catch (e) {
-      $btn.text('🔍 Validate').prop('disabled', false);
+      $btn.text('≡ƒöì Validate').prop('disabled', false);
       state.message = '<span style="color:#ef4444;">Error validating data</span>';
       $status.html(state.message);
     }
@@ -997,22 +991,22 @@ $(function () {
 
       if (data.status === 'success') {
         state.dumped = true;
-        state.message = `<span style="color:#10b981;">✔ Saved to database</span>`;
-        $btn.text('💾 Dumped ✔').prop('disabled', false);
+        state.message = `<span style="color:#10b981;">Γ£ö Saved to database</span>`;
+        $btn.text('≡ƒÆ╛ Dumped Γ£ö').prop('disabled', false);
         $status.html(state.message);
       } else {
-        $btn.text('💾 Dump').prop('disabled', false);
+        $btn.text('≡ƒÆ╛ Dump').prop('disabled', false);
         state.message = `<span style="color:#ef4444;">Error: ${data.message}</span>`;
         $status.html(state.message);
       }
     } catch (e) {
-      $btn.text('💾 Dump').prop('disabled', false);
+      $btn.text('≡ƒÆ╛ Dump').prop('disabled', false);
       state.message = '<span style="color:#ef4444;">Error dumping to database</span>';
       $status.html(state.message);
     }
   });
 
-  // ─── Feed Intelligence Summary Modal Logic ────────────────────────────
+  // ΓöÇΓöÇΓöÇ Feed Intelligence Summary Modal Logic ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
   function generatePlatformFeedSummary(platform, entityName, companyName) {
     const comp = companyName || (activeAccount ? activeAccount.name : 'Enterprise');
@@ -1021,35 +1015,35 @@ $(function () {
     if (platform === 'linkedin') {
       return {
         stats: [
-          { label: 'Activity Index', val: '🔥 Top 5% Active' },
+          { label: 'Activity Index', val: '≡ƒöÑ Top 5% Active' },
           { label: 'Network Reach', val: '25K+ Followers' },
           { label: 'Avg Post Engagement', val: '94.2% Positive' }
         ],
         posts: [
           {
             author: name,
-            time: '2 hours ago • Edited',
+            time: '2 hours ago ΓÇó Edited',
             content: `Delighted to share our latest strategic milestone across ${comp}. Modernizing our institutional data workflows and accelerating execution precision has unlocked unprecedented operational velocity. Huge congratulations to all involved! #Leadership #Innovation #${comp.replace(/\s+/g, '')}`,
-            metrics: ['👍 342 Reactions', '💬 48 Comments', '🔄 21 Reposts']
+            metrics: ['≡ƒæì 342 Reactions', '≡ƒÆ¼ 48 Comments', '≡ƒöä 21 Reposts']
           },
           {
             author: name,
             time: '2 days ago',
             content: `Productive executive roundtable discussing enterprise cloud acceleration and governance frameworks. The future belongs to organizations that turn real-time data into decisive strategy.`,
-            metrics: ['👍 198 Reactions', '💬 26 Comments', '🔄 14 Reposts']
+            metrics: ['≡ƒæì 198 Reactions', '≡ƒÆ¼ 26 Comments', '≡ƒöä 14 Reposts']
           },
           {
             author: name,
             time: '5 days ago',
             content: `Excited to participate in next month's Global Technology & Executive Leadership Forum. Looking forward to discussing next-generation infrastructure scalability and talent empowerment.`,
-            metrics: ['👍 415 Reactions', '💬 62 Comments', '🔄 35 Reposts']
+            metrics: ['≡ƒæì 415 Reactions', '≡ƒÆ¼ 62 Comments', '≡ƒöä 35 Reposts']
           }
         ]
       };
     } else if (platform === 'x_twitter') {
       return {
         stats: [
-          { label: 'Live Signal', val: '⚡ Active Stream' },
+          { label: 'Live Signal', val: 'ΓÜí Active Stream' },
           { label: 'Mention Velocity', val: '+38% this week' },
           { label: 'Audience Sentiment', val: '89% Favorable' }
         ],
@@ -1057,83 +1051,83 @@ $(function () {
           {
             author: `@${name.toLowerCase().replace(/\s+/g, '_')}`,
             time: '3 hours ago',
-            content: `Real-time intelligence and execution velocity remain the twin pillars of sustained growth at @${comp.toLowerCase().replace(/\s+/g, '')}. Exciting developments in motion. 🚀`,
-            metrics: ['👁️ 1.8K Views', '🔁 42 Reposts', '❤️ 195 Likes']
+            content: `Real-time intelligence and execution velocity remain the twin pillars of sustained growth at @${comp.toLowerCase().replace(/\s+/g, '')}. Exciting developments in motion. ≡ƒÜÇ`,
+            metrics: ['≡ƒæü∩╕Å 1.8K Views', '≡ƒöü 42 Reposts', 'Γ¥ñ∩╕Å 195 Likes']
           },
           {
             author: `@${name.toLowerCase().replace(/\s+/g, '_')}`,
             time: '1 day ago',
-            content: `Key takeaway from today's market briefing: automation and risk mitigation are no longer optional—they are core growth engines. #FinTech #Enterprise`,
-            metrics: ['👁️ 1.2K Views', '🔁 29 Reposts', '❤️ 140 Likes']
+            content: `Key takeaway from today's market briefing: automation and risk mitigation are no longer optionalΓÇöthey are core growth engines. #FinTech #Enterprise`,
+            metrics: ['≡ƒæü∩╕Å 1.2K Views', '≡ƒöü 29 Reposts', 'Γ¥ñ∩╕Å 140 Likes']
           },
           {
             author: `@${name.toLowerCase().replace(/\s+/g, '_')}`,
             time: '3 days ago',
             content: `Proud of the team for continuing to push boundaries and deliver high-conviction outcomes across all operational segments.`,
-            metrics: ['👁️ 2.4K Views', '🔁 67 Reposts', '❤️ 310 Likes']
+            metrics: ['≡ƒæü∩╕Å 2.4K Views', '≡ƒöü 67 Reposts', 'Γ¥ñ∩╕Å 310 Likes']
           }
         ]
       };
     } else if (platform === 'reddit') {
       return {
         stats: [
-          { label: 'Community Signal', val: '💬 14 Active Threads' },
+          { label: 'Community Signal', val: '≡ƒÆ¼ 14 Active Threads' },
           { label: 'Upvote Ratio', val: '92% Net Positive' },
           { label: 'Top Community', val: 'r/financialservices' }
         ],
         posts: [
           {
-            author: 'r/financialservices • Posted by u/intel_observer',
+            author: 'r/financialservices ΓÇó Posted by u/intel_observer',
             time: '5 hours ago',
             content: `[Analysis] Comprehensive breakdown of ${comp}'s strategic positioning under ${name}: How their modular service expansion is driving higher retention and margin efficiency.`,
-            metrics: ['⬆️ 164 Upvotes', '💬 42 Comments', '🏆 2 Awards']
+            metrics: ['Γ¼å∩╕Å 164 Upvotes', '≡ƒÆ¼ 42 Comments', '≡ƒÅå 2 Awards']
           },
           {
-            author: 'r/stocks • Posted by u/market_alpha',
+            author: 'r/stocks ΓÇó Posted by u/market_alpha',
             time: '2 days ago',
             content: `Discussion: ${comp} quarterly business review notes. Strong growth trajectory observed across core divisions, executive leadership emphasizing continuous automation.`,
-            metrics: ['⬆️ 310 Upvotes', '💬 88 Comments', '🏆 1 Award']
+            metrics: ['Γ¼å∩╕Å 310 Upvotes', '≡ƒÆ¼ 88 Comments', '≡ƒÅå 1 Award']
           },
           {
-            author: 'r/technology • Posted by u/fintech_insider',
+            author: 'r/technology ΓÇó Posted by u/fintech_insider',
             time: '4 days ago',
             content: `Enterprise Architecture Deep Dive: How ${comp} implemented resilient distributed pipelines for large-scale institutional reconciliation.`,
-            metrics: ['⬆️ 95 Upvotes', '💬 27 Comments']
+            metrics: ['Γ¼å∩╕Å 95 Upvotes', '≡ƒÆ¼ 27 Comments']
           }
         ]
       };
     } else if (platform === 'youtube') {
       return {
         stats: [
-          { label: 'Media Highlights', val: '▶️ 8 Keynotes & Talks' },
+          { label: 'Media Highlights', val: 'Γû╢∩╕Å 8 Keynotes & Talks' },
           { label: 'Total Views', val: '45K+ Views' },
           { label: 'Avg Duration', val: '22 Minutes' }
         ],
         posts: [
           {
             author: 'Enterprise Leadership Global',
-            time: '3 days ago • Duration: 18:45',
-            content: `📺 "Keynote Address: ${name} on Scaling Mission-Critical Platforms in Complex Regulatory Environments" — In-depth breakdown of leadership frameworks and enterprise modernizations.`,
-            metrics: ['👁️ 6.4K Views', '👍 420 Likes', '💬 35 Comments']
+            time: '3 days ago ΓÇó Duration: 18:45',
+            content: `≡ƒô║ "Keynote Address: ${name} on Scaling Mission-Critical Platforms in Complex Regulatory Environments" ΓÇö In-depth breakdown of leadership frameworks and enterprise modernizations.`,
+            metrics: ['≡ƒæü∩╕Å 6.4K Views', '≡ƒæì 420 Likes', '≡ƒÆ¼ 35 Comments']
           },
           {
             author: 'FinTech & Capital Markets Forum',
-            time: '1 week ago • Duration: 25:10',
-            content: `📺 "Fireside Chat: Navigating Market Evolution with ${name} (${comp})" — Strategic discussion on technology adoption and client-centric transformation.`,
-            metrics: ['👁️ 9.8K Views', '👍 610 Likes', '💬 52 Comments']
+            time: '1 week ago ΓÇó Duration: 25:10',
+            content: `≡ƒô║ "Fireside Chat: Navigating Market Evolution with ${name} (${comp})" ΓÇö Strategic discussion on technology adoption and client-centric transformation.`,
+            metrics: ['≡ƒæü∩╕Å 9.8K Views', '≡ƒæì 610 Likes', '≡ƒÆ¼ 52 Comments']
           },
           {
             author: 'Executive Insights Series',
-            time: '3 weeks ago • Duration: 14:20',
-            content: `📺 "Building High-Performance Engineering & Operating Teams: Inside ${comp}'s Blueprint."`,
-            metrics: ['👁️ 4.1K Views', '👍 290 Likes', '💬 18 Comments']
+            time: '3 weeks ago ΓÇó Duration: 14:20',
+            content: `≡ƒô║ "Building High-Performance Engineering & Operating Teams: Inside ${comp}'s Blueprint."`,
+            metrics: ['≡ƒæü∩╕Å 4.1K Views', '≡ƒæì 290 Likes', '≡ƒÆ¼ 18 Comments']
           }
         ]
       };
     } else if (platform === 'google_news') {
       return {
         stats: [
-          { label: 'News Coverage', val: '📰 High Frequency' },
+          { label: 'News Coverage', val: '≡ƒô░ High Frequency' },
           { label: 'Top Publisher', val: 'Reuters / Bloomberg' },
           { label: 'Sentiment', val: 'Bullish & Stable' }
         ],
@@ -1142,91 +1136,91 @@ $(function () {
             author: 'Reuters Financial News',
             time: '4 hours ago',
             content: `"${comp} Announces New Enterprise Initiative Under ${name} to Expand Digital Capabilities and Global Client Delivery Networks."`,
-            metrics: ['🗞️ Verified Press Wire', '🌐 Global Syndication', '📈 Market Impact: Positive']
+            metrics: ['≡ƒù₧∩╕Å Verified Press Wire', '≡ƒîÉ Global Syndication', '≡ƒôê Market Impact: Positive']
           },
           {
             author: 'Bloomberg Markets',
             time: '1 day ago',
             content: `"Institutional Focus: How ${comp}'s Strategic Decisions Are Setting New Benchmarks Across High-Value Commercial Lines."`,
-            metrics: ['🗞️ Verified Editorial', '🌐 Front-page Featured', '📈 Analyst Rating: Outperform']
+            metrics: ['≡ƒù₧∩╕Å Verified Editorial', '≡ƒîÉ Front-page Featured', '≡ƒôê Analyst Rating: Outperform']
           },
           {
             author: 'Financial Times Insights',
             time: '3 days ago',
             content: `"Executive Profile: ${name} and the Next Chapter of Modern Infrastructure Transformation at ${comp}."`,
-            metrics: ['🗞️ Industry Analysis', '🌐 Editorial Pick', '📈 Readership: Top 10']
+            metrics: ['≡ƒù₧∩╕Å Industry Analysis', '≡ƒîÉ Editorial Pick', '≡ƒôê Readership: Top 10']
           }
         ]
       };
     } else if (platform === 'google_patents') {
       return {
         stats: [
-          { label: 'IP Portfolio', val: '📜 12 Filings' },
+          { label: 'IP Portfolio', val: '≡ƒô£ 12 Filings' },
           { label: 'Primary Class', val: 'G06Q Data Systems' },
           { label: 'Status', val: 'Active & Granted' }
         ],
         posts: [
           {
-            author: 'USPTO Filing • US-20260182491-A1',
+            author: 'USPTO Filing ΓÇó US-20260182491-A1',
             time: 'Published 2026',
-            content: `📄 "Automated Multi-Tier Verification Ledger and Cryptographic Consensus Validation Pipeline" — Assignee: ${comp}. Inventors include ${name}.`,
-            metrics: ['🏷️ Status: Granted', '⚖️ Class: G06Q 40/00', '⭐ Citation Score: High']
+            content: `≡ƒôä "Automated Multi-Tier Verification Ledger and Cryptographic Consensus Validation Pipeline" ΓÇö Assignee: ${comp}. Inventors include ${name}.`,
+            metrics: ['≡ƒÅ╖∩╕Å Status: Granted', 'ΓÜû∩╕Å Class: G06Q 40/00', 'Γ¡É Citation Score: High']
           },
           {
-            author: 'WIPO International • WO-202509124-B2',
+            author: 'WIPO International ΓÇó WO-202509124-B2',
             time: 'Published 2025',
-            content: `📄 "High-Throughput Low-Latency Data Reconciliation Framework for Distributed Financial Networks."`,
-            metrics: ['🏷️ Status: Published', '⚖️ Global Priority: US/EP', '⭐ Core Patent']
+            content: `≡ƒôä "High-Throughput Low-Latency Data Reconciliation Framework for Distributed Financial Networks."`,
+            metrics: ['≡ƒÅ╖∩╕Å Status: Published', 'ΓÜû∩╕Å Global Priority: US/EP', 'Γ¡É Core Patent']
           },
           {
-            author: 'USPTO Filing • US-20240319802-A1',
+            author: 'USPTO Filing ΓÇó US-20240319802-A1',
             time: 'Published 2024',
-            content: `📄 "Adaptive Neural Pipeline for High-Velocity Compliance Monitoring and Risk Event Classification."`,
-            metrics: ['🏷️ Status: Active', '⚖️ Class: G06N 3/08', '⭐ 18 Independent Claims']
+            content: `≡ƒôä "Adaptive Neural Pipeline for High-Velocity Compliance Monitoring and Risk Event Classification."`,
+            metrics: ['≡ƒÅ╖∩╕Å Status: Active', 'ΓÜû∩╕Å Class: G06N 3/08', 'Γ¡É 18 Independent Claims']
           }
         ]
       };
     } else if (platform === 'google_trends') {
       return {
         stats: [
-          { label: 'Search Velocity', val: '📈 +44% Spike' },
+          { label: 'Search Velocity', val: '≡ƒôê +44% Spike' },
           { label: 'Top Region', val: 'United States (72%)' },
           { label: 'Trend Classification', val: 'Breakout Momentum' }
         ],
         posts: [
           {
-            author: 'Google Trends • Search Interest Report',
+            author: 'Google Trends ΓÇó Search Interest Report',
             time: 'Live Stream Real-Time',
-            content: `📊 Breakout queries surging this month: "${name} leadership strategy", "${comp} digital growth", "${name} keynote". Regional momentum concentrated in NY, London, and Singapore.`,
-            metrics: ['📈 Velocity: +44% MoM', '🎯 Relevance: 98/100', '⚡ Peak Search: Today']
+            content: `≡ƒôè Breakout queries surging this month: "${name} leadership strategy", "${comp} digital growth", "${name} keynote". Regional momentum concentrated in NY, London, and Singapore.`,
+            metrics: ['≡ƒôê Velocity: +44% MoM', '≡ƒÄ» Relevance: 98/100', 'ΓÜí Peak Search: Today']
           },
           {
-            author: 'Google Trends • Topic Cluster Analytics',
+            author: 'Google Trends ΓÇó Topic Cluster Analytics',
             time: 'Past 90 Days',
-            content: `📊 Associated themes: Digital Assets, Treasury Automation, Workflow Transformation, Enterprise Scale.`,
-            metrics: ['📈 Volume: High', '🎯 Organic Share: 88%']
+            content: `≡ƒôè Associated themes: Digital Assets, Treasury Automation, Workflow Transformation, Enterprise Scale.`,
+            metrics: ['≡ƒôê Volume: High', '≡ƒÄ» Organic Share: 88%']
           }
         ]
       };
     } else {
       return {
         stats: [
-          { label: 'Media Appearances', val: '🎙️ 6 Key Interviews' },
+          { label: 'Media Appearances', val: '≡ƒÄÖ∩╕Å 6 Key Interviews' },
           { label: 'Avg Listenership', val: '18K per Episode' },
           { label: 'Topic Category', val: 'Executive Strategy' }
         ],
         posts: [
           {
-            author: 'The Modern Enterprise Podcast • Ep. 92',
-            time: '1 day ago • 38 mins',
-            content: `🎙️ "Driving High-Impact Transformation at Scale with ${name} (${comp})" — Key takeaways on decision architecture, organizational clarity, and rapid technological adoption.`,
-            metrics: ['🎧 12.4K Listens', '⭐ 4.9/5 Rating', '📝 Transcript Available']
+            author: 'The Modern Enterprise Podcast ΓÇó Ep. 92',
+            time: '1 day ago ΓÇó 38 mins',
+            content: `≡ƒÄÖ∩╕Å "Driving High-Impact Transformation at Scale with ${name} (${comp})" ΓÇö Key takeaways on decision architecture, organizational clarity, and rapid technological adoption.`,
+            metrics: ['≡ƒÄº 12.4K Listens', 'Γ¡É 4.9/5 Rating', '≡ƒô¥ Transcript Available']
           },
           {
-            author: 'Executive Voices in Global Business • Ep. 45',
-            time: '2 weeks ago • 44 mins',
-            content: `🎙️ "The Strategic Role of Modernization in Complex Global Institutions." Featuring guest speaker ${name}.`,
-            metrics: ['🎧 18.2K Listens', '⭐ 5.0/5 Rating', '📝 Key Quotes Highlighted']
+            author: 'Executive Voices in Global Business ΓÇó Ep. 45',
+            time: '2 weeks ago ΓÇó 44 mins',
+            content: `≡ƒÄÖ∩╕Å "The Strategic Role of Modernization in Complex Global Institutions." Featuring guest speaker ${name}.`,
+            metrics: ['≡ƒÄº 18.2K Listens', 'Γ¡É 5.0/5 Rating', '≡ƒô¥ Key Quotes Highlighted']
           }
         ]
       };
@@ -1238,8 +1232,8 @@ $(function () {
     const summaryData = generatePlatformFeedSummary(platform, entityName, activeAccount ? activeAccount.name : '');
 
     $('#feedModalIcon').html(brandIcon);
-    $('#feedModalTitle').text(title || `${entityName} — Activity Summary`);
-    $('#feedModalSubtitle').text(`${entityName} • ${activeAccount ? activeAccount.name : 'Account Intelligence'}`);
+    $('#feedModalTitle').text(title || `${entityName} ΓÇö Activity Summary`);
+    $('#feedModalSubtitle').text(`${entityName} ΓÇó ${activeAccount ? activeAccount.name : 'Account Intelligence'}`);
     
     // External link
     if (externalUrl) {

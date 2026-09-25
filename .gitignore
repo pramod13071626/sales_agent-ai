@@ -55,3 +55,6 @@ scripts/test_*.py
 scripts/inspect_*.py
 scripts/audit_*.py
 *.pdf
+
+# Merge conflict backup files
+.merge_backup/
