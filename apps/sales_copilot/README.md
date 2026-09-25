@@ -1,5 +1,7 @@
 # Sales Copilot — RAG chatbot over the Sales Intelligence DB
 
+> **Completed work, task by task:** see [TASKS.md](TASKS.md).
+
 > **Status:** implementation plan (nothing built yet). Revised 2026-09-24.
 > **Decided stack:** a **free local embedding model** (`BAAI/bge-small-en-v1.5` via `fastembed`),
 > **ChromaDB** as the vector store, and **OpenRouter free models only** for generation.

@@ -169,8 +169,10 @@ export function parseDraft(content) {
 
 const CHECK_ICON = { pass: 'fa-circle-check', fixed: 'fa-wrench', warn: 'fa-triangle-exclamation' };
 
-function renderGuardrails(checks) {
+// quiet = ordinary answers: only shown when a check fixed or flagged something
+function renderGuardrails(checks, quiet = false) {
   if (!checks || !checks.length) return '';
+  if (quiet && !checks.some(c => c.status !== 'pass')) return '';
   const fixed = checks.filter(c => c.status === 'fixed').length;
   const warn = checks.filter(c => c.status === 'warn').length;
   const summary = warn ? `${warn} to review` : (fixed ? `${fixed} auto-fixed` : 'all passed');
@@ -227,6 +229,7 @@ export function renderMessage(msg, opts = {}) {
       </div>
       ${msg.status && streaming ? `<div class="cp-status"><span class="cp-dot"></span><span class="cp-dot"></span><span class="cp-dot"></span> ${esc(msg.status)}</div>` : ''}
       ${(!streaming && extras.draft && renderDraft(msg, cites.length)) || `<div class="cp-md">${renderMarkdown(msg.content, cites.length)}${streaming && msg.content ? '<span class="cp-caret" aria-hidden="true"></span>' : ''}</div>`}
+      ${!streaming && !extras.draft ? renderGuardrails(extras.guardrails, true) : ''}
       ${renderTable(extras.table)}
       ${renderContacts(extras.contacts)}
       ${cites.length && !opts.compact ? `<div class="cp-cite-row" aria-label="Sources">${cites.slice(0, 5).map(c =>

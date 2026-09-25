@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import text
 
-from apps.sales_copilot import embed, guardrails, llm, privacy, retrieve, settings
+from apps.sales_copilot import embed, guardrails, llm, moderation, privacy, retrieve, settings
 
 EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 PHONE_RE = re.compile(r"(?<!\w)\+?\d[\d\s().-]{7,}\d")
@@ -345,11 +345,18 @@ def _citations(evidence: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return out
 
 
-def _evidence_block(evidence: List[Dict[str, Any]]) -> str:
-    lines = []
+def _evidence_block(evidence: List[Dict[str, Any]], extras: Optional[Dict[str, Any]] = None) -> str:
+    """EVIDENCE section of the prompt. Scraped text is untrusted: contact details are masked and
+    instruction-like sentences (prompt injection) are replaced before the model sees them."""
+    lines, removed = [], 0
     for i, e in enumerate(evidence, 1):
         date = e["published_at"].strftime("%Y-%m-%d") if e["published_at"] else "undated"
-        lines.append(f"[{i}] ({e['doc_type']}, {date}) {e['title']}\n{_mask(e['text'].split(chr(10), 1)[-1])[:1600]}")
+        title, n1 = guardrails.sanitize_evidence(e["title"] or "")
+        body, n2 = guardrails.sanitize_evidence(_mask(e["text"].split(chr(10), 1)[-1])[:1600])
+        removed += n1 + n2
+        lines.append(f"[{i}] ({e['doc_type']}, {date}) {title}\n{body}")
+    if removed and extras is not None:
+        extras["injection_removed"] = removed
     return "\n\n".join(lines)
 
 
@@ -498,28 +505,136 @@ you". Do not invent numbers, client names, results, timelines or guarantees. NO 
 list them only on the final Sources line."""
 
 
+# ── Small talk (answered without search or AI) ────────────────────────────────
+
+GREETING_RE = re.compile(r"^\s*(hi+|hello+|hey+|hiya|yo|namaste|namaskar|hola|gm|greetings|"
+                         r"good\s*(mor\w*|morn\w*|after\w*|even\w*|day|night))\b[\s,!.:;-]*", re.I)
+FILLER = {"there", "team", "all", "everyone", "copilot", "bot", "sir", "madam", "bro", "buddy", "dear", "friend", "again",
+          "to", "you", "u", "yaar", "ji"}
+SMALLTALK = [
+    ("thanks", re.compile(r"^\s*(thanks?|thank\s*(you|u)|thx|ty|tysm|cheers|great|awesome|cool|nice|perfect|super(b)?|"
+                          r"ok(ay)?|got\s+it|good\s+job|well\s+done|appreciate\s+it)(\s+(so\s+much|a\s+lot|again|copilot))?[\s!.]*$", re.I)),
+    ("bye", re.compile(r"^\s*(bye|goodbye|good\s*bye|see\s+(you|ya)|good\s*night|take\s+care|ttyl|cya)\b[\s\w!.]{0,20}$", re.I)),
+    ("how_are_you", re.compile(r"^\s*(how\s+are\s+(you|u)|how\s+r\s+u|how'?s\s+it\s+going|how\s+are\s+things|what'?s\s+up|wassup|sup)\b[\s?!.]*$", re.I)),
+    ("help", re.compile(r"^\s*(who\s+are\s+you|what\s+are\s+you|what\s+can\s+you\s+do|help|/help|how\s+does\s+this\s+work|"
+                        r"what\s+do\s+you\s+do|how\s+can\s+you\s+help(\s+me)?)[\s?!.]*$", re.I)),
+]
+
+
+def smalltalk(q: str) -> Tuple[Optional[str], str]:
+    """→ (kind or None, the real question left after a leading greeting, e.g. 'Hi, prep me for …')."""
+    for kind, rx in SMALLTALK:
+        if rx.match(q):
+            return kind, ""
+    m = GREETING_RE.match(q)
+    if not m:
+        return None, q
+    rest = q[m.end():].strip(" ,.!?:;-")
+    if not rest or all(w.lower().strip(",.!?") in FILLER for w in rest.split()):
+        return "greeting", ""
+    kind, rest2 = smalltalk(rest)            # "Hi, thanks!" → thanks
+    return (kind, rest2) if kind else (None, rest)
+
+
+def _smalltalk_answer(t: Dict[str, Any], kind: str) -> str:
+    first = ((getattr(t["user"], "full_name", None) or "").split(" ") or [""])[0] or "there"
+    persona, accounts = t["persona"], t["accounts"]
+    scope = f"{persona['name']}" + (f" at {persona['account']}" if persona.get("account") else "") if persona \
+        else (accounts[0]["name"] if accounts else "")
+    try_line = (f" You're focused on **{scope}** — pick one below to start." if scope else " Try one of the suggestions below.")
+    if kind == "thanks":
+        return f"You're welcome, {first}! Anything else you'd like to know" + (f" about **{scope}**?" if scope else "?")
+    if kind == "bye":
+        return f"Talk soon, {first}. Your chats and saved notes will be here when you need them."
+    if kind == "how_are_you":
+        return f"All good and ready to help, {first}!" + try_line
+    if kind == "help":
+        return ("Here's what I can do — everything comes from your accounts' data, with sources:\n"
+                "- **Prep for a call:** priorities, pain points, likely objections and an opener for any contact\n"
+                "- **Account news:** what's new, what changed in the last 30 days, what they're hiring for\n"
+                "- **Find people:** decision-makers, VPs in technology, the C-suite at an account\n"
+                "- **Draft emails:** a short, fact-checked intro or follow-up\n"
+                "- **Remember things:** type `/remember` and a note — only you can see it\n"
+                "Type **@** to focus on a person or account.")
+    return f"Hi {first}! I'm your Sales Copilot — I answer from your accounts' data (contacts, call-prep, news, " \
+           f"signals and hiring) and can draft emails and find stakeholders." + try_line
+
+
+DEFAULT_SUGGESTIONS = ["What's new at BNY?", "Who are the decision-makers at BlackRock?", "Which BNY VPs work in technology?"]
+
+
+# Intents answered without searching or calling the AI (checked by the eval).
+NO_LLM_INTENTS = {"moderated", "smalltalk"}
+
+
+def pre_route(q: str) -> Dict[str, Any]:
+    """Pure first step of every turn (no DB): moderation, then small talk.
+    → {intent: "moderated" | "smalltalk" | None, smalltalk: kind, q: the real question, stored: text to store, moderation}"""
+    mod = moderation.check(q)
+    if mod.abusive:
+        return {"intent": "moderated", "smalltalk": None, "q": mod.masked, "stored": mod.masked, "moderation": mod}
+    small, rest = smalltalk(q)
+    return {"intent": "smalltalk" if small else None, "smalltalk": small, "q": rest, "stored": q, "moderation": mod}
+
+
 def begin_turn(session, user, q: str, session_id: Optional[str], context: Dict[str, Any]) -> Dict[str, Any]:
-    """Phase 1: session, user message, entities, intent. Cheap (no search)."""
+    """Phase 1: session, user message, entities, intent. Cheap (no search).
+    Abusive messages are stored masked and answered with a fixed refusal; small talk gets a short
+    friendly reply — neither searches nor calls the AI."""
     q = (q or "").strip()[:2000]
     context = {k: v for k, v in (context or {}).items() if v}
+    pre = pre_route(q)
+    q = pre["stored"]
     acl = retrieve.acl_account_ids(session, user)
     sess = get_or_create_session(session, user.id, session_id, q, context)
     history, summary = ("", "") if sess["new"] else _history(session, sess["id"])
     user_msg_id = _store(session, sess["id"], "user", q)
-    ents = resolve_entities(session, q, acl, context, sess["focus"])
-    intent = route(q, ents)
+    small, rest, mod = pre["smalltalk"], pre["q"], pre["moderation"]
+    if mod.abusive:
+        ents = {"persona": None, "persona_source": None, "accounts": [], "ambiguous": []}
+        intent = "moderated"
+        try:
+            # Own session: auth.log_audit may roll back on a stale sequence, which must not undo this turn's inserts.
+            import auth
+            from db.connection import get_session
+            audit = get_session()
+            try:
+                auth.log_audit(audit, user.id, "copilot_abusive_message",
+                               details={"session_id": sess["id"], "message_id": user_msg_id, "terms": len(mod.terms)})
+            finally:
+                audit.close()
+        except Exception:
+            pass
+    elif small:
+        ents = resolve_entities(session, "", acl, context, sess["focus"])     # scope from the page / chat only
+        intent = "smalltalk"
+    else:
+        q = rest                                                              # "Hi, prep me for …" → "prep me for …"
+        ents = resolve_entities(session, q, acl, context, sess["focus"])
+        intent = route(q, ents)
     return {"t0": datetime.now(timezone.utc), "q": q, "user": user, "acl": acl, "sid": sess["id"], "history": history,
             "summary": summary, "user_msg_id": user_msg_id, "ents": ents, "persona": ents["persona"],
             "accounts": ents["accounts"], "account_ids": [a["id"] for a in ents["accounts"]], "intent": intent,
             "prefs": _prefs(session, user.id), "citations": [], "evidence": [], "notes": [], "persona_info": {},
             "extras": {"entities": {"persona": ents["persona"],
                                     "accounts": [{"id": a["id"], "name": a["name"]} for a in ents["accounts"]]}},
-            "answer": None, "mode": "database", "prompt": None, "llm_info": {}}
+            "answer": None, "mode": "database", "prompt": None, "llm_info": {}, "smalltalk": small}
 
 
 def answer_without_llm(session, t: Dict[str, Any]) -> bool:
     """Phase 2a: intents answered straight from the DB. Returns True if handled."""
     q, persona, accounts, extras = t["q"], t["persona"], t["accounts"], t["extras"]
+    if t["intent"] == "moderated":
+        t["answer"] = moderation.REFUSAL
+        extras["moderated"] = True
+        extras["followups"] = DEFAULT_SUGGESTIONS[:2]
+        return True
+    if t["intent"] == "smalltalk":
+        t["answer"] = _smalltalk_answer(t, t["smalltalk"])
+        if t["smalltalk"] != "bye":
+            extras["followups"] = followups("person_brief" if persona else "account_brief", "", persona, accounts, []) \
+                or DEFAULT_SUGGESTIONS
+        return True
     if t["ents"]["ambiguous"] and not persona:
         extras["table"] = {"columns": ["name", "title", "account"], "rows": t["ents"]["ambiguous"], "kind": "people"}
         t["answer"], t["intent"] = f"I found {len(t['ents']['ambiguous'])} people matching that — which one did you mean?", "clarify"
@@ -595,9 +710,8 @@ def gather(session, t: Dict[str, Any]) -> None:
         ORDER BY m.id DESC LIMIT 1"""), {"h": ev_hash, "u": t["user"].id}).fetchone()
     if cached:
         t["answer"], t["mode"] = cached[0], "cached"
-        if t["intent"] == "draft":
-            t["tool_results_json"] = json.dumps(tool_results, default=str, ensure_ascii=False)
-            _guard_draft(t)
+        t["tool_results_json"] = json.dumps(tool_results, default=str, ensure_ascii=False)
+        _guard(t)
         return
     if not t["evidence"] and not t["persona_info"] and not t["notes"]:
         t["answer"] = ("I couldn't find anything about that in the data you have access to. "
@@ -609,7 +723,7 @@ def gather(session, t: Dict[str, Any]) -> None:
         "\n".join(instructions),
         "YOUR NOTES (the user's private notes; cite as [note]):\n" + "\n".join(f"- {_mask(n['text'])}" for n in t["notes"]) if t["notes"] else "",
         "TOOL RESULTS:\n" + json.dumps(tool_results, default=str, ensure_ascii=False)[:3000] if tool_results else "",
-        "EVIDENCE:\n" + _evidence_block(t["evidence"]) if t["evidence"] else "EVIDENCE: (none found)",
+        "EVIDENCE:\n" + _evidence_block(t["evidence"], t["extras"]) if t["evidence"] else "EVIDENCE: (none found)",
         "EARLIER IN THIS CHAT: " + t["summary"] if t["summary"] else "",
         "RECENT CONVERSATION:\n" + t["history"] if t["history"] else "",
         f"QUESTION: {q}",
@@ -638,6 +752,8 @@ def finish_turn(session, t: Dict[str, Any], stopped: bool = False) -> Dict[str, 
     info = t["llm_info"]
     latency = int((datetime.now(timezone.utc) - t["t0"]).total_seconds() * 1000)
     answer = t["answer"] or ""
+    if t["mode"] in ("llm", "cached", "retrieval_only"):
+        answer = moderation.mask(answer)      # scraped evidence or the model may contain abusive words
     mid = _store(session, sid, "assistant", answer, mode=t["mode"], intent=t["intent"], citations=t["citations"],
                  extras=t["extras"], model=info.get("model"), evidence_hash=info.get("evidence_hash") if t["mode"] == "llm" else None,
                  tokens_in=info.get("tokens_in"), tokens_out=info.get("tokens_out"), latency_ms=latency)
@@ -648,16 +764,26 @@ def finish_turn(session, t: Dict[str, Any], stopped: bool = False) -> Dict[str, 
             "quota": llm.quota_status(session, t["user"].id)}
 
 
-def _guard_draft(t: Dict[str, Any]) -> None:
-    """Run the outreach guardrails on a drafted email (guardrails.py) and attach the checks."""
-    if t["intent"] != "draft" or t["mode"] not in ("llm", "cached") or not t.get("answer"):
+def _guard(t: Dict[str, Any]) -> None:
+    """Run the guardrails (guardrails.py) on the AI's full answer and attach the checks: the outreach
+    checks for a drafted email, the answer checks for everything else."""
+    if t["mode"] not in ("llm", "cached") or not t.get("answer"):
+        t["answer"] = _clean_answer(t.get("answer") or "", len(t["evidence"]))
         return
-    evidence_text = " ".join(e["text"] for e in t["evidence"]) + " " + t.get("tool_results_json", "") + " " + \
-        " ".join(n["text"] for n in t["notes"])
+    evidence_text = " ".join(f"{e['title']} {e['text']} {e.get('url') or ''}" for e in t["evidence"]) + " " + \
+        t.get("tool_results_json", "") + " " + " ".join(n["text"] for n in t["notes"])
+    n_inj = t["extras"].get("injection_removed", 0)
+    injection = {"check": "injection", "status": "fixed" if n_inj else "pass",
+                 "detail": f"Ignored {n_inj} instruction-like sentence(s) found in the sources" if n_inj
+                 else "No instructions hidden in the sources"}
+    if t["intent"] != "draft":
+        t["answer"], checks = guardrails.check_answer(t["answer"], evidence_text, len(t["evidence"]))
+        t["extras"]["guardrails"] = checks + [injection]
+        return
     first = _first((t["persona"] or {}).get("name", "")) if t["persona"] else ""
     clean, checks = guardrails.check_draft(t["answer"], evidence_text, first, recipient_is_author=False)
     t["answer"] = clean
-    t["extras"]["guardrails"] = checks
+    t["extras"]["guardrails"] = checks + [injection]
     t["extras"]["draft"] = True
     contacts = t["extras"].get("contacts") or []
     if contacts and contacts[0].get("email"):
@@ -673,8 +799,8 @@ def handle_message(session, user, q: str, session_id: Optional[str], context: Di
             try:
                 raw, info = llm.chat(session, feature="copilot", user_id=user.id, system=SYSTEM_PROMPT, user=t["prompt"])
                 t["llm_info"].update(info)
-                t["answer"] = _clean_answer(raw, len(t["evidence"]))
-                _guard_draft(t)
+                t["answer"] = raw
+                _guard(t)
             except llm.QuotaExceeded as e:
                 fallback(t, str(e), e.scope)
             except llm.LLMError as e:
@@ -736,8 +862,8 @@ def stream_message(session, user, q: str, session_id: Optional[str], context: Di
                 yield "status", {"step": "write", "label": "That model is busy — trying another free model…"}
             finally:
                 stream.close()
-        t["answer"] = _clean_answer("".join(parts), n)
-        _guard_draft(t)
+        t["answer"] = "".join(parts)
+        _guard(t)
     except llm.QuotaExceeded as e:
         if parts:
             t["answer"] = _clean_answer("".join(parts), n)

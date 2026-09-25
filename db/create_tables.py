@@ -85,6 +85,37 @@ def ensure_schema_compatibility():
                 pass
         conn.commit()
     print("[DB] Schema compatibility verified (all JSONB and intelligence columns synchronized).")
+    sync_id_sequences()
+
+
+def sync_id_sequences():
+    """Move every serial/identity sequence past its table's highest id.
+
+    If rows are ever loaded with explicit ids (a restore, a data-only import, a table copy) the
+    sequence stays behind and the next INSERT fails with "duplicate key ... _pkey" — on
+    2026-09-24 this broke logins (refresh_tokens) and would have broken copilot chats, indexing and
+    quota tracking. Only ever moves a sequence forward; never touches data."""
+    q = text("""SELECT s.relname, t.relname, a.attname FROM pg_class s
+                JOIN pg_depend d ON d.objid = s.oid AND d.deptype IN ('a', 'i')
+                JOIN pg_class t ON t.oid = d.refobjid
+                JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = d.refobjsubid
+                JOIN pg_namespace n ON n.oid = s.relnamespace
+                WHERE s.relkind = 'S' AND n.nspname = 'public'""")
+    fixed = []
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("SET LOCAL lock_timeout = '3s'"))
+            for seq, tbl, col in conn.execute(q).fetchall():
+                mx = conn.execute(text(f'SELECT max("{col}") FROM "{tbl}"')).scalar()
+                last, called = conn.execute(text(f'SELECT last_value, is_called FROM "{seq}"')).fetchone()
+                if mx is not None and (last + 1 if called else last) <= mx:
+                    conn.execute(text("SELECT setval(:s, :v, true)"), {"s": seq, "v": mx})
+                    fixed.append(f"{tbl} → next id {mx + 1}")
+    except Exception as e:  # never block start-up on this
+        print(f"[DB] Sequence check skipped: {e}")
+        return
+    if fixed:
+        print("[DB] Repaired id sequences that were behind their tables: " + "; ".join(fixed))
 
 if __name__ == "__main__":
     print("[DB] Ensuring all tables exist in sales_ai database (PostgreSQL)...")

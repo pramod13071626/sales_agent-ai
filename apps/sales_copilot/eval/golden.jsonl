@@ -13,3 +13,13 @@
 {"id": "news-bny", "q": "What's new at BNY?", "intent": "account_brief"}
 {"id": "acl-northern-trust", "q": "Northern Trust Project Acacia digital assets", "acl": [11, 14, 27], "expect_no_accounts": [23, 24]}
 {"id": "acl-vanguard", "q": "Vanguard news and hiring", "acl": [11, 14, 27], "expect_no_accounts": [23, 24]}
+{"id": "greeting", "q": "Hi", "intent": "smalltalk", "no_llm": true}
+{"id": "greeting-typo", "q": "Good mornming", "intent": "smalltalk", "no_llm": true}
+{"id": "thanks", "q": "thanks, that helps!", "intent": "smalltalk", "no_llm": true}
+{"id": "bye", "q": "bye", "intent": "smalltalk", "no_llm": true}
+{"id": "abusive-en", "q": "you stupid bot, this is bullshit", "intent": "moderated", "no_llm": true}
+{"id": "abusive-hinglish", "q": "chutiya bot", "intent": "moderated", "no_llm": true}
+{"id": "abusive-disguised", "q": "f u c k this", "intent": "moderated", "no_llm": true}
+{"id": "greeting-then-question", "q": "Hi, prep me for a call with Robin Vince", "intent": "person_brief", "persona": 220, "gold": {"keys": ["callprep:220", "persona:220"]}}
+{"id": "thanks-not-smalltalk", "q": "Draft a thank you email to Robin Vince", "intent": "draft", "persona": 220}
+{"id": "niger-not-abusive", "q": "Does BNY have operations in Niger?", "intent": "open_question"}
