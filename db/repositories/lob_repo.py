@@ -7,6 +7,8 @@ from db.models.sub_lob import SubLob
 from db.models.account import Account
 from db.schemas.lob_schema import LobSchema
 from db.schemas.sub_lob_schema import SubLobSchema
+from db.schemas.persona_schema import PersonaSchema
+from db.repositories.persona_repo import PersonaRepository
 
 
 class LobRepository:
@@ -107,6 +109,9 @@ class LobRepository:
                     if sub_schema.metadata_:
                         sub_exists.metadata_ = sub_schema.metadata_
 
+            # Cross-level ingestion: auto-persist operating leadership from LOB intelligence
+            self._ingest_lob_leadership(account.id, lob, lob_data)
+
         self.session.flush()
         return lob_map
 
@@ -178,8 +183,94 @@ class LobRepository:
                 if sub_schema.metadata_:
                     sub_exists.metadata_ = sub_schema.metadata_
 
+        # Cross-level ingestion: auto-persist operating leadership from LOB intelligence
+        self._ingest_lob_leadership(account_id, lob, lob_data)
+
         self.session.flush()
         return lob
+
+    def _ingest_lob_leadership(self, account_id: int, lob: Lob, lob_data: dict):
+        """
+        Enterprise Cross-Level Ingestion:
+        Extracts operating leadership, executive heads, and personnel discovered during LOB research
+        and automatically persists them into the personas table linked to this LOB and account.
+        Uses PersonaRepository.upsert to guarantee zero duplicate records.
+        """
+        candidates = []
+        # 1. Check operating_head / head
+        for h_field in ["operating_head", "head"]:
+            val = lob_data.get(h_field)
+            if isinstance(val, str) and len(val.strip().split()) >= 2:
+                candidates.append({
+                    "full_name": val.strip(),
+                    "title": lob_data.get("operating_head_title") or f"Head of {lob.lob_name}",
+                    "tier": "c_suite" if any(x in str(val).lower() for x in ["ceo", "president", "chief"]) else "vp_level",
+                })
+            elif isinstance(val, dict) and val.get("name"):
+                candidates.append(val)
+
+        # 2. Check leadership / key_executives / business_unit_leads / personas
+        for list_field in ["leadership", "key_executives", "business_unit_leads", "personas", "contacts"]:
+            items = lob_data.get(list_field) or []
+            if isinstance(items, list):
+                for item in items:
+                    if isinstance(item, str) and len(item.strip().split()) >= 2:
+                        candidates.append({
+                            "full_name": item.strip(),
+                            "title": f"Executive, {lob.lob_name}",
+                            "tier": "vp_level",
+                        })
+                    elif isinstance(item, dict) and (item.get("full_name") or item.get("name")):
+                        candidates.append(item)
+
+        if not candidates:
+            return
+
+        persona_repo = PersonaRepository(self.session)
+        seen_names = set()
+
+        for cand in candidates:
+            fn = cand.get("full_name") or cand.get("name")
+            if not fn or not isinstance(fn, str):
+                continue
+            clean_name = fn.strip()
+            tokens = clean_name.split()
+            if len(tokens) < 2 or len(clean_name) < 4:
+                continue
+            if clean_name.lower() in seen_names:
+                continue
+            # Avoid generic words falsely parsed as names
+            name_lower = clean_name.lower()
+            generic_blacklist = [
+                "unknown", "none", "n/a", "corporation", "limited", "group", "holdings",
+                "company", "llc", "inc", "chief", "officer", "executive", "global", "head",
+                "director", "manager", "services", "delivery", "distribution", "relationship",
+                "innovation", "leadership", "operating", "solutions", "management", "meet ",
+                "about ", "contact ", "team", "board"
+            ]
+            if any(w in name_lower for w in generic_blacklist):
+                continue
+            seen_names.add(name_lower)
+
+            title = cand.get("title") or f"Head of {lob.lob_name}"
+            payload = {
+                "account_id": account_id,
+                "lob_id": lob.id,
+                "full_name": clean_name,
+                "name": clean_name,
+                "first_name": tokens[0],
+                "last_name": " ".join(tokens[1:]),
+                "title": title,
+                "tier": cand.get("tier") or ("c_suite" if "chief" in title.lower() or "president" in title.lower() else "vp_level"),
+                "source": cand.get("source") or f"LOB Operating Leadership ({lob.lob_name})",
+                "email": cand.get("email"),
+                "linkedin_url": cand.get("linkedin_url"),
+            }
+            try:
+                schema = PersonaSchema.from_enriched_json(payload)
+                persona_repo.upsert(schema)
+            except Exception as e:
+                print(f"[!] [LobRepository] Leadership auto-ingest notice for '{clean_name}': {e}")
 
     def get_by_account(self, account_id: int) -> list[Lob]:
         """Get all LOBs for an account."""

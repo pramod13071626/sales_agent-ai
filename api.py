@@ -1,17 +1,17 @@
-"""
-Sales AI Intelligence Pipeline — Granular REST API Server.
+﻿"""
+Sales AI Intelligence Pipeline ΓÇö Granular REST API Server.
 Provides dedicated Fetch / Validate / Dump lifecycle endpoints for:
 1. Account Level (Tab 1)
 2. Lines of Business (LOB) & Sub-LOB Level (Tab 2 & 3)
-3. Person & Persona Level — Individual & Batch (Tab 4)
+3. Person & Persona Level ΓÇö Individual & Batch (Tab 4)
 4. Full Composite Pipeline
 
 Workflow for each level:
-    [Fetch / Pull Button] ──► Staged into memory/JSON (NO DB Write)
-          │
-    [Validate Button Appears] ──► Quality Audit & Health Scores (0-100%)
-          │
-    [Dump DB Button Appears] ──► User-approved UPSERT into PostgreSQL (sales_ai)
+    [Fetch / Pull Button] ΓöÇΓöÇΓû║ Staged into memory/JSON (NO DB Write)
+          Γöé
+    [Validate Button Appears] ΓöÇΓöÇΓû║ Quality Audit & Health Scores (0-100%)
+          Γöé
+    [Dump DB Button Appears] ΓöÇΓöÇΓû║ User-approved UPSERT into PostgreSQL (sales_ai)
 
 100% Dynamic, Zero Hardcoding.
 """
@@ -21,6 +21,7 @@ import os
 import re
 import json
 import math
+import threading                      # background pipeline threads
 import subprocess
 import tempfile
 from pathlib import Path
@@ -51,7 +52,7 @@ from collectors.validator import DataQualityValidator
 from serializer import MasterSerializer
 from serializers.account_serializer import slugify
 
-from sqlalchemy import or_, text as sql_text
+from sqlalchemy import or_
 from sqlalchemy.orm import selectinload
 from db.connection import get_session
 from db.models import (
@@ -69,6 +70,7 @@ from db.models import (
     AuditLog,
     ActionItem,
     ActionItemReminder,
+    UserAccountAccess,
 )
 
 from db.schemas import AccountSchema, LobSchema, PersonaSchema
@@ -82,13 +84,19 @@ from services.account_service import AccountService
 from services.lob_service import LobService, LobValidator
 from services.persona_service import PersonaService, PersonaValidator
 from services.pipeline_run_logger import PipelineRunLogger
-from services import callprep_service
-# Contact privacy: work email/phone only — personal email & direct mobile never reach the browser
-from apps.sales_copilot import privacy as contact_privacy
 from pdf_export import build_persona_profile_pdf, build_psychological_profile_pdf
 import auth
 import email_sender
 from main import run_pipeline
+from services.job_registry import (          # background job tracking
+    create_job      as _jreg_create,
+    update_job      as _jreg_update,
+    get_job         as _jreg_get,
+    list_jobs       as _jreg_list,
+    record_exception as _jreg_exc,
+    TYPE_ACCOUNT, TYPE_LOB, TYPE_PERSONA,
+    STATUS_DONE, STATUS_FAILED,
+)
 
 import uvicorn
 try:
@@ -125,10 +133,10 @@ if FASTAPI_AVAILABLE:
 
     # allow_origins=["*"] together with allow_credentials=True is rejected by
     # browsers once real credentialed requests (the refresh-token cookie) are
-    # in play — see AUTH_JWT_IMPLEMENTATION_PLAN.md §0. A concrete origin
+    # in play ΓÇö see AUTH_JWT_IMPLEMENTATION_PLAN.md ┬º0. A concrete origin
     # list is required for auth to work at all.
     _cors_origins = [o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
-    # Browsers only send Secure cookies over HTTPS — false for plain-http
+    # Browsers only send Secure cookies over HTTPS ΓÇö false for plain-http
     # local dev (localhost included, to work reliably with curl/tools too),
     # true once this is actually deployed behind HTTPS.
     _COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").strip().lower() == "true"
@@ -153,9 +161,10 @@ if FASTAPI_AVAILABLE:
             print(f"[WARN] Schema compatibility check failed on startup: {e}")
 
 
-    # ══════════════════════════════════════════════════════
+
+    # ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
     # AUTHENTICATION (see AUTH_JWT_IMPLEMENTATION_PLAN.md)
-    # ══════════════════════════════════════════════════════
+    # ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
     class LoginRequest(BaseModel):
         email: str
         password: str
@@ -204,7 +213,7 @@ if FASTAPI_AVAILABLE:
             email = body.email.strip().lower()
             user = session.query(User).filter(User.email.ilike(email)).first()
             # Same generic error whether the email doesn't exist or the
-            # password is wrong — never reveal which one it was.
+            # password is wrong ΓÇö never reveal which one it was.
             invalid = HTTPException(status_code=401, detail="Invalid email or password")
             if not user or not user.is_active:
                 raise invalid
@@ -253,13 +262,7 @@ if FASTAPI_AVAILABLE:
                 auth.revoke_refresh_token(session, raw_refresh)
             finally:
                 session.close()
-        response.delete_cookie(
-            "refresh_token",
-            path="/api/auth",
-            httponly=True,
-            samesite="lax",
-            secure=_COOKIE_SECURE,
-        )
+        response.delete_cookie("refresh_token", path="/api/auth")
         return {"ok": True}
 
     @app.get("/api/auth/me", tags=["0. Authentication"])
@@ -269,7 +272,7 @@ if FASTAPI_AVAILABLE:
     @app.post("/api/auth/forgot-password", tags=["0. Authentication"])
     def forgot_password(body: ForgotPasswordRequest, background_tasks: BackgroundTasks):
         """Always returns the same generic response whether or not the
-        email exists — prevents account enumeration via this endpoint."""
+        email exists ΓÇö prevents account enumeration via this endpoint."""
         session = get_session()
         try:
             user = session.query(User).filter(User.email.ilike(body.email.strip().lower())).first()
@@ -277,7 +280,7 @@ if FASTAPI_AVAILABLE:
                 reset_token = auth.issue_password_reset_token(session, user)
                 auth.log_audit(session, None, "password_reset_requested", target_user_id=user.id)
                 reset_link = f"{os.getenv('APP_BASE_URL', 'http://localhost:8000')}/reset-password?token={reset_token}"
-                # Sent after the response goes out, not before — a live SMTP
+                # Sent after the response goes out, not before ΓÇö a live SMTP
                 # round-trip (real-world: a few seconds against Office365)
                 # must never be what the caller's HTTP request is waiting on.
                 background_tasks.add_task(
@@ -291,7 +294,7 @@ if FASTAPI_AVAILABLE:
                         "Reset your password",
                         [f"Hi {user.full_name or user.email},",
                          "A password reset was requested for your account. If this wasn't you, "
-                         "you can safely ignore this email — your password will stay unchanged."],
+                         "you can safely ignore this email ΓÇö your password will stay unchanged."],
                         cta_label="Reset Password", cta_url=reset_link,
                         footnote=f"This link expires in {auth.RESET_TOKEN_EXPIRE_MINUTES} minutes.",
                     ),
@@ -315,7 +318,7 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
-    # ── Super Admin: user management ─────────────────────────────
+    # ΓöÇΓöÇ Super Admin: user management ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
     @app.get("/api/admin/users", tags=["0. Authentication"])
     def list_users(current: User = Depends(auth.require_role("super_admin"))):
         session = get_session()
@@ -359,7 +362,7 @@ if FASTAPI_AVAILABLE:
             access_note = (
                 "As a super_admin, you have access to every account by default."
                 if new_user.role == "super_admin" else
-                "No accounts have been assigned to you yet — a super admin will "
+                "No accounts have been assigned to you yet ΓÇö a super admin will "
                 "grant access to specific accounts shortly; ask them if you need "
                 "one urgently."
             )
@@ -380,7 +383,7 @@ if FASTAPI_AVAILABLE:
                     "Welcome to Sales Intelligence",
                     [f"Hi {new_user.full_name or new_user.email},",
                      f"An account has been created for you by {current.full_name or current.email}.",
-                     f"Email: {new_user.email}  •  Role: {new_user.role}",
+                     f"Email: {new_user.email}  ΓÇó  Role: {new_user.role}",
                      access_note],
                     cta_label="Sign In", cta_url=f"{base_url}/login",
                     footnote="You'll receive a separate email shortly to set your own password.",
@@ -388,7 +391,7 @@ if FASTAPI_AVAILABLE:
             )
 
             # An admin-set temp password is a worse first-run experience
-            # than the user picking their own — and never having to see the
+            # than the user picking their own ΓÇö and never having to see the
             # temp password anywhere (audit log, admin's clipboard) is a
             # small but real security win.
             reset_token = auth.issue_password_reset_token(session, new_user)
@@ -402,7 +405,7 @@ if FASTAPI_AVAILABLE:
                 html_body=email_sender.render_html(
                     "Set your password",
                     [f"Hi {new_user.full_name or new_user.email},",
-                     "One last step to finish setting up your account — choose your own password."],
+                     "One last step to finish setting up your account ΓÇö choose your own password."],
                     cta_label="Set Password", cta_url=reset_link,
                     footnote=f"This link expires in {auth.RESET_TOKEN_EXPIRE_MINUTES} minutes.",
                 ),
@@ -496,7 +499,7 @@ if FASTAPI_AVAILABLE:
                 raise HTTPException(status_code=404, detail="User not found")
             email = target.email
             # Logged before the delete since AuditLog.target_user_id turns
-            # NULL once the row is gone (ondelete="SET NULL") — the action
+            # NULL once the row is gone (ondelete="SET NULL") ΓÇö the action
             # should still say who it was after the fact.
             auth.log_audit(session, current.id, "user_deleted", target_user_id=None, details={"email": email})
             session.delete(target)
@@ -508,7 +511,7 @@ if FASTAPI_AVAILABLE:
     @app.get("/api/admin/users/{user_id}/accounts", tags=["0. Authentication"])
     def list_user_account_access(user_id: int, current: User = Depends(auth.require_role("super_admin"))):
         """Every account, flagged with whether this user currently has
-        access — the full picker list, not just their current grants."""
+        access ΓÇö the full picker list, not just their current grants."""
         session = get_session()
         try:
             target = session.query(User).filter_by(id=user_id).first()
@@ -690,12 +693,41 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
-    # ══════════════════════════════════════════════════════
+
+    
+    # ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
     # REQUEST / RESPONSE MODELS
-    # ══════════════════════════════════════════════════════
+    # ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
     class AccountCreateRequest(BaseModel):
         company_name: str
         domain: Optional[str] = None
+        stock_symbol: Optional[str] = None
+        sec_cik: Optional[str] = None
+        industry: Optional[str] = None
+        headquarters_location: Optional[str] = None
+        company_type: Optional[str] = None
+
+    class PersonaTierPurgeSelection(BaseModel):
+        all: bool = False
+        c_suite: bool = False
+        vp_head: bool = False
+        director: bool = False
+        manager_other: bool = False
+
+    class SignalPurgeSelection(BaseModel):
+        opportunity_signals: bool = False
+        weekly_digests: bool = False
+        posts_news: bool = False
+        cxo_movements: bool = False
+        jobs: bool = False
+        action_items: bool = False
+
+    class AccountPurgeRequest(BaseModel):
+        delete_account_record: bool = False
+        delete_lobs: bool = False
+        personas: Optional[PersonaTierPurgeSelection] = None
+        signals: Optional[SignalPurgeSelection] = None
+        confirmation_text: Optional[str] = None
 
     class AccountFetchRequest(BaseModel):
         company_name: str
@@ -824,9 +856,9 @@ if FASTAPI_AVAILABLE:
         due_date: Optional[str] = None
         assigned_to_id: Optional[int] = None
 
-    # ══════════════════════════════════════════════════════
+    # ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
     # TAB 1: ACCOUNT LEVEL ENDPOINTS
-    # ══════════════════════════════════════════════════════
+    # ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
     account_router = APIRouter(prefix="/api/account", tags=["1. Account Level"])
 
     @account_router.post("/create")
@@ -837,10 +869,12 @@ if FASTAPI_AVAILABLE:
             clean_name = req.company_name.strip()
             slug = slugify(clean_name)
             clean_dom = (
-                req.domain.replace("https://", "").replace("http://", "").split("/")[0].strip().lower()
+                req.domain.replace("https://", "").replace("http://", "").split("/")[0].split("?")[0].strip().lower()
                 if req.domain
                 else None
             )
+            if clean_dom and clean_dom.startswith("www."):
+                clean_dom = clean_dom[4:]
 
             # Check if account already exists by key, name, or domain
             filters = [
@@ -857,19 +891,34 @@ if FASTAPI_AVAILABLE:
 
             existing = session.query(Account).filter(or_(*filters)).first()
             if existing:
+                # Update supplementary fields if provided
+                if req.stock_symbol:
+                    existing.stock_symbol = req.stock_symbol.strip().upper()
+                if req.sec_cik:
+                    existing.sec_cik = req.sec_cik.strip()
+                if req.company_type:
+                    existing.company_type = req.company_type.strip()
+                if req.headquarters_location:
+                    existing.headquarters_location = req.headquarters_location.strip()
+                if req.industry:
+                    existing.industries = [req.industry.strip()]
+                session.commit()
+                session.refresh(existing)
                 return {
                     "status": "exists",
                     "account_id": existing.id,
                     "key": existing.key,
                     "name": existing.display_name,
                     "domain": existing.primary_domain or existing.domain,
+                    "stock_symbol": existing.stock_symbol,
+                    "sec_cik": existing.sec_cik,
                     "message": (
                         f"Account '{existing.display_name}' already registered "
                         f"in database (ID: {existing.id})."
                     ),
                 }
 
-            # Create new minimal account row
+            # Create new account row with rich enterprise attributes
             new_account = Account(
                 key=slug,
                 display_name=clean_name,
@@ -877,6 +926,11 @@ if FASTAPI_AVAILABLE:
                 domain=clean_dom,
                 primary_domain=clean_dom,
                 website_url=f"https://{clean_dom}" if clean_dom else None,
+                stock_symbol=req.stock_symbol.strip().upper() if req.stock_symbol else None,
+                sec_cik=req.sec_cik.strip() if req.sec_cik else None,
+                company_type=req.company_type.strip() if req.company_type else "Public",
+                headquarters_location=req.headquarters_location.strip() if req.headquarters_location else None,
+                industries=[req.industry.strip()] if req.industry else [],
             )
             session.add(new_account)
             session.commit()
@@ -888,6 +942,8 @@ if FASTAPI_AVAILABLE:
                 "key": new_account.key,
                 "name": new_account.display_name,
                 "domain": new_account.primary_domain,
+                "stock_symbol": new_account.stock_symbol,
+                "sec_cik": new_account.sec_cik,
                 "message": (
                     f"Account '{new_account.display_name}' created successfully "
                     f"in database (ID: {new_account.id})."
@@ -904,7 +960,7 @@ if FASTAPI_AVAILABLE:
         """[Tab 1 - Fetch Button]: Enterprise 11-source account intelligence collection.
         Uses AccountService.collect() with: SEC EDGAR, GLEIF, OpenCorporates, FMP, CourtListener,
         Finnhub, Apify Crunchbase (curious_coder/crunchbase-url-scraper), Apify Glassdoor
-        (memo23/glassdoor-scraper), Diffbot KG, Serper, Wikipedia, FEC — plus standalone
+        (memo23/glassdoor-scraper), Diffbot KG, Serper, Wikipedia, FEC ΓÇö plus standalone
         connectors: 10-K chunks, USPTO patents, SEC Exhibit 21 subsidiaries, GLEIF ownership tree.
         """
         t0 = datetime.now(timezone.utc)
@@ -986,6 +1042,25 @@ if FASTAPI_AVAILABLE:
             audit = account_data.get("_validation_audit") or {}
             raw_dir_val = account_data.get("raw_dir") or account_data.get("raw_storage_dir")
 
+            # Dynamic Metered Credit Breakdown
+            from services.credit_accounting_engine import CreditAccountingEngine
+            acct_credit_tally = account_data.get("_credit_accounting") or CreditAccountingEngine.tally_account_telemetry(
+                (account_data.get("_telemetry") or {}).get("sources", {})
+            )
+            now_completed = datetime.now(timezone.utc)
+            duration_sec = round((now_completed - t0).total_seconds(), 2)
+            credits_breakdown = CreditAccountingEngine.compile_run_breakdown(
+                company_name=req.company_name,
+                run_id=f"run_{slugify(req.company_name)[:20]}_acct",
+                run_number=1,
+                started_at=t0,
+                duration_seconds=duration_sec,
+                status="staged",
+                account_tally=acct_credit_tally,
+                lob_tally={"credits": 0, "resources": []},
+                persona_tally={"credits": 0, "resources": []},
+            )
+
             PipelineRunLogger.log_event(
                 company_name=req.company_name,
                 target_url=req.target_url,
@@ -995,13 +1070,17 @@ if FASTAPI_AVAILABLE:
                 quality_score=float(audit.get("score", 0.0)),
                 quality_grade=audit.get("grade", "N/A"),
                 started_at=t0,
-                completed_at=datetime.now(timezone.utc),
+                completed_at=now_completed,
+                duration_seconds=duration_sec,
                 raw_storage_dir=str(raw_dir_val) if raw_dir_val else None,
+                total_credits_used=acct_credit_tally.get("credits", 0),
+                credits_breakdown=credits_breakdown,
                 entities_extracted={
                     "known_lobs_count": len(account_data.get("known_lobs", [])),
                     "known_personas_count": len(account_data.get("known_personas", [])),
                     "discovered_lobs_count": len(account_data.get("discovered_lob_names", [])),
                     "display_name": account_data.get("display_name"),
+                    "telemetry_sources": (account_data.get("_telemetry") or {}).get("sources", {}),
                 },
             )
 
@@ -1018,6 +1097,154 @@ if FASTAPI_AVAILABLE:
                 error_message=str(e),
             )
             raise HTTPException(status_code=500, detail=f"Account fetch failed: {str(e)}")
+
+    @account_router.post("/fetch-background")
+    def fetch_account_background(req: AccountFetchRequest):
+        """
+        [Background Mode ΓÇö Tab 1 Fetch]:
+        Identical to POST /api/accounts/fetch but returns a job_id immediately (200ms).
+        AccountService.collect() runs in an independent background thread that survives
+        browser close, refresh, or tab switch.
+
+        Workflow:
+          1. POST here ΓåÆ receive {"job_id": "pjob_...", "poll_url": "/api/pipeline/job/..."}
+          2. Poll GET /api/pipeline/job/{job_id} every 3 seconds
+          3. When status == "done", use result.account as you would from /fetch
+        """
+        t0 = datetime.now(timezone.utc)
+        job_id = _jreg_create(TYPE_ACCOUNT, meta={
+            "company_name": req.company_name,
+            "target_url":   req.target_url,
+        })
+
+        def _bg_account():
+            try:
+                _jreg_update(job_id, status="running", progress_pct=5,
+                             message=f"Collecting account intelligence for '{req.company_name}'...")
+
+                account_data = AccountService.collect(
+                    company_name=req.company_name,
+                    domain=req.target_url,
+                )
+
+                _jreg_update(job_id, progress_pct=70, message="Attaching known LOBs/personas from DB...")
+
+                # Attach known LOBs and personas already in DB (exact same as /fetch)
+                _session = get_session()
+                try:
+                    existing = _session.query(Account).filter(
+                        or_(
+                            Account.domain == req.target_url,
+                            Account.primary_domain == req.target_url,
+                            Account.display_name.ilike(f"%{req.company_name}%"),
+                        )
+                    ).first()
+                    if existing:
+                        account_data["known_lobs"] = [
+                            {"id": l.id, "name": l.lob_name, "domain": l.domain}
+                            for l in (existing.lobs or [])
+                        ]
+                        account_data["known_personas"] = [
+                            {"id": p.id, "name": p.full_name, "title": p.title, "tier": p.tier}
+                            for p in (existing.personas or [])
+                        ]
+                        account_data["lobs_count"] = len(account_data["known_lobs"])
+                        account_data["total_contacts_captured"] = len(account_data["known_personas"])
+                except Exception as db_err:
+                    print(f"[!] [BG Account] DB lookup notice: {db_err}")
+                finally:
+                    _session.close()
+
+                _jreg_update(job_id, progress_pct=82, message="Building wrapped response...")
+
+                # Build required_account + wrapper (exact same as /fetch)
+                required_account = {k: account_data.get(k) for k in (
+                    "key", "display_name", "sec_edgar_url", "sec_filings_rss",
+                    "sec_submissions_url", "twitter_live_url", "reddit_query",
+                    "reddit_rss_url", "news_query", "rss_url", "google_patents_url",
+                    "google_trends_url", "youtube_search_url", "openalex_institution_url",
+                    "wikidata_entity_url", "blog_url", "github_url", "glassdoor_url",
+                    "youtube_channel_id",
+                )}
+                wrapped = {
+                    **account_data,
+                    "required_account":       required_account,
+                    "identity":               account_data,
+                    "firmographics":          account_data,
+                    "location":               account_data,
+                    "contact_and_social":     account_data,
+                    "financials_and_funding": account_data,
+                    "market_and_ipo":         account_data,
+                    "acquisitions_and_suborgs": account_data,
+                    "web_traffic_and_growth": account_data,
+                    "tech_and_patents":       account_data,
+                    "key_people":             account_data,
+                }
+
+                _jreg_update(job_id, progress_pct=90, message="Logging pipeline run...")
+
+                audit = account_data.get("_validation_audit") or {}
+                raw_dir_val = account_data.get("raw_dir") or account_data.get("raw_storage_dir")
+                from services.credit_accounting_engine import CreditAccountingEngine
+                acct_credit_tally = account_data.get("_credit_accounting") or CreditAccountingEngine.tally_account_telemetry(
+                    (account_data.get("_telemetry") or {}).get("sources", {})
+                )
+                now_completed = datetime.now(timezone.utc)
+                duration_sec = round((now_completed - t0).total_seconds(), 2)
+                credits_breakdown = CreditAccountingEngine.compile_run_breakdown(
+                    company_name=req.company_name,
+                    run_id=f"run_{slugify(req.company_name)[:20]}_acct_bg",
+                    run_number=1,
+                    started_at=t0,
+                    duration_seconds=duration_sec,
+                    status="staged",
+                    account_tally=acct_credit_tally,
+                    lob_tally={"credits": 0, "resources": []},
+                    persona_tally={"credits": 0, "resources": []},
+                )
+                PipelineRunLogger.log_event(
+                    company_name=req.company_name,
+                    target_url=req.target_url,
+                    level="account",
+                    action="pull",
+                    status="staged",
+                    quality_score=float(audit.get("score", 0.0)),
+                    quality_grade=audit.get("grade", "N/A"),
+                    started_at=t0,
+                    completed_at=now_completed,
+                    duration_seconds=duration_sec,
+                    raw_storage_dir=str(raw_dir_val) if raw_dir_val else None,
+                    total_credits_used=acct_credit_tally.get("credits", 0),
+                    credits_breakdown=credits_breakdown,
+                    entities_extracted={
+                        "known_lobs_count":      len(account_data.get("known_lobs", [])),
+                        "known_personas_count":  len(account_data.get("known_personas", [])),
+                        "discovered_lobs_count": len(account_data.get("discovered_lob_names", [])),
+                        "display_name":          account_data.get("display_name"),
+                        "background_job_id":     job_id,
+                    },
+                )
+
+                _jreg_update(job_id, status="done", progress_pct=100,
+                             message=f"Account enrichment complete for '{req.company_name}'.",
+                             result={"status": "staged", "company_name": req.company_name, "account": wrapped})
+            except Exception as exc:
+                _jreg_exc(job_id, exc)
+                PipelineRunLogger.log_event(
+                    company_name=req.company_name,
+                    target_url=req.target_url,
+                    level="account", action="pull", status="failed",
+                    started_at=t0, completed_at=datetime.now(timezone.utc),
+                    error_message=str(exc),
+                )
+
+        threading.Thread(target=_bg_account, daemon=False, name=f"acct-{job_id}").start()
+        return {
+            "status":   "queued",
+            "job_id":   job_id,
+            "poll_url": f"/api/pipeline/job/{job_id}",
+            "message":  f"Account enrichment started for '{req.company_name}'. Thread runs independently of this connection.",
+        }
 
     @account_router.post("/validate")
     def validate_account_data(account_data: Dict[str, Any] = Body(...)):
@@ -1084,7 +1311,7 @@ if FASTAPI_AVAILABLE:
             wrapper_doc = {"account": req.account_data}
             schema = AccountSchema.from_enriched_json(wrapper_doc)
             repo = AccountRepository(session)
-            acct = repo.upsert(schema)
+            acct = repo.upsert(schema, raw_data=req.account_data)
             session.commit()
 
             PipelineRunLogger.log_event(
@@ -1124,7 +1351,27 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
-    def _serialize_persona_full(p: Persona) -> Dict[str, Any]:
+    def _format_compact_revenue(val: Any) -> str:
+        if not val or val == "Revenue N/A":
+            return "Revenue N/A"
+        s = str(val).strip()
+        if s.startswith("$") or any(s.endswith(suffix) for suffix in ["B", "M", "K", "T"]):
+            return s
+        try:
+            num = float(s.replace(",", ""))
+            if num >= 1e12:
+                return f"${num / 1e12:.2f}B" if num < 1e12 else f"${num / 1e12:.2f}T"
+            if num >= 1e9:
+                return f"${num / 1e9:.2f}B"
+            if num >= 1e6:
+                return f"${num / 1e6:.2f}M"
+            if num >= 1e3:
+                return f"${num / 1e3:.2f}K"
+            return f"${num:,.2f}"
+        except (ValueError, TypeError):
+            return s
+
+    def _serialize_persona_full(p: Persona, last_run_at: Optional[str] = None) -> Dict[str, Any]:
         p_raw = p.raw_data if isinstance(p.raw_data, dict) else {}
         loc_str = (
             (p.city + (f", {p.state}" if p.state else (f", {p.country}" if p.country else "")))
@@ -1146,9 +1393,11 @@ if FASTAPI_AVAILABLE:
             "tier": p.tier,
             "seniority_raw": p.seniority_raw,
             "departments": p.departments or ["Executive"],
-            "email": contact_privacy.safe_email(p.email),
+            "email": p.email,
             "email_status": p.email_status or ("Verified" if p.email else None),
-            "phone": contact_privacy.safe_phone(p.phone, p.direct_mobile_phone),
+            "phone": p.phone,
+            "personal_email": p.personal_email,
+            "direct_mobile_phone": p.direct_mobile_phone,
             "linkedin_url": p.linkedin_url,
             "crunchbase_permalink": p.crunchbase_permalink,
             "city": p.city,
@@ -1181,6 +1430,20 @@ if FASTAPI_AVAILABLE:
             "theorg_url": getattr(p, "theorg_url", None),
             "seeking_alpha_url": getattr(p, "seeking_alpha_url", None),
             "external_board_url": getattr(p, "external_board_url", None),
+            "twitter_live_url": getattr(p, "twitter_live_url", None),
+            "google_patents_url": getattr(p, "google_patents_url", None),
+            "google_scholar_url": getattr(p, "google_scholar_url", None),
+            "openalex_author_url": getattr(p, "openalex_author_url", None),
+            "orcid_search_url": getattr(p, "orcid_search_url", None),
+            "wikidata_person_url": getattr(p, "wikidata_person_url", None),
+            "reddit_rss_url": getattr(p, "reddit_rss_url", None),
+            "google_trends_url": getattr(p, "google_trends_url", None),
+            "youtube_interviews_url": getattr(p, "youtube_interviews_url", None),
+            "podcast_search_url": getattr(p, "podcast_search_url", None),
+            "reddit_query": getattr(p, "reddit_query", None),
+            "news_query": getattr(p, "news_query", None),
+            "patents_query": getattr(p, "patents_query", None),
+            "youtube_channel_id": getattr(p, "youtube_channel_id", None),
             "skills": p.skills or [],
             "target_kpis": p.target_kpis or [],
             "operational_pain_points": p.operational_pain_points or [],
@@ -1206,8 +1469,9 @@ if FASTAPI_AVAILABLE:
             "osint_feed_manifest": p.osint_feed_manifest or {},
             "is_manually_verified": bool(getattr(p, "is_manually_verified", False)),
             "manually_verified_at": p.manually_verified_at.isoformat() if getattr(p, "manually_verified_at", None) else None,
-            "extended_profile": contact_privacy.scrub_extended_profile(getattr(p, "extended_profile", None) or {}),
-            "raw_data": contact_privacy.scrub_raw(p.raw_data, p.personal_email, p.direct_mobile_phone),
+            "last_run_at": last_run_at or (p.manually_verified_at.isoformat() if getattr(p, "manually_verified_at", None) else None),
+            "extended_profile": getattr(p, "extended_profile", None) or {},
+            "raw_data": p.raw_data,
         }
 
     def _serialize_persona_summary(p: Persona) -> Dict[str, Any]:
@@ -1216,7 +1480,7 @@ if FASTAPI_AVAILABLE:
 
 
     def _distribute_personas_across_lobs(raw_lobs, personas_list):
-        """Synthetic C-suite + VP-cohort split across LOBs for display grouping —
+        """Synthetic C-suite + VP-cohort split across LOBs for display grouping ΓÇö
         not the DB's real Persona.lob_id relationship, just how the UI has always
         grouped contacts per division. Shared by the full and summary serializers
         so both agree on the same per-LOB counts/lists."""
@@ -1256,7 +1520,7 @@ if FASTAPI_AVAILABLE:
             "desc": f"Specialized unit under {parent_name or 'Parent LOB'}",
         }
 
-    def _serialize_lob_full(lob_item: Lob, assigned_personas: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _serialize_lob_full(lob_item: Lob, assigned_personas: List[Dict[str, Any]], last_run_at: Optional[str] = None) -> Dict[str, Any]:
         sub_lobs_formatted = [
             _serialize_sublob_obj(s, lob_item.lob_name)
             for s in (lob_item.sub_lobs or [])
@@ -1296,6 +1560,7 @@ if FASTAPI_AVAILABLE:
             "osint_feed_manifest": lob_item.osint_feed_manifest or {},
             "is_manually_verified": bool(getattr(lob_item, "is_manually_verified", False)),
             "manually_verified_at": lob_item.manually_verified_at.isoformat() if getattr(lob_item, "manually_verified_at", None) else None,
+            "last_run_at": last_run_at or (lob_item.manually_verified_at.isoformat() if getattr(lob_item, "manually_verified_at", None) else None),
             "subLobs": sub_lobs_formatted,
             "sub_lobs": sub_lobs_formatted,
             "personas": assigned_personas,
@@ -1305,7 +1570,7 @@ if FASTAPI_AVAILABLE:
     def _serialize_lob_summary(lob_item: Lob, assigned_personas_count: int) -> Dict[str, Any]:
         # Trimmed: keeps technologies/competitors (read by computeSignals()/
         # _compute_signals_count and the competitors-card-grid feature for
-        # EVERY account on every nav-tree/topbar/command-center render — entries
+        # EVERY account on every nav-tree/topbar/command-center render ΓÇö entries
         # may be plain strings or {name,...} objects, both pass through as-is,
         # the frontend already normalizes either shape) and subLobs (nav-tree
         # renders sub-LOB names in the expanded row), drops financial_snippets/
@@ -1316,6 +1581,7 @@ if FASTAPI_AVAILABLE:
             "id": lob_item.id,
             "name": lob_item.lob_name,
             "lob_name": lob_item.lob_name,
+            "relationship_type": lob_item.relationship_type,
             "technologies": lob_item.technologies or [],
             "competitors": lob_item.competitors or [],
             "subLobs": sub_lobs_formatted,
@@ -1323,11 +1589,23 @@ if FASTAPI_AVAILABLE:
             "personas_count": assigned_personas_count,
         }
 
-    def _serialize_account_full(acct: Account) -> Dict[str, Any]:
-        personas_list = [_serialize_persona_full(p) for p in (acct.personas or [])]
+    def _serialize_account_full(acct: Account, latest_lob_runs: Optional[Dict] = None, latest_persona_runs: Optional[Dict] = None) -> Dict[str, Any]:
+        latest_lob_runs = latest_lob_runs or {}
+        latest_persona_runs = latest_persona_runs or {}
+        personas_list = [
+            _serialize_persona_full(
+                p,
+                last_run_at=latest_persona_runs.get(p.id) or latest_persona_runs.get((p.full_name or p.display_name or "").strip().lower())
+            )
+            for p in (acct.personas or [])
+        ]
         raw_lobs = acct.lobs or []
         lobs_list = [
-            _serialize_lob_full(lob_item, assigned)
+            _serialize_lob_full(
+                lob_item,
+                assigned,
+                last_run_at=latest_lob_runs.get(lob_item.id) or latest_lob_runs.get((lob_item.lob_name or "").strip().lower())
+            )
             for lob_item, assigned in _distribute_personas_across_lobs(raw_lobs, personas_list)
         ]
 
@@ -1343,7 +1621,8 @@ if FASTAPI_AVAILABLE:
             "legal_name": acct.legal_name or acct_name,
             "ticker": acct.stock_symbol,
             "stock_symbol": acct.stock_symbol,
-            "revenue": acct.estimated_revenue_range or "Revenue N/A",
+            "revenue": _format_compact_revenue(acct.estimated_revenue_range),
+            "estimated_revenue_range": _format_compact_revenue(acct.estimated_revenue_range),
             "location": acct_loc,
             "desc": acct_desc,
             "domain": acct.domain,
@@ -1396,7 +1675,7 @@ if FASTAPI_AVAILABLE:
             "extracted_at": acct.extracted_at.isoformat() if acct.extracted_at else None,
             "created_at": acct.created_at.isoformat() if acct.created_at else None,
             "updated_at": acct.updated_at.isoformat() if acct.updated_at else None,
-            # ── Engagement / opportunity signals (previously captured but never exposed) ──
+            # ΓöÇΓöÇ Engagement / opportunity signals (previously captured but never exposed) ΓöÇΓöÇ
             "heat_score": acct.heat_score,
             "trend_score_90d": acct.trend_score_90d,
             "active_tech_count": acct.active_tech_count,
@@ -1468,7 +1747,7 @@ if FASTAPI_AVAILABLE:
     ) -> int:
         """Server-side count mirroring signals.js's computeSignals(account, null).
         The nav tree / topbar ticker only ever display the COUNT of signals per
-        account (a badge number), never the underlying detail — so this replaces
+        account (a badge number), never the underlying detail ΓÇö so this replaces
         shipping multi_source_intelligence (and every other field computeSignals
         reads) to the client for every account in the list, just to count it
         client-side. Full signal detail is still available once an account is
@@ -1506,12 +1785,24 @@ if FASTAPI_AVAILABLE:
             count += 1
         return count
 
-    def _serialize_account_summary(acct: Account) -> Dict[str, Any]:
+    def _serialize_account_summary(acct: Account, latest_lob_runs: Optional[Dict] = None, latest_persona_runs: Optional[Dict] = None) -> Dict[str, Any]:
+        latest_lob_runs = latest_lob_runs or {}
+        latest_persona_runs = latest_persona_runs or {}
         # Full serialization for Account, LOBs, and Personas ensures the UI receives 100% of data attributes
-        personas_list = [_serialize_persona_full(p) for p in (acct.personas or [])]
+        personas_list = [
+            _serialize_persona_full(
+                p,
+                last_run_at=latest_persona_runs.get(p.id) or latest_persona_runs.get((p.full_name or p.display_name or "").strip().lower())
+            )
+            for p in (acct.personas or [])
+        ]
         raw_lobs = acct.lobs or []
         lobs_list = [
-            _serialize_lob_summary(lob_item, len(assigned))
+            _serialize_lob_full(
+                lob_item,
+                assigned,
+                last_run_at=latest_lob_runs.get(lob_item.id) or latest_lob_runs.get((lob_item.lob_name or "").strip().lower())
+            )
             for lob_item, assigned in _distribute_personas_across_lobs(raw_lobs, personas_list)
         ]
 
@@ -1527,8 +1818,8 @@ if FASTAPI_AVAILABLE:
             "legal_name": acct.legal_name or acct_name,
             "ticker": acct.stock_symbol,
             "stock_symbol": acct.stock_symbol,
-            "revenue": acct.estimated_revenue_range or "Revenue N/A",
-            "estimated_revenue_range": acct.estimated_revenue_range,
+            "revenue": _format_compact_revenue(acct.estimated_revenue_range),
+            "estimated_revenue_range": _format_compact_revenue(acct.estimated_revenue_range),
             "location": acct_loc,
             "headquarters_location": acct_loc,
             "desc": acct_desc,
@@ -1651,13 +1942,13 @@ if FASTAPI_AVAILABLE:
         """
         [Page Initialization (loadData())]:
         Queries PostgreSQL (accounts, lobs, sub_lobs, personas) and returns a
-        trimmed summary dossier per account — enough for the nav tree, digest,
+        trimmed summary dossier per account ΓÇö enough for the nav tree, digest,
         and topbar ticker's cross-account rollups. Full per-account detail
         (persona dossiers, LOB financials/patents, org chart) is fetched
         on-demand via GET /api/accounts/{account_id} once that account is opened.
 
         A super_admin sees every account; anyone else sees only accounts a
-        super_admin has explicitly granted them (see user_account_access) —
+        super_admin has explicitly granted them (see user_account_access) ΓÇö
         a user with zero grants sees an empty list, not an error.
         """
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
@@ -1672,8 +1963,47 @@ if FASTAPI_AVAILABLE:
             if user.role != "super_admin":
                 accessible_ids = auth.get_accessible_account_ids(session, user.id)
                 query = query.filter(Account.id.in_(accessible_ids)) if accessible_ids else query.filter(False)
+            # Pre-fetch latest run timestamps from pipeline_runs for real Last Run display
+            from sqlalchemy import text
+            latest_lob_runs = {}
+            latest_persona_runs = {}
+            try:
+                lob_runs_raw = session.execute(text("""
+                    SELECT 
+                        COALESCE(NULLIF(entities_extracted->>'lob_id', '')::int, NULL) as lid,
+                        entities_extracted->>'lob_name' as lname,
+                        MAX(completed_at) as mtime
+                    FROM pipeline_runs
+                    WHERE entities_extracted->>'level' = 'lob'
+                    GROUP BY entities_extracted->>'lob_id', entities_extracted->>'lob_name';
+                """)).fetchall()
+                for r in lob_runs_raw:
+                    if r[2]:
+                        iso = r[2].isoformat()
+                        if r[0]: latest_lob_runs[int(r[0])] = iso
+                        if r[1]: latest_lob_runs[str(r[1]).strip().lower()] = iso
+
+                persona_runs_raw = session.execute(text("""
+                    SELECT 
+                        COALESCE(NULLIF(entities_extracted->>'persona_id', '')::int, NULL) as pid,
+                        COALESCE(entities_extracted->>'full_name', entities_extracted->>'name', entities_extracted->>'person_name') as pname,
+                        MAX(completed_at) as mtime
+                    FROM pipeline_runs
+                    WHERE entities_extracted->>'level' = 'persona'
+                      AND COALESCE(entities_extracted->>'action', '') != 'dump'
+                    GROUP BY entities_extracted->>'persona_id', entities_extracted->>'full_name', entities_extracted->>'name', entities_extracted->>'person_name';
+                """)).fetchall()
+                for r in persona_runs_raw:
+                    if r[2]:
+                        iso = r[2].isoformat()
+                        if r[0]: latest_persona_runs[int(r[0])] = iso
+                        if r[1] and str(r[1]).strip().lower() not in ('', 'none'):
+                            latest_persona_runs[str(r[1]).strip().lower()] = iso
+            except Exception as _e:
+                print(f"[RunTimestamps] Non-fatal pre-fetch error: {_e}")
+
             accounts = query.order_by(Account.id.desc()).all()
-            return {"accounts": [_serialize_account_summary(acct) for acct in accounts]}
+            return {"accounts": [_serialize_account_summary(acct, latest_lob_runs, latest_persona_runs) for acct in accounts]}
 
         finally:
             session.close()
@@ -1685,8 +2015,8 @@ if FASTAPI_AVAILABLE:
 
     @account_router.get("/{account_id}")
     def get_account_from_db(account_id: int, user: User = Depends(auth.require_account_access)):
-        """Retrieves one account's full dossier from DB — complete LOBs and
-        personas — fetched on demand when that account is opened."""
+        """Retrieves one account's full dossier from DB ΓÇö complete LOBs and
+        personas ΓÇö fetched on demand when that account is opened."""
         session = get_session()
         try:
             acct = (
@@ -1699,7 +2029,44 @@ if FASTAPI_AVAILABLE:
             )
             if not acct:
                 raise HTTPException(status_code=404, detail="Account not found.")
-            return _serialize_account_full(acct)
+            from sqlalchemy import text
+            latest_lob_runs = {}
+            latest_persona_runs = {}
+            try:
+                lob_runs_raw = session.execute(text("""
+                    SELECT 
+                        COALESCE(NULLIF(entities_extracted->>'lob_id', '')::int, NULL) as lid,
+                        entities_extracted->>'lob_name' as lname,
+                        MAX(completed_at) as mtime
+                    FROM pipeline_runs
+                    WHERE entities_extracted->>'level' = 'lob'
+                    GROUP BY entities_extracted->>'lob_id', entities_extracted->>'lob_name';
+                """)).fetchall()
+                for r in lob_runs_raw:
+                    if r[2]:
+                        iso = r[2].isoformat()
+                        if r[0]: latest_lob_runs[int(r[0])] = iso
+                        if r[1]: latest_lob_runs[str(r[1]).strip().lower()] = iso
+
+                persona_runs_raw = session.execute(text("""
+                    SELECT 
+                        COALESCE(NULLIF(entities_extracted->>'persona_id', '')::int, NULL) as pid,
+                        COALESCE(entities_extracted->>'full_name', entities_extracted->>'name', entities_extracted->>'person_name') as pname,
+                        MAX(completed_at) as mtime
+                    FROM pipeline_runs
+                    WHERE entities_extracted->>'level' = 'persona'
+                      AND COALESCE(entities_extracted->>'action', '') != 'dump'
+                    GROUP BY entities_extracted->>'persona_id', entities_extracted->>'full_name', entities_extracted->>'name', entities_extracted->>'person_name';
+                """)).fetchall()
+                for r in persona_runs_raw:
+                    if r[2]:
+                        iso = r[2].isoformat()
+                        if r[0]: latest_persona_runs[int(r[0])] = iso
+                        if r[1] and str(r[1]).strip().lower() not in ('', 'none'):
+                            latest_persona_runs[str(r[1]).strip().lower()] = iso
+            except Exception as _e:
+                print(f"[RunTimestamps] Non-fatal pre-fetch error: {_e}")
+            return _serialize_account_full(acct, latest_lob_runs, latest_persona_runs)
         finally:
             session.close()
 
@@ -1845,9 +2212,9 @@ if FASTAPI_AVAILABLE:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Diffbot extraction failed: {str(e)}")
 
-    # ══════════════════════════════════════════════════════
+    # ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
     # TAB 2 & 3: LOB & SUB-LOB LEVEL ENDPOINTS
-    # ══════════════════════════════════════════════════════
+    # ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
     lobs_router = APIRouter(prefix="/api/lobs", tags=["2. LOB & Sub-LOB Level"])
 
     @lobs_router.post("/fetch")
@@ -1864,18 +2231,52 @@ if FASTAPI_AVAILABLE:
                     account_id=req.account_id,
                     lob_domain=req.lob_domain,
                 )
+                from services.credit_accounting_engine import CreditAccountingEngine
+                lob_credit_tally = CreditAccountingEngine.tally_lob_telemetry(1)
+                now_completed = datetime.now(timezone.utc)
+                duration_sec = round((now_completed - t0).total_seconds(), 2)
+
+                audit_score = 75.0
+                if isinstance(single_lob, dict):
+                    if single_lob.get("domain") or single_lob.get("website_url"):
+                        audit_score += 10.0
+                    if single_lob.get("description"):
+                        audit_score += 5.0
+                    if single_lob.get("technologies"):
+                        audit_score += 5.0
+                    if single_lob.get("operating_head"):
+                        audit_score += 5.0
+                audit_grade = "A" if audit_score >= 90 else ("B" if audit_score >= 75 else "C")
+
+                credits_breakdown = CreditAccountingEngine.compile_run_breakdown(
+                    company_name=req.company_name or "Company",
+                    run_id=f"run_{slugify(req.company_name or 'lob')[:20]}_lob_single",
+                    run_number=1,
+                    started_at=t0,
+                    duration_seconds=duration_sec,
+                    status="success",
+                    account_tally={"credits": 0, "resources": []},
+                    lob_tally=lob_credit_tally,
+                    persona_tally={"credits": 0, "resources": []},
+                )
                 PipelineRunLogger.log_event(
                     company_name=req.company_name or "Company",
                     target_url=req.lob_domain,
                     level="lob",
                     action="pull",
-                    status="staged",
+                    status="success",
+                    quality_score=audit_score,
+                    quality_grade=audit_grade,
                     started_at=t0,
-                    completed_at=datetime.now(timezone.utc),
+                    completed_at=now_completed,
+                    duration_seconds=duration_sec,
+                    total_credits_used=lob_credit_tally.get("credits", 0),
+                    credits_breakdown=credits_breakdown,
                     entities_extracted={
                         "lob_name": req.lob_name,
                         "account_id": req.account_id,
                         "domain": req.lob_domain,
+                        "total_lobs": 1,
                     },
                 )
                 return {
@@ -1886,7 +2287,7 @@ if FASTAPI_AVAILABLE:
                     "total_lobs": 1,
                 }
             else:
-                # ── Batch LOB Discovery Waterfall ──
+                # ΓöÇΓöÇ Batch LOB Discovery Waterfall ΓöÇΓöÇ
                 discovered_names = []
                 sec_cik_val = None
 
@@ -1962,15 +2363,46 @@ if FASTAPI_AVAILABLE:
                     )
                 else:
                     raw_sublobs = scrape_sublobs(req.company_name)
-                    enriched_lobs = enrich_lob_segments(req.company_name, raw_sublobs)
+                    if raw_sublobs:
+                        enriched_lobs = LobService.enrich_all_lobs(
+                            lobs_list=raw_sublobs,
+                            parent_company=req.company_name,
+                            account_id=req.account_id,
+                            sec_cik=sec_cik_val,
+                        )
+                    else:
+                        enriched_lobs = []
+                # Dynamic Metered Credit Breakdown for LOBs
+                from services.credit_accounting_engine import CreditAccountingEngine
+                lob_credit_tally = CreditAccountingEngine.tally_lob_telemetry(len(enriched_lobs))
+                now_completed = datetime.now(timezone.utc)
+                duration_sec = round((now_completed - t0).total_seconds(), 2)
+                batch_score = 88.0 if enriched_lobs else 60.0
+                batch_grade = "B" if enriched_lobs else "C"
+                credits_breakdown = CreditAccountingEngine.compile_run_breakdown(
+                    company_name=req.company_name or "Company",
+                    run_id=f"run_{slugify(req.company_name or 'lob')[:20]}_lob",
+                    run_number=1,
+                    started_at=t0,
+                    duration_seconds=duration_sec,
+                    status="success",
+                    account_tally={"credits": 0, "resources": []},
+                    lob_tally=lob_credit_tally,
+                    persona_tally={"credits": 0, "resources": []},
+                )
 
                 PipelineRunLogger.log_event(
                     company_name=req.company_name or "Company",
                     level="lob",
                     action="pull",
-                    status="staged",
+                    status="success",
+                    quality_score=batch_score,
+                    quality_grade=batch_grade,
                     started_at=t0,
-                    completed_at=datetime.now(timezone.utc),
+                    completed_at=now_completed,
+                    duration_seconds=duration_sec,
+                    total_credits_used=lob_credit_tally.get("credits", 0),
+                    credits_breakdown=credits_breakdown,
                     entities_extracted={
                         "total_lobs": len(enriched_lobs),
                         "account_id": req.account_id,
@@ -1995,6 +2427,199 @@ if FASTAPI_AVAILABLE:
                 error_message=str(e),
             )
             raise HTTPException(status_code=500, detail=f"LOB fetch failed: {str(e)}")
+
+    @lobs_router.post("/fetch-background")
+    def fetch_lobs_background(req: LobsFetchRequest):
+        """
+        [Background Mode ΓÇö Tab 2 Fetch]:
+        Identical to POST /api/lobs/fetch but returns a job_id immediately (200ms).
+        The full LOB discovery waterfall (SEC Exhibit 21 ΓåÆ GLEIF ΓåÆ Crunchbase ΓåÆ
+        LobService.enrich_all_lobs) runs in an independent background thread
+        that survives browser close, refresh, or tab switch.
+
+        Workflow:
+          1. POST here ΓåÆ receive {"job_id": "pjob_...", "poll_url": "/api/pipeline/job/..."}
+          2. Poll GET /api/pipeline/job/{job_id} every 3 seconds
+          3. When status == "done", result contains the same payload as /lobs/fetch
+        """
+        t0 = datetime.now(timezone.utc)
+        job_id = _jreg_create(TYPE_LOB, meta={
+            "company_name": req.company_name,
+            "lob_name":     req.lob_name,
+            "account_id":   req.account_id,
+        })
+
+        def _bg_lob():
+            try:
+                mode_label = f"single LOB '{req.lob_name}'" if req.lob_name else "batch LOB discovery"
+                _jreg_update(job_id, status="running", progress_pct=5,
+                             message=f"Starting {mode_label} for '{req.company_name}'...")
+
+                # ΓöÇΓöÇ Single LOB path ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+                if req.lob_name:
+                    single_lob = LobService.enrich_single_lob(
+                        lob_name=req.lob_name,
+                        parent_company=req.company_name,
+                        account_id=req.account_id,
+                        lob_domain=req.lob_domain,
+                    )
+                    _jreg_update(job_id, progress_pct=80, message="LOB enriched. Logging...")
+                    from services.credit_accounting_engine import CreditAccountingEngine
+                    lob_credit_tally = CreditAccountingEngine.tally_lob_telemetry(1)
+                    now_completed = datetime.now(timezone.utc)
+                    duration_sec = round((now_completed - t0).total_seconds(), 2)
+                    audit_score = 75.0
+                    if isinstance(single_lob, dict):
+                        if single_lob.get("domain") or single_lob.get("website_url"): audit_score += 10.0
+                        if single_lob.get("description"):  audit_score += 5.0
+                        if single_lob.get("technologies"): audit_score += 5.0
+                        if single_lob.get("operating_head"): audit_score += 5.0
+                    audit_grade = "A" if audit_score >= 90 else ("B" if audit_score >= 75 else "C")
+                    credits_breakdown = CreditAccountingEngine.compile_run_breakdown(
+                        company_name=req.company_name or "Company",
+                        run_id=f"run_{slugify(req.company_name or 'lob')[:20]}_lob_single_bg",
+                        run_number=1, started_at=t0, duration_seconds=duration_sec, status="success",
+                        account_tally={"credits": 0, "resources": []},
+                        lob_tally=lob_credit_tally,
+                        persona_tally={"credits": 0, "resources": []},
+                    )
+                    PipelineRunLogger.log_event(
+                        company_name=req.company_name or "Company", target_url=req.lob_domain,
+                        level="lob", action="pull", status="success",
+                        quality_score=audit_score, quality_grade=audit_grade,
+                        started_at=t0, completed_at=now_completed, duration_seconds=duration_sec,
+                        total_credits_used=lob_credit_tally.get("credits", 0),
+                        credits_breakdown=credits_breakdown,
+                        entities_extracted={"lob_name": req.lob_name, "account_id": req.account_id,
+                                            "domain": req.lob_domain, "total_lobs": 1, "background_job_id": job_id},
+                    )
+                    _jreg_update(job_id, status="done", progress_pct=100,
+                                 message=f"LOB '{req.lob_name}' enriched.",
+                                 result={"status": "staged", "company_name": req.company_name,
+                                         "lob": single_lob, "lobs": [single_lob], "total_lobs": 1})
+                    return
+
+                # ΓöÇΓöÇ Batch LOB discovery waterfall ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+                discovered_names = []
+                sec_cik_val = None
+
+                _jreg_update(job_id, progress_pct=10, message="Checking DB for existing LOB names...")
+                _session = get_session()
+                try:
+                    acct = None
+                    if req.account_id:
+                        acct = _session.query(Account).filter_by(id=req.account_id).first()
+                    if not acct and req.company_name:
+                        acct = _session.query(Account).filter(
+                            Account.display_name.ilike(f"%{req.company_name}%")
+                        ).first()
+                    if acct:
+                        sec_cik_val = acct.sec_cik
+                        if acct.organisational_hierarchy_tree:
+                            tree = acct.organisational_hierarchy_tree
+                            for s in tree.get("sec_exhibit21_subsidiaries", []):
+                                if s.get("legal_name"): discovered_names.append(s["legal_name"])
+                            for c in tree.get("gleif_children", []):
+                                if c.get("legal_name"): discovered_names.append(c["legal_name"])
+                except Exception as db_err:
+                    print(f"[!] [BG LOB] DB account lookup notice: {db_err}")
+                finally:
+                    _session.close()
+
+                if not discovered_names and sec_cik_val:
+                    _jreg_update(job_id, progress_pct=20, message="Querying SEC Exhibit 21...")
+                    try:
+                        ex21 = fetch_sec_exhibit_21_subsidiaries(sec_cik_val)
+                        for s in ex21.get("subsidiaries", []):
+                            if s.get("legal_name"): discovered_names.append(s["legal_name"])
+                    except Exception as e:
+                        print(f"[!] [BG LOB] SEC Exhibit 21 notice: {e}")
+
+                if not discovered_names and req.company_name:
+                    _jreg_update(job_id, progress_pct=30, message="Querying GLEIF ownership tree...")
+                    try:
+                        gleif_tree = fetch_gleif_ownership_tree(req.company_name, max_children=20)
+                        for c in gleif_tree.get("child_entities", []):
+                            if c.get("legal_name"): discovered_names.append(c["legal_name"])
+                    except Exception as e:
+                        print(f"[!] [BG LOB] GLEIF notice: {e}")
+
+                _jreg_update(job_id, progress_pct=40, message="Augmenting with Crunchbase sub-orgs...")
+                try:
+                    cb_subs = scrape_sublobs(req.company_name)
+                    for cb in cb_subs:
+                        cb_name = cb.get("name") or cb.get("sub_organization_name")
+                        if cb_name: discovered_names.append(cb_name)
+                except Exception as e:
+                    print(f"[!] [BG LOB] Crunchbase sublobs notice: {e}")
+
+                unique_names = list(dict.fromkeys([n.strip() for n in discovered_names if n and len(n.strip()) > 1]))
+                lobs_to_enrich = [{"name": n, "lob_name": n} for n in unique_names]
+
+                _jreg_update(job_id, progress_pct=50,
+                             message=f"Enriching {len(lobs_to_enrich) or 'discovered'} LOBs via LobService...")
+                if lobs_to_enrich:
+                    enriched_lobs = LobService.enrich_all_lobs(
+                        lobs_list=lobs_to_enrich,
+                        parent_company=req.company_name,
+                        account_id=req.account_id,
+                        sec_cik=sec_cik_val,
+                    )
+                else:
+                    raw_sublobs = scrape_sublobs(req.company_name)
+                    if raw_sublobs:
+                        enriched_lobs = LobService.enrich_all_lobs(
+                            lobs_list=raw_sublobs,
+                            parent_company=req.company_name,
+                            account_id=req.account_id,
+                            sec_cik=sec_cik_val,
+                        )
+                    else:
+                        enriched_lobs = []
+
+                _jreg_update(job_id, progress_pct=90, message="Logging pipeline run...")
+                from services.credit_accounting_engine import CreditAccountingEngine
+                lob_credit_tally = CreditAccountingEngine.tally_lob_telemetry(len(enriched_lobs))
+                now_completed = datetime.now(timezone.utc)
+                duration_sec = round((now_completed - t0).total_seconds(), 2)
+                batch_score = 88.0 if enriched_lobs else 60.0
+                batch_grade = "B" if enriched_lobs else "C"
+                credits_breakdown = CreditAccountingEngine.compile_run_breakdown(
+                    company_name=req.company_name or "Company",
+                    run_id=f"run_{slugify(req.company_name or 'lob')[:20]}_lob_bg",
+                    run_number=1, started_at=t0, duration_seconds=duration_sec, status="success",
+                    account_tally={"credits": 0, "resources": []},
+                    lob_tally=lob_credit_tally,
+                    persona_tally={"credits": 0, "resources": []},
+                )
+                PipelineRunLogger.log_event(
+                    company_name=req.company_name or "Company", level="lob", action="pull", status="success",
+                    quality_score=batch_score, quality_grade=batch_grade,
+                    started_at=t0, completed_at=now_completed, duration_seconds=duration_sec,
+                    total_credits_used=lob_credit_tally.get("credits", 0), credits_breakdown=credits_breakdown,
+                    entities_extracted={"total_lobs": len(enriched_lobs), "account_id": req.account_id,
+                                        "discovered_names_count": len(unique_names), "background_job_id": job_id},
+                )
+                _jreg_update(job_id, status="done", progress_pct=100,
+                             message=f"Batch LOB enrichment complete. {len(enriched_lobs)} LOBs enriched.",
+                             result={"status": "staged", "company_name": req.company_name,
+                                     "total_lobs": len(enriched_lobs), "lobs": enriched_lobs})
+            except Exception as exc:
+                _jreg_exc(job_id, exc)
+                PipelineRunLogger.log_event(
+                    company_name=req.company_name or "Company",
+                    level="lob", action="pull", status="failed",
+                    started_at=t0, completed_at=datetime.now(timezone.utc),
+                    error_message=str(exc),
+                )
+
+        threading.Thread(target=_bg_lob, daemon=False, name=f"lob-{job_id}").start()
+        return {
+            "status":   "queued",
+            "job_id":   job_id,
+            "poll_url": f"/api/pipeline/job/{job_id}",
+            "message":  f"LOB enrichment started for '{req.company_name}'. Thread runs independently of this connection.",
+        }
 
     @lobs_router.post("/validate")
     def validate_lobs_data(lobs_data: List[Dict[str, Any]] = Body(...)):
@@ -2204,6 +2829,7 @@ if FASTAPI_AVAILABLE:
                     "lob_name": lob_item.lob_name,
                     "domain": lob_item.domain,
                     "website_url": lob_item.website_url,
+                    "relationship_type": lob_item.relationship_type,
                     "audited_segment_revenue": lob_item.audited_segment_revenue,
                     "operating_head": lob_item.operating_head,
                     "segment_headcount": lob_item.segment_headcount,
@@ -2397,9 +3023,9 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
-    # ══════════════════════════════════════════════════════
+    # ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
     # TAB 4: PERSONAS LEVEL (INDIVIDUAL & BATCH LIFECYCLE)
-    # ══════════════════════════════════════════════════════
+    # ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
     personas_router = APIRouter(prefix="/api/personas", tags=["3. Personas Level"])
 
     @personas_router.post("/fetch")
@@ -2437,22 +3063,51 @@ if FASTAPI_AVAILABLE:
             parsed_title = parsed_title or "Leadership"
             parsed_company = parsed_company or ""
 
-            # If company not in payload but account_id provided, look up company from DB
-            if not parsed_company and card.account_id:
+            # If account_id provided, look up company, domain, ticker, and cik from DB
+            acct_domain = None
+            acct_ticker = None
+            acct_cik = None
+            if card.account_id:
                 session = get_session()
                 try:
                     acct = session.query(Account).filter_by(id=card.account_id).first()
                     if acct:
-                        parsed_company = acct.legal_name or acct.display_name or acct.key
+                        if not parsed_company:
+                            parsed_company = acct.legal_name or acct.display_name or acct.key
+                        acct_domain = acct.domain or acct.primary_domain
+                        acct_ticker = acct.stock_symbol
+                        acct_cik = acct.sec_cik
+
+                    # Lookup existing persona stub if present to preserve accurate title & profile
+                    from sqlalchemy import or_
+                    existing_p = None
+                    if card.key:
+                        existing_p = session.query(Persona).filter(
+                            Persona.account_id == card.account_id,
+                            Persona.key == card.key
+                        ).first()
+                    if not existing_p and parsed_name:
+                        existing_p = session.query(Persona).filter(
+                            Persona.account_id == card.account_id,
+                            Persona.full_name.ilike(parsed_name)
+                        ).first()
+                    if existing_p:
+                        if (not parsed_title or parsed_title.lower() in ["leadership", "executive"]) and existing_p.title:
+                            parsed_title = existing_p.title
+                        if not card.linkedin_url and existing_p.linkedin_url:
+                            card.linkedin_url = existing_p.linkedin_url
                 finally:
                     session.close()
 
-            # 2. Enrich via Enterprise PersonaService (FullEnrich + Exa + Apollo + Serper + SEC + ORCID + OpenAlex)
+            # 2. Enrich via Enterprise PersonaService (FullEnrich + Exa + Apollo + Serper + SEC + ORCID + OpenAlex + ExecutiveOsintUrlEngine)
             person_entry = PersonaService.enrich_single_persona(
                 full_name=parsed_name,
                 company_name=parsed_company,
                 title=parsed_title,
                 account_id=card.account_id,
+                domain=acct_domain,
+                ticker=acct_ticker,
+                sec_cik=acct_cik,
                 linkedin_url=card.linkedin_url,
             )
 
@@ -2466,17 +3121,36 @@ if FASTAPI_AVAILABLE:
             )
             MasterSerializer.save_json(person_entry, person_file)
 
+            from services.credit_accounting_engine import CreditAccountingEngine
+            persona_credit_tally = CreditAccountingEngine.tally_persona_telemetry(1)
+            now_completed = datetime.now(timezone.utc)
+            duration_sec = round((now_completed - t0).total_seconds(), 2)
+            credits_breakdown = CreditAccountingEngine.compile_run_breakdown(
+                company_name=parsed_company or "Company",
+                run_id=f"run_{slugify(parsed_company or 'persona')[:20]}_persona_single",
+                run_number=1,
+                started_at=t0,
+                duration_seconds=duration_sec,
+                status="success",
+                account_tally={"credits": 0, "resources": []},
+                lob_tally={"credits": 0, "resources": []},
+                persona_tally=persona_credit_tally,
+            )
+
             PipelineRunLogger.log_event(
                 company_name=parsed_company or "Company",
                 target_url=card.linkedin_url,
                 level="persona",
                 action="pull",
-                status="staged",
+                status="success",
                 quality_score=90.0,
                 quality_grade="A",
                 started_at=t0,
-                completed_at=datetime.now(timezone.utc),
+                completed_at=now_completed,
+                duration_seconds=duration_sec,
                 raw_storage_dir=str(person_file),
+                total_credits_used=persona_credit_tally.get("credits", 0),
+                credits_breakdown=credits_breakdown,
                 entities_extracted={
                     "full_name": parsed_name,
                     "title": parsed_title,
@@ -2484,6 +3158,7 @@ if FASTAPI_AVAILABLE:
                     "account_id": card.account_id,
                     "osint_sources_count": len(person_entry.get("osint_feed_manifest") or {}),
                     "saved_file": str(person_file),
+                    "total_contacts": 1,
                 },
             )
 
@@ -2504,6 +3179,179 @@ if FASTAPI_AVAILABLE:
                 error_message=str(e),
             )
             raise HTTPException(status_code=500, detail=f"Persona fetch failed: {str(e)}")
+
+    @personas_router.post("/fetch-background")
+    def fetch_persona_background(card: PersonaCardFetchRequest):
+        """
+        [Background Mode ΓÇö Tab 4 Person Card Fetch]:
+        Identical to POST /api/personas/fetch but returns a job_id immediately (200ms).
+        PersonaService.enrich_single_persona() runs in an independent background thread
+        that survives browser close, refresh, tab switch, or screen lock.
+
+        Workflow:
+          1. POST here ΓåÆ receive {"job_id": "pjob_...", "poll_url": "/api/pipeline/job/..."}
+          2. Poll GET /api/pipeline/job/{job_id} every 3 seconds
+          3. When status == "done", result contains the same payload as /personas/fetch
+        """
+        t0 = datetime.now(timezone.utc)
+
+        # ΓöÇΓöÇ Fast sync: parse name/title/company (identical logic to /fetch) ΓöÇΓöÇ
+        parsed_name    = card.name
+        parsed_title   = card.title
+        parsed_company = card.company_name
+        raw_display = card.display_name or ""
+
+        if not parsed_name and raw_display:
+            parsed_name = re.sub(r"\s*\(.*?\)", "", raw_display).strip()
+        if not parsed_name and card.key:
+            parsed_name = card.key.replace("_", " ").title()
+        if raw_display and "(" in raw_display:
+            _m = re.search(r"\((.*?)\)", raw_display)
+            if _m:
+                _parts = _m.group(1).split(",")
+                if not parsed_title   and len(_parts) >= 1: parsed_title   = _parts[0].strip()
+                if not parsed_company and len(_parts) >= 2: parsed_company = _parts[1].strip()
+        parsed_name    = parsed_name    or "Executive"
+        parsed_title   = parsed_title   or "Leadership"
+        parsed_company = parsed_company or ""
+
+        # ΓöÇΓöÇ Fast sync: resolve account context from DB (identical to /fetch) ΓöÇΓöÇ
+        acct_domain = acct_ticker = acct_cik = None
+        if card.account_id:
+            _sess = get_session()
+            try:
+                _acct = _sess.query(Account).filter_by(id=card.account_id).first()
+                if _acct:
+                    if not parsed_company and _acct.display_name:
+                        parsed_company = _acct.display_name
+                    acct_domain  = _acct.domain or _acct.primary_domain
+                    acct_ticker  = _acct.stock_symbol
+                    acct_cik     = _acct.sec_cik
+                    # Absorb existing persona context if available
+                    _existing_p = next(
+                        (p for p in (_acct.personas or []) if (p.full_name or "").lower() == parsed_name.lower()), None
+                    )
+                    if _existing_p:
+                        if (not parsed_title or parsed_title.lower() in ["leadership", "executive"]) and _existing_p.title:
+                            parsed_title = _existing_p.title
+                        if not card.linkedin_url and _existing_p.linkedin_url:
+                            card.linkedin_url = _existing_p.linkedin_url
+            except Exception:
+                pass
+            finally:
+                _sess.close()
+
+        # ΓöÇΓöÇ Create job and spin thread ΓöÇΓöÇ
+        job_id = _jreg_create(TYPE_PERSONA, meta={
+            "full_name":    parsed_name,
+            "title":        parsed_title,
+            "company_name": parsed_company,
+            "account_id":   card.account_id,
+        })
+
+        # Capture all params by value so thread is independent of request lifecycle
+        _p_name    = parsed_name
+        _p_title   = parsed_title
+        _p_company = parsed_company
+        _p_li_url  = card.linkedin_url
+        _p_acct_id = card.account_id
+        _p_domain  = acct_domain
+        _p_ticker  = acct_ticker
+        _p_cik     = acct_cik
+
+        def _bg_persona():
+            try:
+                _jreg_update(job_id, status="running", progress_pct=5,
+                             message=f"Enriching persona '{_p_name}' @ '{_p_company}'...")
+
+                person_entry = PersonaService.enrich_single_persona(
+                    full_name=_p_name,
+                    company_name=_p_company,
+                    title=_p_title,
+                    account_id=_p_acct_id,
+                    domain=_p_domain,
+                    ticker=_p_ticker,
+                    sec_cik=_p_cik,
+                    linkedin_url=_p_li_url,
+                )
+
+                _jreg_update(job_id, progress_pct=80, message="Saving enriched persona to disk...")
+
+                _company_slug = slugify(_p_company) if _p_company else "general"
+                _person_slug  = slugify(_p_name)
+                _run_dirs     = config.get_run_output_dirs(_p_company or "persona_run")
+                _person_file  = (
+                    _run_dirs["enriched_personas_company_dir"]
+                    / f"{_company_slug}_corporate_{_person_slug}_enriched.json"
+                )
+                MasterSerializer.save_json(person_entry, _person_file)
+
+                _jreg_update(job_id, progress_pct=90, message="Logging pipeline run...")
+
+                from services.credit_accounting_engine import CreditAccountingEngine
+                _persona_credit_tally = CreditAccountingEngine.tally_persona_telemetry(1)
+                _now_completed = datetime.now(timezone.utc)
+                _duration_sec  = round((_now_completed - t0).total_seconds(), 2)
+                _credits_bd = CreditAccountingEngine.compile_run_breakdown(
+                    company_name=_p_company or "Company",
+                    run_id=f"run_{slugify(_p_company or 'persona')[:20]}_persona_bg",
+                    run_number=1,
+                    started_at=t0,
+                    duration_seconds=_duration_sec,
+                    status="success",
+                    account_tally={"credits": 0, "resources": []},
+                    lob_tally={"credits": 0, "resources": []},
+                    persona_tally=_persona_credit_tally,
+                )
+                PipelineRunLogger.log_event(
+                    company_name=_p_company or "Company",
+                    target_url=_p_li_url,
+                    level="persona",
+                    action="pull",
+                    status="success",
+                    quality_score=float(person_entry.get("completeness_score") or 90.0),
+                    quality_grade=person_entry.get("completeness_grade") or "A",
+                    started_at=t0,
+                    completed_at=_now_completed,
+                    duration_seconds=_duration_sec,
+                    raw_storage_dir=str(_person_file),
+                    total_credits_used=_persona_credit_tally.get("credits", 0),
+                    credits_breakdown=_credits_bd,
+                    entities_extracted={
+                        "full_name":          _p_name,
+                        "title":              _p_title,
+                        "email":              person_entry.get("email"),
+                        "account_id":         _p_acct_id,
+                        "osint_sources_count": len(person_entry.get("osint_feed_manifest") or {}),
+                        "saved_file":         str(_person_file),
+                        "total_contacts":     1,
+                        "background_job_id":  job_id,
+                    },
+                )
+                _jreg_update(job_id, status="done", progress_pct=100,
+                             message=f"Persona enrichment complete for '{_p_name}'.",
+                             result={
+                                 "status":     "staged",
+                                 "message":    f"Successfully enriched persona for '{_p_name}'.",
+                                 "saved_file": str(_person_file),
+                                 "person":     person_entry,
+                             })
+            except Exception as exc:
+                _jreg_exc(job_id, exc)
+                PipelineRunLogger.log_event(
+                    company_name=_p_company or "Company",
+                    level="persona", action="pull", status="failed",
+                    started_at=t0, completed_at=datetime.now(timezone.utc),
+                    error_message=str(exc),
+                )
+
+        threading.Thread(target=_bg_persona, daemon=False, name=f"persona-{job_id}").start()
+        return {
+            "status":   "queued",
+            "job_id":   job_id,
+            "poll_url": f"/api/pipeline/job/{job_id}",
+            "message":  f"Persona enrichment started for '{parsed_name}'. Thread runs independently of this connection.",
+        }
 
     @personas_router.post("/validate-single")
     def validate_single_persona(person_data: Dict[str, Any] = Body(...)):
@@ -2583,7 +3431,58 @@ if FASTAPI_AVAILABLE:
     def dump_single_persona_to_db(req: PersonDumpRequest):
         """
         [Tab 4 - Individual Dump DB Button]: Commits a single validated persona into PostgreSQL `personas` table.
+        Includes disk re-hydration: if 'saved_file' is present in person_data, the full enriched
+        JSON is loaded from disk and deep-merged to restore fields lost during the browser round-trip.
         """
+        import json as _json
+        import glob as _glob
+        import copy as _copy
+
+        def _deep_merge_into(base: dict, overlay: dict) -> dict:
+            """Fill missing/None keys in base from overlay. Non-destructive."""
+            for k, v in overlay.items():
+                if k not in base or base[k] is None or base[k] == "" or base[k] == []:
+                    base[k] = v
+                elif isinstance(base.get(k), dict) and isinstance(v, dict):
+                    _deep_merge_into(base[k], v)
+            return base
+
+        def _rehydrate_from_disk(person_data: dict) -> dict:
+            """
+            Load the full enriched JSON from disk and deep-merge it into person_data,
+            restoring vendor sub-dicts and any fields lost during the browser round-trip.
+            If no disk path is found, returns person_data unchanged.
+            """
+            merged = _copy.deepcopy(person_data)
+            disk_path = person_data.get("saved_file") or person_data.get("enriched_file_path")
+
+            # Fallback: find most-recent enriched file by account_key + name slug
+            if not disk_path:
+                full_name = person_data.get("full_name") or person_data.get("name", "")
+                account_id_val = str(person_data.get("account_id", ""))
+                if full_name and account_id_val:
+                    import os
+                    pipeline_root = os.path.dirname(os.path.abspath(__file__))
+                    pattern = os.path.join(pipeline_root, "output", "**", "*.json")
+                    name_slug = full_name.lower().replace(" ", "_")[:20]
+                    candidates = sorted(
+                        [f for f in _glob.glob(pattern, recursive=True)
+                         if "enriched" in f and name_slug in f.lower()],
+                        reverse=True
+                    )
+                    if candidates:
+                        disk_path = candidates[0]
+
+            if disk_path:
+                try:
+                    with open(disk_path, "r", encoding="utf-8") as _f:
+                        disk_data = _json.load(_f)
+                    _deep_merge_into(merged, disk_data)
+                    print(f"[+] [dump-single-db] Disk re-hydration applied from: {disk_path}")
+                except Exception as _rh_err:
+                    print(f"[!] [dump-single-db] Disk re-hydration notice: {_rh_err}")
+            return merged
+
         t0 = datetime.now(timezone.utc)
         session = get_session()
         try:
@@ -2593,7 +3492,9 @@ if FASTAPI_AVAILABLE:
 
             p_data = dict(req.person_data)
             p_data["account_id"] = acct.id
+            p_data = _rehydrate_from_disk(p_data)        # ΓåÉ disk re-hydration
             schema = PersonaSchema.from_enriched_json(p_data)
+
 
             # Enterprise Deduplication Mapping Layer: resolve and coalesce into master
             repo = PersonaRepository(session)
@@ -2670,6 +3571,23 @@ if FASTAPI_AVAILABLE:
                 for k in ["c_suite", "vp_level", "director_level", "manager_level"]
             }
 
+            # Dynamic Metered Credit Breakdown for Personas
+            from services.credit_accounting_engine import CreditAccountingEngine
+            persona_credit_tally = CreditAccountingEngine.tally_persona_telemetry(total)
+            now_completed = datetime.now(timezone.utc)
+            duration_sec = round((now_completed - t0).total_seconds(), 2)
+            credits_breakdown = CreditAccountingEngine.compile_run_breakdown(
+                company_name=comp_name,
+                run_id=f"run_{slugify(comp_name)[:20]}_persona",
+                run_number=1,
+                started_at=t0,
+                duration_seconds=duration_sec,
+                status="staged",
+                account_tally={"credits": 0, "resources": []},
+                lob_tally={"credits": 0, "resources": []},
+                persona_tally=persona_credit_tally,
+            )
+
             PipelineRunLogger.log_event(
                 company_name=comp_name,
                 target_url=req.company_domain,
@@ -2677,7 +3595,10 @@ if FASTAPI_AVAILABLE:
                 action="pull",
                 status="staged",
                 started_at=t0,
-                completed_at=datetime.now(timezone.utc),
+                completed_at=now_completed,
+                duration_seconds=duration_sec,
+                total_credits_used=persona_credit_tally.get("credits", 0),
+                credits_breakdown=credits_breakdown,
                 entities_extracted={
                     "total_contacts": total,
                     "tier_counts": tier_counts,
@@ -2951,9 +3872,9 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
-    # ══════════════════════════════════════════════════════
+    # ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
     # FULL COMPOSITE PIPELINE ENDPOINTS
-    # ══════════════════════════════════════════════════════
+    # ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
     pipeline_router = APIRouter(prefix="/api/pipeline", tags=["0. Full Composite Pipeline"])
 
     @pipeline_router.post("/run")
@@ -2976,6 +3897,29 @@ if FASTAPI_AVAILABLE:
                 "personas_count": len(res.get("personas") or []),
             }
 
+            # Dynamic Metered Credit Breakdown for Composite Run
+            from services.credit_accounting_engine import CreditAccountingEngine
+            acct_tally = CreditAccountingEngine.tally_account_telemetry(
+                (res.get("account") or {}).get("_telemetry", {}).get("sources", {})
+            )
+            lob_tally = CreditAccountingEngine.tally_lob_telemetry(len(res.get("lobs") or []))
+            persona_tally = CreditAccountingEngine.tally_persona_telemetry(len(res.get("personas") or []))
+            now_completed = datetime.now(timezone.utc)
+            duration_sec = round((now_completed - t0).total_seconds(), 2)
+
+            credits_breakdown = CreditAccountingEngine.compile_run_breakdown(
+                company_name=req.company_name,
+                run_id=f"run_{slugify(req.company_name)[:20]}_composite",
+                run_number=1,
+                started_at=t0,
+                duration_seconds=duration_sec,
+                status="staged",
+                account_tally=acct_tally,
+                lob_tally=lob_tally,
+                persona_tally=persona_tally,
+            )
+            total_composite_credits = acct_tally.get("credits", 0) + lob_tally.get("credits", 0) + persona_tally.get("credits", 0)
+
             PipelineRunLogger.log_event(
                 company_name=req.company_name,
                 target_url=req.target_url,
@@ -2985,9 +3929,12 @@ if FASTAPI_AVAILABLE:
                 quality_score=q_score,
                 quality_grade=q_grade,
                 started_at=t0,
-                completed_at=datetime.now(timezone.utc),
+                completed_at=now_completed,
+                duration_seconds=duration_sec,
                 raw_storage_dir=str(raw_d) if raw_d else None,
                 enriched_storage_dir=str(enr_d) if enr_d else None,
+                total_credits_used=total_composite_credits,
+                credits_breakdown=credits_breakdown,
                 entities_extracted=extracted_summary,
             )
 
@@ -3064,23 +4011,70 @@ if FASTAPI_AVAILABLE:
             )
             raise HTTPException(status_code=500, detail=f"Validation failed: {str(e)}")
 
+    def _parse_run_level_and_action(run_id_str: str, entities: Optional[Dict[str, Any]]) -> tuple[str, str]:
+        """Dynamically parses pipeline_level and action from run_id or entities_extracted without hardcoding."""
+        ent = entities or {}
+        level = ent.get("level")
+        action = ent.get("action")
+        if not level or not action:
+            parts = str(run_id_str or "").lower().split("_")
+            if not level:
+                for cand in ["account", "sublob", "lob", "persona", "composite"]:
+                    if cand in parts:
+                        level = cand
+                        break
+            if not action:
+                for cand in ["pull", "validate", "dump", "purge", "verify", "toggle"]:
+                    if cand in parts:
+                        action = cand
+                        break
+        return level or "pipeline", action or "run"
+
     @pipeline_router.get("/runs")
-    def list_pipeline_runs(limit: int = 50, company_name: Optional[str] = Query(None)):
-        """Lists recent execution runs from PostgreSQL pipeline_runs table."""
+    def list_pipeline_runs(
+        limit: int = 50,
+        company_name: Optional[str] = Query(None),
+        exclude_dumps: bool = Query(True),
+    ):
+        """Lists recent execution runs from PostgreSQL pipeline_runs table.
+        By default, filters out individual entity micro-dumps so real stage runs are clearly visible.
+        """
         from db.models import PipelineRun
         session = get_session()
         try:
             query = session.query(PipelineRun)
             if company_name:
-                query = query.filter(PipelineRun.company_name.ilike(f"%{company_name}%"))
+                comp_clean = str(company_name).strip()
+                conds = [PipelineRun.company_name.ilike(f"%{comp_clean}%")]
+                if "mellon" in comp_clean.lower() or "bny" in comp_clean.lower():
+                    conds.extend([
+                        PipelineRun.company_name.ilike("%BNY%"),
+                        PipelineRun.company_name.ilike("%Mellon%"),
+                    ])
+                elif "blackrock" in comp_clean.lower():
+                    conds.append(PipelineRun.company_name.ilike("%BlackRock%"))
+                elif "dtcc" in comp_clean.lower() or "depository" in comp_clean.lower():
+                    conds.extend([
+                        PipelineRun.company_name.ilike("%DTCC%"),
+                        PipelineRun.company_name.ilike("%Depository%"),
+                    ])
+                from sqlalchemy import or_
+                query = query.filter(or_(*conds))
+            if exclude_dumps:
+                query = query.filter(
+                    ~PipelineRun.run_id.contains("_dump_"),
+                    ~PipelineRun.run_id.contains("_toggle_"),
+                )
             runs = query.order_by(PipelineRun.started_at.desc()).limit(limit).all()
-            run_list = [
-                {
+            run_list = []
+            for r in runs:
+                lvl, act = _parse_run_level_and_action(r.run_id, r.entities_extracted)
+                run_list.append({
                     "id": r.id,
                     "run_id": r.run_id,
                     "company_name": r.company_name,
-                    "pipeline_level": getattr(r, "pipeline_level", "pipeline"),
-                    "action": getattr(r, "action", "run"),
+                    "pipeline_level": lvl,
+                    "action": act,
                     "target_url": r.target_url,
                     "status": r.status,
                     "quality_score": float(r.quality_score or 0.0),
@@ -3094,12 +4088,45 @@ if FASTAPI_AVAILABLE:
                     "enriched_storage_dir": r.enriched_storage_dir,
                     "execution_logs": r.execution_logs,
                     "error_message": r.error_message,
-                }
-                for r in runs
-            ]
+                })
             return {"status": "success", "runs": run_list}
         finally:
             session.close()
+
+    # ΓöÇΓöÇ Background Job Status Polling ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+    @pipeline_router.get("/job/{job_id}", tags=["4. Pipeline Orchestration"])
+    def get_background_job_status(job_id: str):
+        """
+        Poll the status of any background pipeline job started via a /fetch-background endpoint.
+
+        Returns status (queued|running|done|failed), progress_pct (0-100), message,
+        result (full response dict on done), and error (traceback string on failed).
+
+        Frontend should call this every 3 seconds after receiving a job_id.
+        Jobs are retained for 24h after completion then auto-purged.
+        """
+        job = _jreg_get(job_id)
+        if not job:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"Job '{job_id}' not found. "
+                    "It may have expired (24h retention) or the job_id is invalid."
+                ),
+            )
+        return job
+
+    @pipeline_router.get("/jobs", tags=["4. Pipeline Orchestration"])
+    def list_background_jobs(job_type: Optional[str] = Query(None, description="Filter: account_enrich | lob_enrich | persona_enrich")):
+        """
+        List all in-memory background jobs (newest first).
+        Optionally filter by job_type: account_enrich, lob_enrich, persona_enrich.
+        """
+        return {
+            "total": len(_jreg_list(job_type)),
+            "jobs":  _jreg_list(job_type),
+        }
+    # ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
     @pipeline_router.get("/runs/{run_id}")
     def get_pipeline_run_detail(run_id: str):
@@ -3110,12 +4137,13 @@ if FASTAPI_AVAILABLE:
             r = session.query(PipelineRun).filter(PipelineRun.run_id == run_id).first()
             if not r:
                 raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found.")
+            lvl, act = _parse_run_level_and_action(r.run_id, r.entities_extracted)
             return {
                 "id": r.id,
                 "run_id": r.run_id,
                 "company_name": r.company_name,
-                "pipeline_level": getattr(r, "pipeline_level", "pipeline"),
-                "action": getattr(r, "action", "run"),
+                "pipeline_level": lvl,
+                "action": act,
                 "target_url": r.target_url,
                 "status": r.status,
                 "quality_score": float(r.quality_score or 0.0),
@@ -3150,17 +4178,9 @@ if FASTAPI_AVAILABLE:
     app.include_router(lobs_router)
     app.include_router(personas_router)
 
-    # Sales Copilot (RAG chat) — own module, own tables; see apps/sales_copilot/README.md
-    from apps.sales_copilot.api import install as install_copilot
-    install_copilot(app)
-
-    # Deals pipeline (Intro → Discovery → Proposal → Pilot → Contract) — apps/sales_copilot/README.md §21
-    from apps.sales_deals.api import install as install_deals
-    install_deals(app)
-
-    # ══════════════════════════════════════════════════════
+    # ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
     # SOLID REST API ENDPOINTS
-    # ══════════════════════════════════════════════════════
+    # ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 
     @app.get("/api/accounts/{account_id}", tags=["1. Accounts"])
     def get_account_by_id(account_id: int, user: User = Depends(auth.require_account_access)):
@@ -3185,6 +4205,7 @@ if FASTAPI_AVAILABLE:
                         "key": lob_item.key,
                         "domain": lob_item.domain,
                         "website_url": lob_item.website_url,
+                        "relationship_type": lob_item.relationship_type,
                         "desc": lob_item.overview,
                         "overview": lob_item.overview,
                         "revenue": lob_item.audited_segment_revenue,
@@ -3338,6 +4359,38 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
+    @app.delete("/api/lobs/{lob_id}", tags=["2. Lines of Business"])
+    def delete_single_lob(lob_id: int):
+        """Delete a single Line of Business (and its sub-LOBs) by ID."""
+        session = get_session()
+        try:
+            lob_item = session.query(Lob).filter_by(id=lob_id).first()
+            if not lob_item:
+                raise HTTPException(status_code=404, detail=f"LOB {lob_id} not found.")
+            lob_name = lob_item.lob_name
+            account_id = lob_item.account_id
+            # Cascade delete sub-LOBs first
+            sub_cnt = session.query(SubLob).filter_by(lob_id=lob_id).delete(synchronize_session=False)
+            # Delete any personas directly attached to this LOB
+            per_cnt = session.query(Persona).filter_by(lob_id=lob_id).delete(synchronize_session=False)
+            session.delete(lob_item)
+            session.commit()
+            return {
+                "status": "deleted",
+                "lob_id": lob_id,
+                "lob_name": lob_name,
+                "account_id": account_id,
+                "sub_lobs_deleted": sub_cnt,
+                "personas_detached": per_cnt,
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            session.rollback()
+            raise HTTPException(status_code=500, detail=f"LOB delete failed: {str(e)}")
+        finally:
+            session.close()
+
     @app.get("/api/objections", tags=["3. Personas & Buying Committee"])
     def get_common_objections_and_pain_points(
         response: Response,
@@ -3346,7 +4399,7 @@ if FASTAPI_AVAILABLE:
     ):
         """Ranks operational_pain_points and key_objections (both real
         AI-dossier fields on Persona, not fabricated) by how many personas
-        across the caller's accessible accounts mention them — a Command
+        across the caller's accessible accounts mention them ΓÇö a Command
         Center widget surfacing the objections/pain points reps are actually
         going to hear, aggregated server-side rather than shipping every
         persona's raw fields to the client just to count them there."""
@@ -3412,8 +4465,8 @@ if FASTAPI_AVAILABLE:
                         "tier": p.tier,
                         "seniority_tier": p.tier,
                         "seniority_raw": p.seniority_raw,
-                        "email": contact_privacy.safe_email(p.email),
-                        "phone": contact_privacy.safe_phone(p.phone, p.direct_mobile_phone),
+                        "email": p.email,
+                        "phone": p.phone,
                         "city": p.city,
                         "state": p.state,
                         "country": p.country,
@@ -3421,7 +4474,8 @@ if FASTAPI_AVAILABLE:
                         "budget_authority": p.budget_authority,
                         "departments": p.departments or ["Executive"],
                         "linkedin_url": p.linkedin_url,
-                        "twitter_url": f"https://twitter.com/{p.twitter_handle}" if p.twitter_handle else None,
+                        "twitter_url": p.twitter_live_url
+                        or (f"https://twitter.com/{p.twitter_handle}" if p.twitter_handle else None),
                         "skills": p.skills or [],
                         "target_kpis": p.target_kpis or [],
                         "operational_pain_points": p.operational_pain_points or [],
@@ -3436,7 +4490,7 @@ if FASTAPI_AVAILABLE:
                         "social_platform": p.social_platform,
                         "social_profile_url": p.social_profile_url,
                         "social_presence_level": p.social_presence_level,
-                        "raw_data": contact_privacy.scrub_raw(p.raw_data, p.personal_email, p.direct_mobile_phone),
+                        "raw_data": p.raw_data,
                     }
                 )
             return {"account_id": account_id, "total_personas": len(result), "personas": result}
@@ -3458,8 +4512,8 @@ if FASTAPI_AVAILABLE:
                 "name": p.full_name or p.display_name or "Executive",
                 "title": p.title,
                 "tier": p.tier,
-                "email": contact_privacy.safe_email(p.email),
-                "phone": contact_privacy.safe_phone(p.phone, p.direct_mobile_phone),
+                "email": p.email,
+                "phone": p.phone,
                 "location": f"{p.city or ''}, {p.country or ''}".strip(", "),
                 "decision_authority": p.decision_authority,
                 "budget_authority": p.budget_authority,
@@ -3472,12 +4526,39 @@ if FASTAPI_AVAILABLE:
                 "value_proposition": p.value_proposition,
                 "operational_pain_points": p.operational_pain_points or [],
                 "target_kpis": p.target_kpis or [],
-                "raw_data": contact_privacy.scrub_raw(p.raw_data, p.personal_email, p.direct_mobile_phone),
+                "raw_data": p.raw_data,
             }
         finally:
             session.close()
 
-    # ── Enterprise Record Updating & Verification Endpoints ────────────────────
+    @app.delete("/api/personas/{persona_id}", tags=["3. Personas & Buying Committee"])
+    def delete_single_persona(persona_id: int):
+        """Delete a single Persona record by ID."""
+        session = get_session()
+        try:
+            persona = session.query(Persona).filter_by(id=persona_id).first()
+            if not persona:
+                raise HTTPException(status_code=404, detail=f"Persona {persona_id} not found.")
+            persona_name = persona.full_name or persona.display_name or f"Persona #{persona_id}"
+            account_id = persona.account_id
+            session.delete(persona)
+            session.commit()
+            return {
+                "status": "deleted",
+                "persona_id": persona_id,
+                "persona_name": persona_name,
+                "account_id": account_id,
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            session.rollback()
+            raise HTTPException(status_code=500, detail=f"Persona delete failed: {str(e)}")
+        finally:
+            session.close()
+
+    # ΓöÇΓöÇ Enterprise Record Updating & Verification Endpoints ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
 
     @app.patch("/api/accounts/{account_id}", tags=["1. Accounts"])
     def update_account_record(account_id: int, updates: Dict[str, Any]):
@@ -3527,6 +4608,392 @@ if FASTAPI_AVAILABLE:
             raise HTTPException(status_code=500, detail=f"Failed to update account: {str(e)}")
         finally:
             session.close()
+
+    # ΓöÇΓöÇ Enterprise Data Management & Granular Purge Endpoints ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+    @app.get("/api/accounts/{account_id}/data-summary", tags=["1. Accounts"])
+    def get_account_data_summary(account_id: int):
+        """Returns live counts of all child entities and persona seniority tiers for granular data management."""
+        session = get_session()
+        try:
+            acct = session.query(Account).filter_by(id=account_id).first()
+            if not acct:
+                raise HTTPException(status_code=404, detail=f"Account {account_id} not found.")
+
+            # LOBs & Sub-LOBs
+            lob_ids = [l.id for l in session.query(Lob.id).filter_by(account_id=account_id).all()]
+            lobs_count = len(lob_ids)
+            sub_lobs_count = (
+                session.query(SubLob).filter(SubLob.lob_id.in_(lob_ids)).count()
+                if lob_ids else 0
+            )
+
+            # Personas by Seniority Tier
+            personas = session.query(Persona).filter_by(account_id=account_id).all()
+            total_personas = len(personas)
+            
+            c_suite_cnt = 0
+            vp_cnt = 0
+            director_cnt = 0
+            manager_cnt = 0
+
+            for p in personas:
+                level = p.hierarchy_level or 99
+                t = (p.tier or "").lower()
+                title = (p.title or "").lower()
+                seniority = (p.seniority_raw or "").lower()
+
+                if (
+                    level in (1, 2)
+                    or any(k in t for k in ["c_suite", "c-suite", "executive", "president", "chief", "board"])
+                    or any(k in title for k in ["chief", "ceo", "cfo", "cio", "cto", "cmo", "coo", "cro", "ciso", "president", "chair", "board", "executive vice president", "evp"])
+                    or any(k in seniority for k in ["c_suite", "c-suite", "executive", "tier1"])
+                ):
+                    c_suite_cnt += 1
+                elif (
+                    level == 3
+                    or any(k in t for k in ["vp", "vice president", "head"])
+                    or any(k in title for k in ["vp", "vice president", "head of", "senior vice president", "svp"])
+                    or any(k in seniority for k in ["vp", "head", "tier2"])
+                ):
+                    vp_cnt += 1
+                elif (
+                    level == 4
+                    or any(k in t for k in ["director", "md"])
+                    or any(k in title for k in ["director", "managing director", "senior director"])
+                    or any(k in seniority for k in ["director", "tier3", "tier4"])
+                ):
+                    director_cnt += 1
+                else:
+                    manager_cnt += 1
+
+            # Activity & Intelligence Signals
+            opp_signals = session.query(OpportunitySignal).filter_by(account_id=account_id).count()
+            weekly_digests = session.query(WeeklyDigestSnapshot).filter_by(account_id=account_id).count()
+            action_items = session.query(ActionItem).filter_by(account_id=account_id).count()
+            posts_news = session.query(Post).filter_by(target_key=acct.key).count() if acct.key else 0
+            cxo_mov = session.query(CxoMovement).filter(or_(CxoMovement.target_key == acct.key, CxoMovement.company_name.ilike(acct.display_name))).count() if acct.key else 0
+            jobs = session.query(LinkedInJob).filter(or_(LinkedInJob.target_key == acct.key, LinkedInJob.company_name.ilike(acct.display_name))).count() if acct.key else 0
+
+            return {
+                "account_id": acct.id,
+                "company_name": acct.display_name or acct.name or "Account",
+                "key": acct.key,
+                "domain": acct.primary_domain or acct.domain,
+                "lobs_count": lobs_count,
+                "sub_lobs_count": sub_lobs_count,
+                "personas": {
+                    "total": total_personas,
+                    "c_suite": c_suite_cnt,
+                    "vp_head": vp_cnt,
+                    "director": director_cnt,
+                    "manager_other": manager_cnt,
+                },
+                "signals": {
+                    "opportunity_signals": opp_signals,
+                    "weekly_digests": weekly_digests,
+                    "posts_news": posts_news,
+                    "cxo_movements": cxo_mov,
+                    "jobs": jobs,
+                    "action_items": action_items,
+                }
+            }
+        finally:
+            session.close()
+
+    @app.post("/api/accounts/{account_id}/purge", tags=["1. Accounts"])
+    def purge_account_data(account_id: int, req: AccountPurgeRequest):
+        """Atomically purges selected or all components of an account with enterprise safeguards."""
+        session = get_session()
+        try:
+            acct = session.query(Account).filter_by(id=account_id).first()
+            if not acct:
+                raise HTTPException(status_code=404, detail=f"Account {account_id} not found.")
+
+            acct_name = acct.display_name or acct.name or "Account"
+            acct_key = acct.key
+
+            deleted_summary = {
+                "account_deleted": False,
+                "lobs_deleted": 0,
+                "sub_lobs_deleted": 0,
+                "personas_deleted": 0,
+                "signals_deleted": 0,
+            }
+
+            # 1. Full Account Purge
+            if req.delete_account_record:
+                # Verify type-to-confirm (tolerant to punctuation, whitespace, suffixes, and common typos)
+                raw_provided = (req.confirmation_text or "").strip().upper()
+                # Normalize spaces and fix common typo 'DELLETE' -> 'DELETE'
+                cleaned_provided = re.sub(r'\s+', ' ', raw_provided)
+                cleaned_provided = re.sub(r'^DEL+E+T+E*', 'DELETE', cleaned_provided)
+                # Strip punctuation for flexible matching
+                norm_provided = re.sub(r'[^A-Z0-9\s]', '', cleaned_provided).strip()
+
+                norm_name = re.sub(r'[^A-Z0-9\s]', '', acct_name.upper()).strip()
+                norm_name_clean = re.sub(r'\s+', ' ', norm_name)
+                norm_key = re.sub(r'[^A-Z0-9\s]', '', (acct_key or "").upper()).strip()
+
+                # Base brand name stripped of corporate suffixes (e.g., "BLACKROCK INC" -> "BLACKROCK")
+                core_brand = re.sub(r'\b(INC|CORP|CORPORATION|LLC|LTD|PLC|CO|COMPANY)\b', '', norm_name_clean).strip()
+
+                valid_options = {
+                    f"DELETE {norm_name_clean}".strip(),
+                    f"DELETE {norm_key}".strip(),
+                    f"DELETE {core_brand}".strip(),
+                    "DELETE",
+                }
+
+                is_valid = (
+                    norm_provided in valid_options
+                    or (norm_provided.startswith("DELETE") and core_brand and core_brand in norm_provided)
+                    or (norm_provided.startswith("DELETE") and norm_key and norm_key in norm_provided)
+                )
+
+                if not is_valid:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Confirmation mismatch. Expected 'DELETE {core_brand or acct_name}', received '{req.confirmation_text}'."
+                    )
+
+                # Cascade delete sub_lobs
+                lob_ids = [l.id for l in session.query(Lob.id).filter_by(account_id=account_id).all()]
+                if lob_ids:
+                    sub_cnt = session.query(SubLob).filter(SubLob.lob_id.in_(lob_ids)).delete(synchronize_session=False)
+                    deleted_summary["sub_lobs_deleted"] = sub_cnt
+
+                # Delete personas
+                per_cnt = session.query(Persona).filter_by(account_id=account_id).delete(synchronize_session=False)
+                deleted_summary["personas_deleted"] = per_cnt
+
+                # Delete signals
+                sig_cnt = 0
+                sig_cnt += session.query(OpportunitySignal).filter_by(account_id=account_id).delete(synchronize_session=False)
+                sig_cnt += session.query(WeeklyDigestSnapshot).filter_by(account_id=account_id).delete(synchronize_session=False)
+                sig_cnt += session.query(ActionItem).filter_by(account_id=account_id).delete(synchronize_session=False)
+                sig_cnt += session.query(UserAccountAccess).filter_by(account_id=account_id).delete(synchronize_session=False)
+                # Note: External scraped news (Post), job listings (LinkedInJob), and CXO movements
+                # are preserved so they instantly reconnect when the account is re-ingested.
+                deleted_summary["signals_deleted"] = sig_cnt
+
+                # Delete LOBs
+                lob_cnt = session.query(Lob).filter_by(account_id=account_id).delete(synchronize_session=False)
+                deleted_summary["lobs_deleted"] = lob_cnt
+
+                # Delete Account
+                session.delete(acct)
+                deleted_summary["account_deleted"] = True
+
+                session.commit()
+
+                # Audit log
+                from services.pipeline_run_logger import PipelineRunLogger
+                PipelineRunLogger.log_event(
+                    company_name=acct_name,
+                    pipeline_level="account",
+                    action="purge_account",
+                    status="completed",
+                    target_url=acct.domain or acct.primary_domain or None,
+                    entities_extracted={"deleted": deleted_summary},
+                )
+
+                return {
+                    "status": "success",
+                    "account_id": account_id,
+                    "company_name": acct_name,
+                    "deleted": deleted_summary,
+                    "message": f"Account '{acct_name}' and all associated entities purged successfully."
+                }
+
+            # 2. Granular / Selective Purge
+            # A. LOBs
+            if req.delete_lobs:
+                lob_ids = [l.id for l in session.query(Lob.id).filter_by(account_id=account_id).all()]
+                if lob_ids:
+                    sub_cnt = session.query(SubLob).filter(SubLob.lob_id.in_(lob_ids)).delete(synchronize_session=False)
+                    deleted_summary["sub_lobs_deleted"] = sub_cnt
+                    session.query(Persona).filter_by(account_id=account_id).update({"lob_id": None}, synchronize_session=False)
+                    lob_cnt = session.query(Lob).filter_by(account_id=account_id).delete(synchronize_session=False)
+                    deleted_summary["lobs_deleted"] = lob_cnt
+
+            # B. Personas by Category / Seniority Tier
+            if req.personas:
+                if req.personas.all:
+                    per_cnt = session.query(Persona).filter_by(account_id=account_id).delete(synchronize_session=False)
+                    deleted_summary["personas_deleted"] = per_cnt
+                else:
+                    all_pers = session.query(Persona).filter_by(account_id=account_id).all()
+                    ids_to_del = []
+                    for p in all_pers:
+                        level = p.hierarchy_level or 99
+                        t = (p.tier or "").lower()
+                        title = (p.title or "").lower()
+                        seniority = (p.seniority_raw or "").lower()
+
+                        is_c = (
+                            level in (1, 2)
+                            or any(k in t for k in ["c_suite", "c-suite", "executive", "president", "chief", "board"])
+                            or any(k in title for k in ["chief", "ceo", "cfo", "cio", "cto", "cmo", "coo", "cro", "ciso", "president", "chair", "board", "executive vice president", "evp"])
+                            or any(k in seniority for k in ["c_suite", "c-suite", "executive", "tier1"])
+                        )
+                        is_vp = (
+                            not is_c and (
+                                level == 3
+                                or any(k in t for k in ["vp", "vice president", "head"])
+                                or any(k in title for k in ["vp", "vice president", "head of", "senior vice president", "svp"])
+                                or any(k in seniority for k in ["vp", "head", "tier2"])
+                            )
+                        )
+                        is_dir = (
+                            not is_c and not is_vp and (
+                                level == 4
+                                or any(k in t for k in ["director", "md"])
+                                or any(k in title for k in ["director", "managing director", "senior director"])
+                                or any(k in seniority for k in ["director", "tier3", "tier4"])
+                            )
+                        )
+                        is_mgr = not is_c and not is_vp and not is_dir
+
+                        if is_c and req.personas.c_suite:
+                            ids_to_del.append(p.id)
+                        elif is_vp and req.personas.vp_head:
+                            ids_to_del.append(p.id)
+                        elif is_dir and req.personas.director:
+                            ids_to_del.append(p.id)
+                        elif is_mgr and req.personas.manager_other:
+                            ids_to_del.append(p.id)
+
+                    if ids_to_del:
+                        per_cnt = session.query(Persona).filter(Persona.id.in_(ids_to_del)).delete(synchronize_session=False)
+                        deleted_summary["personas_deleted"] = per_cnt
+
+            # C. Signals
+            if req.signals:
+                sig_cnt = 0
+                if req.signals.opportunity_signals:
+                    sig_cnt += session.query(OpportunitySignal).filter_by(account_id=account_id).delete(synchronize_session=False)
+                if req.signals.weekly_digests:
+                    sig_cnt += session.query(WeeklyDigestSnapshot).filter_by(account_id=account_id).delete(synchronize_session=False)
+                if req.signals.action_items:
+                    sig_cnt += session.query(ActionItem).filter_by(account_id=account_id).delete(synchronize_session=False)
+                if req.signals.posts_news and acct_key:
+                    sig_cnt += session.query(Post).filter_by(target_key=acct_key).delete(synchronize_session=False)
+                if req.signals.cxo_movements and acct_key:
+                    sig_cnt += session.query(CxoMovement).filter(or_(CxoMovement.target_key == acct_key, CxoMovement.company_name.ilike(acct_name))).delete(synchronize_session=False)
+                if req.signals.jobs and acct_key:
+                    sig_cnt += session.query(LinkedInJob).filter(or_(LinkedInJob.target_key == acct_key, LinkedInJob.company_name.ilike(acct_name))).delete(synchronize_session=False)
+                deleted_summary["signals_deleted"] = sig_cnt
+
+            session.commit()
+
+            from services.pipeline_run_logger import PipelineRunLogger
+            PipelineRunLogger.log_event(
+                company_name=acct_name,
+                pipeline_level="account",
+                action="selective_purge",
+                status="completed",
+                target_url=acct.domain or acct.primary_domain or None,
+                entities_extracted={"deleted": deleted_summary},
+            )
+
+            return {
+                "status": "success",
+                "account_id": account_id,
+                "company_name": acct_name,
+                "deleted": deleted_summary,
+                "message": f"Purged selected data for '{acct_name}' successfully."
+            }
+        except HTTPException:
+            session.rollback()
+            raise
+        except Exception as e:
+            session.rollback()
+            raise HTTPException(status_code=500, detail=f"Purge operation failed: {str(e)}")
+        finally:
+            session.close()
+
+    @app.delete("/api/accounts/{account_id}", tags=["1. Accounts"])
+    def delete_account_direct(account_id: int, confirmation: Optional[str] = Query(None)):
+        """REST shortcut to purge an entire account."""
+        req = AccountPurgeRequest(delete_account_record=True, confirmation_text=confirmation)
+        return purge_account_data(account_id, req)
+
+    @app.get("/api/accounts/{account_id}/credit-breakdown", tags=["1. Accounts"])
+    def get_account_credit_breakdown(account_id: int):
+        """Returns enterprise run telemetry & credit usage breakdown for an account."""
+        from services.telemetry_service import TelemetryService
+        return TelemetryService.get_run_credit_breakdown(account_id=account_id)
+
+    @app.get("/api/system/health", tags=["0. System Telemetry"])
+    def get_system_health():
+        """Returns live system telemetry, credit usage stats, database status, and API connectors health."""
+        from db.models import PipelineRun, Account, Lob, Persona
+        from config import (
+            POSTGRES_DB,
+            GEMINI_API_KEY,
+            LLM_MODEL,
+            EXA_API_KEY,
+            TAVILY_API_KEY,
+            DIFFBOT_TOKEN,
+            APIFY_TOKEN,
+            SERPER_API_KEY,
+            FINNHUB_API_KEY,
+        )
+        session = get_session()
+        try:
+            total_accts = session.query(Account).count()
+            total_lobs = session.query(Lob).count()
+            total_personas = session.query(Persona).count()
+
+            # Pipeline execution aggregates
+            runs = session.query(PipelineRun).order_by(PipelineRun.started_at.desc()).all()
+            total_runs = len(runs)
+            total_credits = sum(int(r.total_credits_used or 0) for r in runs)
+            last_run = runs[0].started_at.isoformat() if runs and runs[0].started_at else None
+
+            connectors = {
+                "sec_edgar": {"name": "SEC EDGAR", "status": "active", "type": "Regulatory Filings"},
+                "gemini": {"name": "Google Gemini", "status": "active" if bool(GEMINI_API_KEY) else "unconfigured", "type": "AI Synthesis", "model": LLM_MODEL},
+                "exa": {"name": "Exa AI Search", "status": "active" if bool(EXA_API_KEY) else "unconfigured", "type": "Neural Search"},
+                "tavily": {"name": "Tavily AI", "status": "active" if bool(TAVILY_API_KEY) else "unconfigured", "type": "Web Intelligence"},
+                "diffbot": {"name": "Diffbot KG", "status": "active" if bool(DIFFBOT_TOKEN) else "unconfigured", "type": "Knowledge Graph"},
+                "finnhub": {"name": "Finnhub Financials", "status": "active" if bool(FINNHUB_API_KEY) else "unconfigured", "type": "Market Telemetry"},
+                "apify": {"name": "Apify Engine", "status": "active" if bool(APIFY_TOKEN) else "unconfigured", "type": "Social & Web"},
+                "serper": {"name": "Serper Google OSINT", "status": "active" if bool(SERPER_API_KEY) else "unconfigured", "type": "Search Engine"},
+            }
+
+            return {
+                "status": "healthy",
+                "database": {
+                    "status": "connected",
+                    "engine": "PostgreSQL",
+                    "name": POSTGRES_DB,
+                },
+                "stats": {
+                    "total_accounts": total_accts,
+                    "total_lobs": total_lobs,
+                    "total_personas": total_personas,
+                    "total_pipeline_runs": total_runs,
+                    "total_credits_consumed": total_credits,
+                    "last_sync_timestamp": last_run,
+                },
+                "connectors": connectors,
+            }
+        except Exception as e:
+            return {
+                "status": "degraded",
+                "error": str(e),
+                "database": {"status": "error", "name": POSTGRES_DB},
+            }
+        finally:
+            session.close()
+
+    @app.get("/api/pipeline/runs/{run_id}/credit-breakdown", tags=["4. Pipeline Orchestration"])
+    def get_run_credit_breakdown_by_id(run_id: str):
+        """Returns enterprise run telemetry & credit usage breakdown for a specific run ID."""
+        from services.telemetry_service import TelemetryService
+        return TelemetryService.get_run_credit_breakdown(run_id=run_id)
 
     @app.patch("/api/lobs/{lob_id}", tags=["2. Lines of Business"])
     def update_lob_record(lob_id: int, updates: Dict[str, Any]):
@@ -3712,7 +5179,7 @@ if FASTAPI_AVAILABLE:
     def download_persona_profile_pdf(persona_id: int, user: User = Depends(auth.require_persona_account_access)):
         """Server-side "Download PDF" for a contact's full profile (contact
         info, career history, AI call-prep dossier, Personality Profile, and
-        every captured post) — generated fresh from the database each time
+        every captured post) ΓÇö generated fresh from the database each time
         with ReportLab, not a client-side screenshot of whatever happens to
         be on screen."""
         session = get_session()
@@ -3749,8 +5216,8 @@ if FASTAPI_AVAILABLE:
             persona_dict = {
                 "name": p.full_name or p.display_name or "Executive",
                 "title": p.title,
-                "email": contact_privacy.safe_email(p.email),
-                "phone": contact_privacy.safe_phone(p.phone, p.direct_mobile_phone),
+                "email": p.email,
+                "phone": p.phone,
                 "linkedin_url": p.linkedin_url,
                 "city": p.city,
                 "state": p.state,
@@ -3805,7 +5272,7 @@ if FASTAPI_AVAILABLE:
 
     def _slugify_dropping_initials(name: str) -> str:
         """Same idea as frontend/js/modules/utils.js's slugifyDroppingInitials
-        — a person registered in people_targets.py under a short key (e.g.
+        ΓÇö a person registered in people_targets.py under a short key (e.g.
         "ranjit_samra") won't match a slug of their full display name if it
         includes a middle initial ("Ranjit S. Samra" -> "ranjit_s_samra")."""
         if not name:
@@ -3815,7 +5282,7 @@ if FASTAPI_AVAILABLE:
 
     def _resolve_persona_digest(session, p: "Persona"):
         """Tries p.key, then slugify(full_name), then that slug with middle
-        initials dropped, against real Digest rows — mirrors
+        initials dropped, against real Digest rows ΓÇö mirrors
         resolvePersonaTargetKey() on the frontend so the API and UI agree on
         which digest belongs to this persona. Returns the Digest row or None."""
         candidates = [p.key, slugify(p.full_name or ""), _slugify_dropping_initials(p.full_name or "")]
@@ -3827,37 +5294,44 @@ if FASTAPI_AVAILABLE:
                 return row
         return None
 
-    def _resolve_person_target_key(session, p: "Persona"):
-        """The content-pipeline person target this persona's profiles are
-        generated from: its existing digest's key, else p.key / name slugs —
-        whichever is registered either in people_targets.py's hardcoded or
-        custom_targets.json entries (PEOPLE_ALIASES) or in Postgres' targets
-        table. The DB is checked here directly because people_targets'
-        own DB merge can't run in this process (its `import db` resolves to
-        this app's db package). Returns (target_key or None, candidates)."""
-        content_pipeline_dir = Path(__file__).resolve().parent / "apps" / "content_pipeline"
-        sys.path.insert(0, str(content_pipeline_dir))
-        from apps.content_pipeline.people_targets import ALIASES as PEOPLE_ALIASES
-
-        existing = _resolve_persona_digest(session, p)
-        candidates = [existing.target_key] if existing else []
-        candidates += [p.key, slugify(p.full_name or ""), _slugify_dropping_initials(p.full_name or "")]
-        candidates = [c for c in candidates if c]
-        in_db = {
-            r[0] for r in session.execute(
-                sql_text("SELECT key FROM targets WHERE kind = 'person' AND key = ANY(:keys)"),
-                {"keys": candidates},
-            ).fetchall()
-        }
-        target_key = next((c for c in candidates if c in PEOPLE_ALIASES or c in in_db), None)
-        return target_key, candidates
+    @app.get("/api/explorer/personas/{persona_id}/download-pdf", tags=["3. Personas & Buying Committee"])
+    def download_explorer_persona_dossier_pdf(persona_id: int):
+        """Dedicated Account Explorer executive dossier PDF download.
+        Renders full database intelligence, AI sales playbook, KPIs, objections,
+        and verified OSINT footprint using ExplorerPersonaDossierPDF."""
+        session = get_session()
+        try:
+            p = session.query(Persona).filter_by(id=persona_id).first()
+            if not p:
+                raise HTTPException(status_code=404, detail="Persona not found.")
+            acct = session.query(Account).filter_by(id=p.account_id).first()
+            from services.explorer_persona_dossier_pdf import ExplorerPersonaDossierPDF
+            pdf_bytes = ExplorerPersonaDossierPDF.generate(p, acct)
+            p_name = p.full_name or p.display_name or "executive"
+            filename = f"{slugify(p_name)}-executive-dossier.pdf"
+            return Response(
+                content=pdf_bytes,
+                media_type="application/pdf",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{filename}"',
+                    "Content-Type": "application/pdf"
+                },
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=f"Failed to generate dossier PDF: {str(e)}")
+        finally:
+            session.close()
 
     @app.get("/api/personas/{persona_id}/psychological-profile", tags=["3. Personas & Buying Committee"])
     def get_persona_psychological_profile(persona_id: int, user: User = Depends(auth.require_persona_account_access)):
         """Retrieve the compiled Psychological & Leadership Profile for a persona.
 
         Returns profile=None (not a fabricated placeholder) when nothing has
-        been generated yet — the frontend shows an honest "not generated"
+        been generated yet ΓÇö the frontend shows an honest "not generated"
         state for that rather than plausible-looking canned text, same
         principle as the Personality Profile endpoint/renderer."""
         session = get_session()
@@ -3882,263 +5356,6 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
-    def _generate_persona_profiles(session, p: "Persona", user_id: Optional[int] = None):
-        """Runs the person digest subprocess that synthesizes BOTH the
-        Personality and Psychological profiles in one pass (--profiles-only
-        always builds both, see apps/content_pipeline/digest/pipeline.py)
-        and returns the freshly-written Digest row. Shared by the
-        personality-profile and psychological-profile /generate endpoints
-        below so a click on either button doesn't run the subprocess twice.
-        Raises HTTPException on any failure."""
-        content_pipeline_dir = Path(__file__).resolve().parent / "apps" / "content_pipeline"
-
-        # apps/content_pipeline has its own top-level module named `db`
-        # (apps/content_pipeline/db.py) — a straight name collision with
-        # this app's own `db` package, already loaded under that same
-        # name in this process's sys.modules. `import db` inside that
-        # app's own code (people_targets.py, digest/pipeline.py) would
-        # silently resolve to THIS app's db package instead of its own
-        # once cached, no matter what sys.path says. Running it as a
-        # separate process — exactly its own CLI entrypoint, exactly as
-        # a human would run it — sidesteps the collision entirely
-        # instead of fighting Python's module cache for it.
-        sys.path.insert(0, str(content_pipeline_dir))
-        target_key, candidates = _resolve_person_target_key(session, p)
-        if not target_key:
-            raise HTTPException(
-                status_code=400,
-                detail=f"'{p.full_name}' isn't registered in people_targets.py under any key this resolves "
-                f"({', '.join(c for c in candidates if c)}) — add them there before generating a profile.",
-            )
-
-        # --profiles-only: on-demand generation for exactly the two
-        # profiles, skipping the separate email-rollup LLM call nobody
-        # asked for here. --all-posts: a UI click is a deliberate
-        # "(re)generate now", not a scheduled incremental digest.
-        # --since-days 3650: --all-posts only bypasses the "new since
-        # last run" filter, NOT the recency window underneath it — a
-        # contact whose captured posts are all older than the default
-        # 14 days (e.g. no recent public activity) would otherwise
-        # always fail with "no posts in scope" on a fresh generation.
-        #
-        # Logs to an explicit UTF-8-opened file rather than
-        # capture_output=True/text=True — on this box, letting the
-        # parent auto-decode the captured pipes (locale-dependent, not
-        # UTF-8) silently returned stdout=stderr=None instead of
-        # raising, hiding every real error. This is the same "open the
-        # file as UTF-8 yourself" workaround already needed manually
-        # all session for this app's own Windows-console encoding issue
-        # (main.py's banner prints a Unicode box-drawing character).
-        proc_env = dict(os.environ, PYTHONIOENCODING="utf-8")
-
-        # Shared OpenRouter quota (apps/sales_copilot/README.md §10.4): one request per
-        # channel with posts + personality + psychological. Reserve up front so a click
-        # can't start a run the team's remaining budget can't finish.
-        from apps.sales_copilot import llm as quota
-        n_channels = session.execute(
-            sql_text("SELECT count(DISTINCT channel) FROM posts WHERE target_key = :k"), {"k": target_key}
-        ).scalar() or 0
-        try:
-            usage_ids = quota.reserve(session, "profiles", user_id, est_tokens=30000, requests_=max(1, n_channels) + 2)
-        except quota.QuotaExceeded as e:
-            raise HTTPException(status_code=429, detail=str(e))
-
-        log_fd, log_path = tempfile.mkstemp(suffix=".log", prefix="profile_gen_")
-        os.close(log_fd)
-        output = ""
-        try:
-            with open(log_path, "w", encoding="utf-8") as log_fh:
-                result = subprocess.run(
-                    [sys.executable, "main.py", "digest", target_key, "--person", "--all-posts", "--profiles-only", "--since-days", "3650"],
-                    cwd=str(content_pipeline_dir), env=proc_env,
-                    stdout=log_fh, stderr=subprocess.STDOUT, timeout=300,
-                )
-            with open(log_path, "r", encoding="utf-8", errors="replace") as log_fh:
-                output = log_fh.read()
-        finally:
-            try:
-                os.remove(log_path)
-            except OSError:
-                pass
-            # Settle the reservations with what the pipeline actually sent ([llm-usage] lines).
-            sent = re.findall(r"\[llm-usage\] status=(\d+) in=(\d+) out=(\d+)", output or "")
-            for uid, (st, tin, tout) in zip(usage_ids, sent):
-                quota.finalize(session, uid, ok=st == "200", status_code=int(st), model=None,
-                               tokens_in=int(tin), tokens_out=int(tout))
-            quota.release(session, usage_ids[len(sent):])
-            for st, tin, tout in sent[len(usage_ids):]:
-                quota.record(session, "profiles", user_id, ok=st == "200", status_code=int(st),
-                             tokens_in=int(tin), tokens_out=int(tout))
-
-        if result.returncode != 0:
-            # "No posts in scope" isn't a pipeline failure — it means this
-            # contact genuinely has zero captured public content to
-            # synthesize from (distinct from "not registered" above, where
-            # nobody's even trying to capture anything for them). Surface
-            # it as a 400 like the not-registered case so the frontend
-            # shows the same "please connect content for this contact"
-            # message instead of a generic "something went wrong" retry
-            # prompt — a real subprocess crash still falls through to 502.
-            # Checked first: when the LLM quota is exhausted every channel call
-            # fails, and older pipeline builds then reported that as "no posts".
-            if re.search(r"free-models-per-day|rate limit exceeded|HTTP 429", output or "", re.I):
-                raise HTTPException(
-                    status_code=429,
-                    detail="The AI service's daily request limit has been reached — try again after it resets.",
-                )
-            if re.search(r"no posts in scope|nothing to summarise", output or "", re.I):
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"No captured public content is available yet for '{p.full_name}' — nothing to synthesize a profile from.",
-                )
-            raise HTTPException(
-                status_code=502,
-                detail=f"Digest generation failed (exit {result.returncode}): {(output or '(no output)')[-1000:]}",
-            )
-
-        # The subprocess's own db.upsert_digest() call already wrote the
-        # fresh row to Postgres — re-read it here rather than parsing
-        # the subprocess's stdout/local JSON file.
-        session.expire_all()
-        digest_row = _resolve_persona_digest(session, p)
-        return digest_row, output
-
-    @app.get("/api/personas/{persona_id}/personality-profile", tags=["3. Personas & Buying Committee"])
-    def get_persona_personality_profile(persona_id: int, user: User = Depends(auth.require_persona_account_access)):
-        """Retrieve the compiled Executive Personality Profile for a persona.
-
-        Returns profile=None (not a fabricated placeholder) when nothing has
-        been generated yet — the frontend shows an honest "not generated"
-        state, with a Generate button, for that instead of canned text."""
-        session = get_session()
-        try:
-            p = session.query(Persona).filter_by(id=persona_id).first()
-            if not p:
-                raise HTTPException(status_code=404, detail="Persona not found.")
-            digest_row = _resolve_persona_digest(session, p)
-
-            profile = None
-            if digest_row and digest_row.digest and isinstance(digest_row.digest, dict):
-                profile = digest_row.digest.get("personality_profile")
-            if not profile and p.raw_data and isinstance(p.raw_data, dict):
-                profile = p.raw_data.get("personality_profile")
-
-            return {
-                "persona_id": p.id,
-                "persona_name": p.full_name,
-                "title": p.title,
-                "profile": profile,
-            }
-        finally:
-            session.close()
-
-    @app.post("/api/personas/{persona_id}/personality-profile/generate", tags=["3. Personas & Buying Committee"])
-    def generate_persona_personality_profile(persona_id: int, user: User = Depends(auth.require_persona_account_access)):
-        """Trigger on-demand live generation of the personality profile using LLM synthesis."""
-        session = get_session()
-        try:
-            p = session.query(Persona).filter_by(id=persona_id).first()
-            if not p:
-                raise HTTPException(status_code=404, detail="Persona not found.")
-
-            digest_row, output = _generate_persona_profiles(session, p, user.id)
-            personality = (digest_row.digest or {}).get("personality_profile") if digest_row else None
-            if not personality:
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Digest ran but produced no personality_profile. Output: {output[-1000:]}",
-                )
-
-            return {
-                "status": "success",
-                "persona_id": p.id,
-                "profile": personality
-            }
-        finally:
-            session.close()
-
-    # Per-channel post caps the digest applies — mirrors cap=25 and
-    # _HIGH_VOLUME_CAP in apps/content_pipeline/digest/selection.py (not
-    # imported: that app's `db` module collides with ours, see
-    # _generate_persona_profiles).
-    _PROFILE_DIGEST_CAP = 25
-    _PROFILE_DIGEST_CHANNEL_CAP = {"news": 12, "blog": 12, "sec_mentions": 10, "sec": 10}
-
-    @app.get("/api/personas/{persona_id}/profile-readiness", tags=["3. Personas & Buying Committee"])
-    def get_persona_profile_readiness(persona_id: int, user: User = Depends(auth.require_persona_account_access)):
-        """What the Personality/Psychological "Generate now" button has to work
-        with: whether the contact is a tracked target, captured posts per
-        channel (and how many the digest would use), and which background
-        fields exist. Read-only — no LLM calls."""
-        session = get_session()
-        try:
-            p = session.query(Persona).filter_by(id=persona_id).first()
-            if not p:
-                raise HTTPException(status_code=404, detail="Persona not found.")
-
-            target_key, _ = _resolve_person_target_key(session, p)
-
-            channels = []
-            if target_key:
-                rows = session.execute(
-                    sql_text("SELECT channel, count(*) FROM posts WHERE target_key = :k GROUP BY channel ORDER BY 2 DESC"),
-                    {"k": target_key},
-                ).fetchall()
-                for channel, n in rows:
-                    cap = min(_PROFILE_DIGEST_CAP, _PROFILE_DIGEST_CHANNEL_CAP.get(channel, _PROFILE_DIGEST_CAP))
-                    channels.append({"channel": channel, "captured": n, "used": min(n, cap)})
-
-            location = ", ".join(x for x in (p.city, p.state, p.country) if x)
-            background = [
-                {"field": "title", "label": "Job title", "present": bool(p.title)},
-                {"field": "education", "label": "Education", "present": bool(p.degree or p.institution)},
-                {"field": "prior_company", "label": "Prior company", "present": bool(p.prior_company)},
-                {"field": "skills", "label": "Skills", "present": bool(p.skills)},
-                {"field": "location", "label": "Location", "present": bool(location)},
-            ]
-            total_captured = sum(c["captured"] for c in channels)
-            return {
-                "persona_id": p.id,
-                "target_key": target_key,
-                "registered": bool(target_key),
-                "channels": channels,
-                "total_captured": total_captured,
-                "total_used": sum(c["used"] for c in channels),
-                "background": background,
-                # one summary call per channel with posts + personality + psychological
-                "llm_requests": len(channels) + 2 if channels else 0,
-                "ready": bool(target_key) and total_captured > 0,
-            }
-        finally:
-            session.close()
-
-    @app.post("/api/personas/{persona_id}/callprep/generate", tags=["3. Personas & Buying Committee"])
-    def generate_persona_callprep(
-        persona_id: int, force: bool = False, user: User = Depends(auth.require_persona_account_access)
-    ):
-        """On-demand Sales Call-Prep & Battlecards for one persona (services/callprep_service.py).
-        Skips the LLM and returns status "unchanged" when the persona's inputs haven't changed,
-        unless force=true."""
-        session = get_session()
-        try:
-            try:
-                out = callprep_service.generate_persona(session, persona_id, force=force, user_id=user.id)
-            except ValueError as e:
-                raise HTTPException(status_code=404, detail=str(e))
-            except callprep_service.QuotaExceeded as e:
-                raise HTTPException(status_code=429, detail=f"LLM daily quota reached: {e}")
-            except callprep_service.LLMError as e:
-                raise HTTPException(status_code=502, detail=f"Call-prep generation failed: {e}")
-            return {
-                "status": out["status"],
-                "persona_id": persona_id,
-                "level": out["level"],
-                "usage": out["usage"],
-                "persona": _serialize_persona_full(out["persona"]),
-            }
-        finally:
-            session.close()
-
     @app.post("/api/personas/{persona_id}/psychological-profile/generate", tags=["3. Personas & Buying Committee"])
     def generate_persona_psychological_profile(persona_id: int, user: User = Depends(auth.require_persona_account_access)):
         """Trigger on-demand live generation of the psychological profile using LLM synthesis."""
@@ -4148,7 +5365,79 @@ if FASTAPI_AVAILABLE:
             if not p:
                 raise HTTPException(status_code=404, detail="Persona not found.")
 
-            digest_row, output = _generate_persona_profiles(session, p, user.id)
+            content_pipeline_dir = Path(__file__).resolve().parent / "apps" / "content_pipeline"
+
+            # apps/content_pipeline has its own top-level module named `db`
+            # (apps/content_pipeline/db.py) ΓÇö a straight name collision with
+            # this app's own `db` package, already loaded under that same
+            # name in this process's sys.modules. `import db` inside that
+            # app's own code (people_targets.py, digest/pipeline.py) would
+            # silently resolve to THIS app's db package instead of its own
+            # once cached, no matter what sys.path says. Running it as a
+            # separate process ΓÇö exactly its own CLI entrypoint, exactly as
+            # a human would run it ΓÇö sidesteps the collision entirely
+            # instead of fighting Python's module cache for it.
+            sys.path.insert(0, str(content_pipeline_dir))
+            from apps.content_pipeline.people_targets import ALIASES as PEOPLE_ALIASES
+
+            existing = _resolve_persona_digest(session, p)
+            candidates = [existing.target_key] if existing else []
+            candidates += [p.key, slugify(p.full_name or ""), _slugify_dropping_initials(p.full_name or "")]
+            target_key = next((c for c in candidates if c and c in PEOPLE_ALIASES), None)
+            if not target_key:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"'{p.full_name}' isn't registered in people_targets.py under any key this resolves "
+                    f"({', '.join(c for c in candidates if c)}) ΓÇö add them there before generating a profile.",
+                )
+
+            # --profiles-only: on-demand generation for exactly the two
+            # profiles, skipping the separate email-rollup LLM call nobody
+            # asked for here. --all-posts: a UI click is a deliberate
+            # "(re)generate now", not a scheduled incremental digest.
+            # --since-days 3650: --all-posts only bypasses the "new since
+            # last run" filter, NOT the recency window underneath it ΓÇö a
+            # contact whose captured posts are all older than the default
+            # 14 days (e.g. no recent public activity) would otherwise
+            # always fail with "no posts in scope" on a fresh generation.
+            #
+            # Logs to an explicit UTF-8-opened file rather than
+            # capture_output=True/text=True ΓÇö on this box, letting the
+            # parent auto-decode the captured pipes (locale-dependent, not
+            # UTF-8) silently returned stdout=stderr=None instead of
+            # raising, hiding every real error. This is the same "open the
+            # file as UTF-8 yourself" workaround already needed manually
+            # all session for this app's own Windows-console encoding issue
+            # (main.py's banner prints a Unicode box-drawing character).
+            proc_env = dict(os.environ, PYTHONIOENCODING="utf-8")
+            log_fd, log_path = tempfile.mkstemp(suffix=".log", prefix="profile_gen_")
+            os.close(log_fd)
+            try:
+                with open(log_path, "w", encoding="utf-8") as log_fh:
+                    result = subprocess.run(
+                        [sys.executable, "main.py", "digest", target_key, "--person", "--all-posts", "--profiles-only", "--since-days", "3650"],
+                        cwd=str(content_pipeline_dir), env=proc_env,
+                        stdout=log_fh, stderr=subprocess.STDOUT, timeout=300,
+                    )
+                with open(log_path, "r", encoding="utf-8", errors="replace") as log_fh:
+                    output = log_fh.read()
+            finally:
+                try:
+                    os.remove(log_path)
+                except OSError:
+                    pass
+
+            if result.returncode != 0:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Digest generation failed (exit {result.returncode}): {(output or '(no output)')[-1000:]}",
+                )
+
+            # The subprocess's own db.upsert_digest() call already wrote the
+            # fresh row to Postgres ΓÇö re-read it here rather than parsing
+            # the subprocess's stdout/local JSON file.
+            session.expire_all()
+            digest_row = _resolve_persona_digest(session, p)
             psych = (digest_row.digest or {}).get("psychological_profile") if digest_row else None
             if not psych:
                 raise HTTPException(
@@ -4427,10 +5716,10 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
-    # ══════════════════════════════════════════════════════
-    # ACTION ITEMS — client-specific work-list (see
+    # ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+    # ACTION ITEMS ΓÇö client-specific work-list (see
     # ACTION_ITEMS_IMPLEMENTATION_PLAN.md)
-    # ══════════════════════════════════════════════════════
+    # ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
     def _serialize_action_item(item: ActionItem) -> Dict[str, Any]:
         now = datetime.now(timezone.utc)
         due = item.due_date
@@ -4546,11 +5835,11 @@ if FASTAPI_AVAILABLE:
                 raise HTTPException(status_code=404, detail="Action item not found")
 
             if body.status is not None:
-                # 'pending_review' is deliberately excluded here — it's only
+                # 'pending_review' is deliberately excluded here ΓÇö it's only
                 # ever set by the LLM-suggestion write path, and only ever
                 # left via the dedicated /approve or /reject endpoints below,
                 # never a generic field edit. See
-                # ACTION_ITEMS_LLM_SUGGESTIONS_PLAN.md §1.
+                # ACTION_ITEMS_LLM_SUGGESTIONS_PLAN.md ┬º1.
                 if body.status not in ("open", "in_progress", "done", "cancelled"):
                     raise HTTPException(status_code=400, detail="status must be open, in_progress, done, or cancelled")
                 item.status = body.status
@@ -4637,7 +5926,7 @@ if FASTAPI_AVAILABLE:
     def approve_action_item(item_id: int, user: User = Depends(auth.require_action_item_account_access)):
         """Turns an LLM-suggested item (status='pending_review') into a real
         task, assigned to whoever approved it. See
-        ACTION_ITEMS_LLM_SUGGESTIONS_PLAN.md §1 — approval is a dedicated
+        ACTION_ITEMS_LLM_SUGGESTIONS_PLAN.md ┬º1 ΓÇö approval is a dedicated
         endpoint, not a generic status PATCH, so it's always one deliberate
         action rather than a side effect of an unrelated field edit."""
         session = get_session()
@@ -4661,7 +5950,7 @@ if FASTAPI_AVAILABLE:
     @app.post("/api/action-items/{item_id}/reject", tags=["8. Action Items"])
     def reject_action_item(item_id: int, user: User = Depends(auth.require_action_item_account_access)):
         """Dismisses an LLM-suggested item without ever making it a real
-        task — sets status='cancelled' so it's excluded from every existing
+        task ΓÇö sets status='cancelled' so it's excluded from every existing
         open/overdue query with no schema change, rather than deleting it
         outright (keeps a record of what the model suggested)."""
         session = get_session()
@@ -4701,13 +5990,13 @@ if FASTAPI_AVAILABLE:
 
     @app.post("/api/action-items/{item_id}/send-reminder", tags=["8. Action Items"])
     def send_action_item_reminder(item_id: int, user: User = Depends(auth.require_action_item_account_access)):
-        """On-demand reminder email for one action item — same email
+        """On-demand reminder email for one action item ΓÇö same email
         template and action_item_reminders log as the scheduled sweep
         (scripts/send_action_reminders.py), but sent immediately (e.g. from
         the Command Center 'Due soon' widget's Send reminder button)
         instead of waiting for that script's next scheduled run. Unlike the
         sweep, a deliberate manual click is allowed to re-send even if that
-        reminder stage was already logged — updates the existing log row's
+        reminder stage was already logged ΓÇö updates the existing log row's
         sent_at instead of trying to insert a second one (which would hit
         the table's unique constraint)."""
         session = get_session()
@@ -4743,7 +6032,7 @@ if FASTAPI_AVAILABLE:
                 ),
             )
             if not sent:
-                raise HTTPException(status_code=502, detail="Could not send the reminder email — check SMTP configuration (.env SMTP_* vars).")
+                raise HTTPException(status_code=502, detail="Could not send the reminder email ΓÇö check SMTP configuration (.env SMTP_* vars).")
 
             existing = session.query(ActionItemReminder).filter_by(
                 action_item_id=item.id, reminder_type=reminder_type, sent_to_user_id=item.assigned_to_id,
@@ -4774,7 +6063,7 @@ if FASTAPI_AVAILABLE:
 
     @app.get("/api/me/action-items", tags=["8. Action Items"])
     def list_my_action_items(status: Optional[str] = None, user: User = Depends(auth.get_current_user)):
-        """Cross-account 'My Tasks' — every action item assigned to the
+        """Cross-account 'My Tasks' ΓÇö every action item assigned to the
         caller, restricted to accounts they can actually see (super_admin
         gets everything; anyone else only what's been granted to them)."""
         session = get_session()
@@ -4800,63 +6089,6 @@ if FASTAPI_AVAILABLE:
             return {"action_items": results}
         finally:
             session.close()
-
-    _XLSX_MEDIA = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-
-    def _xlsx_response(content: bytes, filename: str):
-        from fastapi import Response
-        return Response(content, media_type=_XLSX_MEDIA,
-                        headers={"Content-Disposition": f'attachment; filename="{filename}"'})
-
-    @app.get("/api/me/action-items/export", tags=["8. Action Items"])
-    def export_my_action_items(status: Optional[str] = None, account_id: Optional[int] = None,
-                               priority: Optional[str] = None, user: User = Depends(auth.get_current_user)):
-        """My Tasks as Excel — same access rules and filters as the /tasks page."""
-        from apps.sales_copilot import exports
-        items = list_my_action_items(status=status, user=user)["action_items"]
-        if account_id:
-            items = [i for i in items if i.get("account_id") == account_id]
-        if priority:
-            items = [i for i in items if i.get("priority") == priority]
-        headers = ["Title", "Status", "Priority", "Due", "Account", "Contact", "Description", "Created"]
-        rows = [[i.get("title"), i.get("status"), i.get("priority"), (i.get("due_date") or "")[:10],
-                 i.get("account_name"), (i.get("persona") or {}).get("name") if isinstance(i.get("persona"), dict) else i.get("persona_name"),
-                 i.get("description"), (i.get("created_at") or "")[:10]] for i in items]
-        content = exports.rows_xlsx("My tasks", headers, rows, [48, 12, 10, 12, 22, 24, 60, 12],
-                                    about=[["Exported for", user.full_name or user.email], ["Exported at", exports._now()],
-                                           ["Filters", f"status={status or 'all'}, priority={priority or 'all'}, account={account_id or 'all'}"],
-                                           ["Rows", len(rows)]])
-        return _xlsx_response(content, "my-tasks.xlsx")
-
-    @app.get("/api/accounts/{account_id}/people/export", tags=["3. Personas & Buying Committee"])
-    def export_account_people(account_id: int, user: User = Depends(auth.require_account_access)):
-        """Buying committee / contact list for one account as Excel. Business contact
-        fields only (work email/phone) — personal email/mobile are never exported."""
-        from apps.sales_copilot import exports
-        session = get_session()
-        try:
-            acct = session.query(Account).filter_by(id=account_id).first()
-            if not acct:
-                raise HTTPException(status_code=404, detail="Account not found.")
-            from apps.sales_copilot import privacy
-            rows = session.execute(sql_text(f"""
-                SELECT coalesce(p.full_name, p.display_name), p.title, p.tier, l.lob_name, p.decision_authority,
-                       p.budget_authority, {privacy.SAFE_EMAIL_SQL}, {privacy.SAFE_PHONE_SQL}, p.linkedin_url,
-                       concat_ws(', ', p.city, p.country), (p.value_proposition IS NOT NULL), p.id
-                FROM personas p LEFT JOIN lobs l ON l.id = p.lob_id
-                WHERE p.account_id = :a
-                ORDER BY p.hierarchy_level NULLS LAST, 1"""), {"a": account_id}).fetchall()
-        finally:
-            session.close()
-        name = acct.display_name or acct.legal_name or acct.key
-        headers = ["Name", "Title", "Tier", "Line of business", "Decision authority", "Budget authority",
-                   "Work email", "Phone", "LinkedIn", "Location", "Call-prep ready", "Profile link"]
-        data = [[r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9], "yes" if r[10] else "",
-                 f"/profile?account={account_id}&persona_id={r[11]}"] for r in rows]
-        content = exports.rows_xlsx("Contacts", headers, data, [26, 40, 14, 24, 22, 18, 30, 18, 40, 22, 12, 34],
-                                    about=[["Account", name], ["Exported for", user.full_name or user.email],
-                                           ["Exported at", exports._now()], ["Contacts", len(data)]])
-        return _xlsx_response(content, exports.safe_filename(f"{name}-contacts", "xlsx"))
 
     @app.get("/api/content", tags=["4. Content Intelligence"])
     def get_content_intelligence():
@@ -4935,9 +6167,9 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
-    # ══════════════════════════════════════════════════════
-    # LINKEDIN JOB POSTINGS — bulk cross-account endpoint
-    # ══════════════════════════════════════════════════════
+    # ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+    # LINKEDIN JOB POSTINGS ΓÇö bulk cross-account endpoint
+    # ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
     JOB_CATEGORY_RULES = [
         (
             "Engineering & Technology",
@@ -5027,7 +6259,7 @@ if FASTAPI_AVAILABLE:
         owning account and tagged with a heuristic job category. Supports free-text search,
         category/employment/workplace filters, sorting, and server-side pagination so the
         Global Accounts Dashboard's 'View All' job browser stays fast as the dataset grows.
-        The list payload omits the (potentially large) job description — fetch
+        The list payload omits the (potentially large) job description ΓÇö fetch
         GET /api/linkedin-jobs/{id} for the full detail of a single posting."""
         session = get_session()
         try:
@@ -5140,32 +6372,11 @@ if FASTAPI_AVAILABLE:
             ai_rx = re.compile(r"\bai\b|artificial|machine learning|\bml\b|genai|process analyst|automation", re.I)
             cloud_rx = re.compile(r"cloud|full-stack|full stack|platform|devops|systems lead|software engineer", re.I)
 
-            # Same taxonomy as HIRING_DOMAINS in jobs-radar.js (the per-account
-            # Hiring Trend Radar deep-dive) — ported here so the Command Center
-            # tile's "top hiring category" agrees with what a rep sees on
-            # click-through, rather than inventing a second classification.
-            # Matched in this order, first hit wins; core_operations is the
-            # catch-all for anything none of the others match (mirrors the
-            # client-side "assign to primary dominant domain" logic exactly).
-            hiring_domains = [
-                {"id": "ai_automation", "name": "AI & Process Automation", "icon": "fa-solid fa-microchip",
-                 "rx": re.compile(r"\bai\b|artificial intelligence|machine learning|\bml\b|genai|generative ai|\bllm\b|copilot|process analyst|deep learning|\bnlp\b|automation|cognitive|neural|agentic|prompt", re.I)},
-                {"id": "cloud_platform", "name": "Cloud & Platform Modernization", "icon": "fa-solid fa-cloud",
-                 "rx": re.compile(r"cloud|infrastructure|full-stack|full stack|platform|devops|architect|systems lead|site reliability|\bsre\b|\baws\b|\bazure\b|\bgcp\b|kubernetes|microservices|distributed systems|software engineer", re.I)},
-                {"id": "data_analytics", "name": "Data Engineering & Analytics", "icon": "fa-solid fa-chart-column",
-                 "rx": re.compile(r"\bdata\b|quantitative|analytics|\bbi\b|data science|\betl\b|\bsql\b|snowflake|databricks|pipeline|warehouse|business intelligence|lakehouse", re.I)},
-                {"id": "risk_compliance", "name": "Risk, Compliance & Control", "icon": "fa-solid fa-shield-halved",
-                 "rx": re.compile(r"\brisk\b|compliance|\bcontrol\b|cyber|security|audit|governance|identity|fraud|surveillance|regulatory|collateral", re.I)},
-                {"id": "core_operations", "name": "Core Business & Operations", "icon": "fa-solid fa-sitemap",
-                 "rx": re.compile(r"product management|\bpom\b|operations|credit|investor services|client processing|custody|asset servicing|settlement|trading|wealth|portfolio|specialist|accountant|\bsales\b|manager", re.I)},
-            ]
-
             leadership_count = 0
             contract_roles = []
             loc_counts: Dict[str, int] = {}
             ai_count = 0
             cloud_count = 0
-            category_counts: Dict[str, int] = {d["id"]: 0 for d in hiring_domains}
 
             for j in jobs:
                 t = j.title or ""
@@ -5193,20 +6404,7 @@ if FASTAPI_AVAILABLE:
                 elif cloud_rx.search(t):
                     cloud_count += 1
 
-                matched_domain = next((d["id"] for d in hiring_domains if d["rx"].search(t)), "core_operations")
-                category_counts[matched_domain] += 1
-
             top_hubs = [{"location": loc, "count": count} for loc, count in sorted(loc_counts.items(), key=lambda x: x[1], reverse=True)[:6]]
-
-            top_category = None
-            if total_roles:
-                top_id, top_count = max(category_counts.items(), key=lambda kv: kv[1])
-                if top_count > 0:
-                    top_domain = next(d for d in hiring_domains if d["id"] == top_id)
-                    top_category = {
-                        "id": top_domain["id"], "name": top_domain["name"], "icon": top_domain["icon"],
-                        "count": top_count,
-                    }
 
             return {
                 "account_id": account.id,
@@ -5220,7 +6418,6 @@ if FASTAPI_AVAILABLE:
                     "ai": ai_count,
                     "cloud": cloud_count,
                 },
-                "top_category": top_category,
                 "contract_leads": contract_roles[:5],
             }
         finally:
@@ -5293,9 +6490,9 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
-    # ══════════════════════════════════════════════════════
+    # ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
     # CXO MOVEMENTS & TRANSITIONS ENDPOINTS
-    # ══════════════════════════════════════════════════════
+    # ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
     def _serialize_cxo_movement(m: CxoMovement, acct: Optional[Account] = None) -> Dict[str, Any]:
         return {
             "id": m.id,
@@ -5404,7 +6601,7 @@ if FASTAPI_AVAILABLE:
         limit: int = Query(30, ge=1, le=100),
     ):
         """Recent Google News articles (Post.channel == "news") captured across
-        every account the caller can see — the cross-account counterpart to
+        every account the caller can see ΓÇö the cross-account counterpart to
         /api/accounts/{id}/content's per-account news slice, for a single feed
         on Command Center instead of one fetch per account."""
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
@@ -5449,7 +6646,7 @@ if FASTAPI_AVAILABLE:
     @app.get("/api/accounts/{account_id}/content", tags=["4. Content Intelligence"])
     def get_account_content_intelligence(account_id: int, user: User = Depends(auth.require_account_access)):
         """Retrieve social listening posts, LLM channel digests, and LinkedIn jobs
-        scoped to one account — the on-demand counterpart to /api/content, fetched
+        scoped to one account ΓÇö the on-demand counterpart to /api/content, fetched
         when that account's Social/Content/Jobs tab is opened rather than pulling
         every account's content up front."""
         session = get_session()
@@ -5460,14 +6657,14 @@ if FASTAPI_AVAILABLE:
             # Persona-level content (per-contact digests like the Personality
             # Profile, and their own captured posts) is stored under each
             # person's own target_key (e.g. "robin_vince"), not the account's
-            # — without including those here, the contact drawer's Recent
+            # ΓÇö without including those here, the contact drawer's Recent
             # Social Media Activity / Personality Profile sections always
             # found nothing, no matter how much persona-level data existed.
             # Three candidates per persona (mirrors _resolve_persona_digest
             # above and resolvePersonaTargetKey on the frontend): a name with
             # a middle initial like "Ranjit S. Samra" slugifies to
             # "ranjit_s_samra", but people_targets.py registers them under
-            # "ranjit_samra" (initial omitted) — without the third candidate
+            # "ranjit_samra" (initial omitted) ΓÇö without the third candidate
             # this endpoint silently omits that persona's digest/posts from
             # its response entirely, no matter how the frontend resolves keys.
             persona_keys = []
@@ -5590,14 +6787,14 @@ if FASTAPI_AVAILABLE:
             path=str(json_path), filename="sales_ai_database_export.json", media_type="application/json"
         )
 
-    # ══════════════════════════════════════════════════════
+    # ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
     # FRONTEND UI: Jinja2-templated shell + static assets
-    # ══════════════════════════════════════════════════════
+    # ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
     # The dashboard shell (frontend/templates/index.html) is composed from
     # partials (topbar/nav/drawer/modal) and rendered server-side; everything
     # it actually renders (accounts, digest sections, etc.) still comes from
     # the JSON APIs below via frontend/js/modules/. CSS/JS/the separate
-    # Account Explorer app stay plain static files — only the shell itself
+    # Account Explorer app stay plain static files ΓÇö only the shell itself
     # needed templating, so we mount those under their own sub-paths instead
     # of the old single mount at "/" (which would now collide with the
     # explicit "/" route below).
@@ -5605,75 +6802,56 @@ if FASTAPI_AVAILABLE:
     if frontend_dir.exists():
         templates = Jinja2Templates(directory=str(frontend_dir / "templates"))
 
-        _NO_CACHE_HEADERS = {
-            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-            "Pragma": "no-cache",
-            "Expires": "0",
-        }
-
         @app.get("/", response_class=HTMLResponse, include_in_schema=False)
         async def dashboard_home(request: Request):
-            return templates.TemplateResponse(request, "index.html", headers=_NO_CACHE_HEADERS)
+            return templates.TemplateResponse(request, "index.html")
 
         @app.get("/login", response_class=HTMLResponse, include_in_schema=False)
         async def login_page(request: Request):
-            return templates.TemplateResponse(request, "login.html", headers=_NO_CACHE_HEADERS)
+            return templates.TemplateResponse(request, "login.html")
 
         @app.get("/reset-password", response_class=HTMLResponse, include_in_schema=False)
         async def reset_password_page(request: Request):
-            return templates.TemplateResponse(request, "reset-password.html", headers=_NO_CACHE_HEADERS)
+            return templates.TemplateResponse(request, "reset-password.html")
 
         @app.get("/admin", response_class=HTMLResponse, include_in_schema=False)
         async def admin_page(request: Request):
-            """Super-admin dashboard shell — the page itself renders for
+            """Super-admin dashboard shell ΓÇö the page itself renders for
             anyone (no server-side session to gate on), but every
             /api/admin/* call it makes is independently protected by
             Depends(auth.require_role("super_admin"))."""
-            return templates.TemplateResponse(request, "admin.html", headers=_NO_CACHE_HEADERS)
+            return templates.TemplateResponse(request, "admin.html")
 
         @app.get("/profile", response_class=HTMLResponse, include_in_schema=False)
         async def contact_profile_page(request: Request):
-            """Standalone full-page contact profile — opened via the contact
+            """Standalone full-page contact profile ΓÇö opened via the contact
             drawer's "View Profile" button (?account=<id>&persona_id=<id>).
             Reuses the same drawer markup/rendering as the dashboard's
             sliding drawer; see frontend/js/modules/profile-page.js."""
-            return templates.TemplateResponse(request, "profile.html", headers=_NO_CACHE_HEADERS)
+            return templates.TemplateResponse(request, "profile.html")
 
         @app.get("/command-center", response_class=HTMLResponse, include_in_schema=False)
         async def sales_command_center_page(request: Request):
-            """Action-first rep/manager/exec dashboard — KPI strip, account
+            """Action-first rep/manager/exec dashboard ΓÇö KPI strip, account
             priority matrix, priority signal feed, playbook and exec
             movements timeline. Currently runs on mock seed data; see
             frontend/js/modules/command-center/data.js."""
-            return templates.TemplateResponse(request, "command-center.html", headers=_NO_CACHE_HEADERS)
-
-        @app.get("/deals", response_class=HTMLResponse, include_in_schema=False)
-        async def deals_page(request: Request):
-            """Deals pipeline board + deal room (apps/sales_copilot/README.md §21).
-            ?deal=ID opens a deal; ?account_id= filters the board."""
-            return templates.TemplateResponse(request, "deals.html", headers=_NO_CACHE_HEADERS)
-
-        @app.get("/copilot", response_class=HTMLResponse, include_in_schema=False)
-        async def copilot_page(request: Request):
-            """Sales Copilot workspace — RAG chat over the sales DB
-            (apps/sales_copilot/README.md §19). Accepts ?persona_id= / ?account_id=
-            to open a chat pre-scoped to that contact or account."""
-            return templates.TemplateResponse(request, "copilot.html", headers=_NO_CACHE_HEADERS)
+            return templates.TemplateResponse(request, "command-center.html")
 
         @app.get("/tasks", response_class=HTMLResponse, include_in_schema=False)
         async def tasks_page(request: Request):
-            """Personal, cross-account Task Management page — every action
+            """Personal, cross-account Task Management page ΓÇö every action
             item assigned to the caller (GET /api/me/action-items), with
             status/priority/account filtering and sorting. See
             TASK_MANAGEMENT_README.md. A team/manager-wide view is a
             deliberately deferred v2 (no endpoint for it exists yet)."""
-            return templates.TemplateResponse(request, "tasks.html", headers=_NO_CACHE_HEADERS)
+            return templates.TemplateResponse(request, "tasks.html")
 
         class NoCacheStaticFiles(StaticFiles):
             """Forces browsers to revalidate every CSS/JS fetch against the
             server (via the ETag/Last-Modified this already returns) instead
             of silently reusing a cached copy. Without this, a plain reload
-            can keep serving an old version of a file indefinitely — these
+            can keep serving an old version of a file indefinitely ΓÇö these
             are ES modules pulled in via bare `import`s (only the page's own
             entry script has a `?v=` cache-busting query string; anything it
             imports does not inherit that), and during active development

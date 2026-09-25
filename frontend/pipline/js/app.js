@@ -8,10 +8,10 @@ $(function () {
   function applySidebarCollapseState(collapsed) {
     if (collapsed) {
       $("#sidebar").addClass("collapsed");
-      $("#sidebarCollapseBtn").html('<i class="fa-solid fa-angles-right"></i>').attr("title", "Expand sidebar");
+      $("#sidebarCollapseBtn").html('<i class="bi bi-chevron-bar-right"></i>').attr("title", "Expand sidebar");
     } else {
       $("#sidebar").removeClass("collapsed");
-      $("#sidebarCollapseBtn").html('<i class="fa-solid fa-table-columns"></i>').attr("title", "Shrink sidebar");
+      $("#sidebarCollapseBtn").html('<i class="bi bi-layout-sidebar-inset"></i>').attr("title", "Shrink sidebar");
     }
   }
 
@@ -108,10 +108,15 @@ $(function () {
           const parsed = JSON.parse(cached);
           if (parsed && Array.isArray(parsed.accounts) && parsed.accounts.length > 0) {
             MOCK_DATA = parsed;
+            updateGlobalTelemetry();
             renderSidebar();
-            const $firstItem = $("#accountList .account-item").first();
-            if ($firstItem.length && !activeAccount) {
-              $firstItem.trigger("click");
+            const savedId = activeAccount ? activeAccount.id : sessionStorage.getItem("pipeline_active_account_id");
+            if (savedId && $(`#accountList .account-item[data-id="${savedId}"]`).length) {
+              if (!activeAccount) {
+                $(`#accountList .account-item[data-id="${savedId}"]`).trigger("click");
+              }
+            } else if (!activeAccount) {
+              renderEmptyStateHub();
             }
           }
         }
@@ -183,12 +188,18 @@ $(function () {
         sessionStorage.setItem("pipeline_accounts_cache", JSON.stringify(data));
       } catch (e) {}
 
-      const currentActiveId = activeAccount ? activeAccount.id : null;
+      updateGlobalTelemetry();
+      const savedId = activeAccount ? activeAccount.id : sessionStorage.getItem("pipeline_active_account_id");
       renderSidebar();
-      if (currentActiveId) {
-        $(`#accountList .account-item[data-id="${currentActiveId}"]`).addClass("active");
-      } else if (MOCK_DATA.accounts && MOCK_DATA.accounts.length > 0) {
-        $("#accountList .account-item").first().trigger("click");
+      updateBatchTriggerPills(activeAccount);
+      if (savedId && $(`#accountList .account-item[data-id="${savedId}"]`).length) {
+        if (!activeAccount) {
+          $(`#accountList .account-item[data-id="${savedId}"]`).trigger("click");
+        } else {
+          $(`#accountList .account-item[data-id="${savedId}"]`).addClass("active");
+        }
+      } else if (!activeAccount) {
+        renderEmptyStateHub();
       }
     } catch (err) {
       console.error("[loadData] Error:", err);
@@ -295,38 +306,436 @@ $(function () {
       .replace(/^-+|-+$/g, "");
   }
 
-  // 1. Render Sidebar Accounts
-  function renderSidebar(filterQuery = "") {
-    const $list = $("#accountList").empty();
-    const q = (filterQuery || "").trim().toLowerCase();
-    let count = 0;
+  // ─── Global Topbar Database Telemetry ────────────────────────────────────
+  function updateGlobalTelemetry() {
+    const accounts = Array.isArray(MOCK_DATA.accounts) ? MOCK_DATA.accounts : [];
+    const totalAccounts = accounts.length;
+    let totalPersonas = 0;
+    let totalLobs = 0;
 
-    (MOCK_DATA.accounts || []).forEach((acct) => {
-      const acctName = acct.name || "Unnamed Account";
-      if (!q || acctName.toLowerCase().includes(q)) {
-        count++;
-        $list.append(`
-          <button type="button" class="account-item fade-in" data-id="${acct.id}">
-            <div class="acct-avatar">${esc(getInitials(acctName))}</div>
-            <div class="acct-info">
-              <div class="acct-name">${esc(acctName)}</div>
-            </div>
-          </button>
-        `);
+    accounts.forEach((a) => {
+      const pCount = (a.personas && Array.isArray(a.personas)) ? a.personas.length : (a.total_contacts_captured || 0);
+      totalPersonas += (typeof pCount === "number" && !isNaN(pCount)) ? pCount : 0;
+
+      const lCount = (a.lobs && Array.isArray(a.lobs)) ? a.lobs.length : (a.lobs_count || 0);
+      totalLobs += (typeof lCount === "number" && !isNaN(lCount)) ? lCount : 0;
+    });
+
+    $("#topbarAccountsCount").text(totalAccounts.toLocaleString());
+    $("#topbarPersonasCount").text(totalPersonas.toLocaleString());
+    $("#topbarLobsCount").text(totalLobs.toLocaleString());
+  }
+
+  // Ensure default clean light theme
+  try {
+    document.documentElement.setAttribute("data-theme", "light");
+    localStorage.removeItem("pipeline_theme");
+  } catch (e) {}
+
+  // ─── Global Pipeline Live Pulse Status ──────────────────────────────────
+  let pipelineTimerInterval = null;
+  let pipelineStartTime = null;
+
+  function setGlobalPipelineStatus(isRunning, levelName = "Pipeline") {
+    const $badge = $("#pipelineStatusBadge");
+    if (!$badge.length) return;
+
+    if (pipelineTimerInterval) {
+      clearInterval(pipelineTimerInterval);
+      pipelineTimerInterval = null;
+    }
+
+    if (isRunning) {
+      pipelineStartTime = Date.now();
+      $badge.removeClass("ready done error").addClass("running");
+      const updateTimer = () => {
+        const elapsed = ((Date.now() - pipelineStartTime) / 1000).toFixed(1);
+        $badge.html(`<span class="pulse-dot-blue"></span> Running ${esc(levelName)} (${elapsed}s)`);
+      };
+      updateTimer();
+      pipelineTimerInterval = setInterval(updateTimer, 200);
+    } else {
+      if (pipelineStartTime) {
+        const totalTime = ((Date.now() - pipelineStartTime) / 1000).toFixed(1);
+        $badge.removeClass("running error").addClass("ready done");
+        $badge.html(`<i class="bi bi-check-circle-fill text-success"></i> ${esc(levelName)} Complete (${totalTime}s)`);
+        pipelineStartTime = null;
+        setTimeout(() => {
+          $badge.removeClass("done");
+          $badge.html(`<i class="bi bi-circle-fill"></i> Pipeline: Ready`);
+        }, 3500);
+      } else {
+        $badge.removeClass("running done error").addClass("ready");
+        $badge.html(`<i class="bi bi-circle-fill"></i> Pipeline: Ready`);
+      }
+    }
+  }
+  window.setGlobalPipelineStatus = setGlobalPipelineStatus;
+
+  // ─── Omnichannel Command Palette (Cmd+K / Ctrl+K) ────────────────────────
+  function initSpotlight() {
+    const $backdrop = $("#spotlightBackdrop");
+    const $input = $("#spotlightInput");
+    const $results = $("#spotlightResults");
+    const $count = $("#spotlightTotalCount");
+
+    function openSpotlight() {
+      $backdrop.removeClass("d-none");
+      $input.val("").focus();
+      renderSpotlightResults("");
+    }
+
+    function closeSpotlight() {
+      $backdrop.addClass("d-none");
+    }
+
+    $("#topbarSpotlightBtn").on("click", openSpotlight);
+    $("#spotlightCloseBtn").on("click", closeSpotlight);
+
+    $backdrop.on("click", function (e) {
+      if ($(e.target).is("#spotlightBackdrop")) {
+        closeSpotlight();
       }
     });
 
-    if (count === 0) {
-      $list.append(
-        `<div style="padding:12px 10px;font-size:.8rem;color:var(--text-muted);">
-          No accounts match.
-        </div>`,
-      );
+    $(document).on("keydown", function (e) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        if ($backdrop.hasClass("d-none")) {
+          openSpotlight();
+        } else {
+          closeSpotlight();
+        }
+        return;
+      }
+
+      if (!$backdrop.hasClass("d-none")) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          closeSpotlight();
+          return;
+        }
+
+        const $items = $results.find(".spotlight-item");
+        if (!$items.length) return;
+
+        let currentIndex = $items.index($results.find(".spotlight-item.active"));
+
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          if (currentIndex < 0 || currentIndex >= $items.length - 1) {
+            currentIndex = 0;
+          } else {
+            currentIndex++;
+          }
+          $items.removeClass("active");
+          const $target = $items.eq(currentIndex).addClass("active");
+          if ($target[0]) $target[0].scrollIntoView({ block: "nearest" });
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          if (currentIndex <= 0) {
+            currentIndex = $items.length - 1;
+          } else {
+            currentIndex--;
+          }
+          $items.removeClass("active");
+          const $target = $items.eq(currentIndex).addClass("active");
+          if ($target[0]) $target[0].scrollIntoView({ block: "nearest" });
+        } else if (e.key === "Enter") {
+          e.preventDefault();
+          if (currentIndex >= 0 && currentIndex < $items.length) {
+            $items.eq(currentIndex).trigger("click");
+          }
+        }
+      }
+    });
+
+    $input.on("input", function () {
+      renderSpotlightResults($(this).val());
+    });
+
+    function renderSpotlightResults(rawQuery) {
+      const q = (rawQuery || "").trim().toLowerCase();
+      const accounts = Array.isArray(MOCK_DATA.accounts) ? MOCK_DATA.accounts : [];
+
+      if (!q) {
+        // Show default quick accounts
+        let html = `<div class="spotlight-group-title">Enterprise Accounts</div>`;
+        accounts.slice(0, 6).forEach((a) => {
+          const aName = a.name || a.display_name || "Unnamed Account";
+          const domain = a.primary_domain || a.domain || "";
+          const lobsCount = (a.lobs || []).length || a.lobs_count || 0;
+          const personasCount = (a.personas || []).length || a.total_contacts_captured || 0;
+
+          html += `
+            <div class="spotlight-item" data-type="account" data-account-id="${a.id}">
+              <div class="spotlight-item-left">
+                <div class="spotlight-item-icon"><i class="bi bi-buildings"></i></div>
+                <div class="spotlight-item-text">
+                  <div class="spotlight-item-title">${esc(aName)}</div>
+                  <div class="spotlight-item-sub">${esc(domain)}${domain ? " &bull; " : ""}${lobsCount} LOBs &bull; ${personasCount} contacts</div>
+                </div>
+              </div>
+              <span class="spotlight-item-badge">Account</span>
+            </div>
+          `;
+        });
+        $results.html(html);
+        $results.find(".spotlight-item").first().addClass("active");
+        $count.text("Type to search all accounts, LOBs, and personas");
+        return;
+      }
+
+      // 1. Search Accounts
+      const matchedAccounts = accounts.filter((a) => {
+        const name = (a.name || a.display_name || "").toLowerCase();
+        const domain = (a.primary_domain || a.domain || "").toLowerCase();
+        const ticker = (a.stock_symbol || a.ticker || "").toLowerCase();
+        const key = (a.key || "").toLowerCase();
+        return name.includes(q) || domain.includes(q) || ticker.includes(q) || key.includes(q);
+      }).slice(0, 5);
+
+      // 2. Search LOBs across all accounts
+      const matchedLobs = [];
+      for (const a of accounts) {
+        if (matchedLobs.length >= 8) break;
+        const lobs = a.lobs || [];
+        for (const l of lobs) {
+          if (matchedLobs.length >= 8) break;
+          const lName = (l.lob_name || l.name || l.division_name || "").toLowerCase();
+          const desc = (l.description || "").toLowerCase();
+          if (lName.includes(q) || desc.includes(q)) {
+            matchedLobs.push({
+              accountId: a.id,
+              accountName: a.name || a.display_name || "Account",
+              lob: l,
+            });
+          }
+        }
+      }
+
+      // 3. Search Personas across all accounts
+      const matchedPersonas = [];
+      for (const a of accounts) {
+        if (matchedPersonas.length >= 10) break;
+        const personas = a.personas || [];
+        for (const p of personas) {
+          if (matchedPersonas.length >= 10) break;
+          const pName = (p.name || "").toLowerCase();
+          const pTitle = (p.title || p.job_title || "").toLowerCase();
+          const pDept = (p.department || "").toLowerCase();
+          if (pName.includes(q) || pTitle.includes(q) || pDept.includes(q)) {
+            matchedPersonas.push({
+              accountId: a.id,
+              accountName: a.name || a.display_name || "Account",
+              persona: p,
+            });
+          }
+        }
+      }
+
+      const totalMatches = matchedAccounts.length + matchedLobs.length + matchedPersonas.length;
+
+      if (totalMatches === 0) {
+        $results.html(`
+          <div style="padding:36px 16px;text-align:center;color:#64748b;font-size:.85rem;">
+            <i class="bi bi-search" style="font-size:1.6rem;opacity:.4;display:block;margin-bottom:8px;"></i>
+            No results found for "<strong>${esc(q)}</strong>"
+          </div>
+        `);
+        $count.text("0 results");
+        return;
+      }
+
+      let html = "";
+
+      // Render Accounts Group
+      if (matchedAccounts.length > 0) {
+        html += `<div class="spotlight-group-title">Enterprise Accounts (${matchedAccounts.length})</div>`;
+        matchedAccounts.forEach((a) => {
+          const aName = a.name || a.display_name || "Unnamed Account";
+          const domain = a.primary_domain || a.domain || "";
+          html += `
+            <div class="spotlight-item" data-type="account" data-account-id="${a.id}">
+              <div class="spotlight-item-left">
+                <div class="spotlight-item-icon"><i class="bi bi-buildings"></i></div>
+                <div class="spotlight-item-text">
+                  <div class="spotlight-item-title">${esc(aName)}</div>
+                  <div class="spotlight-item-sub">${esc(domain)}${a.stock_symbol ? ` &bull; ${esc(a.stock_symbol)}` : ""}</div>
+                </div>
+              </div>
+              <span class="spotlight-item-badge">Account</span>
+            </div>
+          `;
+        });
+      }
+
+      // Render LOBs Group
+      if (matchedLobs.length > 0) {
+        html += `<div class="spotlight-group-title">Lines of Business &amp; Divisions (${matchedLobs.length})</div>`;
+        matchedLobs.forEach((item) => {
+          const lobName = item.lob.lob_name || item.lob.name || "Division";
+          const relType = item.lob.relationship_type || "Operating Division";
+          html += `
+            <div class="spotlight-item" data-type="lob" data-account-id="${item.accountId}" data-lob-id="${item.lob.id}">
+              <div class="spotlight-item-left">
+                <div class="spotlight-item-icon"><i class="bi bi-diagram-3"></i></div>
+                <div class="spotlight-item-text">
+                  <div class="spotlight-item-title">${esc(lobName)}</div>
+                  <div class="spotlight-item-sub">${esc(item.accountName)} &bull; ${esc(relType)}</div>
+                </div>
+              </div>
+              <span class="spotlight-item-badge">Division</span>
+            </div>
+          `;
+        });
+      }
+
+      // Render Personas Group
+      if (matchedPersonas.length > 0) {
+        html += `<div class="spotlight-group-title">Executive Stakeholders (${matchedPersonas.length})</div>`;
+        matchedPersonas.forEach((item) => {
+          const pName = item.persona.name || "Executive";
+          const pTitle = item.persona.title || item.persona.job_title || "Executive";
+          html += `
+            <div class="spotlight-item" data-type="persona" data-account-id="${item.accountId}" data-persona-id="${item.persona.id}">
+              <div class="spotlight-item-left">
+                <div class="spotlight-item-icon"><i class="bi bi-person-badge"></i></div>
+                <div class="spotlight-item-text">
+                  <div class="spotlight-item-title">${esc(pName)}</div>
+                  <div class="spotlight-item-sub">${esc(pTitle)} &bull; ${esc(item.accountName)}</div>
+                </div>
+              </div>
+              <span class="spotlight-item-badge">Persona</span>
+            </div>
+          `;
+        });
+      }
+
+      $results.html(html);
+      $results.find(".spotlight-item").first().addClass("active");
+      $count.text(`${totalMatches} match${totalMatches === 1 ? "" : "es"} found`);
     }
+
+    // Click handler for spotlight items
+    $results.on("click", ".spotlight-item", function () {
+      const type = $(this).data("type");
+      const accountId = $(this).data("account-id");
+      const lobId = $(this).data("lob-id");
+      const personaId = $(this).data("persona-id");
+
+      closeSpotlight();
+
+      if (!accountId) return;
+
+      const currentId = activeAccount ? activeAccount.id : null;
+      if (String(currentId) !== String(accountId)) {
+        $(`#accountList .account-item[data-id="${accountId}"]`).trigger("click");
+      }
+
+      if (type === "lob" && lobId) {
+        setTimeout(() => {
+          $(".tab-pill-btn[data-nav-tab='lobs']").trigger("click");
+          setTimeout(() => {
+            const $card = $(`.lob-card[data-lob-id="${lobId}"]`);
+            if ($card.length) {
+              $card.trigger("click");
+              $("html, body").animate({ scrollTop: $card.offset().top - 90 }, 300);
+              $card.addClass("highlight-pulse");
+              setTimeout(() => $card.removeClass("highlight-pulse"), 2500);
+            }
+          }, 120);
+        }, 80);
+      } else if (type === "persona" && personaId) {
+        setTimeout(() => {
+          $(".tab-pill-btn[data-nav-tab='personas']").trigger("click");
+          setTimeout(() => {
+            const $pCard = $(`.persona-card[data-persona-id="${personaId}"]`);
+            if ($pCard.length) {
+              $("html, body").animate({ scrollTop: $pCard.offset().top - 100 }, 300);
+              $pCard.addClass("highlight-pulse");
+              setTimeout(() => $pCard.removeClass("highlight-pulse"), 2500);
+            }
+          }, 120);
+        }, 80);
+      }
+    });
+  }
+
+  // 1. Render Clean Enterprise Sidebar Accounts
+  function renderSidebar(filterQuery = "") {
+    updateGlobalTelemetry();
+    const $list = $("#accountList").empty();
+    const q = (filterQuery !== undefined ? filterQuery : ($("#accountSearch").val() || "")).trim().toLowerCase();
+
+    const accounts = Array.isArray(MOCK_DATA.accounts) ? [...MOCK_DATA.accounts] : [];
+
+    // Filter by search query
+    const filtered = accounts.filter((acct) => {
+      const acctName = (acct.name || acct.display_name || "").toLowerCase();
+      const domain = (acct.primary_domain || acct.domain || "").toLowerCase();
+      const ticker = (acct.stock_symbol || acct.ticker || "").toLowerCase();
+      const key = (acct.key || "").toLowerCase();
+      return !q || acctName.includes(q) || domain.includes(q) || ticker.includes(q) || key.includes(q);
+    });
+
+    // Update real accounts counter badge in sidebar header
+    $("#sidebarAccountsCount").text(filtered.length);
+
+    if (filtered.length === 0) {
+      $list.append(
+        `<div style="padding:16px 12px;font-size:.8rem;color:var(--text-muted);text-align:center;">
+          No accounts found.
+        </div>`
+      );
+      return;
+    }
+
+    filtered.forEach((acct) => {
+      const acctName = acct.name || acct.display_name || "Unnamed Account";
+      const sId = String(acct.id);
+      const isActive = activeAccount && String(activeAccount.id) === sId;
+
+      const aHealth = computeAccountHealth(acct);
+      const completenessScore = aHealth.percentage || aHealth.completenessPct || 0;
+      const healthClass = completenessScore >= 80 ? "high" : (completenessScore >= 60 ? "medium" : "basic");
+
+      const lobsCount = (acct.lobs || []).length || acct.lobs_count || 0;
+      const personasCount = (acct.personas || []).length || acct.total_contacts_captured || 0;
+      const domain = acct.primary_domain || acct.domain || "";
+
+      let subtext = "";
+      if (lobsCount > 0 || personasCount > 0) {
+        const parts = [];
+        if (lobsCount > 0) parts.push(`${lobsCount} LOBs`);
+        if (personasCount > 0) parts.push(`${personasCount} contacts`);
+        subtext = parts.join(` <span class="acct-meta-dot">&bull;</span> `);
+      } else if (domain) {
+        subtext = esc(domain);
+      } else {
+        subtext = esc(acct.company_type || "Enterprise Account");
+      }
+
+      $list.append(`
+        <div class="account-item fade-in ${isActive ? 'active' : ''}" data-id="${acct.id}" role="button" tabindex="0" title="${esc(acctName)} &bull; ${completenessScore}% Data Filled (${aHealth.populatedCount}/${aHealth.totalFields}) &bull; ${lobsCount} LOBs &bull; ${personasCount} Personas">
+          <div class="acct-avatar">${esc(getInitials(acctName))}</div>
+          <div class="acct-body">
+            <div class="acct-main-row">
+              <span class="acct-name" title="${esc(acctName)}">${esc(acctName)}</span>
+              <span class="acct-score-pill ${healthClass}">${completenessScore}%</span>
+            </div>
+            <div class="acct-meta-row">
+              ${subtext}
+            </div>
+          </div>
+        </div>
+      `);
+    });
   }
 
   // Initial load
   loadData();
+  initSpotlight();
 
   // Sidebar Search
   $("#accountSearch").on("input", function () {
@@ -509,7 +918,7 @@ $(function () {
     } else if (opts.url && value) {
       const normHref = normalizeUrl(String(value));
       const display = opts.urlLabel || (typeof value === "string" && value.length > 55 ? value.substring(0, 52) + "..." : value);
-      renderedValHtml = `<a href="${esc(normHref)}" target="_blank" rel="noopener noreferrer" style="color:#0284c7;font-weight:600;word-break:break-all;text-decoration:none;">${esc(display)} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:.7rem;"></i></a>`;
+      renderedValHtml = `<a href="${esc(normHref)}" target="_blank" rel="noopener noreferrer" style="color:#0284c7;font-weight:600;word-break:break-all;text-decoration:none;">${esc(display)} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;"></i></a>`;
       rawValStr = String(value);
     } else if (opts.chips && Array.isArray(value)) {
       const maxInitial = opts.maxChips || (label.toLowerCase().includes("keyword") ? 6 : null);
@@ -517,7 +926,7 @@ $(function () {
         if (typeof v === 'object' && v !== null) {
           const mainText = v.name || v.title || v.label || v.term || v.company || Object.values(v)[0];
           const subText = v.relationship || v.domain || v.category || "";
-          return `<span class="data-tag" style="display:inline-flex;align-items:center;gap:4px;" title="${esc(JSON.stringify(v))}"><i class="fa-solid fa-tag" style="font-size:0.65rem;color:#0284c7;"></i> ${esc(mainText)}${subText ? ` <span style="color:#64748b;font-size:0.68rem;">(${esc(subText)})</span>` : ''}</span>`;
+          return `<span class="data-tag" style="display:inline-flex;align-items:center;gap:4px;" title="${esc(JSON.stringify(v))}"><i class="bi bi-tag" style="font-size:0.65rem;color:#0284c7;"></i> ${esc(mainText)}${subText ? ` <span style="color:#64748b;font-size:0.68rem;">(${esc(subText)})</span>` : ''}</span>`;
         }
         return `<span class="data-tag">${esc(String(v))}</span>`;
       };
@@ -534,7 +943,7 @@ $(function () {
               ${hiddenChips}
             </span>
             <button type="button" class="btn btn-sm btn-toggle-chips-expand" data-expanded="false" style="padding:2px 10px;font-size:0.72rem;border-radius:14px;display:inline-flex;align-items:center;gap:4px;cursor:pointer;border:1px solid #cbd5e1;color:#0284c7;background:#f8fafc;font-weight:600;">
-              <span>+${remainingCount} more</span> <i class="fa-solid fa-chevron-down" style="font-size:0.68rem;"></i>
+              <span>+${remainingCount} more</span> <i class="bi bi-chevron-down" style="font-size:0.68rem;"></i>
             </button>
           </div>
         `;
@@ -557,7 +966,7 @@ $(function () {
       <div class="snapshot-field-item${spanClass}" ${canEdit ? `data-entity-type="${esc(entityType)}" data-id="${esc(entityId)}" data-field="${esc(fieldName)}" data-raw-value="${esc(rawValStr)}"` : ""}>
         <div class="snapshot-field-header">
           <span class="snapshot-field-label">${esc(label.toUpperCase())}</span>
-          ${canEdit ? `<i class="fa-solid fa-pen snapshot-field-pencil" title="Edit ${esc(label)} inline"></i>` : ""}
+          ${canEdit ? `<i class="bi bi-pencil snapshot-field-pencil" title="Edit ${esc(label)} inline"></i>` : ""}
         </div>
         <div class="snapshot-field-value">
           ${renderedValHtml}
@@ -606,22 +1015,22 @@ $(function () {
               <div class="career-item-header">
                 ${logo ? `
                   <img src="${esc(logo)}" class="career-company-logo" alt="${esc(company)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
-                  <div class="career-logo-fallback" style="display:none;"><i class="fa-solid fa-building"></i></div>
+                  <div class="career-logo-fallback" style="display:none;"><i class="bi bi-building"></i></div>
                 ` : `
-                  <div class="career-logo-fallback"><i class="fa-solid fa-building"></i></div>
+                  <div class="career-logo-fallback"><i class="bi bi-building"></i></div>
                 `}
                 <div class="career-item-info">
                   <div class="career-role-title">${esc(pos)}</div>
                   <div class="career-company-row">
                     ${linkedin ? `
                       <a href="${esc(linkedin)}" target="_blank" rel="noopener noreferrer" class="career-company-link">
-                        ${esc(company)} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:0.65rem;"></i>
+                        ${esc(company)} <i class="bi bi-box-arrow-up-right" style="font-size:0.65rem;"></i>
                       </a>
                     ` : `
                       <span style="font-weight:600;color:#334155;">${esc(company)}</span>
                     `}
-                    ${dateRange ? `<span class="career-date-pill"><i class="fa-solid fa-calendar-days"></i> ${esc(dateRange)}</span>` : ""}
-                    ${loc ? `<span style="color:#64748b;font-size:0.75rem;"><i class="fa-solid fa-location-dot"></i> ${esc(loc)}</span>` : ""}
+                    ${dateRange ? `<span class="career-date-pill"><i class="bi bi-calendar3"></i> ${esc(dateRange)}</span>` : ""}
+                    ${loc ? `<span style="color:#64748b;font-size:0.75rem;"><i class="bi bi-geo-alt"></i> ${esc(loc)}</span>` : ""}
                   </div>
                 </div>
               </div>
@@ -654,12 +1063,12 @@ $(function () {
           return `
             <div class="academic-card">
               <div class="academic-icon-box">
-                <i class="fa-solid fa-graduation-cap"></i>
+                <i class="bi bi-mortarboard-fill"></i>
               </div>
               <div>
                 <div class="academic-degree-name">${esc(deg)}</div>
                 <div class="academic-school-name">${esc(school)}</div>
-                ${dateStr ? `<div style="font-size:0.72rem;color:#94a3b8;margin-top:4px;"><i class="fa-solid fa-calendar"></i> Class of ${esc(dateStr)}</div>` : ""}
+                ${dateStr ? `<div style="font-size:0.72rem;color:#94a3b8;margin-top:4px;"><i class="bi bi-calendar"></i> Class of ${esc(dateStr)}</div>` : ""}
               </div>
             </div>
           `;
@@ -674,7 +1083,7 @@ $(function () {
       return `
         <div class="lob-structured-card">
           <div class="lob-structured-header">
-            <span class="lob-structured-title"><i class="fa-solid fa-circle-check" style="color:#0284c7;"></i> Intellectual Property &amp; Patents</span>
+            <span class="lob-structured-title"><i class="bi bi-patch-check" style="color:#0284c7;"></i> Intellectual Property &amp; Patents</span>
             <span class="badge" style="background:#f1f5f9;color:#64748b;">No Separate Patents</span>
           </div>
           <div style="color:#94a3b8;font-size:0.8rem;font-style:italic;">No dedicated patents registered directly under this operating division.</div>
@@ -688,7 +1097,7 @@ $(function () {
     return `
       <div class="lob-structured-card">
         <div class="lob-structured-header">
-          <span class="lob-structured-title"><i class="fa-solid fa-circle-check" style="color:#0284c7;"></i> Intellectual Property &amp; Patent Portfolio</span>
+          <span class="lob-structured-title"><i class="bi bi-patch-check-fill" style="color:#0284c7;"></i> Intellectual Property &amp; Patent Portfolio</span>
           <span class="badge-solid-green">${esc(status)}</span>
         </div>
         <div class="lob-disclosure-grid">
@@ -717,7 +1126,7 @@ $(function () {
       return `
         <div class="lob-structured-card">
           <div class="lob-structured-header">
-            <span class="lob-structured-title"><i class="fa-solid fa-file-lines" style="color:#059669;"></i> Financial Disclosures &amp; Regulatory Standing</span>
+            <span class="lob-structured-title"><i class="bi bi-file-earmark-bar-graph" style="color:#059669;"></i> Financial Disclosures &amp; Regulatory Standing</span>
             <span class="badge" style="background:#f1f5f9;color:#64748b;">Consolidated</span>
           </div>
           <div style="color:#94a3b8;font-size:0.8rem;font-style:italic;">Disclosures consolidated into parent corporate audited filings.</div>
@@ -734,7 +1143,7 @@ $(function () {
     return `
       <div class="lob-structured-card">
         <div class="lob-structured-header">
-          <span class="lob-structured-title"><i class="fa-solid fa-file-lines" style="color:#059669;"></i> Financial Disclosures &amp; Regulatory Standing</span>
+          <span class="lob-structured-title"><i class="bi bi-file-earmark-bar-graph-fill" style="color:#059669;"></i> Financial Disclosures &amp; Regulatory Standing</span>
           <span class="badge-solid-green">${esc(status)}</span>
         </div>
         <div class="lob-disclosure-grid">
@@ -759,7 +1168,7 @@ $(function () {
               <div class="lob-disclosure-label">REGISTERED LEI IDENTIFIER</div>
               <div class="lob-disclosure-val">
                 <a href="https://search.gleif.org/#/record/${esc(lei)}" target="_blank" rel="noopener noreferrer" style="color:#0284c7;text-decoration:none;font-family:monospace;">
-                  ${esc(lei)} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:0.7rem;"></i>
+                  ${esc(lei)} <i class="bi bi-box-arrow-up-right" style="font-size:0.7rem;"></i>
                 </a>
               </div>
             </div>
@@ -807,7 +1216,7 @@ $(function () {
           <div class="section-title-row">
             <div class="section-title-left">
               <span class="section-title-dot"></span>
-              <i class="fa-solid fa-shield-halved" style="color:#0284c7;"></i>
+              <i class="bi bi-shield-shaded" style="color:#0284c7;"></i>
               <span>${sectionPrefix}Direct Peer Competitors &amp; Market Alternatives</span>
             </div>
             <span class="badge" style="background:#f1f5f9;color:#64748b;">None Tracked</span>
@@ -822,7 +1231,7 @@ $(function () {
         <div class="section-title-row" style="margin-bottom:10px;">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="fa-solid fa-shield-halved" style="color:#0284c7;"></i>
+            <i class="bi bi-shield-shaded" style="color:#0284c7;"></i>
             <span>${sectionPrefix}Direct Peer Competitors &amp; Market Alternatives</span>
           </div>
           <span class="badge" style="background:#e0f2fe;color:#0369a1;font-weight:700;padding:2px 8px;font-size:0.72rem;">${list.length} Peers Tracked</span>
@@ -866,7 +1275,7 @@ $(function () {
               <div class="competitor-compact-card">
                 <div class="competitor-card-head">
                   <div class="competitor-card-title">
-                    <i class="fa-solid fa-shield-halved" style="color:#0284c7;font-size:0.9rem;flex-shrink:0;"></i>
+                    <i class="bi bi-shield-check" style="color:#0284c7;font-size:0.9rem;flex-shrink:0;"></i>
                     <span class="competitor-card-name" title="${esc(name)}">${esc(name)}</span>
                   </div>
                   <span class="competitor-rel-badge" style="flex-shrink:0;">${esc(rel)}</span>
@@ -874,24 +1283,24 @@ $(function () {
 
                 <div class="competitor-card-domain">
                   <a href="${esc(webUrl)}" target="_blank" rel="noopener noreferrer" class="competitor-domain-link" title="Visit official corporate domain: ${esc(cleanDomain || webUrl)}">
-                    <i class="fa-solid fa-globe" style="font-size:0.72rem;"></i>
+                    <i class="bi bi-globe" style="font-size:0.72rem;"></i>
                     <span style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(cleanDomain || 'Official Website')}</span>
-                    <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:0.58rem;"></i>
+                    <i class="bi bi-box-arrow-up-right" style="font-size:0.58rem;"></i>
                   </a>
                 </div>
 
                 <div class="competitor-card-actions">
                   <a href="${esc(webUrl)}" target="_blank" rel="noopener noreferrer" class="comp-link-badge" title="Official Domain: ${esc(cleanDomain || webUrl)}">
-                    <i class="fa-solid fa-link"></i> Web
+                    <i class="bi bi-link-45deg"></i> Web
                   </a>
                   <a href="${esc(newsUrl)}" target="_blank" rel="noopener noreferrer" class="comp-link-badge" title="Live Google News Stream">
-                    <i class="fa-solid fa-newspaper"></i> News
+                    <i class="bi bi-newspaper"></i> News
                   </a>
                   <a href="${esc(linkedinUrl)}" target="_blank" rel="noopener noreferrer" class="comp-link-badge" title="LinkedIn Corporate Profile">
-                    <i class="fa-brands fa-linkedin"></i> LinkedIn
+                    <i class="bi bi-linkedin"></i> LinkedIn
                   </a>
                   <a href="${esc(secUrl)}" target="_blank" rel="noopener noreferrer" class="comp-link-badge" title="SEC EDGAR Company Filings">
-                    <i class="fa-solid fa-file-lines"></i> SEC
+                    <i class="bi bi-file-earmark-text"></i> SEC
                   </a>
                 </div>
               </div>
@@ -909,7 +1318,7 @@ $(function () {
       return `
         <div class="lob-structured-card" style="grid-column: 1 / -1;">
           <div style="display:flex;align-items:center;gap:10px;padding:8px;color:#64748b;">
-            <i class="fa-solid fa-circle-info" style="color:#0284c7;font-size:1.1rem;"></i>
+            <i class="bi bi-info-circle-fill" style="color:#0284c7;font-size:1.1rem;"></i>
             <div>
               <div style="font-weight:600;color:#334155;font-size:0.85rem;">No Direct Child Divisions Registered</div>
               <div style="font-size:0.75rem;margin-top:2px;">This operating division operates as a direct consolidated unit without secondary nested subsidiaries under the current corporate registry filing.</div>
@@ -942,7 +1351,7 @@ $(function () {
                     ${sLegal ? `<div class="sublob-card-subtitle">${esc(sLegal)}</div>` : ''}
                   </div>
                   <span class="sublob-badge-l3">
-                    <i class="fa-solid fa-sitemap"></i> Level 3
+                    <i class="bi bi-diagram-3"></i> Level 3
                   </span>
                 </div>
 
@@ -952,7 +1361,7 @@ $(function () {
                     <div class="sublob-meta-val">
                       ${lei ? `
                         <a href="https://search.gleif.org/#/record/${esc(lei)}" target="_blank" rel="noopener noreferrer" style="color:#0284c7;font-family:monospace;" onclick="event.stopPropagation();">
-                          ${esc(lei.length > 14 ? lei.substring(0, 12) + '...' : lei)} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:0.65rem;"></i>
+                          ${esc(lei.length > 14 ? lei.substring(0, 12) + '...' : lei)} <i class="bi bi-box-arrow-up-right" style="font-size:0.65rem;"></i>
                         </a>
                       ` : '<span style="color:#94a3b8;">Pending LEI</span>'}
                     </div>
@@ -975,24 +1384,24 @@ $(function () {
 
               <div class="sublob-card-footer">
                 <span class="sublob-parent-tag" title="Parent Line of Business">
-                  <i class="fa-solid fa-building"></i> ${esc(parentName)}
+                  <i class="bi bi-building"></i> ${esc(parentName)}
                 </span>
                 <div style="display:flex;align-items:center;gap:6px;">
                   <button type="button" class="btn-sublob-details" data-sublob-id="${esc(sub.id || '')}" title="View all 18 enterprise database fields">
-                    <i class="fa-solid fa-eye"></i> Details
+                    <i class="bi bi-eye"></i> Details
                   </button>
                   ${isVerified ? `
                     <span class="badge" style="background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;font-size:0.68rem;padding:3px 7px;">
-                      <i class="fa-solid fa-circle-check"></i> Verified ${verifiedAt ? '(' + esc(verifiedAt) + ')' : ''}
+                      <i class="bi bi-check-circle-fill"></i> Verified ${verifiedAt ? '(' + esc(verifiedAt) + ')' : ''}
                     </span>
                   ` : `
                     <span class="badge" style="background:#f8fafc;color:#64748b;border:1px solid #e2e8f0;font-size:0.68rem;padding:3px 7px;">
-                      <i class="fa-solid fa-circle-minus"></i> Unverified
+                      <i class="bi bi-dash-circle"></i> Unverified
                     </span>
                   `}
                   ${sub.id ? `
                     <button type="button" class="btn btn-sm btn-light btn-verify-sublob" data-sublob-id="${esc(sub.id)}" title="Toggle manual verification" style="font-size:0.68rem;padding:2px 6px;border:1px solid #cbd5e1;">
-                      <i class="fa-solid fa-circle-check"></i>
+                      <i class="bi bi-check2-circle"></i>
                     </button>
                   ` : ''}
                 </div>
@@ -1044,7 +1453,7 @@ $(function () {
       <!-- Explainer Banner -->
       <div class="hierarchy-explainer-banner">
         <div class="hierarchy-explainer-icon">
-          <i class="fa-solid fa-sitemap"></i>
+          <i class="bi bi-diagram-3-fill"></i>
         </div>
         <div class="hierarchy-explainer-text">
           <div class="hierarchy-explainer-title">
@@ -1056,12 +1465,12 @@ $(function () {
             Below is the multi-tier hierarchy containing <strong>${directCount} Direct Operating Divisions (LOBs)</strong> and <strong>${sublobCount} Indirect Operating Sub-LOBs</strong> under the ultimate parent company.
           </p>
           <div class="hierarchy-stats-bar">
-            <span class="hierarchy-stat-chip"><i class="fa-solid fa-shield-halved" style="color:#059669;"></i> Parent LEI: <strong>${esc(parentLei)}</strong></span>
-            <span class="hierarchy-stat-chip"><i class="fa-solid fa-diagram-project" style="color:#0284c7;"></i> <strong>${totalCount}</strong> Total Global Entities</span>
-            <span class="hierarchy-stat-chip"><i class="fa-solid fa-building" style="color:#0ea5e9;"></i> <strong>${directCount}</strong> Direct LOBs</span>
-            <span class="hierarchy-stat-chip"><i class="fa-solid fa-sitemap" style="color:#d97706;"></i> <strong>${sublobCount}</strong> Operating Sub-LOBs</span>
-            <span class="hierarchy-stat-chip"><i class="fa-solid fa-globe" style="color:#6366f1;"></i> <strong>${countries.length}</strong> Global Jurisdictions (${countries.slice(0, 6).join(", ")})</span>
-            ${mappedCount > 0 ? `<span class="hierarchy-stat-chip" style="background:#ecfdf5;border-color:#a7f3d0;color:#047857;"><i class="fa-solid fa-circle-check"></i> <strong>${mappedCount}</strong> Mapped to Pipeline LOBs</span>` : ""}
+            <span class="hierarchy-stat-chip"><i class="bi bi-shield-check" style="color:#059669;"></i> Parent LEI: <strong>${esc(parentLei)}</strong></span>
+            <span class="hierarchy-stat-chip"><i class="bi bi-diagram-2" style="color:#0284c7;"></i> <strong>${totalCount}</strong> Total Global Entities</span>
+            <span class="hierarchy-stat-chip"><i class="bi bi-building" style="color:#0ea5e9;"></i> <strong>${directCount}</strong> Direct LOBs</span>
+            <span class="hierarchy-stat-chip"><i class="bi bi-diagram-3" style="color:#d97706;"></i> <strong>${sublobCount}</strong> Operating Sub-LOBs</span>
+            <span class="hierarchy-stat-chip"><i class="bi bi-globe" style="color:#6366f1;"></i> <strong>${countries.length}</strong> Global Jurisdictions (${countries.slice(0, 6).join(", ")})</span>
+            ${mappedCount > 0 ? `<span class="hierarchy-stat-chip" style="background:#ecfdf5;border-color:#a7f3d0;color:#047857;"><i class="bi bi-check-circle-fill"></i> <strong>${mappedCount}</strong> Mapped to Pipeline LOBs</span>` : ""}
           </div>
         </div>
       </div>
@@ -1071,7 +1480,7 @@ $(function () {
         <div class="hierarchy-root-header">
           <div>
             <div style="font-size:0.68rem;font-weight:700;color:#0284c7;letter-spacing:0.05em;text-transform:uppercase;">
-              <i class="fa-solid fa-award"></i> ULTIMATE PARENT HOLDING ENTITY (LEVEL 1)
+              <i class="bi bi-award-fill"></i> ULTIMATE PARENT HOLDING ENTITY (LEVEL 1)
             </div>
             <div class="hierarchy-root-title">
               ${esc(account.legal_name || account.display_name || account.name)}
@@ -1080,10 +1489,10 @@ $(function () {
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
             <span class="badge-solid-green">ACTIVE &amp; VERIFIED</span>
             <a href="https://search.gleif.org/#/record/${esc(parentLei)}" target="_blank" rel="noopener noreferrer" class="hierarchy-root-lei" title="View official GLEIF Golden Copy registry record">
-              <i class="fa-solid fa-arrow-up-right-from-square" style="color:#0284c7;"></i> LEI: ${esc(parentLei)}
+              <i class="bi bi-box-arrow-up-right" style="color:#0284c7;"></i> LEI: ${esc(parentLei)}
             </a>
             <button type="button" class="btn btn-sm btn-light copy-lei-btn" data-lei="${esc(parentLei)}" title="Copy LEI to clipboard" style="font-size:0.7rem;padding:3px 8px;border:1px solid #cbd5e1;">
-              <i class="fa-solid fa-clipboard"></i> Copy
+              <i class="bi bi-clipboard"></i> Copy
             </button>
           </div>
         </div>
@@ -1093,7 +1502,7 @@ $(function () {
       <div class="hierarchy-branch-connector">
         <div class="hierarchy-branch-line"></div>
         <div class="hierarchy-branch-badge">
-          <i class="fa-solid fa-sitemap"></i> Direct LOBs (${directCount}) &amp; Operating Sub-LOBs (${sublobCount})
+          <i class="bi bi-diagram-3"></i> Direct LOBs (${directCount}) &amp; Operating Sub-LOBs (${sublobCount})
         </div>
         <div class="hierarchy-branch-line"></div>
       </div>
@@ -1104,16 +1513,16 @@ $(function () {
           All Global Subsidiaries (${totalCount})
         </button>
         <button type="button" class="hierarchy-filter-btn" data-filter="direct">
-          <i class="fa-solid fa-building"></i> Direct LOBs (${directCount})
+          <i class="bi bi-building"></i> Direct LOBs (${directCount})
         </button>
         <button type="button" class="hierarchy-filter-btn" data-filter="sublob">
-          <i class="fa-solid fa-sitemap"></i> Operating Sub-LOBs (${sublobCount})
+          <i class="bi bi-diagram-3"></i> Operating Sub-LOBs (${sublobCount})
         </button>
       </div>
 
       <!-- Search & Filter Controls -->
       <div class="subsidiary-search-box">
-        <i class="fa-solid fa-magnifying-glass" style="color:#94a3b8;font-size:0.85rem;margin-left:4px;"></i>
+        <i class="bi bi-search" style="color:#94a3b8;font-size:0.85rem;margin-left:4px;"></i>
         <input type="text" class="subsidiary-search-input" placeholder="Search subsidiaries by name, country (US, CA, GB, JP), or LEI..." />
         <span class="badge" style="background:#f1f5f9;color:#64748b;font-size:0.75rem;padding:7px 12px;border:1px solid #e2e8f0;" id="subsidiaryCountBadge">${totalCount} Entities</span>
       </div>
@@ -1142,27 +1551,27 @@ $(function () {
                 <div class="subsidiary-meta-row">
                   ${isSub ? `
                     <span class="jurisdiction-tag" style="background:#fef3c7;color:#92400e;font-weight:700;">
-                      <i class="fa-solid fa-sitemap"></i> Level 3: Sub-LOB
+                      <i class="bi bi-diagram-3"></i> Level 3: Sub-LOB
                     </span>
                   ` : `
                     <span class="jurisdiction-tag" style="background:#e0f2fe;color:#0284c7;font-weight:700;">
-                      <i class="fa-solid fa-building"></i> Level 2: Direct LOB
+                      <i class="bi bi-building"></i> Level 2: Direct LOB
                     </span>
                   `}
                   <span class="jurisdiction-tag">
                     ${getCountryFlag(child.country)} ${esc(child.jurisdiction || child.country || "Global")}
                   </span>
-                  ${child.legal_form ? `<span class="jurisdiction-tag" title="Entity Legal Form Code"><i class="fa-solid fa-file-lines"></i> ${esc(child.legal_form)}</span>` : ""}
-                  ${child.is_commercial_lob ? `<span class="jurisdiction-tag" style="background:#f0fdf4;color:#047857;" title="Commercial Operating Unit"><i class="fa-solid fa-briefcase"></i> Commercial</span>` : ""}
+                  ${child.legal_form ? `<span class="jurisdiction-tag" title="Entity Legal Form Code"><i class="bi bi-file-earmark-text"></i> ${esc(child.legal_form)}</span>` : ""}
+                  ${child.is_commercial_lob ? `<span class="jurisdiction-tag" style="background:#f0fdf4;color:#047857;" title="Commercial Operating Unit"><i class="bi bi-briefcase-fill"></i> Commercial</span>` : ""}
                 </div>
               </div>
               <div style="margin-top:10px;padding-top:8px;border-top:1px dashed #e2e8f0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">
                 <a href="https://search.gleif.org/#/record/${esc(child.lei)}" target="_blank" rel="noopener noreferrer" class="lei-code-badge" title="View GLEIF official record">
-                  <i class="fa-solid fa-arrow-up-right-from-square"></i> LEI: ${esc(child.lei ? (child.lei.length > 16 ? child.lei.substring(0, 14) + "..." : child.lei) : "N/A")}
+                  <i class="bi bi-box-arrow-up-right"></i> LEI: ${esc(child.lei ? (child.lei.length > 16 ? child.lei.substring(0, 14) + "..." : child.lei) : "N/A")}
                 </a>
                 ${isMapped ? `
                   <a href="javascript:void(0)" class="lob-matched-badge" data-lob-id="${esc(matchedLobId)}" title="Click to view Line of Business #${matchedLobId}">
-                    <i class="fa-solid fa-circle-check"></i> Mapped LOB #${matchedLobId}
+                    <i class="bi bi-check-circle-fill"></i> Mapped LOB #${matchedLobId}
                   </a>
                 ` : `
                   <span style="font-size:0.68rem;color:#94a3b8;">${esc(child.relationship_type || (isSub ? "Indirect Operating Sub-LOB" : "Direct Child Entity"))}</span>
@@ -1176,15 +1585,15 @@ $(function () {
       ${secSubs.length ? `
         <div style="margin-top:20px;padding-top:14px;border-top:1px solid #e2e8f0;">
           <div style="font-size:0.82rem;font-weight:700;color:#0f172a;margin-bottom:8px;display:flex;align-items:center;gap:6px;">
-            <i class="fa-solid fa-file-excel" style="color:#0284c7;"></i> SEC Form 10-K Exhibit 21 Disclosed Subsidiaries (${secSubs.length})
+            <i class="bi bi-file-earmark-spreadsheet" style="color:#0284c7;"></i> SEC Form 10-K Exhibit 21 Disclosed Subsidiaries (${secSubs.length})
           </div>
           <div class="subsidiaries-grid">
             ${secSubs.map(sub => `
               <div class="subsidiary-card">
                 <div class="subsidiary-name">${esc(sub.legal_name || sub.name)}</div>
                 <div class="subsidiary-meta-row">
-                  <span class="jurisdiction-tag"><i class="fa-solid fa-location-dot"></i> ${esc(sub.jurisdiction || sub.state || "US")}</span>
-                  ${sub.filing_year ? `<span class="jurisdiction-tag"><i class="fa-solid fa-calendar"></i> Filing Year: ${esc(sub.filing_year)}</span>` : ""}
+                  <span class="jurisdiction-tag"><i class="bi bi-geo-alt"></i> ${esc(sub.jurisdiction || sub.state || "US")}</span>
+                  ${sub.filing_year ? `<span class="jurisdiction-tag"><i class="bi bi-calendar"></i> Filing Year: ${esc(sub.filing_year)}</span>` : ""}
                 </div>
               </div>
             `).join("")}
@@ -1195,7 +1604,7 @@ $(function () {
       <!-- Collapsible Raw Regulatory JSON -->
       <div class="raw-json-accordion">
         <button type="button" class="btn btn-sm btn-outline-secondary btn-toggle-raw-json" style="font-size:0.72rem;">
-          <i class="fa-solid fa-code"></i> View Raw Regulatory Data (JSON) <i class="fa-solid fa-chevron-down"></i>
+          <i class="bi bi-code-slash"></i> View Raw Regulatory Data (JSON) <i class="bi bi-chevron-down"></i>
         </button>
         <div class="raw-json-container d-none" style="margin-top:10px;">
           <pre style="font-size:.7rem;max-height:220px;overflow:auto;background:#0f172a;color:#f8fafc;padding:12px;border-radius:6px;margin:0;white-space:pre-wrap;">${esc(JSON.stringify(tree, null, 2))}</pre>
@@ -1219,7 +1628,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="fa-solid fa-building" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="bi bi-building" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>1. Corporate Identity &amp; Legal Registration</span>
           </div>
           <span class="section-subtitle-hint">Click pencil icon to edit inline</span>
@@ -1243,7 +1652,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="fa-solid fa-location-dot" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="bi bi-geo-alt" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>2. Location &amp; Corporate Contact</span>
           </div>
           <span class="section-subtitle-hint">Click pencil icon to edit inline</span>
@@ -1265,7 +1674,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="fa-solid fa-share-nodes" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="bi bi-share" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>3. Social Media &amp; Developer Footprint</span>
           </div>
           <span class="section-subtitle-hint">Click pencil icon to edit inline</span>
@@ -1285,7 +1694,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="fa-solid fa-dollar-sign" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="bi bi-currency-dollar" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>4. Financial Valuation &amp; Securities</span>
           </div>
           <span class="section-subtitle-hint">Click pencil icon to edit inline</span>
@@ -1310,7 +1719,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="fa-solid fa-shield-halved" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="bi bi-shield-check" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>5. Regulatory Compliance &amp; SEC EDGAR</span>
           </div>
           <span class="section-subtitle-hint">Click pencil icon to edit inline</span>
@@ -1328,7 +1737,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="fa-solid fa-microchip" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="bi bi-cpu" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>6. Web Traffic, IT Spend &amp; IP Assets</span>
           </div>
           <span class="section-subtitle-hint">Click pencil icon to edit inline</span>
@@ -1353,7 +1762,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="fa-solid fa-tower-broadcast" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="bi bi-broadcast" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>7. 15 OSINT Scraping Launchpad Feeds</span>
           </div>
           <span class="section-subtitle-hint">Click pencil icon to edit inline</span>
@@ -1377,7 +1786,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="fa-solid fa-tags" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="bi bi-tags" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>8. Industry Classifications &amp; Hierarchy Metrics</span>
           </div>
           <span class="section-subtitle-hint">Click pencil icon to edit inline</span>
@@ -1402,7 +1811,7 @@ $(function () {
           <div class="section-title-row">
             <div class="section-title-left">
               <span class="section-title-dot"></span>
-              <i class="fa-solid fa-sitemap" style="color:#0284c7;font-size:0.95rem;"></i>
+              <i class="bi bi-diagram-3-fill" style="color:#0284c7;font-size:0.95rem;"></i>
               <span>9. Corporate Regulatory &amp; Legal Registry Summary</span>
             </div>
             <span class="section-subtitle-hint">GLEIF ISO 17442 &amp; SEC Form 10-K Exhibit 21</span>
@@ -1415,7 +1824,7 @@ $(function () {
               </div>
               <div class="snapshot-field-value">
                 <a href="https://search.gleif.org/#/record/${esc(account.organisational_hierarchy_tree.gleif_lei || account.sec_cik || '')}" target="_blank" style="color:#0284c7;text-decoration:none;">
-                  ${esc(account.organisational_hierarchy_tree.gleif_lei || 'Verified in Registry')} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:.7rem;"></i>
+                  ${esc(account.organisational_hierarchy_tree.gleif_lei || 'Verified in Registry')} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;"></i>
                 </a>
               </div>
             </div>
@@ -1436,7 +1845,7 @@ $(function () {
               <div class="snapshot-field-value">
                 ${account.sec_edgar_url ? `
                   <a href="${esc(account.sec_edgar_url)}" target="_blank" style="color:#0284c7;text-decoration:none;">
-                    SEC Form 10-K Exhibit 21 <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:.7rem;"></i>
+                    SEC Form 10-K Exhibit 21 <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;"></i>
                   </a>
                 ` : 'SEC Exhibit 21 Indexed'}
               </div>
@@ -1445,7 +1854,7 @@ $(function () {
 
           <div style="margin-top:12px;padding:10px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;font-size:0.78rem;color:#64748b;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
             <div>
-              <i class="fa-solid fa-circle-info" style="color:#0284c7;"></i>
+              <i class="bi bi-info-circle-fill" style="color:#0284c7;"></i>
               Active operating business units, divisional heads, and technology stacks are organized under the <strong>Lines of Business (${(account.lobs || []).length})</strong> tab.
             </div>
             <button type="button" class="crumb-lobs" style="font-size:0.74rem;padding:4px 12px;background:#0284c7;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600;">
@@ -1468,7 +1877,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="fa-solid fa-building" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="bi bi-building" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>1. Corporate Identity &amp; Legal Structure</span>
           </div>
           <span class="section-subtitle-hint">Click pencil icon to edit inline</span>
@@ -1492,7 +1901,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="fa-solid fa-chart-column" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="bi bi-bar-chart" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>2. Financial Metrics &amp; Executive Leadership</span>
           </div>
           <span class="section-subtitle-hint">Click pencil icon to edit inline</span>
@@ -1509,7 +1918,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="fa-solid fa-microchip" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="bi bi-cpu" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>3. Technology Stack &amp; Infrastructure</span>
           </div>
           <span class="section-subtitle-hint">Click pencil icon to edit inline</span>
@@ -1527,7 +1936,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="fa-solid fa-book" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="bi bi-journal-text" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>5. Patents &amp; Financial Disclosures</span>
           </div>
           <span class="section-subtitle-hint">Regulatory Disclosures &amp; IP Holdings</span>
@@ -1543,7 +1952,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="fa-solid fa-tower-broadcast" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="bi bi-broadcast-pin" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>6. OSINT Stream Feed Endpoints &amp; Tracking Queries</span>
           </div>
           <span class="section-subtitle-hint">Click pencil icon to configure stream endpoints inline</span>
@@ -1569,26 +1978,36 @@ $(function () {
     currentVaultContext = { entityType: "persona", id: p.id };
 
     const verifiedStreams = [
-      { label: "LinkedIn Profile URL", val: p.linkedin_url, icon: "fa-brands fa-linkedin" },
-      { label: "Official Corporate Bio URL", val: p.corporate_bio_url, icon: "fa-solid fa-building-circle-check", isBespoke: true },
-      { label: "Crunchbase Profile URL", val: p.crunchbase_url, icon: "fa-solid fa-briefcase" },
-      { label: "SEC Form 4 Insider Trades URL", val: p.sec_insider_trades_url, icon: "fa-solid fa-lock" },
-      { label: "FEC Political Contributions URL", val: p.fec_contributions_url, icon: "fa-solid fa-building-columns" },
-      { label: "Quiver Quantitative Insider URL", val: p.quiver_insider_url, icon: "fa-solid fa-arrow-trend-up", isBespoke: true },
-      { label: "Bloomberg Media & Videos URL", val: p.bloomberg_url, icon: "fa-solid fa-tv", isBespoke: true },
-      { label: "Wall Street Journal Article URL", val: p.wsj_article_url, icon: "fa-solid fa-newspaper", isBespoke: true },
-      { label: "Major Media Interview URL", val: p.media_interview_url, icon: "fa-solid fa-microphone", isBespoke: true },
-      { label: "Annual Report & Proxy Statement URL", val: p.annual_report_url, icon: "fa-solid fa-file-lines" },
-      { label: "ZoomInfo Profile URL", val: p.zoominfo_url, icon: "fa-solid fa-id-badge" },
-      { label: "Google News Real-Time RSS URL", val: p.rss_url, icon: "fa-solid fa-rss" },
-      { label: "YouTube Media & Keynotes URL", val: p.youtube_url, icon: "fa-brands fa-youtube", isBespoke: true },
-      { label: "Executive Podcast Appearances URL", val: p.podcast_url, icon: "fa-solid fa-headphones", isBespoke: true },
-      { label: "OpenInsider Trades Screener URL", val: p.openinsider_url, icon: "fa-solid fa-right-left" },
-      { label: "SECForm4 Live Filings URL", val: p.secform4_url, icon: "fa-solid fa-shield-halved" },
-      { label: "Wayback Career Archive URL", val: p.wayback_url, icon: "fa-solid fa-clock-rotate-left" },
-      { label: "TheOrg Executive Chart URL", val: p.theorg_url, icon: "fa-solid fa-sitemap", isBespoke: true },
-      { label: "Seeking Alpha Transcripts URL", val: p.seeking_alpha_url, icon: "fa-solid fa-comment-dots", isBespoke: true },
-      { label: "External Board & Civic Roles URL", val: p.external_board_url, icon: "fa-solid fa-award", isBespoke: true }
+      { label: "LinkedIn Profile URL", val: p.linkedin_url, icon: "bi-linkedin" },
+      { label: "Official Corporate Bio URL", val: p.corporate_bio_url, icon: "bi-building-check", isBespoke: true },
+      { label: "Crunchbase Profile URL", val: p.crunchbase_url, icon: "bi-briefcase" },
+      { label: "SEC Form 4 Insider Trades URL", val: p.sec_insider_trades_url, icon: "bi-file-earmark-lock" },
+      { label: "FEC Political Contributions URL", val: p.fec_contributions_url, icon: "bi-bank" },
+      { label: "Quiver Quantitative Insider URL", val: p.quiver_insider_url, icon: "bi-graph-up-arrow", isBespoke: true },
+      { label: "Bloomberg Media & Videos URL", val: p.bloomberg_url, icon: "bi-tv", isBespoke: true },
+      { label: "Wall Street Journal Article URL", val: p.wsj_article_url, icon: "bi-newspaper", isBespoke: true },
+      { label: "Major Media Interview URL", val: p.media_interview_url, icon: "bi-mic-fill", isBespoke: true },
+      { label: "Annual Report & Proxy Statement URL", val: p.annual_report_url, icon: "bi-file-earmark-text" },
+      { label: "ZoomInfo Profile URL", val: p.zoominfo_url, icon: "bi-person-badge" },
+      { label: "Google News Real-Time RSS URL", val: p.rss_url, icon: "bi-rss" },
+      { label: "YouTube Media & Keynotes URL", val: p.youtube_url, icon: "bi-youtube", isBespoke: true },
+      { label: "Executive Podcast Appearances URL", val: p.podcast_url, icon: "bi-headphones", isBespoke: true },
+      { label: "OpenInsider Trades Screener URL", val: p.openinsider_url, icon: "bi-currency-exchange" },
+      { label: "SECForm4 Live Filings URL", val: p.secform4_url, icon: "bi-shield-shaded" },
+      { label: "Wayback Career Archive URL", val: p.wayback_url, icon: "bi-clock-history" },
+      { label: "TheOrg Executive Chart URL", val: p.theorg_url, icon: "bi-diagram-3-fill", isBespoke: true },
+      { label: "Seeking Alpha Transcripts URL", val: p.seeking_alpha_url, icon: "bi-chat-square-quote-fill", isBespoke: true },
+      { label: "External Board & Civic Roles URL", val: p.external_board_url, icon: "bi-award-fill", isBespoke: true },
+      { label: "Google Patents Inventor Search URL", val: p.google_patents_url, icon: "bi-lightbulb", isBespoke: true },
+      { label: "Google Scholar Citations URL", val: p.google_scholar_url, icon: "bi-mortarboard", isBespoke: true },
+      { label: "OpenAlex Scientific Author URL", val: p.openalex_author_url, icon: "bi-book", isBespoke: true },
+      { label: "ORCID Researcher Profile URL", val: p.orcid_search_url, icon: "bi-person-badge-fill", isBespoke: true },
+      { label: "Wikidata Entity Resolution URL", val: p.wikidata_person_url, icon: "bi-globe2", isBespoke: true },
+      { label: "Reddit OSINT Sentiment RSS URL", val: p.reddit_rss_url, icon: "bi-reddit", isBespoke: true },
+      { label: "Google Trends Executive Interest URL", val: p.google_trends_url, icon: "bi-graph-up", isBespoke: true },
+      { label: "YouTube Executive Keynotes URL", val: p.youtube_interviews_url, icon: "bi-play-circle", isBespoke: true },
+      { label: "Podcast Executive Appearances URL", val: p.podcast_search_url, icon: "bi-mic", isBespoke: true },
+      { label: "Live Corporate Twitter / X Stream URL", val: p.twitter_live_url, icon: "bi-twitter-x", isBespoke: true }
     ];
 
     // Filter dedicated-column streams that have a value
@@ -1612,7 +2031,7 @@ $(function () {
           activeStreams.push({
             label: (feed.source || feed.type || "Intelligence Feed") + " URL",
             val: feedUrl,
-            icon: "fa-solid fa-rss",
+            icon: "bi-rss-fill",
             isManifest: true   // distinct badge style (blue) from DB-column streams
           });
           existingUrls.add(feedUrl.toLowerCase()); // prevent duplicates within manifest itself
@@ -1626,7 +2045,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="fa-solid fa-address-card" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="bi bi-person-vcard" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>1. Executive Profile &amp; Demographics</span>
           </div>
           <span class="section-subtitle-hint">Click pencil icon to edit inline</span>
@@ -1647,7 +2066,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="fa-solid fa-envelope" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="bi bi-envelope" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>2. Verified Contact Coordinates</span>
           </div>
           <span class="section-subtitle-hint">Click pencil icon to edit inline</span>
@@ -1670,7 +2089,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="fa-solid fa-briefcase" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="bi bi-briefcase" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>3. Career &amp; Employment History</span>
           </div>
           <span class="section-subtitle-hint">Executive Career Journey &amp; Corporate Background</span>
@@ -1692,7 +2111,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="fa-solid fa-graduation-cap" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="bi bi-mortarboard" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>4. Academic Background &amp; Degrees</span>
           </div>
           <span class="section-subtitle-hint">Verified Academic Credentials &amp; Degrees</span>
@@ -1709,7 +2128,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="fa-solid fa-star" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="bi bi-stars" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>5. AI Sales Dossier &amp; Behavioral Tone</span>
           </div>
           <span class="section-subtitle-hint">Click pencil icon to edit inline</span>
@@ -1729,7 +2148,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="fa-solid fa-bullseye" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="bi bi-bullseye" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>6. Skills, Operational Pain Points &amp; Buying Authority</span>
           </div>
           <span class="section-subtitle-hint">Click pencil icon to edit inline</span>
@@ -1750,7 +2169,7 @@ $(function () {
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-dot"></span>
-            <i class="fa-solid fa-shield-halved" style="color:#0284c7;font-size:0.95rem;"></i>
+            <i class="bi bi-shield-check" style="color:#0284c7;font-size:0.95rem;"></i>
             <span>7. Verified Executive Intelligence (${activeStreams.length} Active Streams)</span>
           </div>
           <span class="section-subtitle-hint">Click pencil icon to edit inline &bull; Verified live feeds</span>
@@ -1765,23 +2184,23 @@ $(function () {
           <div style="margin-top:14px;padding-top:12px;border-top:1px solid #e2e8f0;">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
               <span style="font-size:0.75rem;font-weight:700;color:#0284c7;text-transform:uppercase;letter-spacing:0.5px;">
-                <i class="fa-solid fa-microchip"></i> Active OSINT Streams Manifest (${activeStreams.length} verified channels)
+                <i class="bi bi-cpu-fill"></i> Active OSINT Streams Manifest (${activeStreams.length} verified channels)
               </span>
               <span style="font-size:0.68rem;color:#64748b;">Key: ${esc(p.osint_feed_manifest && p.osint_feed_manifest.key ? p.osint_feed_manifest.key : (p.key || ''))}</span>
             </div>
             <div style="display:flex;flex-wrap:wrap;gap:6px;">
               ${activeStreams.map(s => {
                 const badgeClass = s.isBespoke ? 'badge-solid-purple' : s.isManifest ? 'badge-solid-blue' : 'badge-solid-green';
-                const iconClass  = s.isBespoke ? 'fa-solid fa-circle-check' : s.isManifest ? 'fa-solid fa-rss' : 'fa-solid fa-circle-check';
+                const iconClass  = s.isBespoke ? 'bi-patch-check-fill' : s.isManifest ? 'bi-rss-fill' : 'bi-check-circle-fill';
                 const iconColor  = s.isBespoke ? '#a855f7' : s.isManifest ? '#0284c7' : '#10b981';
                 return `
                 <a href="${esc(normalizeUrl(String(s.val)))}" target="_blank" rel="noopener noreferrer"
                    class="${badgeClass}"
                    style="text-decoration:none;display:inline-flex;align-items:center;gap:4px;padding:4px 8px;font-size:0.72rem;"
                    title="${esc(s.val)}">
-                  <i class="${iconClass}" style="color:${iconColor};"></i>
+                  <i class="bi ${iconClass}" style="color:${iconColor};"></i>
                   ${esc(s.label.replace(' URL', '').toUpperCase())}
-                  <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:0.6rem;"></i>
+                  <i class="bi bi-box-arrow-up-right" style="font-size:0.6rem;"></i>
                 </a>`;
               }).join('')}
 
@@ -1796,14 +2215,14 @@ $(function () {
           <div class="section-title-row">
             <div class="section-title-left">
               <span class="section-title-dot"></span>
-              <i class="fa-solid fa-code" style="color:#0284c7;font-size:0.95rem;"></i>
+              <i class="bi bi-code-square" style="color:#0284c7;font-size:0.95rem;"></i>
               <span>8. Ingestion Audit Payload (JSON)</span>
             </div>
             <span class="section-subtitle-hint">Technical Ingestion Audit</span>
           </div>
           <div class="raw-json-accordion" style="margin-top:0;border-top:none;padding-top:0;">
             <button type="button" class="btn btn-sm btn-outline-secondary btn-toggle-raw-json" style="font-size:0.75rem;">
-              <i class="fa-solid fa-code"></i> View Ingestion Audit Payload (JSON) <i class="fa-solid fa-chevron-down"></i>
+              <i class="bi bi-code-slash"></i> View Ingestion Audit Payload (JSON) <i class="bi bi-chevron-down"></i>
             </button>
             <div class="raw-json-container d-none" style="margin-top:10px;">
               <pre style="font-size:.7rem;max-height:260px;overflow:auto;background:#0f172a;color:#f8fafc;padding:12px;border-radius:6px;margin:0;white-space:pre-wrap;">${esc(JSON.stringify(p.raw_data, null, 2))}</pre>
@@ -1850,9 +2269,7 @@ $(function () {
         <span class="active-crumb">${esc(activeLob.name)}</span>
       `);
     } else {
-      $("#breadcrumbsBar").html(`
-        <span class="active-crumb">${esc(activeAccount.name)}</span>
-      `);
+      $("#breadcrumbsBar").empty();
     }
   }
 
@@ -1882,7 +2299,7 @@ $(function () {
     if (val === null || val === undefined) return false;
     if (typeof val === "string") {
       const s = val.trim();
-      return s !== "" && s !== "—" && s !== "-" && s !== "None" && s !== "null" && s !== "Revenue N/A";
+      return s !== "" && s !== "—" && s !== "-" && s !== "None" && s !== "null" && s !== "Revenue N/A" && s !== "NEW" && s !== "Domain not set" && s !== "Not set";
     }
     if (Array.isArray(val)) return val.length > 0;
     if (typeof val === "object") return Object.keys(val).length > 0;
@@ -2203,10 +2620,11 @@ $(function () {
   // VIEW 1: ACCOUNT LEVEL INTELLIGENCE (IMAGE 1)
   // ══════════════════════════════════════════════════════════════════
   
-  // Reusable LOB Compact Cards Renderer (Top 10 with Expandable Toggle)
+  // Reusable LOB Compact Cards Renderer with Multi-Tier Entity Taxonomy & Filter Bar
   function renderLobCardsList($container, lobs) {
     $container.empty();
     $("#lobSection").find(".lob-toggle-footer").remove();
+    $("#lobSection").find(".lob-taxonomy-filter-bar").remove();
 
     if (!lobs || lobs.length === 0) {
       $container.append(
@@ -2214,48 +2632,147 @@ $(function () {
           No Lines of Business discovered for this account.
         </div>`
       );
-      $("#lobCountBadge").text("(0 Divisions)");
+      $("#lobCountBadge").text("(0 Entities)");
       return;
     }
 
-    $("#lobCountBadge").text(`(${lobs.length} Division${lobs.length > 1 ? "s" : ""})`);
-    
-    const limit = 10;
-    const hasMore = lobs.length > limit;
+    $("#lobCountBadge").text(`(${lobs.length} Corporate Entit${lobs.length > 1 ? "ies" : "y"})`);
 
-    lobs.forEach((lob, idx) => {
-      const isExtra = idx >= limit;
-      const subtitle = lob.revenue ? `Rev: ${lob.revenue}` : lob.desc || lob.overview || "Business Division";
-      $container.append(`
-        <div class="compact-card lob-card fade-in ${isExtra ? 'lob-card-extra' : ''}"
-             data-lob-id="${lob.id}"
-             ${isExtra ? 'style="display:none;"' : ''}
-             title="Click to explore ${esc(lob.name)} division and personas">
-          <div class="compact-card-avatar"><i class="fa-solid fa-folder"></i></div>
-          <div class="compact-card-body">
-            <div class="compact-card-title">${esc(lob.name)}</div>
-            <div class="compact-card-subtitle">${esc(subtitle)}</div>
-          </div>
-        </div>
-      `);
+    // Taxonomy Category Badge Colors & Iconography
+    const TAXONOMY_CONFIG = {
+      "Commercial brand/platform": { color: "#059669", bg: "#ecfdf5", border: "#a7f3d0", label: "Commercial Platform", icon: "bi-stars" },
+      "Acquired operating company": { color: "#2563eb", bg: "#eff6ff", border: "#bfdbfe", label: "Acquired Brand / OpCo", icon: "bi-building-up" },
+      "Regulated advisory entity": { color: "#7c3aed", bg: "#f5f3ff", border: "#ddd6fe", label: "Regulated Advisor", icon: "bi-shield-check" },
+      "Regional operating company": { color: "#0891b2", bg: "#ecfeff", border: "#a5f3fc", label: "Regional OpCo", icon: "bi-globe" },
+      "Holding company": { color: "#d97706", bg: "#fffbeb", border: "#fde68a", label: "Holding Company", icon: "bi-layers" },
+      "Financing entity/SPV": { color: "#ea580c", bg: "#fff7ed", border: "#fed7aa", label: "Financing / SPV", icon: "bi-bank" },
+      "Legal subsidiary": { color: "#475569", bg: "#f8fafc", border: "#e2e8f0", label: "Legal Subsidiary", icon: "bi-briefcase" },
+      "Fund/GP structure": { color: "#4f46e5", bg: "#eef2ff", border: "#c7d2fe", label: "Fund / GP Structure", icon: "bi-diagram-3" },
+      "Unclassified - Requires Review": { color: "#64748b", bg: "#f1f5f9", border: "#cbd5e1", label: "Requires Review", icon: "bi-question-circle" }
+    };
+
+    // Calculate Counts per Taxonomy
+    const categoryCounts = {};
+    lobs.forEach(l => {
+      const cat = l.relationship_type || "Legal subsidiary";
+      categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
     });
 
-    if (hasMore) {
-      const extraCount = lobs.length - limit;
-      $container.after(`
-        <div class="lob-toggle-footer" style="grid-column: 1 / -1; width: 100%; text-align: center; margin-top: 12px; padding-top: 10px; border-top: 1px dashed #e2e8f0;">
-          <button type="button" class="btn-toggle-lobs-expand" data-expanded="false" style="background:#f8fafc;border:1px solid #cbd5e1;color:#0284c7;font-size:0.8rem;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px;padding:6px 16px;border-radius:20px;transition:all .15s ease;">
-            <span>View all ${lobs.length} Lines of Business (+${extraCount} more)</span> <i class="fa-solid fa-chevron-down" style="font-size:0.75rem;"></i>
-          </button>
-        </div>
-      `);
+    // Create Taxonomy Filter Bar
+    const priority = {
+      "Commercial brand/platform": 1,
+      "Acquired operating company": 2,
+      "Regulated advisory entity": 3,
+      "Regional operating company": 4,
+      "Holding company": 5,
+      "Financing entity/SPV": 6,
+      "Legal subsidiary": 7,
+      "Fund/GP structure": 8,
+      "Unclassified - Requires Review": 9
+    };
+    const categoriesPresent = Object.keys(categoryCounts).sort((a, b) => (priority[a] || 99) - (priority[b] || 99));
+
+    let filterHtml = `
+      <div class="lob-taxonomy-filter-bar" style="margin-bottom:14px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+        <span style="font-size:0.75rem;font-weight:700;color:#64748b;margin-right:4px;text-transform:uppercase;letter-spacing:0.5px;">Taxonomy:</span>
+        <button type="button" class="btn-lob-filter active" data-category="ALL" style="background:#0284c7;color:#fff;border:1px solid #0284c7;font-size:0.75rem;font-weight:600;padding:4px 12px;border-radius:14px;cursor:pointer;transition:all .15s ease;">
+          All (${lobs.length})
+        </button>
+    `;
+
+    categoriesPresent.forEach(cat => {
+      const cfg = TAXONOMY_CONFIG[cat] || { label: cat };
+      filterHtml += `
+        <button type="button" class="btn-lob-filter" data-category="${esc(cat)}" style="background:#f8fafc;color:#475569;border:1px solid #cbd5e1;font-size:0.75rem;font-weight:600;padding:4px 12px;border-radius:14px;cursor:pointer;transition:all .15s ease;">
+          ${esc(cfg.label)} (${categoryCounts[cat]})
+        </button>
+      `;
+    });
+    filterHtml += `</div>`;
+    $container.before(filterHtml);
+
+    function renderFilteredCards(filterCat) {
+      $container.empty();
+      $("#lobSection").find(".lob-toggle-footer").remove();
+
+      const filteredLobs = filterCat === "ALL" 
+        ? lobs 
+        : lobs.filter(l => (l.relationship_type || "Legal subsidiary") === filterCat);
+
+      const limit = 12;
+      const hasMore = filteredLobs.length > limit;
+
+      filteredLobs.forEach((lob, idx) => {
+        const isExtra = idx >= limit;
+        const relType = lob.relationship_type || "Legal subsidiary";
+        const cfg = TAXONOMY_CONFIG[relType] || { color: "#475569", bg: "#f8fafc", border: "#e2e8f0", label: relType, icon: "bi-building" };
+
+        $container.append(`
+          <div class="compact-card lob-card fade-in ${isExtra ? 'lob-card-extra' : ''}"
+               data-lob-id="${lob.id}"
+               data-category="${esc(relType)}"
+               ${isExtra ? 'style="display:none;"' : ''}
+               title="Click to explore ${esc(lob.name)} (${esc(relType)})">
+            <div class="compact-card-avatar" style="position:relative;background:${cfg.bg};color:${cfg.color};border:1px solid ${cfg.border};display:flex;align-items:center;justify-content:center;">
+              <i class="bi ${cfg.icon || 'bi-building'}" style="font-size:1rem;"></i>
+            </div>
+            <div class="compact-card-body">
+              <div class="compact-card-title">${esc(lob.name)}</div>
+              <div class="compact-card-subtitle" style="display:flex;align-items:center;gap:5px;margin-top:2px;">
+                <span style="display:inline-block;padding:2px 7px;border-radius:4px;font-size:0.68rem;font-weight:700;background:${cfg.bg};color:${cfg.color};border:1px solid ${cfg.border};line-height:1.2;">
+                  ${esc(cfg.label)}
+                </span>
+                ${lob.revenue ? `<span style="font-size:0.7rem;color:#0284c7;font-weight:600;">${esc(lob.revenue)}</span>` : ''}
+              </div>
+            </div>
+          </div>
+        `);
+      });
+
+      if (hasMore) {
+        const extraCount = filteredLobs.length - limit;
+        $container.after(`
+          <div class="lob-toggle-footer" style="grid-column: 1 / -1; width: 100%; text-align: center; margin-top: 12px; padding-top: 10px; border-top: 1px dashed #e2e8f0;">
+            <button type="button" class="btn-toggle-lobs-expand" data-expanded="false" style="background:#f8fafc;border:1px solid #cbd5e1;color:#0284c7;font-size:0.8rem;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px;padding:6px 16px;border-radius:20px;transition:all .15s ease;">
+              <span>View all ${filteredLobs.length} entities (+${extraCount} more)</span> <i class="bi bi-chevron-down" style="font-size:0.75rem;"></i>
+            </button>
+          </div>
+        `);
+      }
     }
+
+    renderFilteredCards("ALL");
+
+    // Bind Filter Click Events
+    $("#lobSection").off("click", ".btn-lob-filter").on("click", ".btn-lob-filter", function() {
+      const $btn = $(this);
+      const cat = $btn.data("category");
+      $("#lobSection").find(".btn-lob-filter").removeClass("active").css({ background: "#f8fafc", color: "#475569", borderColor: "#cbd5e1" });
+      $btn.addClass("active").css({ background: "#0284c7", color: "#fff", borderColor: "#0284c7" });
+      renderFilteredCards(cat);
+    });
+
+
+  }
+
+  function formatCompactRevenue(val) {
+    if (!val || val === "Revenue N/A" || val === "—") return val || "—";
+    const s = String(val).trim();
+    if (/^\$?\d+(\.\d+)?[TMBK]$/i.test(s)) return s.startsWith("$") ? s : `$${s}`;
+    const num = parseFloat(s.replace(/[^0-9.-]/g, ""));
+    if (isNaN(num) || num === 0) return s;
+    if (num >= 1e12) return `$${(num / 1e12).toFixed(2)}T`;
+    if (num >= 1e9) return `$${(num / 1e9).toFixed(2)}B`;
+    if (num >= 1e6) return `$${(num / 1e6).toFixed(2)}M`;
+    if (num >= 1e3) return `$${(num / 1e3).toFixed(2)}K`;
+    return `$${num.toLocaleString()}`;
   }
 
   function renderModernAccountHeader(account) {
     const initials = getInitials(account.name);
     const compType = account.company_type || "—";
-    const revenue = (account.revenue && account.revenue !== "Revenue N/A") ? account.revenue : (account.estimated_revenue_range || "—");
+    const rawRev = (account.revenue && account.revenue !== "Revenue N/A") ? account.revenue : (account.estimated_revenue_range || "—");
+    const revenue = formatCompactRevenue(rawRev);
     const opStatus = account.operating_status || "—";
     const industry = (account.industries || [])[0] || "—";
     const desc = account.desc || account.overview || account.short_description || "—";
@@ -2280,10 +2797,10 @@ $(function () {
               ${opStatus !== "—" ? `<span class="badge-solid-green">${esc(opStatus)}</span>` : ""}
               ${industry !== "—" ? `<span class="badge-solid-purple">${esc(industry)}</span>` : ""}
               <span class="badge-health-pill ${aHealth.confidenceScore >= 80 ? 'health-green' : (aHealth.confidenceScore >= 60 ? 'health-blue' : 'health-amber')}" title="Data Completeness: ${aHealth.completenessPct}% (${aHealth.populatedCount}/${aHealth.totalFields} fields) | Source Coverage: ${aHealth.coveragePct}% (${aHealth.sourcesHit}/${aHealth.totalSources} sources)">
-                <i class="fa-solid fa-shield-halved"></i> <strong>${aHealth.confidenceScore}% Confidence</strong> &bull; ${aHealth.completenessPct}% Filled (${aHealth.populatedCount}/${aHealth.totalFields}) &bull; ${aHealth.sourcesHit}/${aHealth.totalSources} Sources
+                <i class="bi bi-shield-check"></i> <strong>${aHealth.confidenceScore}% Confidence</strong> &bull; ${aHealth.completenessPct}% Filled (${aHealth.populatedCount}/${aHealth.totalFields}) &bull; ${aHealth.sourcesHit}/${aHealth.totalSources} Sources
               </span>
               <button type="button" class="btn-verify-badge ${account.is_manually_verified ? 'verified' : 'unverified'}" data-entity-type="account" data-id="${account.id}" title="${account.is_manually_verified ? `Verified ${formatTimeAgo(account.manually_verified_at)}` : 'Click to toggle verification'}">
-                <i class="${account.is_manually_verified ? 'fa-solid fa-circle-check' : 'fa-solid fa-shield-halved'}"></i>
+                <i class="bi ${account.is_manually_verified ? 'bi-patch-check-fill' : 'bi-shield-exclamation'}"></i>
                 <span>${account.is_manually_verified ? `Manually Verified ✓ (${formatTimeAgo(account.manually_verified_at)})` : 'AI Inferred • Verify'}</span>
               </button>
             </div>
@@ -2293,17 +2810,17 @@ $(function () {
 
         <div class="header-actions-col">
           <div class="header-btn-group">
-            <button type="button" class="action-btn-pill btn-pill-blue acct-btn-pull" data-entity-type="account" data-key="${acctKey}">
-              <i class="fa-solid fa-caret-down" style="font-size:0.65rem;"></i> Pull
-            </button>
-            <button type="button" class="action-btn-pill btn-pill-validate acct-btn-validate" data-entity-type="account" data-key="${acctKey}">
-              <i class="fa-solid fa-check"></i> Validate
-            </button>
-            <button type="button" class="action-btn-pill btn-pill-dump acct-btn-dump" data-entity-type="account" data-key="${acctKey}">
-              <i class="fa-solid fa-database"></i> Dump
+            <button type="button" class="action-btn-pill btn-pill-blue" id="acctOpenBatchBtn" data-account-id="${account.id}" title="Open Batch Console — bulk enrich, discover LOBs & Personas">
+              <i class="bi bi-grid-3x3-gap-fill" style="font-size:0.7rem;"></i> Batch Console
             </button>
             <button type="button" class="action-btn-pill btn-pill-purple" id="acctEditBtn">
               Edit
+            </button>
+            <button type="button" class="action-btn-pill btn-pill-red" id="acctDataManageBtn"
+                    data-account-id="${account.id}"
+                    data-account-name="${esc(account.name || account.display_name || 'Account')}"
+                    title="Manage & Purge Account Data">
+              <i class="bi bi-trash3"></i> Delete / Purge
             </button>
           </div>
           <span class="header-meta-timestamp">Last pull: ${pullTimeStr} &bull; ${aHealth.sourcesHit}/11 sources &bull; ${validationStr}</span>
@@ -2322,7 +2839,7 @@ $(function () {
           <div class="completeness-heading">
             <span>DATA HEALTH &amp; COMPLETENESS</span>
             <span style="font-size:0.75rem;font-weight:700;color:#0284c7;text-transform:none;letter-spacing:0;margin-left:6px;">
-              &bull; <strong>${comp.confidenceScore}% Confidence</strong> &bull; ${comp.percentage}% Filled (${comp.populatedCount}/${comp.totalFields}) &bull; ${comp.sourcesHit}/${comp.totalSources} Sources
+              &bull; <strong>${comp.percentage}% Data Filled</strong> &bull; ${comp.populatedCount}/${comp.totalFields} Attributes &bull; ${comp.sourcesHit}/${comp.totalSources} Live Gateways
             </span>
           </div>
           <div class="enterprise-progress-track">
@@ -2352,7 +2869,7 @@ $(function () {
             <div class="completeness-heading">
               <span>DIVISION DATA HEALTH &amp; COMPLETENESS</span>
               <span style="font-size:0.75rem;font-weight:700;color:#0284c7;text-transform:none;letter-spacing:0;margin-left:6px;">
-                &bull; <strong>${comp.confidenceScore}% Confidence</strong> &bull; ${comp.completenessPct}% Filled (${comp.populatedCount}/${comp.totalFields}) &bull; ${comp.sourcesHit}/${comp.totalSources} Streams Active
+                &bull; <strong>${comp.completenessPct}% Data Filled</strong> &bull; ${comp.populatedCount}/${comp.totalFields} Attributes &bull; ${comp.sourcesHit}/${comp.totalSources} Streams Active
               </span>
             </div>
             <div class="enterprise-progress-track">
@@ -2393,11 +2910,6 @@ $(function () {
         <button type="button" class="tab-pill-btn ${activeTab === 'activity' ? 'active' : ''}" data-nav-tab="activity">
           Activity Log
         </button>
-      </div>
-
-      <div class="tab-search-box-wrap">
-        <i class="fa-solid fa-magnifying-glass"></i>
-        <input type="text" id="tabSearchInput" placeholder="Search divisions, personas, fields..." autocomplete="off" />
       </div>
     `;
   }
@@ -2500,34 +3012,47 @@ $(function () {
       }
 
       const html = runs.map((r, idx) => {
-        const dot = r.status === "completed" ? "dot-green" : (r.status === "failed" ? "dot-red" : "dot-blue");
+        const isSuccess = r.status === "completed";
+        const isFailed = r.status === "failed";
+        const statusClass = isSuccess ? "success" : (isFailed ? "failed" : "running");
+        const statusIcon = isSuccess ? "bi-check-circle-fill" : (isFailed ? "bi-x-circle-fill" : "bi-arrow-repeat spin");
+        const statusLabel = isSuccess ? "Completed" : (isFailed ? "Failed" : (r.status || "In Progress"));
         const timeStr = r.completed_at || r.started_at ? formatTimeAgo(r.completed_at || r.started_at) : "recently";
         const lvl = (r.pipeline_level || "pipeline").toUpperCase();
         const act = (r.action || "run").toUpperCase();
-        const statusText = r.status === "completed" ? "Success" : r.status;
-        const scoreBadge = (r.quality_score !== null && r.quality_score !== undefined) 
-          ? `<span class="badge-solid-green" style="font-size:.65rem;padding:2px 6px;margin-left:6px;">Score: ${r.quality_score}% (${r.quality_grade || '—'})</span>`
-          : "";
         const countStr = formatEntitiesExtracted(r.entities_extracted);
         const durStr = (r.duration_seconds !== null && r.duration_seconds !== undefined) ? `${r.duration_seconds.toFixed(2)}s` : "";
-        const meta = [countStr, durStr, r.raw_storage_dir || r.enriched_storage_dir].filter(Boolean).join(" &bull; ");
+        const storageDir = r.raw_storage_dir || r.enriched_storage_dir || "";
+        const compactStorage = storageDir ? storageDir.split(/[\/\\]/).slice(-2).join("/") : "";
         const isExtra = idx >= 3;
         const displayStyle = (isExtra && !wasExpanded) ? 'style="display:none;"' : '';
 
         return `
-          <div class="timeline-item ${isExtra ? 'timeline-item-extra' : ''}" ${displayStyle}>
-            <span class="timeline-dot ${dot}"></span>
-            <div class="timeline-content">
-              <div class="timeline-title">
-                [${esc(lvl)}] ${esc(act)} &mdash; ${esc(statusText)}
-                ${scoreBadge}
-              </div>
-              <div class="timeline-desc" style="word-break:break-all;">
-                ${meta ? esc(meta) : "Execution logged in PostgreSQL and output audit directory"}
-                ${r.error_message ? `<div style="color:#ef4444;font-size:.7rem;margin-top:2px;">Error: ${esc(r.error_message)}</div>` : ""}
+          <div class="pipeline-activity-card timeline-item timeline-item-extra ${isExtra ? 'extra' : ''}" ${displayStyle}>
+            <div class="activity-card-left">
+              <span class="activity-status-icon ${statusClass}">
+                <i class="bi ${statusIcon}"></i>
+              </span>
+              <div class="activity-card-details">
+                <div class="activity-card-title-row">
+                  <span class="activity-tag-level">${esc(lvl)}</span>
+                  <span class="activity-tag-action">${esc(act)}</span>
+                  <span class="activity-status-badge ${statusClass}">${esc(statusLabel)}</span>
+                  ${(r.quality_score !== null && r.quality_score !== undefined) ? `
+                    <span class="activity-quality-badge"><i class="bi bi-shield-check"></i> Score: ${r.quality_score}% (${esc(r.quality_grade || 'A')})</span>
+                  ` : ''}
+                </div>
+                <div class="activity-card-meta-row">
+                  ${countStr ? `<span class="activity-meta-pill"><i class="bi bi-diagram-3-fill"></i> ${esc(countStr)}</span>` : ''}
+                  ${durStr ? `<span class="activity-meta-pill"><i class="bi bi-stopwatch"></i> ${esc(durStr)}</span>` : ''}
+                  ${compactStorage ? `<span class="activity-meta-pill storage" title="${esc(storageDir)}"><i class="bi bi-folder2"></i> ${esc(compactStorage)}</span>` : ''}
+                </div>
+                ${r.error_message ? `<div class="activity-error-msg"><i class="bi bi-exclamation-circle-fill"></i> ${esc(r.error_message)}</div>` : ''}
               </div>
             </div>
-            <div class="timeline-time">${esc(timeStr)}</div>
+            <div class="activity-card-right">
+              <span class="activity-timestamp"><i class="bi bi-clock"></i> ${esc(timeStr)}</span>
+            </div>
           </div>
         `;
       }).join("");
@@ -2537,8 +3062,8 @@ $(function () {
         ? `<div class="activity-toggle-footer" style="padding-top:10px;border-top:1px dashed #e2e8f0;margin-top:10px;text-align:center;">
              <button type="button" class="btn-toggle-activity-expand" data-expanded="${wasExpanded ? 'true' : 'false'}" style="background:none;border:none;color:#0284c7;font-size:0.78rem;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:6px;transition:all .15s ease;">
                ${wasExpanded 
-                 ? `<span>Show latest 3 only</span> <i class="fa-solid fa-chevron-up" style="font-size:0.72rem;"></i>`
-                 : `<span>View full run history (${extraCount} more)</span> <i class="fa-solid fa-chevron-down" style="font-size:0.72rem;"></i>`
+                 ? `<span>Show latest 3 only</span> <i class="bi bi-chevron-up" style="font-size:0.72rem;"></i>`
+                 : `<span>View full run history (${extraCount} more)</span> <i class="bi bi-chevron-down" style="font-size:0.72rem;"></i>`
                }
              </button>
            </div>`
@@ -2558,7 +3083,8 @@ $(function () {
       ? `LEI: ${account.organisational_hierarchy_tree.gleif_lei}` 
       : (account.sec_cik ? `CIK: ${account.sec_cik}` : (account.lei_code ? `LEI: ${account.lei_code}` : "—"));
     const employees = account.employee_count_range || "—";
-    const revenue = (account.revenue && account.revenue !== "Revenue N/A") ? account.revenue : (account.estimated_revenue_range || "—");
+    const rawRev = (account.revenue && account.revenue !== "Revenue N/A") ? account.revenue : (account.estimated_revenue_range || "—");
+    const revenue = formatCompactRevenue(rawRev);
     const compType = account.company_type || "—";
     const opStatus = account.operating_status || "—";
     const founded = account.founded_year || (account.founded_date ? String(account.founded_date).slice(0, 4) : "—");
@@ -2568,76 +3094,86 @@ $(function () {
     const lobsCount = (account.lobs || []).length;
     const personasCount = (account.personas || []).length;
 
-    // Feeds evaluation
+    // Feeds evaluation (Expanded OSINT matrix)
     const feedsList = [
-      { name: "X / Twitter", url: account.twitter_live_url, key: "twitter_live_url" },
-      { name: "Google News RSS", url: account.rss_url || account.news_query, key: "rss_url" },
-      { name: "Reddit Feed", url: account.reddit_rss_url || account.reddit_query, key: "reddit_rss_url" },
-      { name: "Google Patents", url: account.google_patents_url, key: "google_patents_url" },
-      { name: "YouTube Media", url: account.youtube_search_url, key: "youtube_search_url" },
-      { name: "Wikidata", url: account.wikidata_entity_url, key: "wikidata_entity_url" },
+      { name: "X (Twitter) Feed", icon: "bi-twitter-x", url: account.twitter_live_url || account.twitter_url, key: "twitter_live_url", type: "Social Stream" },
+      { name: "Google News Alerts", icon: "bi-newspaper", url: account.rss_url || (account.news_query ? `https://news.google.com/search?q=${encodeURIComponent(account.news_query)}` : null), key: "rss_url", type: "Media RSS" },
+      { name: "Reddit Discussions", icon: "bi-reddit", url: account.reddit_rss_url || (account.reddit_query ? `https://www.reddit.com/search.rss?q=${encodeURIComponent(account.reddit_query)}` : null), key: "reddit_rss_url", type: "Community RSS" },
+      { name: "USPTO Patent Filings", icon: "bi-lightbulb", url: account.google_patents_url, key: "google_patents_url", type: "IP Portfolio" },
+      { name: "Executive Media / Video", icon: "bi-youtube", url: account.youtube_search_url, key: "youtube_search_url", type: "Broadcast Media" },
+      { name: "Wikidata Entity", icon: "bi-diagram-2", url: account.wikidata_entity_url, key: "wikidata_entity_url", type: "Knowledge Graph" },
+      { name: "Google Trends Momentum", icon: "bi-graph-up-arrow", url: account.google_trends_url, key: "google_trends_url", type: "Search Trends" },
+      { name: "SEC EDGAR Submissions", icon: "bi-bank", url: account.sec_submissions_url || account.sec_edgar_url, key: "sec_submissions_url", type: "Regulatory Filings" },
     ];
 
+    const configuredFeedsCount = feedsList.filter(f => Boolean(f.url)).length;
     const feedsHtml = feedsList.map(f => {
       const isConfigured = Boolean(f.url);
-      const timeStr = isConfigured ? `synced ${formatTimeAgo(account.updated_at || account.extracted_at)}` : `<span style="color:#94a3b8;">Not configured &bull; &mdash;</span>`;
-      const dotClass = isConfigured ? "dot-green" : "dot-gray";
-      return `
-        <div class="feed-status-row feed-status-interactive" data-feed-url="${esc(f.url || '')}" data-feed-name="${esc(f.name)}" data-feed-key="${esc(f.key)}" style="cursor:pointer;transition:background 0.15s ease;" title="${isConfigured ? 'Click to open ' + esc(f.name) + ' live feed' : 'Click to configure ' + esc(f.name)}">
-          <div class="feed-status-left">
-            <span class="dot-indicator ${dotClass}"></span>
-            <span style="font-weight:600;">${esc(f.name)}</span>
+      if (isConfigured) {
+        return `
+          <a href="${esc(f.url)}" target="_blank" rel="noopener noreferrer" class="osint-channel-tile active feed-status-row" data-feed-url="${esc(f.url)}" data-feed-name="${esc(f.name)}" data-feed-key="${esc(f.key)}" title="Open live ${esc(f.name)}">
+            <div class="osint-tile-left">
+              <div class="osint-tile-icon"><i class="bi ${f.icon}"></i></div>
+              <div class="osint-tile-info">
+                <div class="osint-tile-title">${esc(f.name)}</div>
+                <div class="osint-tile-type">${esc(f.type)}</div>
+              </div>
+            </div>
+            <span class="osint-live-indicator"><span class="pulse-dot"></span> LIVE <i class="bi bi-box-arrow-up-right" style="font-size:0.65rem;margin-left:2px;"></i></span>
+          </a>
+        `;
+      } else {
+        return `
+          <div class="osint-channel-tile inactive feed-status-row" data-feed-name="${esc(f.name)}" data-feed-key="${esc(f.key)}" title="${esc(f.name)}: Not configured">
+            <div class="osint-tile-left">
+              <div class="osint-tile-icon inactive"><i class="bi ${f.icon}"></i></div>
+              <div class="osint-tile-info">
+                <div class="osint-tile-title">${esc(f.name)}</div>
+                <div class="osint-tile-type">${esc(f.type)}</div>
+              </div>
+            </div>
+            <span class="osint-inactive-indicator">Offline</span>
           </div>
-          <div style="display:flex;align-items:center;gap:6px;">
-            <span class="feed-status-time">${timeStr}</span>
-            ${isConfigured ? `<i class="fa-solid fa-arrow-up-right-from-square" style="font-size:0.68rem;color:#0284c7;"></i>` : `<i class="fa-solid fa-circle-plus" style="font-size:0.75rem;color:#94a3b8;"></i>`}
-          </div>
-        </div>
-      `;
+        `;
+      }
     }).join("");
 
-    const extraFeedsCount = [account.google_trends_url, account.glassdoor_url, account.github_url, account.blog_url, account.sec_filings_rss, account.sec_edgar_url, account.openalex_institution_url].filter(Boolean).length;
-
-    // Source checklist items
-    const checkSec = coverage.sources.find(s => s.id === 'sec')?.active;
-    const checkGleif = coverage.sources.find(s => s.id === 'gleif')?.active;
-    const checkFinnhub = coverage.sources.find(s => s.id === 'finnhub')?.active;
-    const checkPatents = coverage.sources.find(s => s.id === 'patents')?.active;
-    const checkDiffbot = coverage.sources.find(s => s.id === 'diffbot')?.active;
-    const checkWiki = coverage.sources.find(s => s.id === 'wiki')?.active;
-
-    // Build authentic dynamic timeline events
+    // Build authentic dynamic timeline events for initial fallback render
     const timelineEvents = [];
     if (account.extracted_at || account.updated_at) {
       timelineEvents.push({
-        title: "Intelligence extraction synced",
+        title: "Intelligence Extraction Synced",
         desc: `${coverage.hitCount} of 11 multi-source intelligence connectors aggregated`,
         time: formatTimeAgo(account.extracted_at || account.updated_at),
-        dot: "dot-green"
+        tag: "L1",
+        action: "ENRICH"
       });
     }
     if (lobsCount > 0) {
       timelineEvents.push({
-        title: "Line of business hierarchy mapped",
+        title: "Lines of Business Mapped",
         desc: `${lobsCount} distinct operating segments and subsidiaries indexed`,
         time: formatTimeAgo(account.updated_at || account.created_at),
-        dot: "dot-blue"
+        tag: "L2",
+        action: "INDEX"
       });
     }
     if (personasCount > 0) {
       timelineEvents.push({
-        title: "Executive buying committee captured",
+        title: "Executive Committee Captured",
         desc: `${personasCount} verified leadership personas and decision-makers discovered`,
         time: formatTimeAgo(account.updated_at || account.created_at),
-        dot: "dot-purple"
+        tag: "L3",
+        action: "COLLECT"
       });
     }
     if (account.created_at) {
       timelineEvents.push({
-        title: "Account record initialized",
+        title: "Account Record Initialized",
         desc: "Profile established in sales_ai enterprise database",
         time: formatTimeAgo(account.created_at),
-        dot: "dot-gray"
+        tag: "SYSTEM",
+        action: "INIT"
       });
     }
 
@@ -2650,19 +3186,34 @@ $(function () {
           const isExtra = idx >= visibleEventsCount;
           const displayStyle = isExtra ? 'style="display:none;"' : '';
           return `
-            <div class="timeline-item ${isExtra ? 'timeline-item-extra' : ''}" ${displayStyle}>
-              <span class="timeline-dot ${ev.dot}"></span>
-              <div class="timeline-content">
-                <div class="timeline-title">${esc(ev.title)}</div>
-                <div class="timeline-desc">${esc(ev.desc)}</div>
+            <div class="pipeline-activity-card timeline-item timeline-item-extra ${isExtra ? 'extra' : ''}" ${displayStyle}>
+              <div class="activity-card-left">
+                <span class="activity-status-icon success">
+                  <i class="bi bi-check-circle-fill"></i>
+                </span>
+                <div class="activity-card-details">
+                  <div class="activity-card-title-row">
+                    <span class="activity-tag-level">${esc(ev.tag)}</span>
+                    <span class="activity-tag-action">${esc(ev.action)}</span>
+                    <span class="activity-status-badge success">${esc(ev.title)}</span>
+                  </div>
+                  <div class="activity-card-meta-row">
+                    <span class="activity-meta-pill"><i class="bi bi-info-circle"></i> ${esc(ev.desc)}</span>
+                  </div>
+                </div>
               </div>
-              <div class="timeline-time">${esc(ev.time)}</div>
+              <div class="activity-card-right">
+                <span class="activity-timestamp"><i class="bi bi-clock"></i> ${esc(ev.time)}</span>
+                <button type="button" class="btn btn-xs btn-outline-primary btn-run-credits" data-action="view-credits" title="View credits & API telemetry for this run" style="font-size:0.68rem;padding:2px 8px;border-radius:4px;color:#4f46e5;border:1px solid #c7d2fe;background:#eef2ff;display:inline-flex;align-items:center;gap:3px;cursor:pointer;">
+                  <i class="bi bi-lightning-charge-fill" style="color:#6366f1;"></i> <span>Credits</span>
+                </button>
+              </div>
             </div>
           `;
         }).join("") + (hasExtraEvents ? `
           <div class="activity-toggle-footer" style="padding-top:10px;border-top:1px dashed #e2e8f0;margin-top:10px;text-align:center;">
             <button type="button" class="btn-toggle-activity-expand" data-expanded="false" style="background:none;border:none;color:#0284c7;font-size:0.78rem;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:6px;transition:all .15s ease;">
-              <span>View full run history (${extraEventsCount} more)</span> <i class="fa-solid fa-chevron-down" style="font-size:0.72rem;"></i>
+              <span>View full run history (${extraEventsCount} more)</span> <i class="bi bi-chevron-down" style="font-size:0.72rem;"></i>
             </button>
           </div>
         ` : '')
@@ -2686,7 +3237,7 @@ $(function () {
             <div class="snapshot-field-item" data-entity-type="account" data-id="${account.id}" data-field="employee_count_range" data-raw-value="${esc(account.employee_count_range || '')}">
               <div class="snapshot-field-header">
                 <span class="snapshot-field-label">EMPLOYEES</span>
-                <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Employees inline"></i>
+                <i class="bi bi-pencil snapshot-field-pencil" title="Edit Employees inline"></i>
               </div>
               <div class="snapshot-field-value">${esc(employees)}</div>
             </div>
@@ -2694,7 +3245,7 @@ $(function () {
             <div class="snapshot-field-item" data-entity-type="account" data-id="${account.id}" data-field="estimated_revenue_range" data-raw-value="${esc(account.estimated_revenue_range || account.revenue || '')}">
               <div class="snapshot-field-header">
                 <span class="snapshot-field-label">ANNUAL REVENUE</span>
-                <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Revenue inline"></i>
+                <i class="bi bi-pencil snapshot-field-pencil" title="Edit Revenue inline"></i>
               </div>
               <div class="snapshot-field-value">${esc(revenue)}</div>
             </div>
@@ -2702,7 +3253,7 @@ $(function () {
             <div class="snapshot-field-item" data-entity-type="account" data-id="${account.id}" data-field="company_type" data-raw-value="${esc(account.company_type || '')}">
               <div class="snapshot-field-header">
                 <span class="snapshot-field-label">COMPANY TYPE</span>
-                <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Company Type inline"></i>
+                <i class="bi bi-pencil snapshot-field-pencil" title="Edit Company Type inline"></i>
               </div>
               <div class="snapshot-field-value">${esc(compType)}</div>
             </div>
@@ -2710,7 +3261,7 @@ $(function () {
             <div class="snapshot-field-item" data-entity-type="account" data-id="${account.id}" data-field="operating_status" data-raw-value="${esc(account.operating_status || '')}">
               <div class="snapshot-field-header">
                 <span class="snapshot-field-label">OPERATING STATUS</span>
-                <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Operating Status inline"></i>
+                <i class="bi bi-pencil snapshot-field-pencil" title="Edit Operating Status inline"></i>
               </div>
               <div class="snapshot-field-value">
                 ${opStatus !== "—" ? `<span class="badge-solid-green">${esc(opStatus)}</span>` : `<span style="color:#94a3b8;">—</span>`}
@@ -2720,7 +3271,7 @@ $(function () {
             <div class="snapshot-field-item" data-entity-type="account" data-id="${account.id}" data-field="founded_year" data-raw-value="${esc(account.founded_year || '')}">
               <div class="snapshot-field-header">
                 <span class="snapshot-field-label">FOUNDED</span>
-                <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Founded Year inline"></i>
+                <i class="bi bi-pencil snapshot-field-pencil" title="Edit Founded Year inline"></i>
               </div>
               <div class="snapshot-field-value">${esc(founded)}</div>
             </div>
@@ -2728,7 +3279,7 @@ $(function () {
             <div class="snapshot-field-item" data-entity-type="account" data-id="${account.id}" data-field="city" data-raw-value="${esc(account.city || '')}">
               <div class="snapshot-field-header">
                 <span class="snapshot-field-label">LOCATION (HQ)</span>
-                <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Location inline"></i>
+                <i class="bi bi-pencil snapshot-field-pencil" title="Edit Location inline"></i>
               </div>
               <div class="snapshot-field-value">${esc(account.headquarters_location || (account.city ? `${account.city}, ${account.country || ''}` : '—'))}</div>
             </div>
@@ -2736,7 +3287,7 @@ $(function () {
             <div class="snapshot-field-item" data-entity-type="account" data-id="${account.id}" data-field="sec_cik" data-raw-value="${esc(account.sec_cik || '')}">
               <div class="snapshot-field-header">
                 <span class="snapshot-field-label">REGULATORY ID (CIK / LEI)</span>
-                <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Regulatory ID inline"></i>
+                <i class="bi bi-pencil snapshot-field-pencil" title="Edit Regulatory ID inline"></i>
               </div>
               <div class="snapshot-field-value" style="font-size:.8rem;letter-spacing:-0.02em;">${esc(secOrLei)}</div>
             </div>
@@ -2744,12 +3295,12 @@ $(function () {
             <div class="snapshot-field-item" data-entity-type="account" data-id="${account.id}" data-field="primary_domain" data-raw-value="${esc(account.primary_domain || account.domain || '')}">
               <div class="snapshot-field-header">
                 <span class="snapshot-field-label">OFFICIAL WEBSITE / DOMAIN</span>
-                <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Domain inline"></i>
+                <i class="bi bi-pencil snapshot-field-pencil" title="Edit Domain inline"></i>
               </div>
               <div class="snapshot-field-value">
                 ${domain !== "—" ? `
                   <a href="${account.website_url || 'https://' + domain}" target="_blank" style="color:var(--text-primary);text-decoration:none;">
-                    ${esc(domain)} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:.7rem;color:#0284c7;"></i>
+                    ${esc(domain)} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;color:#0284c7;"></i>
                   </a>
                 ` : `<span style="color:#94a3b8;">—</span>`}
               </div>
@@ -2759,89 +3310,63 @@ $(function () {
           <!-- Collapsible Vault: All 95 Account Attributes -->
           <div class="vault-collapsible-wrapper">
             <button type="button" class="vault-toggle-button" id="toggleAccountVaultBtn">
-              <i class="fa-solid fa-database"></i> View All 95 Account Attributes &amp; Regulatory Filings <i class="fa-solid fa-chevron-down" style="font-size:.7rem;"></i>
+              <i class="bi bi-database"></i> View All 95 Account Attributes &amp; Regulatory Filings <i class="bi bi-chevron-down" style="font-size:.7rem;"></i>
             </button>
             <div class="vault-content-area d-none" id="accountVaultArea"></div>
           </div>
         </div>
 
-        <!-- Card 2: Source Coverage & Verified Connectors (Horizontal Strip) -->
+        <!-- Card 2: Source Coverage & Verified Connectors -->
         <div class="pipeline-section-card fade-in">
           <div class="section-title-row">
             <div class="section-title-left">
               <span class="section-title-dot"></span>
               <span>Source Coverage &amp; Verified Connectors</span>
             </div>
-            <span class="badge" style="background:#e0f2fe;color:#0369a1;font-weight:700;padding:2px 8px;font-size:0.72rem;">${coverage.coveragePct}% Coverage &bull; ${coverage.sourcesHit || 8}/${coverage.totalSources || 11} Active</span>
+            <div class="coverage-header-metrics">
+              <div class="coverage-bar-track" title="${coverage.coveragePct}% verified data coverage">
+                <div class="coverage-bar-fill" style="width: ${coverage.coveragePct}%;"></div>
+              </div>
+              <span class="coverage-score-badge ${coverage.coveragePct >= 60 ? 'high' : 'medium'}">
+                <i class="bi bi-shield-check"></i> ${coverage.coveragePct}% Coverage &bull; ${coverage.sourcesHit ?? 0}/${coverage.totalSources || 11} Active
+              </span>
+            </div>
           </div>
 
-          <div class="source-coverage-horizontal-wrap">
-            <div class="source-coverage-donut-col">
-              <div class="donut-circle-graphic" style="background: conic-gradient(#10b981 0% ${coverage.coveragePct}%, #e2e8f0 ${coverage.coveragePct}% 100%);">
-                <div class="donut-circle-inner">
-                  <span class="donut-pct-text">${coverage.coveragePct}%</span>
-                  <span class="donut-sub-text">sources hit</span>
-                </div>
+          <div class="connectors-chip-matrix">
+            ${(coverage.sources || []).map(src => `
+              <div class="connector-status-badge ${src.active ? 'active' : 'inactive'}" title="${esc(src.name)}: ${src.active ? 'Verified & Active' : 'No Data Captured'}">
+                ${src.active 
+                  ? `<span class="connector-verified-dot"></span> <i class="bi bi-check-circle-fill text-success" style="font-size:0.8rem;"></i>` 
+                  : `<i class="bi bi-dash-circle text-muted" style="font-size:0.8rem;"></i>`}
+                <span>${esc(src.name)}</span>
               </div>
-              <div style="font-size:0.75rem;color:#64748b;line-height:1.4;">
-                <div style="font-weight:700;color:#1e293b;">${coverage.sourcesHit || 8} of ${coverage.totalSources || 11}</div>
-                <div>Connectors active</div>
-              </div>
-            </div>
-
-            <div class="source-checklist-horizontal-grid">
-              <div class="source-check-card ${checkSec ? 'active' : ''}">
-                ${checkSec ? '<i class="fa-solid fa-circle-check text-success" style="font-size:0.95rem;"></i>' : '<i class="fa-solid fa-circle-minus text-muted"></i>'}
-                <span>SEC Filings (EDGAR)</span>
-              </div>
-              <div class="source-check-card ${checkGleif ? 'active' : ''}">
-                ${checkGleif ? '<i class="fa-solid fa-circle-check text-success" style="font-size:0.95rem;"></i>' : '<i class="fa-solid fa-circle-minus text-muted"></i>'}
-                <span>GLEIF Global LEI</span>
-              </div>
-              <div class="source-check-card ${checkFinnhub ? 'active' : ''}">
-                ${checkFinnhub ? '<i class="fa-solid fa-circle-check text-success" style="font-size:0.95rem;"></i>' : '<i class="fa-solid fa-circle-minus text-muted"></i>'}
-                <span>Finnhub Market Data</span>
-              </div>
-              <div class="source-check-card ${checkPatents ? 'active' : ''}">
-                ${checkPatents ? '<i class="fa-solid fa-circle-check text-success" style="font-size:0.95rem;"></i>' : '<i class="fa-solid fa-circle-minus text-muted"></i>'}
-                <span>USPTO Patents</span>
-              </div>
-              <div class="source-check-card ${checkDiffbot ? 'active' : ''}">
-                ${checkDiffbot ? '<i class="fa-solid fa-circle-check text-success" style="font-size:0.95rem;"></i>' : '<i class="fa-solid fa-circle-minus text-muted"></i>'}
-                <span>Diffbot KG Graph</span>
-              </div>
-              <div class="source-check-card ${checkWiki ? 'active' : ''}">
-                ${checkWiki ? '<i class="fa-solid fa-circle-check text-success" style="font-size:0.95rem;"></i>' : '<i class="fa-solid fa-circle-minus text-muted"></i>'}
-                <span>Wikipedia / DBpedia</span>
-              </div>
-            </div>
+            `).join("")}
           </div>
         </div>
 
-        <!-- Card 3: Live Intelligence Feeds & OSINT Channels (Horizontal Grid) -->
+        <!-- Card 3: Live Intelligence Feeds & OSINT Channels -->
         <div class="pipeline-section-card fade-in">
           <div class="section-title-row">
             <div class="section-title-left">
               <span class="section-title-dot"></span>
               <span>Live Intelligence Feeds &amp; OSINT Channels</span>
+              <span class="badge-feed-count">${configuredFeedsCount} Active</span>
             </div>
-            <a href="javascript:void(0)" class="section-action-link" id="btnAddIntelligenceFeed" title="Add or configure an intelligence feed"><i class="fa-solid fa-plus"></i> Add feed</a>
+            <div style="display:flex;align-items:center;gap:12px;">
+              ${account.updated_at ? `<span class="section-subtitle-hint"><i class="bi bi-arrow-repeat"></i> Last synced ${formatTimeAgo(account.updated_at)}</span>` : ''}
+              <a href="javascript:void(0)" class="section-action-link" id="btnAddIntelligenceFeed" title="Add or configure an intelligence feed"><i class="bi bi-plus"></i> Add feed</a>
+            </div>
           </div>
 
-          <div class="feed-status-horizontal-grid">
+          <div class="osint-channel-tile-grid">
             ${feedsHtml}
           </div>
 
-          <div style="margin-top:14px;border-top:1px solid #f1f5f9;padding-top:10px;">
-            ${extraFeedsCount > 0 ? `
-              <a href="javascript:void(0)" id="btnViewAllActiveFeeds" style="font-size:.76rem;color:#0284c7;text-decoration:none;font-weight:600;display:inline-flex;align-items:center;gap:4px;cursor:pointer;">
-                Trends, Glassdoor + ${extraFeedsCount} more active &rarr;
-              </a>
-            ` : `
-              <a href="javascript:void(0)" id="btnViewAllActiveFeeds" style="font-size:.74rem;color:#0284c7;text-decoration:none;font-weight:600;display:inline-flex;align-items:center;gap:4px;cursor:pointer;">
-                View All OSINT Channels &rarr;
-              </a>
-            `}
+          <div style="margin-top:10px;padding-top:8px;border-top:1px solid #f1f5f9;display:flex;justify-content:flex-end;">
+            <a href="javascript:void(0)" id="btnViewAllActiveFeeds" style="font-size:.74rem;color:#0284c7;text-decoration:none;font-weight:600;display:inline-flex;align-items:center;gap:4px;cursor:pointer;">
+              View All OSINT Channels &rarr;
+            </a>
           </div>
         </div>
 
@@ -2851,12 +3376,17 @@ $(function () {
             <div class="section-title-left">
               <span class="section-title-dot"></span>
               <span>Recent Pipeline Activity</span>
-              <span class="badge-solid-gray" id="activityCountBadge" style="font-size:.68rem;padding:2px 7px;margin-left:6px;font-weight:600;">${timelineEvents.length}</span>
+              <span class="badge-solid-gray" id="activityCountBadge" style="font-size:.68rem;padding:2px 7px;margin-left:6px;font-weight:600;">${timelineEvents.length} runs</span>
             </div>
-            <span class="section-subtitle-hint" id="activityShowingHint">Showing latest 3</span>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <button type="button" class="btn btn-xs btn-outline-primary" id="btnOpenCreditUsageModal" style="display:inline-flex;align-items:center;gap:5px;font-size:0.75rem;padding:3px 10px;border-radius:6px;font-weight:600;background:rgba(99,102,241,0.06);border-color:#6366f1;color:#4f46e5;cursor:pointer;">
+                <i class="bi bi-lightning-charge-fill" style="color:#6366f1;"></i> <span>Credits Usage</span>
+              </button>
+              <span class="section-subtitle-hint" id="activityShowingHint">Showing latest 3</span>
+            </div>
           </div>
 
-          <div class="timeline-activity-list" id="recentPipelineActivityList">
+          <div class="pipeline-activity-list" id="recentPipelineActivityList">
             ${timelineHtml}
           </div>
         </div>
@@ -2889,7 +3419,7 @@ $(function () {
           <div class="section-title-row">
             <div class="section-title-left">
               <span class="section-title-dot"></span>
-              <i class="fa-solid fa-sitemap" style="color:#0284c7;font-size:0.95rem;"></i>
+              <i class="bi bi-diagram-3-fill" style="color:#0284c7;font-size:0.95rem;"></i>
               <span>Operating Sub-LOBs &amp; Child Divisions (${subLobs.length})</span>
             </div>
             <span class="section-subtitle-hint">Level 3 Grandchild Subsidiaries &amp; Specialized Operating Units</span>
@@ -2915,15 +3445,50 @@ $(function () {
               const pKey = p.key || `lob_persona_${idx}`;
               p.key = pKey;
               const pRaw = encodeURIComponent(JSON.stringify(p));
+              const pEmail = p.email || p.sanitized_email || p.work_email || p.personal_email || "";
+              const pPhone = p.phone || p.phone_number || p.sanitized_phone || p.direct_mobile_phone || "";
+              const pLinkedIn = p.linkedin_url || p.linkedin || "";
+              const cik = (activeAccount && activeAccount.sec_cik) ? activeAccount.sec_cik : "";
+              const secInsiderUrl = cik ? `https://www.sec.gov/edgar/searchedgar/companysearch` : "";
+
+              let actionsHtml = "";
+              if (pEmail || pPhone || pLinkedIn || secInsiderUrl) {
+                actionsHtml = `
+                  <div class="persona-card-actions">
+                    ${pEmail ? `
+                      <button type="button" class="persona-action-btn btn-copy-email" data-email="${esc(pEmail)}" title="Copy verified email (${esc(pEmail)})">
+                        <i class="bi bi-envelope-fill"></i>
+                      </button>
+                    ` : ''}
+                    ${pPhone ? `
+                      <button type="button" class="persona-action-btn btn-copy-phone" data-phone="${esc(pPhone)}" title="Copy direct phone (${esc(pPhone)})">
+                        <i class="bi bi-telephone-fill"></i>
+                      </button>
+                    ` : ''}
+                    ${pLinkedIn ? `
+                      <a href="${normalizeUrl(pLinkedIn)}" target="_blank" rel="noopener noreferrer" class="persona-action-btn btn-open-linkedin" title="Open verified LinkedIn Profile" onclick="event.stopPropagation();">
+                        <i class="bi bi-linkedin"></i>
+                      </a>
+                    ` : ''}
+                    ${secInsiderUrl ? `
+                      <a href="${secInsiderUrl}" target="_blank" rel="noopener noreferrer" class="persona-action-btn btn-open-sec" title="SEC Form 4 Insider Filings" onclick="event.stopPropagation();">
+                        <i class="bi bi-bank2"></i>
+                      </a>
+                    ` : ''}
+                  </div>
+                `;
+              }
+
               return `
                 <div class="compact-card persona-card fade-in"
                      data-key="${pKey}"
                      data-raw="${pRaw}"
-                     title="Click to view AI call prep for ${esc(p.name)}">
+                     title="Inspect Executive Dossier for ${esc(p.name)}">
                   <div class="compact-card-avatar avatar-purple" style="color:#fff;">${esc(getInitials(p.name))}</div>
                   <div class="compact-card-body">
                     <div class="compact-card-title">${esc(p.name)}</div>
                     <div class="compact-card-subtitle">${esc(p.title || "Executive")}</div>
+                    ${actionsHtml}
                   </div>
                 </div>
               `;
@@ -2940,7 +3505,7 @@ $(function () {
     const lobStreams = [
       {
         name: "LinkedIn Division Intelligence",
-        icon: "fa-brands fa-linkedin",
+        icon: "bi-linkedin",
         active: Boolean(lob.domain || directPersonas.some(p => p.linkedin_url)),
         url: lob.domain 
           ? `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(lobName + (acctName ? ' ' + acctName : ''))}`
@@ -2948,7 +3513,7 @@ $(function () {
       },
       {
         name: "Google News Stream",
-        icon: "fa-solid fa-newspaper",
+        icon: "bi-newspaper",
         active: Boolean(lob.google_news_rss_url || activeAccount.rss_url || activeAccount.news_query),
         url: lob.google_news_rss_url || (activeAccount.news_query 
           ? `https://news.google.com/search?q=${encodeURIComponent(activeAccount.news_query)}`
@@ -2956,7 +3521,7 @@ $(function () {
       },
       {
         name: "X / Twitter Feed",
-        icon: "fa-brands fa-x-twitter",
+        icon: "bi-twitter-x",
         active: Boolean(lob.twitter_live_url || activeAccount.twitter_live_url || activeAccount.twitter_handle),
         url: lob.twitter_live_url || activeAccount.twitter_live_url || (activeAccount.twitter_handle 
           ? `https://twitter.com/${activeAccount.twitter_handle.replace('@', '')}` 
@@ -2964,31 +3529,31 @@ $(function () {
       },
       {
         name: "Reddit Community Discussions",
-        icon: "fa-brands fa-reddit",
+        icon: "bi-reddit",
         active: Boolean(lob.reddit_rss_url || activeAccount.reddit_rss_url || activeAccount.reddit_query),
         url: lob.reddit_rss_url || activeAccount.reddit_rss_url || `https://www.reddit.com/search/?q=${encodeURIComponent(lobName + (acctName ? ' ' + acctName : ''))}`,
       },
       {
         name: "USPTO Patent Intelligence",
-        icon: "fa-solid fa-award",
+        icon: "bi-award",
         active: Boolean(lob.google_patents_url || (Array.isArray(lob.patents) && lob.patents.length) || activeAccount.google_patents_url || (activeAccount.patents_granted > 0)),
         url: lob.google_patents_url || activeAccount.google_patents_url || `https://patents.google.com/?assignee=${encodeURIComponent(acctName || lobName)}&q=${encodeURIComponent(lobName)}`,
       },
       {
         name: "Search Trends Momentum",
-        icon: "fa-solid fa-arrow-trend-up",
+        icon: "bi-graph-up-arrow",
         active: Boolean(lob.google_trends_url || activeAccount.google_trends_url),
         url: lob.google_trends_url || activeAccount.google_trends_url || `https://trends.google.com/trends/explore?q=${encodeURIComponent(lobName || acctName)}`,
       },
       {
         name: "YouTube Media & Interviews",
-        icon: "fa-brands fa-youtube",
+        icon: "bi-youtube",
         active: Boolean(lob.youtube_search_url || activeAccount.youtube_search_url),
         url: lob.youtube_search_url || activeAccount.youtube_search_url || `https://www.youtube.com/results?search_query=${encodeURIComponent((acctName ? acctName + ' ' : '') + lobName)}`,
       },
       {
         name: "Glassdoor Workplace Reviews",
-        icon: "fa-solid fa-building-circle-check",
+        icon: "bi-building-check",
         active: Boolean(activeAccount.glassdoor_url),
         url: activeAccount.glassdoor_url || `https://www.glassdoor.com/Search/results.htm?keyword=${encodeURIComponent(acctName || lobName)}`,
       },
@@ -2997,7 +3562,7 @@ $(function () {
     if (lob.website_url || lob.domain) {
       lobStreams.unshift({
         name: "Division Web Portal",
-        icon: "fa-solid fa-earth-americas",
+        icon: "bi-globe2",
         active: true,
         url: lob.website_url || `https://${lob.domain.replace(/^https?:\/\//, '')}`,
       });
@@ -3017,7 +3582,7 @@ $(function () {
         <div class="modern-entity-header">
           <div class="header-main-info">
             <div class="header-avatar-box avatar-blue">
-              <i class="fa-solid fa-folder-open"></i>
+              <i class="bi bi-folder2-open"></i>
             </div>
             <div>
               <h1 class="header-entity-name">${esc(lob.name)}</h1>
@@ -3027,15 +3592,15 @@ $(function () {
                 <span class="badge-solid-gray">${directPersonas.length} Contacts</span>
                 ${(lob.sub_lobs || lob.subLobs || []).length > 0 ? `
                   <span class="sublob-count-pill" title="Nested Level 3 child divisions registered under this LOB">
-                    <i class="fa-solid fa-sitemap"></i> ${(lob.sub_lobs || lob.subLobs).length} Sub-LOBs
+                    <i class="bi bi-diagram-3"></i> ${(lob.sub_lobs || lob.subLobs).length} Sub-LOBs
                   </span>
                 ` : ""}
                 ${domainStr !== "—" ? `<span class="badge-solid-green">Domain Mapped</span>` : `<span class="badge-solid-gray">Domain Unmapped</span>`}
                 <span class="badge-health-pill ${comp.confidenceScore >= 80 ? 'health-green' : (comp.confidenceScore >= 60 ? 'health-blue' : 'health-amber')}" title="Data Completeness: ${comp.completenessPct}% (${comp.populatedCount}/${comp.totalFields} fields) | Source Coverage: ${comp.coveragePct}% (${comp.sourcesHit}/${comp.totalSources} streams)">
-                  <i class="fa-solid fa-shield-halved"></i> <strong>${comp.confidenceScore}% Confidence</strong> &bull; ${comp.completenessPct}% Filled (${comp.populatedCount}/${comp.totalFields}) &bull; ${comp.sourcesHit}/${comp.totalSources} Streams
+                  <i class="bi bi-shield-check"></i> <strong>${comp.confidenceScore}% Confidence</strong> &bull; ${comp.completenessPct}% Filled (${comp.populatedCount}/${comp.totalFields}) &bull; ${comp.sourcesHit}/${comp.totalSources} Streams
                 </span>
                 <button type="button" class="btn-verify-badge ${lob.is_manually_verified ? 'verified' : 'unverified'}" data-entity-type="lob" data-id="${lob.id}" title="${lob.is_manually_verified ? `Verified ${formatTimeAgo(lob.manually_verified_at)}` : 'Click to toggle verification'}">
-                  <i class="${lob.is_manually_verified ? 'fa-solid fa-circle-check' : 'fa-solid fa-shield-halved'}"></i>
+                  <i class="bi ${lob.is_manually_verified ? 'bi-patch-check-fill' : 'bi-shield-exclamation'}"></i>
                   <span>${lob.is_manually_verified ? `Manually Verified ✓ (${formatTimeAgo(lob.manually_verified_at)})` : 'AI Inferred • Verify'}</span>
                 </button>
               </div>
@@ -3045,17 +3610,14 @@ $(function () {
 
           <div class="header-actions-col">
             <div class="header-btn-group">
-              <button type="button" class="action-btn-pill btn-pill-blue panel-btn-pull" data-entity-type="lob" data-key="${lobKey}">
-                <i class="fa-solid fa-caret-down" style="font-size:0.65rem;"></i> Pull
-              </button>
-              <button type="button" class="action-btn-pill btn-pill-validate panel-btn-validate" data-entity-type="lob" data-key="${lobKey}" ${validateBtnDisabled ? "disabled" : ""}>
-                <i class="fa-solid fa-check"></i> Validate
-              </button>
-              <button type="button" class="action-btn-pill btn-pill-dump panel-btn-dump" data-entity-type="lob" data-key="${lobKey}" ${dumpBtnDisabled ? "disabled" : ""}>
-                <i class="fa-solid fa-database"></i> Dump
-              </button>
               <button type="button" class="action-btn-pill btn-pill-purple" id="lobEditToggleBtn">
                 Edit
+              </button>
+              <button type="button" class="action-btn-pill btn-pill-red lob-delete-btn"
+                      data-lob-id="${lob.id}"
+                      data-lob-name="${esc(lob.lob_name || lob.name || '')}"
+                      title="Permanently delete this Line of Business">
+                <i class="bi bi-trash3"></i> Delete
               </button>
             </div>
             <span class="header-meta-timestamp">Last pull: ${pullTimeStr} &bull; Validation: ${state.validated ? 'Passed &check;' : 'not run'} &bull; Dump: ${state.dumped ? 'Persisted &check;' : 'never'}</span>
@@ -3082,7 +3644,7 @@ $(function () {
             <div class="snapshot-field-item" data-entity-type="lob" data-id="${lob.id}" data-field="overview" data-raw-value="${esc(lob.overview || lob.desc || '')}" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px 14px;margin-bottom:14px;">
               <div class="snapshot-field-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
                 <span class="snapshot-field-label">DIVISION OVERVIEW</span>
-                <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Division Overview inline"></i>
+                <i class="bi bi-pencil snapshot-field-pencil" title="Edit Division Overview inline"></i>
               </div>
               <div class="snapshot-field-value" style="font-size:0.84rem;color:#1e293b;line-height:1.5;">
                 ${esc(overviewStr)}
@@ -3093,7 +3655,7 @@ $(function () {
               <div class="snapshot-field-item" data-entity-type="lob" data-id="${lob.id}" data-field="relationship_type" data-raw-value="${esc(lob.relationship_type || '')}">
                 <div class="snapshot-field-header">
                   <span class="snapshot-field-label">RELATIONSHIP TYPE</span>
-                  <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Relationship Type inline"></i>
+                  <i class="bi bi-pencil snapshot-field-pencil" title="Edit Relationship Type inline"></i>
                 </div>
                 <div class="snapshot-field-value">${esc(relTypeStr)}</div>
               </div>
@@ -3101,7 +3663,7 @@ $(function () {
               <div class="snapshot-field-item" data-entity-type="lob" data-id="${lob.id}" data-field="domain" data-raw-value="${esc(lob.domain || '')}">
                 <div class="snapshot-field-header">
                   <span class="snapshot-field-label">PRIMARY DOMAIN</span>
-                  <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Domain inline"></i>
+                  <i class="bi bi-pencil snapshot-field-pencil" title="Edit Domain inline"></i>
                 </div>
                 <div class="snapshot-field-value">${esc(domainStr)}</div>
               </div>
@@ -3109,16 +3671,16 @@ $(function () {
               <div class="snapshot-field-item" data-entity-type="lob" data-id="${lob.id}" data-field="website_url" data-raw-value="${esc(lob.website_url || '')}">
                 <div class="snapshot-field-header">
                   <span class="snapshot-field-label">WEBSITE</span>
-                  <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Website inline"></i>
+                  <i class="bi bi-pencil snapshot-field-pencil" title="Edit Website inline"></i>
                 </div>
                 <div class="snapshot-field-value">
                   ${lob.website_url ? `
                     <a href="${esc(lob.website_url)}" target="_blank" style="color:var(--brand);text-decoration:none;">
-                      ${esc(lob.website_url.replace(/^https?:\/\//, ''))} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:.7rem;"></i>
+                      ${esc(lob.website_url.replace(/^https?:\/\//, ''))} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;"></i>
                     </a>
                   ` : (lob.domain ? `
                     <a href="https://${esc(lob.domain)}" target="_blank" style="color:var(--brand);text-decoration:none;">
-                      ${esc(lob.domain)} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:.7rem;"></i>
+                      ${esc(lob.domain)} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;"></i>
                     </a>
                   ` : `<span style="color:#94a3b8;">—</span>`)}
                 </div>
@@ -3136,12 +3698,12 @@ $(function () {
               <div class="snapshot-field-item" data-entity-type="lob" data-id="${lob.id}" data-field="crunchbase_url" data-raw-value="${esc(lob.crunchbase_url || '')}">
                 <div class="snapshot-field-header">
                   <span class="snapshot-field-label">CRUNCHBASE PROFILE</span>
-                  <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Crunchbase URL inline"></i>
+                  <i class="bi bi-pencil snapshot-field-pencil" title="Edit Crunchbase URL inline"></i>
                 </div>
                 <div class="snapshot-field-value" style="font-size:0.78rem;">
                   ${lob.crunchbase_url ? `
                     <a href="${esc(lob.crunchbase_url)}" target="_blank" style="color:var(--brand);text-decoration:none;">
-                      ${esc(lob.crunchbase_url.replace(/^https?:\/\//, ''))} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:.7rem;"></i>
+                      ${esc(lob.crunchbase_url.replace(/^https?:\/\//, ''))} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;"></i>
                     </a>
                   ` : `<span style="color:#94a3b8;">—</span>`}
                 </div>
@@ -3150,7 +3712,7 @@ $(function () {
               <div class="snapshot-field-item">
                 <div class="snapshot-field-header">
                   <span class="snapshot-field-label">COMMERCIAL REGISTRY</span>
-                  <i class="fa-solid fa-pen snapshot-field-pencil"></i>
+                  <i class="bi bi-pencil snapshot-field-pencil"></i>
                 </div>
                 <div class="snapshot-field-value" style="font-size:0.8rem;">
                   ${esc(registryStr)}
@@ -3164,7 +3726,7 @@ $(function () {
             <!-- Collapsible Vault: All LOB Columns, Competitors & Tech -->
             <div class="vault-collapsible-wrapper">
               <button type="button" class="vault-toggle-button" id="toggleLobVaultBtn">
-                <i class="fa-solid fa-database"></i> View All LOB Attributes, Competitors, Technologies &amp; Patents <i class="fa-solid fa-chevron-down" style="font-size:.7rem;"></i>
+                <i class="bi bi-database"></i> View All LOB Attributes, Competitors, Technologies &amp; Patents <i class="bi bi-chevron-down" style="font-size:.7rem;"></i>
               </button>
               <div class="vault-content-area d-none" id="lobVaultArea"></div>
             </div>
@@ -3183,7 +3745,7 @@ $(function () {
               <div class="snapshot-field-item" data-entity-type="lob" data-id="${lob.id}" data-field="audited_segment_revenue" data-raw-value="${esc(lob.audited_segment_revenue || lob.revenue || '')}">
                 <div class="snapshot-field-header">
                   <span class="snapshot-field-label">SEGMENT REVENUE</span>
-                  <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Segment Revenue inline"></i>
+                  <i class="bi bi-pencil snapshot-field-pencil" title="Edit Segment Revenue inline"></i>
                 </div>
                 <div class="snapshot-field-value">${esc(revStr)}</div>
               </div>
@@ -3191,7 +3753,7 @@ $(function () {
               <div class="snapshot-field-item" data-entity-type="lob" data-id="${lob.id}" data-field="segment_headcount" data-raw-value="${esc(lob.segment_headcount || lob.headcount || '')}">
                 <div class="snapshot-field-header">
                   <span class="snapshot-field-label">HEADCOUNT / SIZE</span>
-                  <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Headcount inline"></i>
+                  <i class="bi bi-pencil snapshot-field-pencil" title="Edit Headcount inline"></i>
                 </div>
                 <div class="snapshot-field-value">${esc(headcountStr)}</div>
               </div>
@@ -3199,7 +3761,7 @@ $(function () {
               <div class="snapshot-field-item" data-entity-type="lob" data-id="${lob.id}" data-field="operating_head" data-raw-value="${esc(lob.operating_head || lob.head || '')}">
                 <div class="snapshot-field-header">
                   <span class="snapshot-field-label">OPERATING HEAD</span>
-                  <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Operating Head inline"></i>
+                  <i class="bi bi-pencil snapshot-field-pencil" title="Edit Operating Head inline"></i>
                 </div>
                 <div class="snapshot-field-value">${esc(opHeadStr)}</div>
               </div>
@@ -3207,7 +3769,7 @@ $(function () {
               <div class="snapshot-field-item">
                 <div class="snapshot-field-header">
                   <span class="snapshot-field-label">MAPPED CONTACTS</span>
-                  <i class="fa-solid fa-pen snapshot-field-pencil"></i>
+                  <i class="bi bi-pencil snapshot-field-pencil"></i>
                 </div>
                 <div class="snapshot-field-value" style="color:#d97706;">${directPersonas.length} Identified</div>
               </div>
@@ -3219,7 +3781,7 @@ $(function () {
             <div class="section-title-row" style="margin-bottom:12px;">
               <div class="section-title-left">
                 <span class="section-title-dot"></span>
-                <i class="fa-solid fa-tower-broadcast" style="color:#0284c7;font-size:0.95rem;"></i>
+                <i class="bi bi-broadcast-pin" style="color:#0284c7;font-size:0.95rem;"></i>
                 <span>Live OSINT &amp; Public Intelligence Streams</span>
               </div>
               <span class="badge" style="background:#e0f2fe;color:#0369a1;font-weight:700;padding:3px 10px;font-size:0.72rem;border-radius:12px;">
@@ -3233,9 +3795,9 @@ $(function () {
                    class="osint-stream-chip ${s.active ? 'stream-active' : 'stream-pending'}"
                    title="${s.active ? 'Verified active channel: ' + esc(s.url) : 'Query launchpad: ' + esc(s.url)}">
                   <span class="dot-indicator ${s.active ? 'dot-green' : 'dot-gray'}"></span>
-                  <i class="${s.icon}"></i>
+                  <i class="bi ${s.icon}"></i>
                   <span class="stream-chip-label">${esc(s.name)}</span>
-                  <i class="fa-solid fa-arrow-up-right-from-square stream-ext-icon"></i>
+                  <i class="bi bi-box-arrow-up-right stream-ext-icon"></i>
                 </a>
               `).join('')}
             </div>
@@ -3275,6 +3837,7 @@ $(function () {
     const reportsToStr = p.reports_to || "—";
 
     const comp = computePersonaCompleteness(p);
+    const dbCols = calculateDbColumnsFilled(p, "persona");
     const pullTimeStr = formatTimeAgo(p.extracted_at || activeAccount.updated_at || activeAccount.created_at);
 
     // Validation checklist computation
@@ -3303,6 +3866,9 @@ $(function () {
       <div class="modern-view-card fade-in">
         <div class="modern-entity-header">
           <div class="header-main-info">
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnBackFromPersonaDetail" style="margin-right:8px;width:34px;height:34px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;padding:0;cursor:pointer;border-color:#e2e8f0;background:#fff;color:#475569;flex-shrink:0;" title="Back to Directory">
+              <i class="bi bi-arrow-left" style="font-size:1.1rem;line-height:1;"></i>
+            </button>
             <div class="header-avatar-box avatar-purple">
               ${esc(initialsStr)}
             </div>
@@ -3316,11 +3882,11 @@ $(function () {
                 <span class="badge-solid-gray">Level ${p.hierarchy_level || 3}</span>
                 ${p.email ? `<span class="badge-solid-green">Email Verified</span>` : `<span class="badge-solid-gray">Email Unverified</span>`}
                 ${locStr !== "—" ? `<span class="badge-solid-gray">${esc(locStr)}</span>` : ""}
-                <span class="badge-health-pill ${comp.confidenceScore >= 80 ? 'health-green' : (comp.confidenceScore >= 60 ? 'health-blue' : 'health-amber')}" title="Data Completeness: ${comp.completenessPct}% (${comp.populatedCount}/${comp.totalFields} fields) | Source Coverage: ${comp.coveragePct}% (${comp.sourcesHit}/${comp.totalSources} sources)">
-                  <i class="fa-solid fa-shield-halved"></i> <strong>${comp.confidenceScore}% Confidence</strong> &bull; ${comp.completenessPct}% Filled (${comp.populatedCount}/${comp.totalFields}) &bull; ${comp.sourcesHit}/${comp.totalSources} Sources
+                <span class="badge-health-pill ${dbCols.pct >= 80 ? 'health-green' : (dbCols.pct >= 60 ? 'health-blue' : 'health-amber')}" title="Database Schema: ${dbCols.filled}/${dbCols.total} columns populated (${dbCols.pct}%) | Quality Confidence: ${comp.confidenceScore}% | OSINT Sources: ${comp.sourcesHit}/${comp.totalSources}">
+                  <i class="bi bi-shield-check"></i> <strong>${dbCols.pct}% Complete (${dbCols.filled}/${dbCols.total} DB Cols)</strong> &bull; ${comp.confidenceScore}% Quality Score &bull; ${comp.sourcesHit}/${comp.totalSources} Sources
                 </span>
                 <button type="button" class="btn-verify-badge ${p.is_manually_verified ? 'verified' : 'unverified'}" data-entity-type="persona" data-id="${p.id}" title="${p.is_manually_verified ? `Verified ${formatTimeAgo(p.manually_verified_at)}` : 'Click to toggle verification'}">
-                  <i class="${p.is_manually_verified ? 'fa-solid fa-circle-check' : 'fa-solid fa-shield-halved'}"></i>
+                  <i class="bi ${p.is_manually_verified ? 'bi-patch-check-fill' : 'bi-shield-exclamation'}"></i>
                   <span>${p.is_manually_verified ? `Manually Verified ✓ (${formatTimeAgo(p.manually_verified_at)})` : 'AI Inferred • Verify'}</span>
                 </button>
               </div>
@@ -3329,17 +3895,17 @@ $(function () {
 
           <div class="header-actions-col">
             <div class="header-btn-group">
-              <button type="button" class="action-btn-pill btn-pill-blue panel-btn-pull" data-entity-type="persona" data-key="${pKey}">
-                <i class="fa-solid fa-caret-down" style="font-size:0.65rem;"></i> Pull
-              </button>
-              <button type="button" class="action-btn-pill btn-pill-validate panel-btn-validate" data-entity-type="persona" data-key="${pKey}" ${validateBtnDisabled ? "disabled" : ""}>
-                <i class="fa-solid fa-check"></i> Validate
-              </button>
-              <button type="button" class="action-btn-pill btn-pill-dump panel-btn-dump" data-entity-type="persona" data-key="${pKey}" ${dumpBtnDisabled ? "disabled" : ""}>
-                <i class="fa-solid fa-database"></i> Dump
-              </button>
               <button type="button" class="action-btn-pill btn-pill-purple" id="personaEditToggleBtn">
                 Edit
+              </button>
+              <button type="button" class="action-btn-pill btn-pill-red persona-delete-btn"
+                      data-persona-id="${p.id}"
+                      data-persona-name="${esc(p.full_name || p.display_name || p.name || '')}"
+                      title="Permanently delete this persona">
+                <i class="bi bi-trash3"></i> Delete
+              </button>
+              <button type="button" class="action-btn-pill btn-persona-download-pdf" data-persona-id="${p.id}" style="background:#0284c7;color:#fff;border-color:#0284c7;display:inline-flex;align-items:center;gap:5px;font-weight:600;" title="Download full executive dossier as PDF">
+                <i class="bi bi-file-earmark-pdf-fill"></i> Download PDF
               </button>
             </div>
             <span class="header-meta-timestamp">Last scraped: ${pullTimeStr} &bull; ${p.email ? 'Email Verified &check;' : 'Email Pending'}</span>
@@ -3350,7 +3916,7 @@ $(function () {
       <!-- Edit Mode Notification Banner -->
       <div class="edit-mode-alert-banner fade-in d-none" id="personaEditBanner">
         <div class="edit-banner-left">
-          <i class="fa-solid fa-pen" style="font-size:1rem;"></i>
+          <i class="bi bi-pencil" style="font-size:1rem;"></i>
           <span>Edit mode is ON &mdash; fields are editable. Changes re-validate on save.</span>
         </div>
         <div class="edit-banner-actions">
@@ -3376,7 +3942,7 @@ $(function () {
             <div class="snapshot-field-item snapshot-field-item-uniform" data-entity-type="persona" data-id="${p.id}" data-field="full_name" data-raw-value="${esc(p.full_name || p.name || '')}">
               <div class="snapshot-field-header">
                 <span class="snapshot-field-label">FULL NAME</span>
-                <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Full Name inline"></i>
+                <i class="bi bi-pencil snapshot-field-pencil" title="Edit Full Name inline"></i>
               </div>
               <div class="snapshot-field-value">${esc(p.name || p.full_name)}</div>
             </div>
@@ -3384,7 +3950,7 @@ $(function () {
             <div class="snapshot-field-item snapshot-field-item-uniform" data-entity-type="persona" data-id="${p.id}" data-field="title" data-raw-value="${esc(p.title || '')}">
               <div class="snapshot-field-header">
                 <span class="snapshot-field-label">CORPORATE TITLE</span>
-                <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Corporate Title inline"></i>
+                <i class="bi bi-pencil snapshot-field-pencil" title="Edit Corporate Title inline"></i>
               </div>
               <div class="snapshot-field-value">${esc(p.title || "—")}</div>
             </div>
@@ -3392,7 +3958,7 @@ $(function () {
             <div class="snapshot-field-item snapshot-field-item-uniform" data-entity-type="persona" data-id="${p.id}" data-field="email" data-raw-value="${esc(p.email || '')}">
               <div class="snapshot-field-header">
                 <span class="snapshot-field-label">CORPORATE EMAIL</span>
-                <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Corporate Email inline"></i>
+                <i class="bi bi-pencil snapshot-field-pencil" title="Edit Corporate Email inline"></i>
               </div>
               <div class="snapshot-field-value" style="font-size:0.8rem;${!p.email ? 'color:#94a3b8;' : ''}">
                 ${emailStr !== "—" ? esc(emailStr) : "—"}
@@ -3402,7 +3968,7 @@ $(function () {
             <div class="snapshot-field-item snapshot-field-item-uniform" data-entity-type="persona" data-id="${p.id}" data-field="email_status" data-raw-value="${esc(p.email_status || '')}">
               <div class="snapshot-field-header">
                 <span class="snapshot-field-label">EMAIL STATUS</span>
-                <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Email Status inline"></i>
+                <i class="bi bi-pencil snapshot-field-pencil" title="Edit Email Status inline"></i>
               </div>
               <div class="snapshot-field-value">
                 ${emailStatusStr !== "—" ? `<span class="badge-solid-green">${esc(emailStatusStr)}</span>` : `<span style="color:#94a3b8;">—</span>`}
@@ -3412,7 +3978,7 @@ $(function () {
             <div class="snapshot-field-item snapshot-field-item-uniform" data-entity-type="persona" data-id="${p.id}" data-field="phone" data-raw-value="${esc(p.phone || p.direct_mobile_phone || '')}">
               <div class="snapshot-field-header">
                 <span class="snapshot-field-label">PHONE</span>
-                <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Phone inline"></i>
+                <i class="bi bi-pencil snapshot-field-pencil" title="Edit Phone inline"></i>
               </div>
               <div class="snapshot-field-value" style="font-size:0.82rem;">${esc(phoneStr)}</div>
             </div>
@@ -3420,7 +3986,7 @@ $(function () {
             <div class="snapshot-field-item snapshot-field-item-uniform" data-entity-type="persona" data-id="${p.id}" data-field="city" data-raw-value="${esc(p.city || '')}">
               <div class="snapshot-field-header">
                 <span class="snapshot-field-label">LOCATION / BASE</span>
-                <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Location/City inline"></i>
+                <i class="bi bi-pencil snapshot-field-pencil" title="Edit Location/City inline"></i>
               </div>
               <div class="snapshot-field-value" style="font-size:0.82rem;">${esc(locStr)}</div>
             </div>
@@ -3428,7 +3994,7 @@ $(function () {
             <div class="snapshot-field-item snapshot-field-item-uniform" data-entity-type="persona" data-id="${p.id}" data-field="degree" data-raw-value="${esc(p.degree || '')}">
               <div class="snapshot-field-header">
                 <span class="snapshot-field-label">EDUCATION</span>
-                <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Education/Degree inline"></i>
+                <i class="bi bi-pencil snapshot-field-pencil" title="Edit Education/Degree inline"></i>
               </div>
               <div class="snapshot-field-value" style="font-size:0.82rem;">${esc(eduStr)}</div>
             </div>
@@ -3436,7 +4002,7 @@ $(function () {
             <div class="snapshot-field-item snapshot-field-item-uniform" data-entity-type="persona" data-id="${p.id}" data-field="prior_company" data-raw-value="${esc(p.prior_company || '')}">
               <div class="snapshot-field-header">
                 <span class="snapshot-field-label">PRIOR EXPERIENCE</span>
-                <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Prior Company inline"></i>
+                <i class="bi bi-pencil snapshot-field-pencil" title="Edit Prior Company inline"></i>
               </div>
               <div class="snapshot-field-value" style="font-size:0.82rem;">${esc(priorStr)}</div>
             </div>
@@ -3444,7 +4010,7 @@ $(function () {
             <div class="snapshot-field-item snapshot-field-item-uniform" data-entity-type="persona" data-id="${p.id}" data-field="current_role_tenure_months" data-raw-value="${esc(p.current_role_tenure_months || '')}">
               <div class="snapshot-field-header">
                 <span class="snapshot-field-label">TENURE AT ${esc(coTicker)}</span>
-                <i class="fa-solid fa-pen snapshot-field-pencil" title="Edit Role Tenure (months) inline"></i>
+                <i class="bi bi-pencil snapshot-field-pencil" title="Edit Role Tenure (months) inline"></i>
               </div>
               <div class="snapshot-field-value">${esc(tenureStr)}</div>
             </div>
@@ -3462,11 +4028,11 @@ $(function () {
           <div class="core-validation-strip">
             <div class="core-validation-header">
               <div class="core-validation-title">
-                <i class="fa-solid fa-shield-halved"></i>
+                <i class="bi bi-shield-check"></i>
                 <span>Core Field Validation &amp; Quality Status</span>
               </div>
               <div class="core-validation-score-wrap">
-                <span class="core-validation-score-text">Passed: ${passedChecksCount} / 5 &bull; ${comp.completenessPct}% Profile Completeness (${comp.populatedCount}/${comp.totalFields} fields)</span>
+                <span class="core-validation-score-text">Passed: ${passedChecksCount} / 5 Core Checks &bull; ${dbCols.filled}/${dbCols.total} DB Columns Populated (${dbCols.pct}%)</span>
                 <span class="core-validation-grade-badge ${overallGrade.toLowerCase()}">${overallGrade}</span>
               </div>
             </div>
@@ -3474,35 +4040,35 @@ $(function () {
             <div class="core-validation-chips-row">
               <div class="core-validation-chip ${emailValid ? 'chip-passed' : 'chip-failed'}">
                 <span class="chip-label">Email Format</span>
-                <span class="chip-status">${emailValid ? '<i class="fa-solid fa-check"></i> Verified' : '&mdash; Missing'}</span>
+                <span class="chip-status">${emailValid ? '<i class="bi bi-check2"></i> Verified' : '&mdash; Missing'}</span>
               </div>
 
               <div class="core-validation-chip ${domainMatch ? 'chip-passed' : 'chip-failed'}">
                 <span class="chip-label">Domain Match (${esc(activeAccount.domain || '—')})</span>
-                <span class="chip-status">${domainMatch ? '<i class="fa-solid fa-check"></i> Verified' : '&mdash; Unmatched'}</span>
+                <span class="chip-status">${domainMatch ? '<i class="bi bi-check2"></i> Verified' : '&mdash; Unmatched'}</span>
               </div>
 
               <div class="core-validation-chip ${titleValid ? 'chip-passed' : 'chip-failed'}">
                 <span class="chip-label">Title &amp; Seniority</span>
-                <span class="chip-status">${titleValid ? '<i class="fa-solid fa-check"></i> Verified' : '&mdash; Incomplete'}</span>
+                <span class="chip-status">${titleValid ? '<i class="bi bi-check2"></i> Verified' : '&mdash; Incomplete'}</span>
               </div>
 
               <div class="core-validation-chip ${authorityValid ? 'chip-passed' : 'chip-failed'}">
                 <span class="chip-label">Authority Mapped</span>
-                <span class="chip-status">${authorityValid ? '<i class="fa-solid fa-check"></i> Verified' : '&mdash; Pending'}</span>
+                <span class="chip-status">${authorityValid ? '<i class="bi bi-check2"></i> Verified' : '&mdash; Pending'}</span>
               </div>
 
               <div class="core-validation-chip ${linkedinValid ? 'chip-passed' : 'chip-failed'}">
                 <span class="chip-label">LinkedIn Linked</span>
-                <span class="chip-status">${linkedinValid ? '<i class="fa-solid fa-check"></i> Verified' : '&mdash; Unlinked'}</span>
+                <span class="chip-status">${linkedinValid ? '<i class="bi bi-check2"></i> Verified' : '&mdash; Unlinked'}</span>
               </div>
             </div>
           </div>
 
-          <!-- Collapsible Vault: All 69 Persona Columns -->
+          <!-- Collapsible Vault: All 89 Persona Columns -->
           <div class="vault-collapsible-wrapper">
             <button type="button" class="vault-toggle-button" id="togglePersonaVaultBtn">
-              <i class="fa-solid fa-database"></i> View All 69 Persona Attributes, Dossier &amp; OSINT Feeds <i class="fa-solid fa-chevron-down" style="font-size:.7rem;"></i>
+              <i class="bi bi-database"></i> View All ${PERSONA_89_COLUMNS.length} Persona Database Attributes, Dossier &amp; OSINT Feeds <i class="bi bi-chevron-down" style="font-size:.7rem;"></i>
             </button>
             <div class="vault-content-area d-none" id="personaVaultArea"></div>
           </div>
@@ -3518,6 +4084,10 @@ $(function () {
     const id = $(this).data("id");
     activeAccount = MOCK_DATA.accounts.find((a) => a.id === id);
     if (!activeAccount) return;
+
+    try {
+      sessionStorage.setItem("pipeline_active_account_id", String(id));
+    } catch (e) {}
 
     activeLob = null;
     activePersona = null;
@@ -3560,6 +4130,782 @@ $(function () {
 
     // Render Complete Enterprise Hierarchy at Account Level
     renderAllPersonasDirectory(activeAccount);
+
+    // Update Batch Multi-Enrichment trigger pills (People & LOBs)
+    updateBatchTriggerPills(activeAccount);
+  });
+
+  // ══════════════════════════════════════════════════════════════════
+  // INTERACTIVE QUICK-LAUNCH HUB (EMPTY STATE)
+  // ══════════════════════════════════════════════════════════════════
+
+  function getConnectorIcon(key) {
+    switch (key) {
+      case "sec_edgar": return "bi-bank2";
+      case "gemini": return "bi-stars";
+      case "exa": return "bi-search";
+      case "tavily": return "bi-globe2";
+      case "diffbot": return "bi-diagram-3";
+      case "finnhub": return "bi-graph-up-arrow";
+      case "apify": return "bi-robot";
+      case "serper": return "bi-google";
+      default: return "bi-hdd-network";
+    }
+  }
+
+  function formatRelativeSyncTime(isoStr) {
+    if (!isoStr) return "Just now";
+    try {
+      const d = new Date(isoStr);
+      if (isNaN(d.getTime())) return "Recently synced";
+      const now = new Date();
+      const diffSec = Math.floor((now - d) / 1000);
+      if (diffSec < 60) return "Just now";
+      if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+      if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+      return d.toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    } catch (_) {
+      return "Recently synced";
+    }
+  }
+
+  async function renderEmptyStateHub() {
+    const $hub = $("#emptyState");
+    if (!$hub.length) return;
+
+    // 1. Fetch live system health & telemetry
+    try {
+      const token = sessionStorage.getItem("access_token") || localStorage.getItem("access_token");
+      const headers = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      const res = await fetch(`${API_BASE}/api/system/health`, { headers, credentials: "include" });
+      if (res.ok) {
+        const health = await res.json();
+        if (health && health.stats) {
+          $("#hubCreditsConsumed").text((health.stats.total_credits_consumed || 0).toLocaleString());
+          $("#hubTotalRuns").text((health.stats.total_pipeline_runs || 0).toLocaleString());
+          
+          if (health.database) {
+            $("#hubDbStatus").html(`<span class="pulse-dot-green"></span> ${esc(health.database.engine || "PostgreSQL")}`);
+            $("#hubDbName").text(health.database.name || "sales_ai_universal");
+          }
+
+          if (health.stats.last_sync_timestamp) {
+            $("#hubLastSync").text(formatRelativeSyncTime(health.stats.last_sync_timestamp));
+            $("#hubFreshnessLabel").text(`Freshness: ${formatRelativeSyncTime(health.stats.last_sync_timestamp)}`);
+          } else {
+            $("#hubLastSync").text("Active");
+          }
+        }
+      }
+    } catch (err) {
+        console.warn("[renderEmptyStateHub] System health fetch error:", err);
+      }
+
+      // 2. Render Enterprise Portfolio & Outreach Readiness Cards
+      const accts = (typeof MOCK_DATA !== "undefined" && Array.isArray(MOCK_DATA.accounts))
+        ? MOCK_DATA.accounts
+        : [];
+      $("#hubPortfolioAccountsCountBadge").text(`${accts.length} Accounts Monitored`);
+      $("#hubPortfolioGrid").html(renderHubPortfolioGrid(accts));
+
+      // 3. Render Pipeline Resource Architecture & Data Lineage (Two-Tier Filter Grid)
+      hubLineageFilterState = { layer: "all", cost: "all" };
+      $("#hubLineageScopePills .hub-lineage-pill").removeClass("active").filter('[data-layer="all"]').addClass("active");
+      $("#hubLineageCostToggle .hub-cost-toggle-btn").removeClass("active").filter('[data-cost="all"]').addClass("active");
+      $("#hubLineageGrid").html(renderHubLineageGrid("all", "all"));
+
+      // 4. Render Live Recent Pipeline Runs Feed
+      loadHubRecentRuns();
+    }
+
+    // ── Pipeline Resource & Data Lineage Registry (23 Enterprise Platforms & 27+ Connectors) ──
+    const PIPELINE_LINEAGE_SOURCES = [
+      // ── Regulatory, Legal & Open Data Platforms ──
+      {
+        id: "sec_edgar",
+        name: "SEC EDGAR",
+        icon: "bi-bank2",
+        portalUrl: "https://www.sec.gov/edgar/searchedgar/companysearch",
+        layers: ["account", "lob"],
+        scopeLabel: "Account & Division",
+        costType: "free",
+        costLabel: "100% Free / Public Gov",
+        description: "Official SEC 10-K statutory filings, audited financials, CIK registry, Exhibit 21 corporate subsidiaries, submissions Atom RSS feed.",
+        chips: ["10-K Filings", "Exhibit 21 Subsidiaries", "SEC CIK", "Audited Revenue", "Filings Atom RSS"],
+        subTools: [
+          { name: "10-K Statutory Filings", rate: "$0 Free", desc: "Audited Financials & Revenue" },
+          { name: "Exhibit 21 Subsidiaries", rate: "$0 Free", desc: "Legal Entity Ownership Tree" },
+          { name: "Submissions Atom RSS", rate: "$0 Free", desc: "Live Regulatory Filing Feed" }
+        ]
+      },
+      {
+        id: "gleif",
+        name: "GLEIF LEI Registry",
+        icon: "bi-diagram-3",
+        portalUrl: "https://search.gleif.org",
+        layers: ["account", "lob"],
+        scopeLabel: "Account & Division",
+        costType: "free",
+        costLabel: "100% Free / Open Data",
+        description: "Global Legal Entity Identifier (LEI) master database, verified jurisdiction of incorporation, parent-subsidiary corporate ownership trees.",
+        chips: ["LEI Code", "Corporate Ownership Tree", "Legal Jurisdiction", "GLEIF Entity ID"]
+      },
+      {
+        id: "patents",
+        name: "USPTO & PatentsView",
+        icon: "bi-lightbulb",
+        portalUrl: "https://patents.google.com",
+        layers: ["account", "lob", "persona"],
+        scopeLabel: "Universal (All Layers)",
+        costType: "free",
+        costLabel: "100% Free / Public Gov",
+        description: "Granted patent portfolios, technology innovation filings, registered assignees, and active inventor filings for executives.",
+        chips: ["Patents Granted", "Tech Innovations", "Assignees", "Inventor Search"],
+        subTools: [
+          { name: "PatentsView Open API", rate: "$0 Free", desc: "Corporate Patent Portfolio" },
+          { name: "Inventor Search", rate: "$0 Free", desc: "Executive Assigned Inventions" }
+        ]
+      },
+      {
+        id: "courtlistener",
+        name: "CourtListener RECAP",
+        icon: "bi-hammer",
+        portalUrl: "https://www.courtlistener.com/recap/",
+        layers: ["account"],
+        scopeLabel: "Account Level",
+        costType: "free",
+        costLabel: "100% Free / Public Gov",
+        description: "Federal litigation records, court dockets, legal actions, regulatory proceedings, and PACER docket summaries.",
+        chips: ["Federal Dockets", "PACER Filings", "Regulatory Actions", "Legal Disclosures"]
+      },
+      {
+        id: "openfec",
+        name: "OpenFEC (Data.gov)",
+        icon: "bi-flag",
+        portalUrl: "https://api.open.fec.gov",
+        layers: ["account", "persona"],
+        scopeLabel: "Account & Persona",
+        costType: "free",
+        costLabel: "100% Free / Public Gov",
+        description: "Federal Election Commission filings: Corporate PAC political expenditures, committee disbursements, and executive individual campaign donations.",
+        chips: ["Corporate PAC", "Executive Donations", "Data.gov API", "FEC Schedule A"],
+        subTools: [
+          { name: "Corporate PAC Filings", rate: "$0 Free", desc: "PAC Receipts & Disbursements" },
+          { name: "Schedule A Donations", rate: "$0 Free", desc: "Executive Individual Contributions" }
+        ]
+      },
+      {
+        id: "wikipedia",
+        name: "Wikipedia & Wikidata",
+        icon: "bi-globe2",
+        portalUrl: "https://www.wikidata.org",
+        layers: ["account", "lob"],
+        scopeLabel: "Account & Division",
+        costType: "free",
+        costLabel: "100% Free / Open Data",
+        description: "Verified historical origins, founding year, founders, global headcount, industry classifications, and Wikidata QID entity resolution.",
+        chips: ["Founded Year", "Founders", "Wikidata QID", "Corporate History"]
+      },
+      {
+        id: "news_rss",
+        name: "Google News RSS",
+        icon: "bi-newspaper",
+        portalUrl: "https://news.google.com",
+        layers: ["account", "lob"],
+        scopeLabel: "Account & Division",
+        costType: "free",
+        costLabel: "100% Free / Public RSS",
+        description: "Live corporate press releases, operating division media mentions, executive interviews, and merger & acquisition signals.",
+        chips: ["Live PR Releases", "Segment Headlines", "M&A Signals", "News RSS Stream"]
+      },
+      {
+        id: "reddit_osint",
+        name: "Reddit OSINT",
+        icon: "bi-chat-left-text",
+        portalUrl: "https://www.reddit.com",
+        layers: ["account", "lob"],
+        scopeLabel: "Account & Division",
+        costType: "free",
+        costLabel: "100% Free / Public RSS",
+        description: "Unfiltered employee and customer sentiment, division product feedback, engineering discussions, and community perception.",
+        chips: ["Customer Sentiment", "Employee Discussions", "Product Feedback", "Reddit Query"]
+      },
+      {
+        id: "openalex",
+        name: "OpenAlex Research",
+        icon: "bi-journal-bookmark",
+        portalUrl: "https://openalex.org",
+        layers: ["account", "persona"],
+        scopeLabel: "Account & Persona",
+        costType: "free",
+        costLabel: "100% Free / Open Data",
+        description: "Scholarly citations, academic publications, institutional research affiliations, and executive scientific h-index telemetry.",
+        chips: ["Academic Papers", "Scholarly Citations", "Executive h-Index", "Research Affiliations"]
+      },
+
+      // ── Unified Multi-Tool Platforms (Monid & Apify) ──
+      {
+        id: "monid",
+        name: "Monid.ai Enterprise Gateway",
+        icon: "bi-hdd-network",
+        portalUrl: "https://monid.ai",
+        layers: ["lob", "persona"],
+        scopeLabel: "Division & Persona",
+        costType: "metered",
+        costLabel: "Metered & Free Fallback",
+        description: "Unified enterprise gateway powering organization hierarchy discovery, buying committee discovery, and high-speed bio fallback search.",
+        chips: ["Apollo Org Engine", "TinyFish Search", "Buying Committee", "Executive Contacts"],
+        subTools: [
+          { name: "Apollo Org Engine", rate: "25 cr/pass", desc: "Org Chart & Verified Emails" },
+          { name: "TinyFish Search", rate: "$0 Free", desc: "Real-time Bio Snippets & News" }
+        ]
+      },
+      {
+        id: "apify",
+        name: "Apify Actor Cloud Platform",
+        icon: "bi-cloud-arrow-down",
+        portalUrl: "https://apify.com/store",
+        layers: ["account", "lob", "persona"],
+        scopeLabel: "Universal (All Layers)",
+        costType: "metered",
+        costLabel: "Metered Scraping Platform",
+        description: "Serverless web scraping & OSINT cloud executing dedicated crawler actors across executive careers, operating divisions, funding, and workplace ratings.",
+        chips: ["LinkedIn Profiles", "LinkedIn Company", "Crunchbase", "Glassdoor"],
+        subTools: [
+          { name: "LinkedIn Profiles Actor", rate: "10 cr/scrape", desc: "Career Progression & Role Tenure" },
+          { name: "LinkedIn Company Actor", rate: "15 cr/scrape", desc: "Operating Units & Headcount" },
+          { name: "Crunchbase Actor", rate: "10 cr/crawl", desc: "Funding Rounds & Lead Investors" },
+          { name: "Glassdoor Actor", rate: "10 cr/crawl", desc: "Workplace Ratings & CEO %" }
+        ]
+      },
+
+      // ── Specialized Financial, Search, AI & Contact Gateways ──
+      {
+        id: "finnhub",
+        name: "Finnhub Financials",
+        icon: "bi-graph-up-arrow",
+        portalUrl: "https://finnhub.io",
+        layers: ["account"],
+        scopeLabel: "Account Level",
+        costType: "freetier",
+        costLabel: "Free-Tier / Metered (5 cr)",
+        description: "Real-time equity market telemetry, stock exchange listings, ticker symbols, trading valuation, and IPO registration status.",
+        chips: ["Stock Symbol", "Exchange", "IPO Status", "Market Valuation"]
+      },
+      {
+        id: "serper",
+        name: "Google Serper Dev",
+        icon: "bi-google",
+        portalUrl: "https://serper.dev",
+        layers: ["account", "lob", "persona"],
+        scopeLabel: "Universal (All Layers)",
+        costType: "metered",
+        costLabel: "Metered API (1 cr/search)",
+        description: "High-speed Google Search & Knowledge Graph API: corporate web indexing, division discovery, executive biographies, and organic SERP results.",
+        chips: ["Google SERP", "Knowledge Graph", "Executive Bio", "Domain Discovery"]
+      },
+      {
+        id: "diffbot",
+        name: "Diffbot Knowledge Graph",
+        icon: "bi-cpu",
+        portalUrl: "https://www.diffbot.com",
+        layers: ["account", "lob", "persona"],
+        scopeLabel: "Universal (All Layers)",
+        costType: "metered",
+        costLabel: "Metered API (25 cr/lookup)",
+        description: "AI Knowledge Graph entity resolution: corporate firmographics, operating subsidiary tech stacks, competitors, and executive employment histories.",
+        chips: ["Entity Graph", "Tech Stack Matrix", "Competitor Graph", "Employment History"]
+      },
+      {
+        id: "fmp",
+        name: "Financial Modeling Prep (FMP)",
+        icon: "bi-cash-coin",
+        portalUrl: "https://financialmodelingprep.com",
+        layers: ["account"],
+        scopeLabel: "Account Level",
+        costType: "metered",
+        costLabel: "Metered API (2 cr/query)",
+        description: "Standardized corporate financial statements, 10-K/10-Q balance sheets, enterprise valuation ratios, and institutional ownership data.",
+        chips: ["Balance Sheets", "Income Statements", "Financial Ratios", "Valuation Multiples"]
+      },
+      {
+        id: "opencorporates",
+        name: "OpenCorporates",
+        icon: "bi-building-check",
+        portalUrl: "https://opencorporates.com",
+        layers: ["account"],
+        scopeLabel: "Account Level",
+        costType: "metered",
+        costLabel: "Metered API (1 cr/lookup)",
+        description: "World's largest open corporate database: official company registry numbers, active incorporation status, and branch filings.",
+        chips: ["Company Registry", "Incorporation Status", "Branch Filings", "Registered Agent"]
+      },
+      {
+        id: "firecrawl",
+        name: "Firecrawl v1 Scraper",
+        icon: "bi-fire",
+        portalUrl: "https://firecrawl.dev",
+        layers: ["account", "lob"],
+        scopeLabel: "Account & Division",
+        costType: "metered",
+        costLabel: "Metered API (1 cr/scrape)",
+        description: "High-fidelity web crawler converting complex JavaScript-heavy enterprise web pages and division product suites into clean, structured Markdown.",
+        chips: ["Clean Markdown Scrapes", "JS Bypass", "Product Portals", "Division Webpages"]
+      },
+      {
+        id: "fullenrich",
+        name: "FullEnrich v2 Waterfall",
+        icon: "bi-telephone-inbound",
+        portalUrl: "https://fullenrich.com",
+        layers: ["persona"],
+        scopeLabel: "Executive Persona",
+        costType: "metered",
+        costLabel: "Metered API (10 cr/lookup)",
+        description: "Multi-vendor waterfall contact enrichment: verified direct dials, validated corporate emails, mobile numbers, and employment verification.",
+        chips: ["Waterfall Enrichment", "Direct Dials", "Verified Work Emails", "Carrier Validation"]
+      },
+      {
+        id: "tavily",
+        name: "Tavily AI Search",
+        icon: "bi-compass",
+        portalUrl: "https://tavily.com",
+        layers: ["lob", "persona"],
+        scopeLabel: "Division & Persona",
+        costType: "metered",
+        costLabel: "Metered API (5 cr/op)",
+        description: "Targeted AI market intelligence: division revenue figures, competitive positioning, executive strategic KPIs, and operational pain points.",
+        chips: ["Division Revenue", "Strategic Priorities", "Pain Points", "Competitor Matrix"]
+      },
+      {
+        id: "exa",
+        name: "Exa Neural Web",
+        icon: "bi-search",
+        portalUrl: "https://exa.ai",
+        layers: ["lob", "persona"],
+        scopeLabel: "Division & Persona",
+        costType: "metered",
+        costLabel: "Metered API (5 cr/op)",
+        description: "Deep semantic neural search across podcast transcripts, conference panels, thought leadership blogs, and technical architecture writeups.",
+        chips: ["Podcast Transcripts", "Conference Panels", "Tech Stack Graph", "Semantic Citations"]
+      },
+      {
+        id: "gemini_llm",
+        name: "Google Gemini 3.6 Flash",
+        icon: "bi-stars",
+        portalUrl: "https://ai.google.dev",
+        layers: ["persona"],
+        scopeLabel: "Executive Persona",
+        costType: "metered",
+        costLabel: "Metered AI (5 cr/dossier)",
+        description: "Autonomous GenAI sales dossier synthesis: persona-specific value propositions, DISC-modeled communication styles, and personalized conversation icebreakers.",
+        chips: ["AI Value Prop", "Personalized Icebreakers", "DISC Personality", "Strategic Objections"]
+      },
+      {
+        id: "semrush",
+        name: "SEMrush Web Traffic",
+        icon: "bi-bar-chart-line",
+        portalUrl: "https://www.semrush.com",
+        layers: ["account"],
+        scopeLabel: "Account Level",
+        costType: "metered",
+        costLabel: "Enterprise Intelligence",
+        description: "Web traffic analytics, global rank, domain authority score, organic search volume, and digital marketing footprint.",
+        chips: ["Monthly Visits", "Global Rank", "Organic Keywords", "Domain Authority"]
+      },
+      {
+        id: "apptopia",
+        name: "Apptopia Intelligence",
+        icon: "bi-phone",
+        portalUrl: "https://apptopia.com",
+        layers: ["account"],
+        scopeLabel: "Account Level",
+        costType: "metered",
+        costLabel: "Enterprise Intelligence",
+        description: "Mobile app portfolio intelligence: iOS and Android download volumes, daily active users (DAU), and digital product engagement.",
+        chips: ["Mobile Apps", "Active Users (DAU)", "App Downloads", "Store Rankings"]
+      }
+    ];
+
+    // Helper: Render Hub Portfolio Grid from live PostgreSQL payload
+    function renderHubPortfolioGrid(accounts) {
+      if (!Array.isArray(accounts) || !accounts.length) {
+        return `<div style="grid-column:1/-1;text-align:center;padding:24px;color:#94a3b8;">No monitored accounts found.</div>`;
+      }
+
+      return accounts.map((acct) => {
+        const name = acct.display_name || acct.name || "Enterprise Account";
+        const domain = acct.primary_domain || acct.domain || "";
+        const ticker = acct.stock_symbol ? `${acct.stock_symbol} (${acct.stock_exchange || "US"})` : domain;
+        const initials = getInitials(name);
+
+        const health = computeAccountHealth(acct);
+        const pct = health.percentage || 0;
+        const pctCls = pct >= 80 ? "pct-high" : (pct >= 50 ? "pct-med" : "pct-low");
+
+        const lobs = acct.lobs || [];
+        const personas = acct.personas || [];
+
+        let lobsEnriched = 0;
+        lobs.forEach((l) => { if (isLobItemEnriched(l)) lobsEnriched++; });
+
+        let personasEnriched = 0;
+        personas.forEach((p) => { if (isPersonaItemEnriched(p)) personasEnriched++; });
+
+        let readinessTag = "";
+        if (pct >= 90 && personasEnriched > 20) {
+          readinessTag = `<span class="hub-port-status-tag status-ready"><i class="bi bi-check-circle-fill"></i> Ready for Outreach</span>`;
+        } else if (pct >= 60 || personasEnriched > 0 || lobsEnriched > 0) {
+          readinessTag = `<span class="hub-port-status-tag status-active"><i class="bi bi-lightning-charge-fill"></i> Active Intelligence</span>`;
+        } else {
+          readinessTag = `<span class="hub-port-status-tag status-pending"><i class="bi bi-hourglass-split"></i> Seed Stubs Only</span>`;
+        }
+
+        return `
+          <div class="hub-portfolio-card fade-in" data-account-id="${acct.id}">
+            <div class="hub-port-head">
+              <div class="hub-port-identity">
+                <div class="hub-port-avatar">${esc(initials)}</div>
+                <div class="hub-port-titles">
+                  <div class="hub-port-name" title="${esc(name)}">${esc(name)}</div>
+                  <div class="hub-port-sub"><i class="bi bi-buildings"></i> ${esc(ticker || 'Enterprise')}</div>
+                </div>
+              </div>
+              <span class="hub-port-badge-pct ${pctCls}">${pct}% Data Filled</span>
+            </div>
+
+            <div class="hub-port-track">
+              <div class="hub-port-fill ${pctCls}" style="width: ${pct}%;"></div>
+            </div>
+
+            <div class="hub-port-stats-row">
+              <div class="hub-port-stat-item">
+                <span class="hub-port-stat-val">${lobs.length} <small style="font-size:0.68rem;font-weight:400;color:#64748b;">(${lobsEnriched} enriched)</small></span>
+                <span class="hub-port-stat-lbl">Operating Segments</span>
+              </div>
+              <div class="hub-port-stat-item">
+                <span class="hub-port-stat-val">${personas.length} <small style="font-size:0.68rem;font-weight:400;color:#64748b;">(${personasEnriched} AI dossiers)</small></span>
+                <span class="hub-port-stat-lbl">Executive Buying Committee</span>
+              </div>
+            </div>
+
+            <div class="hub-port-status-bar">
+              <span style="color:#64748b;font-weight:500;">Readiness:</span>
+              ${readinessTag}
+            </div>
+
+            <div class="hub-port-actions">
+              <button type="button" class="btn-hub-open-acct" data-account-id="${acct.id}" title="Open Single Enterprise Intelligence Dashboard">
+                <i class="bi bi-box-arrow-in-right"></i> Open Account
+              </button>
+              <button type="button" class="btn-hub-queue-acct" data-account-id="${acct.id}" title="Open Batch Queue for this Account">
+                <i class="bi bi-play-circle"></i> Batch Queue
+              </button>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    // Helper: Render Individual Resource Lineage Card
+    function renderLineageCard(s, isWide = false, cost = "all") {
+      // Filter sub-tools based on active cost filter
+      let subTools = s.subTools || [];
+      if (cost === "free") {
+        subTools = subTools.filter(t => (t.rate || "").toLowerCase().includes("free"));
+      } else if (cost === "metered") {
+        subTools = subTools.filter(t => !(t.rate || "").toLowerCase().includes("free"));
+      }
+
+      const costBadge = s.costType === "free"
+        ? `<span class="hub-cost-badge cost-free"><i class="bi bi-gift-fill"></i> ${esc(s.costLabel)}</span>`
+        : (s.costType === "freetier"
+          ? `<span class="hub-cost-badge cost-freetier"><i class="bi bi-check2-circle"></i> ${esc(s.costLabel)}</span>`
+          : `<span class="hub-cost-badge cost-metered"><i class="bi bi-lightning-fill"></i> ${esc(s.costLabel)}</span>`);
+
+      const cardClass = isWide ? "hub-lineage-card card-wide" : "hub-lineage-card card-compact";
+
+      const subToolsHtml = (subTools && subTools.length)
+        ? `
+          <div class="hub-lineage-subtools">
+            <div class="hub-subtools-title"><i class="bi bi-diagram-2"></i> Specialized Connectors &amp; Tools:</div>
+            <div class="hub-subtools-grid">
+              ${subTools.map(t => {
+                const rateCls = (t.rate || "").toLowerCase().includes("free") ? "rate-free" : "";
+                return `
+                  <div class="hub-subtool-item">
+                    <span class="hub-subtool-name"><i class="bi bi-arrow-return-right" style="font-size:0.58rem;color:#0284c7;"></i> ${esc(t.name)}</span>
+                    <span class="hub-subtool-rate ${rateCls}">${esc(t.rate)}</span>
+                    <span class="hub-subtool-desc" title="${esc(t.desc)}">${esc(t.desc)}</span>
+                  </div>
+                `;
+              }).join("")}
+            </div>
+          </div>
+        `
+        : "";
+
+      return `
+        <a href="${s.portalUrl}" target="_blank" rel="noopener noreferrer" class="${cardClass}" title="Open ${esc(s.name)} Official Platform">
+          <div class="hub-lineage-head">
+            <div class="hub-lineage-title-wrap">
+              <div class="hub-lineage-icon"><i class="bi ${s.icon}"></i></div>
+              <div class="hub-lineage-name">${esc(s.name)}</div>
+            </div>
+            <span class="osint-live-indicator"><span class="pulse-dot"></span> LIVE <i class="bi bi-box-arrow-up-right" style="font-size:0.62rem;margin-left:2px;"></i></span>
+          </div>
+
+          <div class="hub-lineage-badges-row">
+            <span class="hub-scope-badge"><i class="bi bi-layers"></i> ${esc(s.scopeLabel)}</span>
+            ${costBadge}
+          </div>
+
+          <div class="hub-lineage-desc">${esc(s.description)}</div>
+
+          <div class="hub-lineage-chips">
+            ${s.chips.map(c => `<span class="hub-lineage-chip">${esc(c)}</span>`).join("")}
+          </div>
+
+          ${subToolsHtml}
+        </a>
+      `;
+    }
+
+    // Two-Tier Lineage Filter State
+    let hubLineageFilterState = {
+      layer: "all",
+      cost: "all"
+    };
+
+    // Helper: Render Density-Grouped Resource Architecture & Lineage Grid
+    function renderHubLineageGrid(layer = "all", cost = "all") {
+      const list = PIPELINE_LINEAGE_SOURCES.filter(s => {
+        // 1. Layer filter
+        if (layer !== "all" && !s.layers.includes(layer)) {
+          return false;
+        }
+
+        // 2. Cost filter
+        if (cost === "free") {
+          const hasFree = s.costType === "free" || (s.subTools && s.subTools.some(t => (t.rate || "").toLowerCase().includes("free")));
+          if (!hasFree) return false;
+        } else if (cost === "metered") {
+          const hasMetered = s.costType === "metered" || s.costType === "freetier" || (s.subTools && s.subTools.some(t => !(t.rate || "").toLowerCase().includes("free")));
+          if (!hasMetered) return false;
+        }
+
+        return true;
+      });
+
+      // Dynamic Section Badge Update
+      const layerName = layer === "all" ? "All Layers" : (layer === "account" ? "Account Layer" : (layer === "lob" ? "Division Layer" : "Persona Layer"));
+      const costName = cost === "all" ? "All Costs" : (cost === "free" ? "Free Only" : "Metered Only");
+      $("#hubActiveConnectorsBadge").text(`${list.length} Platforms Displayed (${layerName} • ${costName})`);
+
+      if (!list.length) {
+        return `
+          <div style="text-align:center;padding:36px 16px;color:#94a3b8;font-size:0.82rem;background:#f8fafc;border-radius:8px;border:1px dashed #e2e8f0;width:100%;">
+            <i class="bi bi-filter-circle" style="font-size:1.4rem;display:block;margin-bottom:8px;color:#cbd5e1;"></i>
+            No resources match both <strong>${esc(layerName)}</strong> and <strong>${esc(costName)}</strong>.
+            <div style="margin-top:6px;font-size:0.72rem;color:#64748b;">Try selecting "All Layers" or "All Costs" to expand your view.</div>
+          </div>
+        `;
+      }
+
+      // Group by Data Density: Multi-Connector Enterprise Platforms vs Direct Feeds
+      const multiConnectorList = list.filter(s => s.subTools && s.subTools.length > 0);
+      const directFeedList = list.filter(s => !s.subTools || s.subTools.length === 0);
+
+      let html = "";
+
+      // 1. Multi-Connector Platforms Section (Wide 2-Column Cards)
+      if (multiConnectorList.length > 0) {
+        html += `
+          <div class="hub-lineage-group">
+            <div class="hub-lineage-group-header">
+              <div class="hub-group-title-wrap">
+                <span class="hub-group-icon"><i class="bi bi-diagram-3-fill"></i></span>
+                <div>
+                  <div class="hub-group-title">Multi-Connector Enterprise Platforms &amp; Crawler Clouds</div>
+                  <div class="hub-group-sub">Platforms integrating multiple specialized sub-tools, crawler actors, or dual cost models</div>
+                </div>
+              </div>
+              <span class="hub-group-count-badge">${multiConnectorList.length} Platforms Integrated</span>
+            </div>
+            <div class="hub-lineage-grid-wide">
+              ${multiConnectorList.map(s => renderLineageCard(s, true, cost)).join("")}
+            </div>
+          </div>
+        `;
+      }
+
+      // Visual Divider between groups
+      if (multiConnectorList.length > 0 && directFeedList.length > 0) {
+        html += `<div class="hub-lineage-group-divider"></div>`;
+      }
+
+      // 2. Direct Feeds & Dedicated Registries (Compact 4-Column Cards)
+      if (directFeedList.length > 0) {
+        html += `
+          <div class="hub-lineage-group">
+            <div class="hub-lineage-group-header">
+              <div class="hub-group-title-wrap">
+                <span class="hub-group-icon feed-icon"><i class="bi bi-hdd-network-fill"></i></span>
+                <div>
+                  <div class="hub-group-title">Direct Intelligence Feeds &amp; Dedicated Registries</div>
+                  <div class="hub-group-sub">Targeted single-purpose data providers, government registries, and AI synthesis engines</div>
+                </div>
+              </div>
+              <span class="hub-group-count-badge">${directFeedList.length} Feeds Integrated</span>
+            </div>
+            <div class="hub-lineage-grid-compact">
+              ${directFeedList.map(s => renderLineageCard(s, false, cost)).join("")}
+            </div>
+          </div>
+        `;
+      }
+
+      return html;
+    }
+
+    // Helper: Load Live Recent Pipeline Runs Feed
+    async function loadHubRecentRuns() {
+      const $container = $("#hubRecentRunsContainer");
+      if (!$container.length) return;
+
+      try {
+        const res = await fetch(`${API_BASE}/api/pipeline/runs?limit=5`);
+        if (!res.ok) throw new Error("Status " + res.status);
+        const data = await res.json();
+        const runs = data.runs || [];
+
+        if (!runs.length) {
+          $container.html(`<div style="padding:16px;text-align:center;color:#94a3b8;font-size:0.8rem;">No recent pipeline runs recorded yet.</div>`);
+          return;
+        }
+
+        let rowsHtml = runs.map(r => {
+          const ent = r.entities_extracted || {};
+          const targetName = ent.person_name || ent.company || r.company_name || "Target Entity";
+          const level = r.pipeline_level || ent.level || "pipeline";
+          const action = r.action || ent.action || "run";
+          const levelBadge = `<span style="text-transform:capitalize;font-weight:600;padding:2px 6px;border-radius:4px;background:#f1f5f9;font-size:0.7rem;">${esc(level)} ${esc(action)}</span>`;
+
+          const score = r.quality_score ? `${Math.round(r.quality_score)}%` : "—";
+          const grade = r.quality_grade || "";
+          const credits = r.total_credits_used > 0 ? `${r.total_credits_used} Credits` : "0 (Free)";
+          const timeStr = formatRelativeSyncTime(r.started_at);
+
+          const statusLower = String(r.status || "success").toLowerCase();
+          let statusCls = "status-success";
+          if (statusLower.includes("val")) statusCls = "status-validated";
+          else if (statusLower.includes("run") || statusLower.includes("stag")) statusCls = "status-running";
+          else if (statusLower.includes("err") || statusLower.includes("fail")) statusCls = "status-failed";
+
+          return `
+            <tr>
+              <td>
+                <strong style="color:#0f172a;">${esc(targetName)}</strong>
+                <div style="font-size:0.68rem;color:#64748b;">${esc(r.company_name || '')}</div>
+              </td>
+              <td>${levelBadge}</td>
+              <td><span style="font-weight:700;color:#0284c7;">${score}</span> ${grade ? `<small>(${esc(grade)})</small>` : ''}</td>
+              <td><span style="font-weight:600;color:${r.total_credits_used > 0 ? '#b45309' : '#059669'};">${credits}</span></td>
+              <td><span style="color:#64748b;">${timeStr}</span></td>
+              <td><span class="hub-run-status-badge ${statusCls}"><i class="bi bi-circle-fill" style="font-size:0.5rem;"></i> ${esc(r.status || 'Done')}</span></td>
+            </tr>
+          `;
+        }).join("");
+
+        $container.html(`
+          <div class="hub-runs-table-wrap">
+            <table class="hub-runs-table">
+              <thead>
+                <tr>
+                  <th>Target Entity &amp; Enterprise</th>
+                  <th>Pipeline Stage</th>
+                  <th>Quality Score</th>
+                  <th>Credits</th>
+                  <th>Executed</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rowsHtml}
+              </tbody>
+            </table>
+          </div>
+        `);
+      } catch (err) {
+        console.warn("Failed to load hub recent runs:", err);
+        $container.html(`<div style="padding:14px;text-align:center;color:#94a3b8;font-size:0.8rem;">Live pipeline audit logs accessible in database.</div>`);
+      }
+    }
+
+    // Tier 1: Scope Layer Pills Click Event (Recommendation 2)
+    $(document).on("click", "#hubLineageScopePills .hub-lineage-pill", function () {
+      $("#hubLineageScopePills .hub-lineage-pill").removeClass("active");
+      $(this).addClass("active");
+      hubLineageFilterState.layer = $(this).data("layer") || "all";
+      $("#hubLineageGrid").html(renderHubLineageGrid(hubLineageFilterState.layer, hubLineageFilterState.cost));
+    });
+
+    // Tier 2: Cost Filter Toggle Click Event (Recommendation 2)
+    $(document).on("click", "#hubLineageCostToggle .hub-cost-toggle-btn", function () {
+      $("#hubLineageCostToggle .hub-cost-toggle-btn").removeClass("active");
+      $(this).addClass("active");
+      hubLineageFilterState.cost = $(this).data("cost") || "all";
+      $("#hubLineageGrid").html(renderHubLineageGrid(hubLineageFilterState.layer, hubLineageFilterState.cost));
+    });
+
+    // Hub Portfolio Card Actions
+    $(document).on("click", ".btn-hub-open-acct", function (e) {
+      e.stopPropagation();
+      const acctId = $(this).data("account-id");
+      const $sidebarItem = $(`#accountList .account-item[data-id="${acctId}"]`);
+      if ($sidebarItem.length) {
+        $sidebarItem.trigger("click");
+      }
+    });
+
+    $(document).on("click", ".btn-hub-queue-acct", function (e) {
+      e.stopPropagation();
+      const acctId = $(this).data("account-id");
+      const acct = (MOCK_DATA.accounts || []).find(a => a.id === acctId);
+      if (acct) {
+        openBatchConsole("persona", acct);
+      }
+    });
+
+    $(document).on("click", ".hub-portfolio-card", function () {
+      const acctId = $(this).data("account-id");
+      const $sidebarItem = $(`#accountList .account-item[data-id="${acctId}"]`);
+      if ($sidebarItem.length) {
+        $sidebarItem.trigger("click");
+      }
+    });
+
+
+  // Return to Quick-Launch Hub when clicking top-left brand header or sidebar brand
+  $(document).on("click", ".pipeline-top-left, .sidebar-brand", function (e) {
+    if ($(e.target).closest("#sidebarCollapseBtn").length) return;
+    activeAccount = null;
+    activeLob = null;
+    activePersona = null;
+    try {
+      sessionStorage.removeItem("pipeline_active_account_id");
+    } catch (err) {}
+
+    $(".account-item").removeClass("active");
+    $("#dashboardContainer").addClass("d-none");
+    $("#lobDetailViewContainer").addClass("d-none").empty();
+    $("#personaDetailViewContainer").addClass("d-none").empty();
+    $("#detailPanelContainer").addClass("d-none").empty();
+    
+    renderModernBreadcrumbs();
+    renderEmptyStateHub();
+    $("#emptyState").removeClass("d-none");
   });
 
   // ══════════════════════════════════════════════════════════════════
@@ -3612,14 +4958,317 @@ $(function () {
   });
 
   // ══════════════════════════════════════════════════════════════════
-  // EVENT: PERSONA CARD SELECTION
+  // EVENT: PERSONA CARD SELECTION (SLIDE-OVER EXECUTIVE DOSSIER DRAWER)
   // ══════════════════════════════════════════════════════════════════
-  $(document).on("click", ".persona-card", function () {
+  $(document).on("click", ".persona-card", function (e) {
+    // If clicked on quick-action buttons inside the card, ignore drawer
+    if ($(e.target).closest(".persona-action-btn").length) {
+      return;
+    }
+
     $(".persona-card").removeClass("active");
     $(this).addClass("active");
 
     const pData = JSON.parse(decodeURIComponent($(this).attr("data-raw")));
     activePersona = pData;
+
+    // Direct 1-Click to Full Executive Dossier View (Bypass intermediate sidebar drawer)
+    closeExecutiveDossierDrawer();
+    $("#lobDetailViewContainer").addClass("d-none");
+    $("#personaDetailViewContainer").html(renderModernPersonaDetailView(activePersona)).removeClass("d-none");
+    renderModernBreadcrumbs();
+    const $pC = $("#personaDetailViewContainer");
+    if ($pC.length && $pC.offset()) {
+      window.scrollTo({ top: Math.max(0, $pC.offset().top - 20), behavior: "smooth" });
+    }
+  });
+
+  // ─── Floating Toast Notification Helper ───
+  function showToastNotification(message, icon = "bi-check-circle-fill text-success") {
+    let $container = $("#toastNotificationContainer");
+    if (!$container.length) {
+      $container = $('<div id="toastNotificationContainer" class="pipeline-toast-container"></div>').appendTo("body");
+    }
+    const $toast = $(`
+      <div class="pipeline-floating-toast">
+        <i class="bi ${icon}"></i>
+        <span>${esc(message)}</span>
+      </div>
+    `);
+    $container.append($toast);
+    setTimeout(() => {
+      $toast.fadeOut(250, function () { $(this).remove(); });
+    }, 2400);
+  }
+
+  function showToast(message, type = "info") {
+    let icon = "bi-info-circle-fill text-info";
+    if (type === "success") icon = "bi-check-circle-fill text-success";
+    else if (type === "warning") icon = "bi-exclamation-triangle-fill text-warning";
+    else if (type === "error" || type === "danger") icon = "bi-x-circle-fill text-danger";
+    else if (typeof type === "string" && type.includes("bi-")) icon = type;
+    showToastNotification(message, icon);
+  }
+  window.showToast = showToast;
+
+  // ─── Quick-Copy Utilities ───
+  $(document).on("click", ".btn-copy-email", function (e) {
+    e.stopPropagation();
+    const email = $(this).data("email") || $(this).attr("data-email");
+    if (!email) return;
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(email).catch(() => {});
+    } else {
+      const ta = document.createElement("textarea");
+      ta.value = email;
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); } catch (_) {}
+      document.body.removeChild(ta);
+    }
+
+    const $btn = $(this);
+    const origHtml = $btn.html();
+    $btn.addClass("copied").html('<i class="bi bi-check-lg"></i>');
+    showToastNotification(`Copied email: ${email}`);
+
+    setTimeout(() => {
+      $btn.removeClass("copied").html(origHtml);
+    }, 1800);
+  });
+
+  $(document).on("click", ".btn-copy-phone", function (e) {
+    e.stopPropagation();
+    const phone = $(this).data("phone") || $(this).attr("data-phone");
+    if (!phone) return;
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(String(phone)).catch(() => {});
+    } else {
+      const ta = document.createElement("textarea");
+      ta.value = String(phone);
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); } catch (_) {}
+      document.body.removeChild(ta);
+    }
+
+    const $btn = $(this);
+    const origHtml = $btn.html();
+    $btn.addClass("copied").html('<i class="bi bi-check-lg"></i>');
+    showToastNotification(`Copied phone: ${phone}`);
+
+    setTimeout(() => {
+      $btn.removeClass("copied").html(origHtml);
+    }, 1800);
+  });
+
+  // ─── Slide-Over Executive Dossier Drawer Logic ───
+  function renderExecutiveDossierDrawer(p) {
+    if (!p) return;
+    const tierCat = getPersonaTierCategory(p);
+    const avatarClass = tierCat === "c_suite" ? "avatar-csuite" : (tierCat === "vp_head" ? "avatar-vp" : "");
+    const tierLabelMap = {
+      c_suite: "C-Suite",
+      vp_head: "VP & Head",
+      director: "Director",
+      manager: "Manager & Lead",
+      other: "Executive Staff",
+    };
+    const tierLabel = tierLabelMap[tierCat] || "Executive";
+
+    const comp = computePersonaCompleteness(p);
+    const score = comp.score || 85;
+
+    const initials = getInitials(p.name || "EX");
+    $("#drawerAvatar").attr("class", `drawer-avatar ${avatarClass}`).text(initials);
+    $("#drawerName").text(p.name || "Executive");
+    $("#drawerTierBadge").attr("class", `drawer-tier-badge ${tierCat}`).text(tierLabel);
+    $("#drawerHealthBadge").text(`${score}% Confidence`);
+    $("#drawerTitle").text(p.title || p.job_title || "Executive Leadership");
+
+    const coName = activeAccount ? (activeAccount.name || activeAccount.display_name || "Enterprise") : "Enterprise";
+    const lobName = (activeLob && activeLob.name) ? activeLob.name : (p.department || "Corporate");
+    $("#drawerCompanyMeta").html(`${esc(coName)} &bull; <i class="bi bi-diagram-3"></i> ${esc(lobName)}`);
+
+    const pEmail = p.email || p.work_email || p.personal_email || p.sanitized_email || "";
+    const pPhone = p.phone || p.direct_mobile_phone || p.sanitized_phone || "";
+    const pLinkedIn = p.linkedin_url || p.linkedin || "";
+    const cik = (activeAccount && activeAccount.sec_cik) ? activeAccount.sec_cik : "";
+    const secInsiderUrl = cik ? `https://www.sec.gov/edgar/searchedgar/companysearch` : "";
+
+    // Action Bar Chips
+    let actionsHtml = "";
+    if (pEmail) {
+      actionsHtml += `
+        <button type="button" class="drawer-action-chip btn-copy-email" data-email="${esc(pEmail)}" title="Click to copy email">
+          <i class="bi bi-envelope-fill text-primary"></i> <span>${esc(pEmail)}</span> <i class="bi bi-copy" style="font-size:0.68rem;opacity:.6;"></i>
+        </button>
+      `;
+    }
+    if (pPhone) {
+      actionsHtml += `
+        <button type="button" class="drawer-action-chip btn-copy-phone" data-phone="${esc(pPhone)}" title="Click to copy phone">
+          <i class="bi bi-telephone-fill text-success"></i> <span>${esc(pPhone)}</span> <i class="bi bi-copy" style="font-size:0.68rem;opacity:.6;"></i>
+        </button>
+      `;
+    }
+    if (pLinkedIn) {
+      actionsHtml += `
+        <a href="${normalizeUrl(pLinkedIn)}" target="_blank" rel="noopener noreferrer" class="drawer-action-chip" title="Open verified LinkedIn Profile">
+          <i class="bi bi-linkedin" style="color:#0a66c2;"></i> <span>LinkedIn Profile</span> <i class="bi bi-box-arrow-up-right" style="font-size:0.65rem;opacity:.6;"></i>
+        </a>
+      `;
+    }
+    if (secInsiderUrl) {
+      actionsHtml += `
+        <a href="${secInsiderUrl}" target="_blank" rel="noopener noreferrer" class="drawer-action-chip" title="SEC Form 4 Insider Stock Transactions">
+          <i class="bi bi-bank2 text-secondary"></i> <span>SEC Form 4</span> <i class="bi bi-box-arrow-up-right" style="font-size:0.65rem;opacity:.6;"></i>
+        </a>
+      `;
+    }
+    $("#drawerActionBar").html(actionsHtml);
+
+    // AI Call Prep & Strategic Angle
+    const icebreaker = p.icebreaker || (p.ai_call_prep && p.ai_call_prep.icebreakers && p.ai_call_prep.icebreakers[0]) || 
+      `Congratulations on driving strategic initiatives across ${lobName} at ${coName}.`;
+
+    const valueProp = p.value_proposition || (p.ai_call_prep && p.ai_call_prep.value_proposition) || 
+      `Empowering ${coName}'s ${p.department || lobName} team with high-velocity data automation and enterprise risk transparency.`;
+
+    const strategicAngle = p.strategic_angle || (p.ai_call_prep && p.ai_call_prep.strategic_angle) || p.decision_priorities ||
+      `Focuses on operational resilience, cost efficiency, and cross-functional leadership alignment.`;
+
+    // Coordinates
+    const locStr = p.city ? `${p.city}${p.state ? ', ' + p.state : ''}${p.country ? ', ' + p.country : ''}` : (p.country || "Corporate Headquarters");
+    const tenureStr = p.current_role_tenure_months ? 
+      `${Math.floor(p.current_role_tenure_months / 12)} yrs ${p.current_role_tenure_months % 12} mos` : "Active Executive";
+    const priorStr = p.prior_company || (Array.isArray(p.past_companies) && p.past_companies.length > 0 ? p.past_companies.join(', ') : "Enterprise Sector");
+    const eduStr = p.degree ? `${p.degree}${p.institution ? ' &bull; ' + p.institution : ''}` : (p.institution || "Higher Education / University");
+    const reportsTo = p.reports_to || "Executive Committee / Board";
+
+    let skillsHtml = "";
+    const skills = Array.isArray(p.skills) ? p.skills : (p.skills ? String(p.skills).split(",") : []);
+    if (skills.length) {
+      skillsHtml = `
+        <div style="margin-top:10px;">
+          <div class="drawer-field-label" style="margin-bottom:4px;">Core Competencies &amp; Skills</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;">
+            ${skills.slice(0, 10).map(s => `<span style="font-size:0.68rem;background:#f1f5f9;color:#334155;padding:2px 7px;border-radius:4px;border:1px solid #e2e8f0;">${esc(s.trim())}</span>`).join("")}
+          </div>
+        </div>
+      `;
+    }
+
+    $("#drawerBody").html(`
+      <!-- Section 1: AI Call Prep & Conversation Hooks -->
+      <div class="drawer-section-card">
+        <div class="drawer-section-title">
+          <i class="bi bi-stars"></i> AI Call Prep &amp; Executive Hook
+        </div>
+        <div class="drawer-ai-callout">
+          <div class="drawer-ai-label"><i class="bi bi-chat-quote-fill"></i> Conversation Opener / Icebreaker</div>
+          <div class="drawer-ai-text">${esc(icebreaker)}</div>
+        </div>
+        <div class="drawer-ai-callout" style="border-left-color:#10b981;">
+          <div class="drawer-ai-label" style="color:#059669;"><i class="bi bi-bullseye"></i> Tailored Value Proposition</div>
+          <div class="drawer-ai-text">${esc(valueProp)}</div>
+        </div>
+        <div class="drawer-ai-callout" style="border-left-color:#8b5cf6;margin-bottom:0;">
+          <div class="drawer-ai-label" style="color:#7c3aed;"><i class="bi bi-compass"></i> Strategic Priorities &amp; Decision Drivers</div>
+          <div class="drawer-ai-text">${esc(strategicAngle)}</div>
+        </div>
+      </div>
+
+      <!-- Section 2: Contact Coordinates & Office -->
+      <div class="drawer-section-card">
+        <div class="drawer-section-title">
+          <i class="bi bi-person-lines-fill"></i> Contact Coordinates &amp; Office
+        </div>
+        <div class="drawer-grid-2col">
+          <div class="drawer-field">
+            <span class="drawer-field-label">Verified Work Email</span>
+            <span class="drawer-field-val">
+              ${pEmail ? `<a href="mailto:${esc(pEmail)}" style="color:#0284c7;text-decoration:none;">${esc(pEmail)}</a>` : '<span style="color:#94a3b8;">Not captured</span>'}
+            </span>
+          </div>
+          <div class="drawer-field">
+            <span class="drawer-field-label">Direct / Mobile Phone</span>
+            <span class="drawer-field-val">
+              ${pPhone ? `<a href="tel:${esc(pPhone)}" style="color:#0284c7;text-decoration:none;">${esc(pPhone)}</a>` : '<span style="color:#94a3b8;">Not captured</span>'}
+            </span>
+          </div>
+          <div class="drawer-field">
+            <span class="drawer-field-label">Office Location</span>
+            <span class="drawer-field-val">${esc(locStr)}</span>
+          </div>
+          <div class="drawer-field">
+            <span class="drawer-field-label">Division / Department</span>
+            <span class="drawer-field-val">${esc(p.department || lobName)}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section 3: Professional Background & Seniority -->
+      <div class="drawer-section-card">
+        <div class="drawer-section-title">
+          <i class="bi bi-briefcase-fill"></i> Professional Career &amp; Experience
+        </div>
+        <div class="drawer-grid-2col">
+          <div class="drawer-field">
+            <span class="drawer-field-label">Role Tenure</span>
+            <span class="drawer-field-val">${esc(tenureStr)}</span>
+          </div>
+          <div class="drawer-field">
+            <span class="drawer-field-label">Reports To</span>
+            <span class="drawer-field-val">${esc(reportsTo)}</span>
+          </div>
+          <div class="drawer-field">
+            <span class="drawer-field-label">Prior Organization</span>
+            <span class="drawer-field-val">${esc(priorStr)}</span>
+          </div>
+          <div class="drawer-field">
+            <span class="drawer-field-label">Education / Credentials</span>
+            <span class="drawer-field-val">${esc(eduStr)}</span>
+          </div>
+        </div>
+        ${skillsHtml}
+      </div>
+    `);
+  }
+
+  function openExecutiveDossierDrawer(persona) {
+    if (!persona) return;
+    activePersona = persona;
+    renderExecutiveDossierDrawer(persona);
+    $("#executiveDrawerBackdrop").removeClass("d-none fade-out");
+    $("#executiveDossierDrawer").addClass("open").attr("aria-hidden", "false");
+    $("body").css("overflow", "hidden");
+  }
+
+  function closeExecutiveDossierDrawer() {
+    $("#executiveDossierDrawer").removeClass("open").attr("aria-hidden", "true");
+    $("#executiveDrawerBackdrop").addClass("fade-out");
+    setTimeout(() => {
+      $("#executiveDrawerBackdrop").addClass("d-none").removeClass("fade-out");
+      $("body").css("overflow", "");
+    }, 220);
+  }
+
+  $(document).on("click", "#closeExecutiveDrawerBtn, #drawerCloseFooterBtn, #executiveDrawerBackdrop", function () {
+    closeExecutiveDossierDrawer();
+  });
+
+  $(document).on("keydown", function (e) {
+    if (e.key === "Escape" && $("#executiveDossierDrawer").hasClass("open")) {
+      closeExecutiveDossierDrawer();
+    }
+  });
+
+  $(document).on("click", "#drawerOpenFullPageBtn", function () {
+    if (!activePersona) return;
+    closeExecutiveDossierDrawer();
 
     // Hide LOB detail view while viewing Persona
     $("#lobDetailViewContainer").addClass("d-none");
@@ -3632,6 +5281,113 @@ $(function () {
     if ($pC.length && $pC.offset()) {
       window.scrollTo({ top: Math.max(0, $pC.offset().top - 20), behavior: "smooth" });
     }
+  });
+
+  $(document).on("click", "#btnBackFromPersonaDetail", function () {
+    if (activeLob) {
+      $(".crumb-lob").trigger("click");
+    } else {
+      $(".crumb-personas").trigger("click");
+    }
+  });
+
+  // ─── One-Click Account Directory Export (CSV / JSON) ───
+  $(document).on("click", "#btnExportPersonas", function (e) {
+    e.stopPropagation();
+    $("#personaExportMenu").toggleClass("d-none");
+  });
+
+  $(document).on("click", function (e) {
+    if (!$(e.target).closest(".persona-export-wrapper").length) {
+      $("#personaExportMenu").addClass("d-none");
+    }
+  });
+
+  function exportPersonasDirectory(format = "csv") {
+    $("#personaExportMenu").addClass("d-none");
+    const personas = (allPersonasDirectoryState && allPersonasDirectoryState.personas && allPersonasDirectoryState.personas.length) 
+      ? allPersonasDirectoryState.personas 
+      : ((activeAccount && activeAccount.personas) ? activeAccount.personas : []);
+
+    if (!personas.length) {
+      showToastNotification("No personas available to export", "bi-exclamation-triangle-fill text-warning");
+      return;
+    }
+
+    const coName = activeAccount ? (activeAccount.name || activeAccount.display_name || "enterprise") : "enterprise";
+    const dateStr = new Date().toISOString().split("T")[0];
+    const fileName = `${slugify(coName)}_executive_directory_${dateStr}.${format}`;
+
+    if (format === "csv") {
+      const headers = [
+        "Full Name",
+        "Job Title",
+        "Hierarchy Tier",
+        "Department",
+        "Company",
+        "Work Email",
+        "Direct Phone",
+        "LinkedIn URL",
+        "Office Location",
+        "Role Tenure",
+        "Alma Mater / Degree",
+        "Confidence Score",
+      ];
+
+      const rows = personas.map((p) => {
+        const tier = getPersonaTierCategory(p);
+        const comp = computePersonaCompleteness(p);
+        const loc = p.city ? `${p.city}${p.state ? ', ' + p.state : ''}${p.country ? ', ' + p.country : ''}` : (p.country || "");
+        const tenure = p.current_role_tenure_months ? `${Math.floor(p.current_role_tenure_months / 12)}y ${p.current_role_tenure_months % 12}m` : "";
+        const edu = p.degree ? `${p.degree}${p.institution ? ' - ' + p.institution : ''}` : (p.institution || "");
+
+        return [
+          p.name || "",
+          p.title || p.job_title || "",
+          tier,
+          p.department || "",
+          coName,
+          p.email || p.work_email || p.personal_email || "",
+          p.phone || p.direct_mobile_phone || "",
+          p.linkedin_url || p.linkedin || "",
+          loc,
+          tenure,
+          edu,
+          `${comp.score || 85}%`,
+        ].map((val) => `"${String(val).replace(/"/g, '""')}"`);
+      });
+
+      const csvContent = "\uFEFF" + [headers.join(","), ...rows.map((r) => r.join(","))].join("\r\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      showToastNotification(`Exported ${personas.length} contacts to CSV`, "bi-file-earmark-spreadsheet text-success");
+    } else if (format === "json") {
+      const jsonContent = JSON.stringify(personas, null, 2);
+      const blob = new Blob([jsonContent], { type: "application/json;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      showToastNotification(`Exported ${personas.length} contacts to JSON`, "bi-filetype-json text-primary");
+    }
+  }
+
+  $(document).on("click", ".persona-export-item", function () {
+    const format = $(this).data("format") || "csv";
+    exportPersonasDirectory(format);
   });
 
   // ══════════════════════════════════════════════════════════════════
@@ -3736,18 +5492,18 @@ $(function () {
     const $list = $btn.closest("#recentPipelineActivityList");
     const $extras = $list.find(".timeline-item-extra");
     const isExpanded = $btn.attr("data-expanded") === "true";
-    const totalCount = $list.find(".timeline-item").length;
+    const totalCount = $list.find(".pipeline-activity-card, .timeline-item").length;
     const extraCount = $extras.length;
 
     if (isExpanded) {
       $extras.slideUp(180);
       $btn.attr("data-expanded", "false");
-      $btn.html(`<span>View full run history (${extraCount} more)</span> <i class="fa-solid fa-chevron-down" style="font-size:0.72rem;"></i>`);
+      $btn.html(`<span>View full run history (${extraCount} more)</span> <i class="bi bi-chevron-down" style="font-size:0.72rem;"></i>`);
       $("#activityShowingHint").text("Showing latest 3");
     } else {
       $extras.slideDown(220);
       $btn.attr("data-expanded", "true");
-      $btn.html(`<span>Show latest 3 only</span> <i class="fa-solid fa-chevron-up" style="font-size:0.72rem;"></i>`);
+      $btn.html(`<span>Show latest 3 only</span> <i class="bi bi-chevron-up" style="font-size:0.72rem;"></i>`);
       $("#activityShowingHint").text(`Showing all ${totalCount}`);
     }
   });
@@ -3765,30 +5521,179 @@ $(function () {
     if (isExpanded) {
       $extra.css("display", "none");
       $btn.attr("data-expanded", "false");
-      $btn.html(`<span>+${totalExtra} more</span> <i class="fa-solid fa-chevron-down" style="font-size:0.68rem;"></i>`);
+      $btn.html(`<span>+${totalExtra} more</span> <i class="bi bi-chevron-down" style="font-size:0.68rem;"></i>`);
     } else {
       $extra.css("display", "inline-flex");
       $btn.attr("data-expanded", "true");
-      $btn.html(`<span>Show less</span> <i class="fa-solid fa-chevron-up" style="font-size:0.68rem;"></i>`);
+      $btn.html(`<span>Show less</span> <i class="bi bi-chevron-up" style="font-size:0.68rem;"></i>`);
     }
   });
 
-  // Tab Live Search Box
-  $(document).on("input", "#tabSearchInput", function () {
-    const q = $(this).val().toLowerCase().trim();
+  // ─── Universal Tab Search Engine (Divisions, Personas, Fields) ───────────
+  function applyUniversalTabSearch(query) {
+    const q = (query || "").toLowerCase().trim();
+    const activeTab = $(".tab-pill-btn.active").data("nav-tab") || "overview";
+    const $clearBtn = $("#clearTabSearchBtn");
+
+    if (q) {
+      $clearBtn.show();
+    } else {
+      $clearBtn.hide();
+    }
+
     if (!q) {
-      $(".lob-card, .persona-card").show();
+      // 1. Restore sections according to current active tab
+      if (activeTab === "overview") {
+        $("#accountOverviewContainer").removeClass("d-none");
+        $("#lobSection").removeClass("d-none");
+        $("#allPersonasSection").removeClass("d-none");
+      } else if (activeTab === "lobs") {
+        $("#accountOverviewContainer").addClass("d-none");
+        $("#lobSection").removeClass("d-none");
+        $("#allPersonasSection").addClass("d-none");
+      } else if (activeTab === "personas") {
+        $("#accountOverviewContainer").addClass("d-none");
+        $("#lobSection").addClass("d-none");
+        $("#allPersonasSection").removeClass("d-none");
+      } else {
+        $("#accountOverviewContainer").removeClass("d-none");
+      }
+
+      // 2. Restore LOB cards to default limit (first 12 visible, extras hidden)
+      $(".lob-card").each(function () {
+        const isExtra = $(this).hasClass("lob-card-extra");
+        $(this).css("display", isExtra ? "none" : "");
+      });
+      $(".lob-toggle-footer").show();
+      $(".sublob-card").show();
+
+      // 3. Reset Personas directory
+      if (allPersonasDirectoryState.searchQuery) {
+        allPersonasDirectoryState.searchQuery = "";
+        allPersonasDirectoryState.visibleLimit = 30;
+        $("#allPersonasSearchInput").val("");
+        $("#clearAllPersonasSearch").hide();
+        renderFilteredPersonaCards();
+      }
+
+      // 4. Restore overview fields & clear search highlights
+      $(".snapshot-field-item, .intelligence-metric-item, .feed-status-row, .vault-field, .detail-field").each(function () {
+        $(this).css("display", "");
+        $(this).removeClass("search-field-match");
+      });
       return;
     }
+
+    // ─── A. SEARCH DIVISIONS (LOBs & Sub-LOBs) ─────────────────────────────
+    let lobMatchCount = 0;
     $(".lob-card").each(function () {
-      const txt = $(this).text().toLowerCase();
-      $(this).toggle(txt.includes(q));
+      const text = $(this).text().toLowerCase();
+      const cat = ($(this).data("category") || "").toLowerCase();
+      const match = text.includes(q) || cat.includes(q);
+      if (match) {
+        $(this).css("display", "flex").show();
+        lobMatchCount++;
+      } else {
+        $(this).hide();
+      }
     });
-    $(".persona-card").each(function () {
-      const txt = $(this).text().toLowerCase();
-      $(this).toggle(txt.includes(q));
+
+    // Also search Sub-LOBs if visible
+    $(".sublob-card").each(function () {
+      const text = $(this).text().toLowerCase();
+      const match = text.includes(q);
+      $(this).toggle(match);
+      if (match) lobMatchCount++;
     });
-  });
+
+    // Hide standard expander button during search so counts don't conflict
+    $(".lob-toggle-footer").hide();
+
+    // ─── B. SEARCH PERSONAS (Full Enterprise Directory) ────────────────────
+    let personaMatchCount = 0;
+    allPersonasDirectoryState.searchQuery = q;
+    allPersonasDirectoryState.visibleLimit = 60;
+    $("#allPersonasSearchInput").val(q);
+    $("#clearAllPersonasSearch").css("display", "inline-flex");
+    renderFilteredPersonaCards();
+
+    // Calculate actual persona matches
+    if (allPersonasDirectoryState.personas && allPersonasDirectoryState.personas.length) {
+      personaMatchCount = allPersonasDirectoryState.personas.filter(p => {
+        const matchName = (p.name || "").toLowerCase().includes(q);
+        const matchTitle = (p.title || "").toLowerCase().includes(q);
+        const matchHeadline = (p.headline || "").toLowerCase().includes(q);
+        const matchDept = (p.department || (Array.isArray(p.departments) ? p.departments.join(" ") : "")).toLowerCase().includes(q);
+        const matchSkills = (Array.isArray(p.skills) ? p.skills.join(" ") : "").toLowerCase().includes(q);
+        return matchName || matchTitle || matchHeadline || matchDept || matchSkills;
+      }).length;
+    }
+
+    // Also search LOB-specific persona cards if open in LOB detail panel
+    $("#personaCardsContainer .persona-card").each(function () {
+      const text = $(this).text().toLowerCase();
+      const match = text.includes(q);
+      $(this).toggle(match);
+      if (match) personaMatchCount++;
+    });
+
+    // ─── C. SEARCH FIELDS (Snapshot, Metrics, Vaults, Feeds) ───────────────
+    let fieldMatchCount = 0;
+    $(".snapshot-field-item").each(function () {
+      const label = $(this).find(".snapshot-field-label").text().toLowerCase();
+      const val = $(this).find(".snapshot-field-value").text().toLowerCase();
+      const fieldName = ($(this).data("field") || "").toLowerCase();
+      const match = label.includes(q) || val.includes(q) || fieldName.includes(q);
+      if (match) {
+        $(this).css("display", "block").addClass("search-field-match");
+        fieldMatchCount++;
+      } else {
+        $(this).css("display", "none").removeClass("search-field-match");
+      }
+    });
+
+    $(".intelligence-metric-item").each(function () {
+      const text = $(this).text().toLowerCase();
+      const match = text.includes(q);
+      $(this).toggle(match);
+      if (match) fieldMatchCount++;
+    });
+
+    $(".feed-status-row").each(function () {
+      const text = $(this).text().toLowerCase();
+      const match = text.includes(q);
+      $(this).toggle(match);
+      if (match) fieldMatchCount++;
+    });
+
+    $(".detail-field, .vault-field").each(function () {
+      const label = $(this).find(".detail-label, .vault-label").text().toLowerCase();
+      const val = $(this).find(".detail-val, .vault-val").text().toLowerCase();
+      const match = label.includes(q) || val.includes(q);
+      $(this).toggle(match);
+      if (match) fieldMatchCount++;
+    });
+
+    // ─── D. REVEAL SECTIONS DYNAMICALLY ────────────────────────────────────
+    // If divisions matched, make sure LOB section is visible
+    if (lobMatchCount > 0) {
+      $("#lobSection").removeClass("d-none");
+    } else if (activeTab === "personas" && personaMatchCount > 0) {
+      $("#lobSection").addClass("d-none");
+    }
+
+    // If personas matched, make sure Personas section is visible
+    if (personaMatchCount > 0) {
+      $("#allPersonasSection").removeClass("d-none");
+    } else if (activeTab === "lobs" && lobMatchCount > 0) {
+      $("#allPersonasSection").addClass("d-none");
+    }
+
+    // If fields matched, ensure Overview container is visible
+    if (fieldMatchCount > 0) {
+      $("#accountOverviewContainer").removeClass("d-none");
+    }
+  }
 
   // Vault Toggle Handlers (Lazy rendered for ultra-fast clicking response)
   $(document).on("click", "#toggleAccountVaultBtn", function () {
@@ -3833,13 +5738,13 @@ $(function () {
         const timeStr = res.manually_verified_at ? formatTimeAgo(res.manually_verified_at) : "";
         if (isVerified) {
           $btn.removeClass("unverified").addClass("verified");
-          $btn.find("i").removeClass("fa-solid fa-shield-halved").addClass("fa-solid fa-circle-check");
+          $btn.find("i").removeClass("bi-shield-exclamation").addClass("bi-patch-check-fill");
           $btn.find("span").text(`Manually Verified ✓ (${timeStr})`);
           $btn.attr("title", `Verified ${timeStr}`);
           showNotification(`Marked ${entityType} as Manually Verified in PostgreSQL!`, "success");
         } else {
           $btn.removeClass("verified").addClass("unverified");
-          $btn.find("i").removeClass("fa-solid fa-circle-check").addClass("fa-solid fa-shield-halved");
+          $btn.find("i").removeClass("bi-patch-check-fill").addClass("bi-shield-exclamation");
           $btn.find("span").text("AI Inferred • Verify");
           $btn.attr("title", "Click to toggle verification");
           showNotification(`Reset ${entityType} verification flag to AI Inferred.`, "info");
@@ -3892,8 +5797,8 @@ $(function () {
     $valContainer.html(`
       <div class="inline-edit-box">
         <input type="text" class="inline-edit-input" value="${esc(cleanVal)}" />
-        <button type="button" class="inline-edit-save" title="Save to PostgreSQL"><i class="fa-solid fa-check"></i></button>
-        <button type="button" class="inline-edit-cancel" title="Cancel"><i class="fa-solid fa-xmark"></i></button>
+        <button type="button" class="inline-edit-save" title="Save to PostgreSQL"><i class="bi bi-check-lg"></i></button>
+        <button type="button" class="inline-edit-cancel" title="Cancel"><i class="bi bi-x-lg"></i></button>
       </div>
     `);
 
@@ -3902,7 +5807,7 @@ $(function () {
 
     function saveField() {
       const newVal = $input.val().trim();
-      $valContainer.html(`<span style="color:#0284c7;font-size:0.75rem;"><i class="fa-solid fa-arrows-rotate spin"></i> Saving...</span>`);
+      $valContainer.html(`<span style="color:#0284c7;font-size:0.75rem;"><i class="bi bi-arrow-repeat spin"></i> Saving...</span>`);
 
       const payload = {};
       const intFields = [
@@ -3942,7 +5847,7 @@ $(function () {
           const timeStr = formatTimeAgo(verifyAt);
           const $badge = $(`.btn-verify-badge[data-entity-type="${entityType}"][data-id="${entityId}"]`);
           $badge.removeClass("unverified").addClass("verified");
-          $badge.find("i").removeClass("fa-solid fa-shield-halved").addClass("fa-solid fa-circle-check");
+          $badge.find("i").removeClass("bi-shield-exclamation").addClass("bi-patch-check-fill");
           $badge.find("span").text(`Manually Verified ✓ (${timeStr})`);
           $badge.attr("title", `Verified ${timeStr}`);
 
@@ -4033,9 +5938,9 @@ $(function () {
     const $container = $(this).siblings(".raw-json-container");
     $container.toggleClass("d-none");
     const isHidden = $container.hasClass("d-none");
-    $(this).find(".fa-chevron-down, .fa-chevron-up")
-      .toggleClass("fa-solid fa-chevron-down", isHidden)
-      .toggleClass("fa-solid fa-chevron-up", !isHidden);
+    $(this).find(".bi-chevron-down, .bi-chevron-up")
+      .toggleClass("bi-chevron-down", isHidden)
+      .toggleClass("bi-chevron-up", !isHidden);
   });
 
   $(document).on("click", ".lob-matched-badge", function (e) {
@@ -4111,7 +6016,7 @@ $(function () {
     };
 
     const $btn = $(this);
-    $btn.prop("disabled", true).html(`<i class="fa-solid fa-arrows-rotate spin"></i> Saving to PostgreSQL...`);
+    $btn.prop("disabled", true).html(`<i class="bi bi-arrow-repeat spin"></i> Saving to PostgreSQL...`);
 
     $.ajax({
       url: `/api/accounts/${acctId}`,
@@ -4119,7 +6024,7 @@ $(function () {
       contentType: "application/json",
       data: JSON.stringify(payload),
       success: function (res) {
-        $btn.prop("disabled", false).html(`<i class="fa-solid fa-circle-check"></i> Save &amp; Mark Verified`);
+        $btn.prop("disabled", false).html(`<i class="bi bi-check2-circle"></i> Save &amp; Mark Verified`);
         const modalEl = document.getElementById("universalAccountEditModal");
         const modal = bootstrap.Modal.getInstance(modalEl);
         if (modal) modal.hide();
@@ -4138,7 +6043,7 @@ $(function () {
         }
       },
       error: function (err) {
-        $btn.prop("disabled", false).html(`<i class="fa-solid fa-circle-check"></i> Save &amp; Mark Verified`);
+        $btn.prop("disabled", false).html(`<i class="bi bi-check2-circle"></i> Save &amp; Mark Verified`);
         showNotification(`Account save failed: ${err.responseText || err.statusText}`, "error");
       }
     });
@@ -4166,7 +6071,7 @@ $(function () {
     };
 
     const $btn = $(this);
-    $btn.prop("disabled", true).html(`<i class="fa-solid fa-arrows-rotate spin"></i> Saving...`);
+    $btn.prop("disabled", true).html(`<i class="bi bi-arrow-repeat spin"></i> Saving...`);
 
     $.ajax({
       url: `/api/lobs/${lobId}`,
@@ -4246,6 +6151,57 @@ $(function () {
     $("#personaEditBanner").addClass("d-none");
   });
 
+  $(document).on("click", ".btn-persona-download-pdf", async function (e) {
+    e.preventDefault();
+    const personaId = $(this).attr("data-persona-id") || (activePersona ? activePersona.id : null);
+    if (!personaId) {
+      alert("No persona selected to download.");
+      return;
+    }
+    const $btn = $(this);
+    const originalHtml = $btn.html();
+    $btn.html('<i class="bi bi-hourglass-split"></i> Generating Dossier...').prop('disabled', true);
+    
+    try {
+      const response = await fetch(`/api/explorer/personas/${personaId}/download-pdf`, {
+        method: 'GET',
+        headers: { 'Accept': 'application/pdf' },
+        credentials: 'include'
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Server returned HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const blob = await response.blob();
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = `executive-persona-${personaId}-dossier.pdf`;
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename=["']?([^"';]+)["']?/);
+        if (match && match[1]) {
+          filename = match[1];
+        }
+      }
+      
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      console.error("PDF download error:", err);
+      // Fallback to direct navigation
+      window.location.href = `/api/explorer/personas/${personaId}/download-pdf`;
+    } finally {
+      setTimeout(() => {
+        $btn.html(originalHtml).prop('disabled', false);
+      }, 1500);
+    }
+  });
+
   $(document).on("click", "#saveUniversalPersonaBtn", function () {
     const personaId = $("#editPersonaId").val() || (activePersona ? activePersona.id : null);
     if (!personaId) return;
@@ -4266,7 +6222,7 @@ $(function () {
     };
 
     const $btn = $(this);
-    $btn.prop("disabled", true).html(`<i class="fa-solid fa-arrows-rotate spin"></i> Saving to PostgreSQL...`);
+    $btn.prop("disabled", true).html(`<i class="bi bi-arrow-repeat spin"></i> Saving to PostgreSQL...`);
 
     $.ajax({
       url: `/api/personas/${personaId}`,
@@ -4274,7 +6230,7 @@ $(function () {
       contentType: "application/json",
       data: JSON.stringify(payload),
       success: function (res) {
-        $btn.prop("disabled", false).html(`<i class="fa-solid fa-circle-check"></i> Save &amp; Mark Verified`);
+        $btn.prop("disabled", false).html(`<i class="bi bi-check2-circle"></i> Save &amp; Mark Verified`);
         const modalEl = document.getElementById("universalPersonaEditModal");
         const modal = bootstrap.Modal.getInstance(modalEl);
         if (modal) modal.hide();
@@ -4297,7 +6253,7 @@ $(function () {
         }
       },
       error: function (err) {
-        $btn.prop("disabled", false).html(`<i class="fa-solid fa-circle-check"></i> Save &amp; Mark Verified`);
+        $btn.prop("disabled", false).html(`<i class="bi bi-check2-circle"></i> Save &amp; Mark Verified`);
         showNotification(`Persona save failed: ${err.responseText || err.statusText}`, "error");
       }
     });
@@ -4370,7 +6326,7 @@ $(function () {
     function tag(label, val, icon) {
       if (!val && val !== 0 && val !== "0") return "";
       return `<div class="detail-field">
-        <div class="detail-label">${icon ? `<i class="${icon}"></i> ` : ""}${label}</div>
+        <div class="detail-label">${icon ? `<i class="bi ${icon}"></i> ` : ""}${label}</div>
         <div class="detail-val">${esc(String(val))}</div>
       </div>`;
     }
@@ -4378,10 +6334,10 @@ $(function () {
       if (!url) return "";
       const display = linkText || url.replace(/^https?:\/\//, "").slice(0, 36);
       return `<div class="detail-field">
-        <div class="detail-label">${icon ? `<i class="${icon}"></i> ` : ""}${label}</div>
+        <div class="detail-label">${icon ? `<i class="bi ${icon}"></i> ` : ""}${label}</div>
         <div class="detail-val">
           <a href="${esc(url)}" target="_blank" rel="noopener" style="color:var(--brand);font-weight:600;word-break:break-all;">
-            ${esc(display)} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:.7rem;"></i>
+            ${esc(display)} <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;"></i>
           </a>
         </div>
       </div>`;
@@ -4399,37 +6355,37 @@ $(function () {
       <div class="detail-panel fade-in" style="border-top:none;border-radius:12px;margin-top:16px;">
         <div class="detail-section">
           <div class="detail-section-heading">
-            <i class="fa-solid fa-building"></i> Enterprise Intelligence Snapshot
+            <i class="bi bi-building-gear"></i> Enterprise Intelligence Snapshot
           </div>
           <div class="detail-grid">
-            ${tag("Employees", account.employee_count_range || "1-5000", "fa-solid fa-users")}
-            ${tag("Company Type", account.company_type || "Private", "fa-solid fa-sitemap")}
-            ${tag("Operating Status", account.operating_status || "ACTIVE", "fa-solid fa-heart-pulse")}
-            ${tag("Revenue", revenueVal, "fa-solid fa-money-bill-wave")}
-            ${tag("Location", loc, "fa-solid fa-location-dot")}
-            ${tag("Founded", account.founded_year, "fa-solid fa-calendar-days")}
-            ${tag("Funding Status", account.funding_status || "Private", "fa-solid fa-arrow-trend-up")}
-            ${tag("IPO Status", account.ipo_status || "Private", "fa-solid fa-building-columns")}
-            ${tag("Regulatory ID", secOrLei, "fa-solid fa-file-circle-check")}
-            ${tag("Industry", industries, "fa-solid fa-tags")}
-            ${linkTag("Official Website", websiteUrl, "fa-solid fa-globe")}
+            ${tag("Employees", account.employee_count_range || "1-5000", "bi-people")}
+            ${tag("Company Type", account.company_type || "Private", "bi-diagram-3")}
+            ${tag("Operating Status", account.operating_status || "ACTIVE", "bi-activity")}
+            ${tag("Revenue", revenueVal, "bi-cash-stack")}
+            ${tag("Location", loc, "bi-geo-alt")}
+            ${tag("Founded", account.founded_year, "bi-calendar3")}
+            ${tag("Funding Status", account.funding_status || "Private", "bi-graph-up-arrow")}
+            ${tag("IPO Status", account.ipo_status || "Private", "bi-bank")}
+            ${tag("Regulatory ID", secOrLei, "bi-file-earmark-check")}
+            ${tag("Industry", industries, "bi-tags")}
+            ${linkTag("Official Website", websiteUrl, "bi-globe")}
           </div>
         </div>
         <div class="detail-section">
           <div class="detail-section-heading">
-            <i class="fa-solid fa-link"></i> Intelligence Feeds &amp; Live Signals
+            <i class="bi bi-link-45deg"></i> Intelligence Feeds &amp; Live Signals
           </div>
           <div class="detail-grid">
-            ${linkTag("SEC EDGAR", account.sec_edgar_url, "fa-solid fa-file-lines")}
-            ${linkTag("LinkedIn", account.linkedin_url, "fa-brands fa-linkedin")}
-            ${linkTag("Twitter / X", account.twitter_live_url || account.twitter_url, "fa-brands fa-x-twitter")}
-            ${linkTag("Google News", account.rss_url, "fa-solid fa-newspaper")}
-            ${linkTag("Reddit Feed", account.reddit_rss_url, "fa-brands fa-reddit")}
-            ${linkTag("Google Patents", account.google_patents_url, "fa-solid fa-lightbulb")}
-            ${linkTag("Google Trends", account.google_trends_url, "fa-solid fa-arrow-trend-up")}
-            ${linkTag("YouTube", account.youtube_search_url, "fa-brands fa-youtube")}
-            ${linkTag("Crunchbase", account.crunchbase_url, "fa-solid fa-boxes-stacked")}
-            ${linkTag("Wikidata", account.wikidata_entity_url, "fa-brands fa-wikipedia-w")}
+            ${linkTag("SEC EDGAR", account.sec_edgar_url, "bi-file-earmark-ruled")}
+            ${linkTag("LinkedIn", account.linkedin_url, "bi-linkedin")}
+            ${linkTag("Twitter / X", account.twitter_live_url || account.twitter_url, "bi-twitter-x")}
+            ${linkTag("Google News", account.rss_url, "bi-newspaper")}
+            ${linkTag("Reddit Feed", account.reddit_rss_url, "bi-reddit")}
+            ${linkTag("Google Patents", account.google_patents_url, "bi-lightbulb")}
+            ${linkTag("Google Trends", account.google_trends_url, "bi-graph-up")}
+            ${linkTag("YouTube", account.youtube_search_url, "bi-youtube")}
+            ${linkTag("Crunchbase", account.crunchbase_url, "bi-boxes")}
+            ${linkTag("Wikidata", account.wikidata_entity_url, "bi-wikipedia")}
           </div>
         </div>
       </div>`;
@@ -4481,18 +6437,18 @@ $(function () {
                     border-radius: 12px; margin-top: 8px;">
           <div style="width: 48px; height: 48px; border-radius: 50%; background: var(--badge-bg, #f1f5f9);
                       display: inline-flex; align-items: center; justify-content: center; margin-bottom: 12px; color: var(--accent, #0ea5e9); font-size: 1.4rem;">
-            <i class="fa-solid fa-users"></i>
+            <i class="bi bi-people"></i>
           </div>
           <div style="font-weight: 600; color: var(--text, #1e293b); font-size: 0.95rem; margin-bottom: 4px;">
             No Executive Personas Discovered Yet
           </div>
           <div style="color: var(--text-muted, #64748b); font-size: 0.8rem; max-width: 480px; margin: 0 auto 16px;">
-            Click <strong>Pull All</strong> in the header above to discover executive leadership across C-Suite, VPs, Directors &amp; Managers via Apollo, Corporate Web, and OSINT.
+            Click <strong>Batch Console</strong> in the header above to discover executive leadership across C-Suite, VPs, Directors &amp; Managers via Apollo, Corporate Web, and OSINT.
           </div>
         </div>
       `);
       $("#allPersonasShowMoreContainer").addClass("d-none");
-      $("#allPersonasBatchPull, #personaBatchPull").prop("disabled", false).removeClass("done running").html('<i class="fa-solid fa-cloud-arrow-down"></i> Pull All');
+      $("#allPersonasBatchPull, #personaBatchPull").prop("disabled", false).removeClass("done running");
       $("#allPersonasBatchValidate, #personaBatchValidate").prop("disabled", true);
       $("#allPersonasBatchDump, #personaBatchDump").prop("disabled", true);
       return;
@@ -4501,7 +6457,7 @@ $(function () {
     console.log("[renderDir] showing section, rendering cards");
     $("#allPersonasSection").removeClass("d-none");
     $("#allPersonasCountBadge").text(`(${all.length} Total Captured)`);
-    $("#allPersonasBatchPull, #personaBatchPull").removeClass("running").addClass("done").html('<i class="fa-solid fa-cloud-arrow-down"></i> Pulled ✔');
+    $("#allPersonasBatchPull, #personaBatchPull").removeClass("running done");
     $("#allPersonasBatchValidate, #personaBatchValidate").prop("disabled", false);
     $("#allPersonasBatchDump, #personaBatchDump").prop("disabled", false);
 
@@ -4582,7 +6538,7 @@ $(function () {
       $container.append(`
         <div style="grid-column: 1/-1; padding: 24px; text-align: center;
                     color: var(--text-muted); font-size: 0.85rem;">
-          <i class="fa-solid fa-magnifying-glass" style="font-size: 1.5rem; display: block; margin-bottom: 8px;"></i>
+          <i class="bi bi-search" style="font-size: 1.5rem; display: block; margin-bottom: 8px;"></i>
           No executive personas found matching your filter criteria.
         </div>
       `);
@@ -4597,15 +6553,54 @@ $(function () {
       const pRaw = encodeURIComponent(JSON.stringify(p));
       const tierCat = getPersonaTierCategory(p);
       const avatarClass = tierCat === "c_suite" ? "avatar-csuite" : (tierCat === "vp_head" ? "avatar-vp" : "");
+
+      const pEmail = p.email || p.sanitized_email || p.work_email || p.personal_email || "";
+      const pPhone = p.phone || p.phone_number || p.sanitized_phone || p.direct_mobile_phone || "";
+      const pLinkedIn = p.linkedin_url || p.linkedin || "";
+      const cik = (activeAccount && activeAccount.sec_cik) ? activeAccount.sec_cik : "";
+      const secInsiderUrl = cik ? `https://www.sec.gov/edgar/searchedgar/companysearch` : "";
+
+      let actionsHtml = "";
+      if (pEmail || pPhone || pLinkedIn || secInsiderUrl) {
+        actionsHtml = `
+          <div class="persona-card-actions">
+            ${pEmail ? `
+              <button type="button" class="persona-action-btn btn-copy-email" data-email="${esc(pEmail)}" title="Copy verified email (${esc(pEmail)})">
+                <i class="bi bi-envelope-fill"></i>
+              </button>
+            ` : ''}
+            ${pPhone ? `
+              <button type="button" class="persona-action-btn btn-copy-phone" data-phone="${esc(pPhone)}" title="Copy direct phone (${esc(pPhone)})">
+                <i class="bi bi-telephone-fill"></i>
+              </button>
+            ` : ''}
+            ${pLinkedIn ? `
+              <a href="${normalizeUrl(pLinkedIn)}" target="_blank" rel="noopener noreferrer" class="persona-action-btn btn-open-linkedin" title="Open verified LinkedIn Profile" onclick="event.stopPropagation();">
+                <i class="bi bi-linkedin"></i>
+              </a>
+            ` : ''}
+            ${secInsiderUrl ? `
+              <a href="${secInsiderUrl}" target="_blank" rel="noopener noreferrer" class="persona-action-btn btn-open-sec" title="SEC Form 4 Insider Filings" onclick="event.stopPropagation();">
+                <i class="bi bi-bank2"></i>
+              </a>
+            ` : ''}
+          </div>
+        `;
+      }
+
       $container.append(`
         <div class="compact-card persona-card fade-in"
              data-key="${pKey}"
              data-raw="${pRaw}"
-             title="Click to view AI call prep, email, and social signals for ${esc(p.name)}">
+             title="Inspect Executive Dossier for ${esc(p.name)}">
           <div class="compact-card-avatar ${avatarClass}">${esc(getInitials(p.name))}</div>
           <div class="compact-card-body">
-            <div class="compact-card-title">${esc(p.name)}</div>
+            <div class="compact-card-title-row">
+              <div class="compact-card-title">${esc(p.name)}</div>
+              ${p.department ? `<span class="persona-dept-tag">${esc(p.department)}</span>` : ""}
+            </div>
             <div class="compact-card-subtitle">${esc(p.title || "Executive")}</div>
+            ${actionsHtml}
           </div>
         </div>
       `);
@@ -4670,7 +6665,7 @@ $(function () {
       lob.subLobs && lob.subLobs.length
         ? `
       <div class="detail-section">
-        <div class="detail-section-heading"><i class="fa-solid fa-folder-tree"
+        <div class="detail-section-heading"><i class="bi bi-folder-symlink"
           ></i> Sub-Divisions &amp; Operating Groups (${lob.subLobs.length})</div>
         <p class="section-desc"
           >Nested subsidiaries, specialized business lines, and operational branches mapped under this
@@ -4697,7 +6692,7 @@ $(function () {
       <div class="detail-panel fade-in" data-entity-type="lob" data-key="${lobKey}">
         <div class="detail-panel-header">
           <div class="detail-panel-title-area">
-            <span class="pill pill-brand detail-panel-badge"><i class="fa-solid fa-diagram-project"
+            <span class="pill pill-brand detail-panel-badge"><i class="bi bi-diagram-2"
               ></i> Line of Business Deep Dive</span>
             <h2 class="detail-panel-title">${esc(lob.name)}</h2>
             <p class="detail-panel-subtitle"
@@ -4708,17 +6703,17 @@ $(function () {
               <button type="button" class="panel-btn panel-btn-pull"
                       ${pullBtnDisabled ? "disabled" : ""}
                       title="Step 1: Pull live public feeds (News, Social, Filings, Patents) for this LOB">
-                <i class="fa-solid fa-cloud-arrow-down"></i> Pull
+                <i class="bi bi-cloud-arrow-down"></i> Pull
               </button>
               <button type="button" class="panel-btn panel-btn-validate"
                       ${validateBtnDisabled ? "disabled" : ""}
                       title="Step 2: AI cleans, verifies, and extracts strategic intent from scraped signals">
-                <i class="fa-solid fa-shield-halved"></i> Validate
+                <i class="bi bi-shield-check"></i> Validate
               </button>
               <button type="button" class="panel-btn panel-btn-dump"
                       ${dumpBtnDisabled ? "disabled" : ""}
                       title="Step 3: Save verified structured intelligence into NeonDB">
-                <i class="fa-solid fa-database"></i> Dump
+                <i class="bi bi-database-check"></i> Dump
               </button>
             </div>
             <div class="panel-status-msg" id="panelStatusMsg"
@@ -4741,7 +6736,7 @@ $(function () {
 
         <!-- Categorized Section 1: Overview & Structure -->
         <div class="detail-section">
-          <div class="detail-section-heading"><i class="fa-solid fa-building"
+          <div class="detail-section-heading"><i class="bi bi-building"
             ></i> Overview &amp; Corporate Structure</div>
           <p class="section-desc"
             >Operating scope, relationship taxonomy, primary web domains, and commercial registry
@@ -4761,7 +6756,7 @@ $(function () {
               <div class="detail-label">Primary Domain</div>
               <div class="detail-val">
                 ${lob.domain ? `<a href="https://${esc(lob.domain)}" target="_blank"
-                  >${esc(lob.domain)} <i class="fa-solid fa-arrow-up-right-from-square"></i></a>` : `<span
+                  >${esc(lob.domain)} <i class="bi bi-box-arrow-up-right"></i></a>` : `<span
                   class="text-muted">Not specified</span>`}
               </div>
             </div>
@@ -4769,7 +6764,7 @@ $(function () {
               <div class="detail-label">Website URL</div>
               <div class="detail-val">
                 ${lob.website_url ? `<a href="${esc(lob.website_url)}" target="_blank"
-                  >${esc(lob.website_url)} <i class="fa-solid fa-arrow-up-right-from-square"></i></a>` : `<span
+                  >${esc(lob.website_url)} <i class="bi bi-box-arrow-up-right"></i></a>` : `<span
                   class="text-muted">Not specified</span>`}
               </div>
             </div>
@@ -4777,7 +6772,7 @@ $(function () {
               <div class="detail-label">Crunchbase Profile</div>
               <div class="detail-val">
                 ${lob.crunchbase_url ? `<a href="${esc(lob.crunchbase_url)}" target="_blank"
-                  >View Profile <i class="fa-solid fa-arrow-up-right-from-square"></i></a>` : `<span class="text-muted"
+                  >View Profile <i class="bi bi-box-arrow-up-right"></i></a>` : `<span class="text-muted"
                   >Not specified</span>`}
               </div>
             </div>
@@ -4786,7 +6781,7 @@ $(function () {
 
         <!-- Categorized Section 2: Segment Metrics -->
         <div class="detail-section">
-          <div class="detail-section-heading"><i class="fa-solid fa-chart-line"
+          <div class="detail-section-heading"><i class="bi bi-bar-chart-line"
             ></i> Segment Financials &amp; Operational Scale</div>
           <p class="section-desc"
             >Reported segment revenues, organizational headcount, leadership structure, and mapped
@@ -4813,7 +6808,7 @@ $(function () {
 
         <!-- Categorized Section 3: Intelligence Feeds -->
         <div class="detail-section">
-          <div class="detail-section-heading"><i class="fa-solid fa-tower-broadcast"
+          <div class="detail-section-heading"><i class="bi bi-broadcast"
             ></i> Live Intelligence Feeds &amp; Public Signals</div>
           <p class="section-desc"
             >Click any platform card below to view recent scraped post activity, AI sentiment analysis,
@@ -4828,8 +6823,8 @@ $(function () {
                       lob.name + " " + (activeAccount ? activeAccount.name : "")
                     )}`
               }" title="Click to view LinkedIn activity summary and extracted posts">
-                <span class="feed-title"><i class="fa-brands fa-linkedin" style="color:#0077b5;"
-                  ></i> LinkedIn Intelligence <i class="fa-solid fa-chevron-right"
+                <span class="feed-title"><i class="bi bi-linkedin" style="color:#0077b5;"
+                  ></i> LinkedIn Intelligence <i class="bi bi-chevron-right"
                   style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${
@@ -4853,8 +6848,8 @@ $(function () {
                     ? activeAccount.name
                     : ""))}&f=live`
               }" title="Click to view Twitter/X live feed summary and sentiment">
-                <span class="feed-title"><i class="fa-brands fa-x-twitter"></i> Twitter / X Feed <i
-                  class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+                <span class="feed-title"><i class="bi bi-twitter-x"></i> Twitter / X Feed <i
+                  class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${
                 lob.twitter_live_url
@@ -4875,8 +6870,8 @@ $(function () {
                   ? esc(lob.reddit_rss_url)
                   : `https://www.reddit.com/search/?q=${encodeURIComponent(lob.name)}`
               }" title="Click to view Reddit discussions and public sentiment">
-                <span class="feed-title"><i class="fa-brands fa-reddit" style="color:#ff4500;"
-                  ></i> Reddit Community <i class="fa-solid fa-chevron-right"
+                <span class="feed-title"><i class="bi bi-reddit" style="color:#ff4500;"
+                  ></i> Reddit Community <i class="bi bi-chevron-right"
                   style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${
@@ -4897,8 +6892,8 @@ $(function () {
                   ? esc(lob.youtube_search_url)
                   : `https://www.youtube.com/results?search_query=${encodeURIComponent(lob.name)}`
               }" title="Click to view YouTube interviews, keynote presentations, and webinars">
-                <span class="feed-title"><i class="fa-brands fa-youtube" style="color:#ff0000;"
-                  ></i> YouTube Media <i class="fa-solid fa-chevron-right"
+                <span class="feed-title"><i class="bi bi-youtube" style="color:#ff0000;"
+                  ></i> YouTube Media <i class="bi bi-chevron-right"
                   style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${
@@ -4918,8 +6913,8 @@ $(function () {
                   ? esc(lob.google_news_rss_url)
                   : `https://news.google.com/rss/search?q=${encodeURIComponent(lob.name)}`
               }" title="Click to view Google News headlines and press coverage">
-                <span class="feed-title"><i class="fa-solid fa-newspaper" style="color:#4285f4;"
-                  ></i> Google News RSS <i class="fa-solid fa-chevron-right"
+                <span class="feed-title"><i class="bi bi-newspaper" style="color:#4285f4;"
+                  ></i> Google News RSS <i class="bi bi-chevron-right"
                   style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${
@@ -4939,8 +6934,8 @@ $(function () {
                   ? esc(lob.google_patents_url)
                   : `https://patents.google.com/?q=${encodeURIComponent(lob.name)}`
               }" title="Click to view patent filings, R&D innovations, and IP portfolio">
-                <span class="feed-title"><i class="fa-solid fa-lightbulb" style="color:#34a853;"
-                  ></i> Patents Explorer <i class="fa-solid fa-chevron-right"
+                <span class="feed-title"><i class="bi bi-lightbulb" style="color:#34a853;"
+                  ></i> Patents Explorer <i class="bi bi-chevron-right"
                   style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${
@@ -4960,8 +6955,8 @@ $(function () {
                   ? esc(lob.google_trends_url)
                   : `https://trends.google.com/trends/explore?q=${encodeURIComponent(lob.name)}`
               }" title="Click to view search term momentum and keyword interest">
-                <span class="feed-title"><i class="fa-solid fa-arrow-trend-up" style="color:#ea4335;"
-                  ></i> Search Trends <i class="fa-solid fa-chevron-right"
+                <span class="feed-title"><i class="bi bi-graph-up" style="color:#ea4335;"
+                  ></i> Search Trends <i class="bi bi-chevron-right"
                   style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${
@@ -4996,7 +6991,7 @@ $(function () {
         ? p.skills
             .map(
               (s) =>
-                `<span class="data-tag" title="Verified skill area"><i class="fa-solid fa-check"></i> ${esc(s)}</span>`,
+                `<span class="data-tag" title="Verified skill area"><i class="bi bi-check2"></i> ${esc(s)}</span>`,
             )
             .join("")
         : '<span class="text-muted" style="font-size:.8rem;">No skills mapped</span>';
@@ -5006,7 +7001,7 @@ $(function () {
             .map(
               (k) =>
                 `<span class="data-tag data-tag-success" title="Target KPI priority"><i
-                  class="fa-solid fa-bullseye"></i> ${esc(k)}</span>`,
+                  class="bi bi-bullseye"></i> ${esc(k)}</span>`,
             )
             .join("")
         : '<span class="text-muted" style="font-size:.8rem;">No KPIs mapped</span>';
@@ -5016,7 +7011,7 @@ $(function () {
             .map(
               (pain) =>
                 `<span class="data-tag data-tag-warning" title="Critical operational challenge"><i
-                  class="fa-solid fa-circle-exclamation"></i> ${esc(pain)}</span>`,
+                  class="bi bi-exclamation-circle"></i> ${esc(pain)}</span>`,
             )
             .join("")
         : '<span class="text-muted" style="font-size:.8rem;">None recorded</span>';
@@ -5025,7 +7020,7 @@ $(function () {
         ? p.key_objections
             .map(
               (obj) =>
-                `<span class="data-tag" title="Anticipated sales objection"><i class="fa-solid fa-shield"></i>
+                `<span class="data-tag" title="Anticipated sales objection"><i class="bi bi-shield"></i>
                   ${esc(obj)}</span>`,
             )
             .join("")
@@ -5035,7 +7030,7 @@ $(function () {
       <div class="detail-panel fade-in" data-entity-type="persona" data-key="${pKey}">
         <div class="detail-panel-header">
           <div class="detail-panel-title-area">
-            <span class="pill pill-brand detail-panel-badge"><i class="fa-solid fa-id-badge"
+            <span class="pill pill-brand detail-panel-badge"><i class="bi bi-person-badge"
               ></i> Executive Persona Call Prep</span>
             <h2 class="detail-panel-title">${esc(p.name)}</h2>
             <p class="detail-panel-subtitle">
@@ -5050,17 +7045,17 @@ $(function () {
                       ${pullBtnDisabled ? "disabled" : ""}
                       title="Step 1: Pull live social posts, press interviews, and author records for
                         this executive">
-                <i class="fa-solid fa-cloud-arrow-down"></i> Pull
+                <i class="bi bi-cloud-arrow-down"></i> Pull
               </button>
               <button type="button" class="panel-btn panel-btn-validate"
                       ${validateBtnDisabled ? "disabled" : ""}
                       title="Step 2: AI parses communication style, icebreakers, and objection readiness">
-                <i class="fa-solid fa-shield-halved"></i> Validate
+                <i class="bi bi-shield-check"></i> Validate
               </button>
               <button type="button" class="panel-btn panel-btn-dump"
                       ${dumpBtnDisabled ? "disabled" : ""}
                       title="Step 3: Save validated executive persona profile into NeonDB">
-                <i class="fa-solid fa-database"></i> Dump
+                <i class="bi bi-database-check"></i> Dump
               </button>
             </div>
             <div class="panel-status-msg" id="panelStatusMsg"
@@ -5083,7 +7078,7 @@ $(function () {
 
         <!-- Categorized Section 1: Executive Profile & Demographics -->
         <div class="detail-section">
-          <div class="detail-section-heading"><i class="fa-solid fa-address-card"
+          <div class="detail-section-heading"><i class="bi bi-person-vcard"
             ></i> Executive Profile &amp; Demographics</div>
           <p class="section-desc"
             >Corporate title, verified contact information, geographic base, academic background, and
@@ -5101,7 +7096,7 @@ $(function () {
               <div class="detail-label">Corporate Email</div>
               <div class="detail-val">
                 ${p.email ? `<a href="mailto:${esc(p.email)}">${esc(p.email)} <i
-                  class="fa-solid fa-envelope-circle-check"></i></a>` : `<span class="text-muted"
+                  class="bi bi-envelope-check"></i></a>` : `<span class="text-muted"
                   >Not discovered</span>`}
               </div>
             </div>
@@ -5137,7 +7132,7 @@ $(function () {
 
         <!-- Categorized Section 2: Behavior & Strategic KPIs -->
         <div class="detail-section">
-          <div class="detail-section-heading"><i class="fa-solid fa-bullseye"
+          <div class="detail-section-heading"><i class="bi bi-bullseye"
             ></i> Strategic Priorities &amp; Operational Pain Points</div>
           <p class="section-desc"
             >Key performance metrics the executive is evaluated on, top operational blockers, and
@@ -5164,7 +7159,7 @@ $(function () {
 
         <!-- Categorized Section 3: Personalized Messaging & Pitch -->
         <div class="detail-section">
-          <div class="detail-section-heading"><i class="fa-solid fa-comment-dots"
+          <div class="detail-section-heading"><i class="bi bi-chat-quote-fill"
             ></i> Personalized Engagement &amp; Pitch Strategy</div>
           <p class="section-desc"
             >AI-tailored opening icebreaker based on recent initiatives, targeted value proposition, and
@@ -5172,7 +7167,7 @@ $(function () {
           <div class="detail-grid">
             <div class="detail-field span-full"
               style="background: var(--brand-soft); border-color: rgba(0,97,255,.25);">
-              <div class="detail-label" style="color:var(--brand);"><i class="fa-solid fa-star"
+              <div class="detail-label" style="color:var(--brand);"><i class="bi bi-stars"
                 ></i> Tailored Call Icebreaker</div>
               <div class="detail-val" style="font-size:.9rem; color:var(--text-primary); font-weight:600;">
                 "${esc(p.personalized_icebreaker || `Congratulations on your leadership initiatives at
@@ -5203,7 +7198,7 @@ $(function () {
 
         <!-- Categorized Section 4: Verified Executive Intelligence Streams & Feeds -->
         <div class="detail-section">
-          <div class="detail-section-heading"><i class="fa-solid fa-tower-broadcast"
+          <div class="detail-section-heading"><i class="bi bi-broadcast-pin"
             ></i> Executive Intelligence &amp; Live Feeds</div>
           <p class="section-desc"
             >Click any verified platform card to inspect real-time executive filings, articles, and public commentary.</p>
@@ -5213,7 +7208,7 @@ $(function () {
                 <button type="button" class="feed-title-btn" data-platform="linkedin"
                   data-title="LinkedIn Executive Intelligence" data-entity="${esc(p.name)}" data-url="${esc(p.linkedin_url)}"
                   title="Click to view executive LinkedIn activity">
-                  <span class="feed-title"><i class="fa-brands fa-linkedin" style="color:#0077b5;"></i> LinkedIn Profile <i class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+                  <span class="feed-title"><i class="bi bi-linkedin" style="color:#0077b5;"></i> LinkedIn Profile <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
                 </button>
                 <a href="${esc(p.linkedin_url)}" target="_blank" class="feed-right-icon-link" title="Open LinkedIn in new tab">${BRAND_ICONS.linkedin}</a>
               </div>
@@ -5224,9 +7219,9 @@ $(function () {
                 <button type="button" class="feed-title-btn" data-platform="corporate_bio"
                   data-title="Official Corporate Bio" data-entity="${esc(p.name)}" data-url="${esc(p.corporate_bio_url)}"
                   title="Click to view official corporate biography on bny.com">
-                  <span class="feed-title"><i class="fa-solid fa-building" style="color:#0f172a;"></i> Corporate Bio <i class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+                  <span class="feed-title"><i class="bi bi-building" style="color:#0f172a;"></i> Corporate Bio <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
                 </button>
-                <a href="${esc(p.corporate_bio_url)}" target="_blank" class="feed-right-icon-link" title="Open Corporate Bio in new tab"><i class="fa-solid fa-arrow-up-right-from-square" style="color:#0f172a;font-size:1.1rem;"></i></a>
+                <a href="${esc(p.corporate_bio_url)}" target="_blank" class="feed-right-icon-link" title="Open Corporate Bio in new tab"><i class="bi bi-box-arrow-up-right" style="color:#0f172a;font-size:1.1rem;"></i></a>
               </div>
             ` : ''}
 
@@ -5235,9 +7230,9 @@ $(function () {
                 <button type="button" class="feed-title-btn" data-platform="crunchbase"
                   data-title="Crunchbase Executive Profile" data-entity="${esc(p.name)}" data-url="${esc(p.crunchbase_url)}"
                   title="Click to view Crunchbase profile">
-                  <span class="feed-title"><i class="fa-solid fa-briefcase" style="color:#0284c7;"></i> Crunchbase <i class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+                  <span class="feed-title"><i class="bi bi-briefcase-fill" style="color:#0284c7;"></i> Crunchbase <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
                 </button>
-                <a href="${esc(p.crunchbase_url)}" target="_blank" class="feed-right-icon-link" title="Open Crunchbase in new tab"><i class="fa-solid fa-arrow-up-right-from-square" style="color:#0284c7;font-size:1.1rem;"></i></a>
+                <a href="${esc(p.crunchbase_url)}" target="_blank" class="feed-right-icon-link" title="Open Crunchbase in new tab"><i class="bi bi-box-arrow-up-right" style="color:#0284c7;font-size:1.1rem;"></i></a>
               </div>
             ` : ''}
 
@@ -5246,9 +7241,9 @@ $(function () {
                 <button type="button" class="feed-title-btn" data-platform="sec"
                   data-title="SEC Form 4 Insider Filings" data-entity="${esc(p.name)}" data-url="${esc(p.sec_insider_trades_url)}"
                   title="Click to view SEC EDGAR Form 4 filings">
-                  <span class="feed-title"><i class="fa-solid fa-file-lines" style="color:#1e3a8a;"></i> SEC Form 4 <i class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+                  <span class="feed-title"><i class="bi bi-file-earmark-text-fill" style="color:#1e3a8a;"></i> SEC Form 4 <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
                 </button>
-                <a href="${esc(p.sec_insider_trades_url)}" target="_blank" class="feed-right-icon-link" title="Open SEC Form 4 in new tab"><i class="fa-solid fa-arrow-up-right-from-square" style="color:#1e3a8a;font-size:1.1rem;"></i></a>
+                <a href="${esc(p.sec_insider_trades_url)}" target="_blank" class="feed-right-icon-link" title="Open SEC Form 4 in new tab"><i class="bi bi-box-arrow-up-right" style="color:#1e3a8a;font-size:1.1rem;"></i></a>
               </div>
             ` : ''}
 
@@ -5257,9 +7252,9 @@ $(function () {
                 <button type="button" class="feed-title-btn" data-platform="fec"
                   data-title="FEC Political Contributions" data-entity="${esc(p.name)}" data-url="${esc(p.fec_contributions_url)}"
                   title="Click to view FEC political contributions">
-                  <span class="feed-title"><i class="fa-solid fa-building-columns" style="color:#059669;"></i> FEC Contributions <i class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+                  <span class="feed-title"><i class="bi bi-bank" style="color:#059669;"></i> FEC Contributions <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
                 </button>
-                <a href="${esc(p.fec_contributions_url)}" target="_blank" class="feed-right-icon-link" title="Open FEC in new tab"><i class="fa-solid fa-arrow-up-right-from-square" style="color:#059669;font-size:1.1rem;"></i></a>
+                <a href="${esc(p.fec_contributions_url)}" target="_blank" class="feed-right-icon-link" title="Open FEC in new tab"><i class="bi bi-box-arrow-up-right" style="color:#059669;font-size:1.1rem;"></i></a>
               </div>
             ` : ''}
 
@@ -5268,9 +7263,9 @@ $(function () {
                 <button type="button" class="feed-title-btn" data-platform="quiver"
                   data-title="Quiver Quant Insider Net Worth" data-entity="${esc(p.name)}" data-url="${esc(p.quiver_insider_url)}"
                   title="Click to view Quiver Quantitative Insider data">
-                  <span class="feed-title"><i class="fa-solid fa-arrow-trend-up" style="color:#6366f1;"></i> Quiver Quant <i class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+                  <span class="feed-title"><i class="bi bi-graph-up" style="color:#6366f1;"></i> Quiver Quant <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
                 </button>
-                <a href="${esc(p.quiver_insider_url)}" target="_blank" class="feed-right-icon-link" title="Open Quiver Quant in new tab"><i class="fa-solid fa-arrow-up-right-from-square" style="color:#6366f1;font-size:1.1rem;"></i></a>
+                <a href="${esc(p.quiver_insider_url)}" target="_blank" class="feed-right-icon-link" title="Open Quiver Quant in new tab"><i class="bi bi-box-arrow-up-right" style="color:#6366f1;font-size:1.1rem;"></i></a>
               </div>
             ` : ''}
 
@@ -5279,9 +7274,9 @@ $(function () {
                 <button type="button" class="feed-title-btn" data-platform="bloomberg"
                   data-title="Bloomberg Media & Videos" data-entity="${esc(p.name)}" data-url="${esc(p.bloomberg_url)}"
                   title="Click to view Bloomberg video">
-                  <span class="feed-title"><i class="fa-solid fa-video" style="color:#000;"></i> Bloomberg Media <i class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+                  <span class="feed-title"><i class="bi bi-camera-video-fill" style="color:#000;"></i> Bloomberg Media <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
                 </button>
-                <a href="${esc(p.bloomberg_url)}" target="_blank" class="feed-right-icon-link" title="Open Bloomberg in new tab"><i class="fa-solid fa-arrow-up-right-from-square" style="color:#000;font-size:1.1rem;"></i></a>
+                <a href="${esc(p.bloomberg_url)}" target="_blank" class="feed-right-icon-link" title="Open Bloomberg in new tab"><i class="bi bi-box-arrow-up-right" style="color:#000;font-size:1.1rem;"></i></a>
               </div>
             ` : ''}
 
@@ -5290,9 +7285,9 @@ $(function () {
                 <button type="button" class="feed-title-btn" data-platform="wsj"
                   data-title="Wall Street Journal Article" data-entity="${esc(p.name)}" data-url="${esc(p.wsj_article_url)}"
                   title="Click to view WSJ article">
-                  <span class="feed-title"><i class="fa-solid fa-book" style="color:#111827;"></i> Wall Street Journal <i class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+                  <span class="feed-title"><i class="bi bi-journal-text" style="color:#111827;"></i> Wall Street Journal <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
                 </button>
-                <a href="${esc(p.wsj_article_url)}" target="_blank" class="feed-right-icon-link" title="Open WSJ in new tab"><i class="fa-solid fa-arrow-up-right-from-square" style="color:#111827;font-size:1.1rem;"></i></a>
+                <a href="${esc(p.wsj_article_url)}" target="_blank" class="feed-right-icon-link" title="Open WSJ in new tab"><i class="bi bi-box-arrow-up-right" style="color:#111827;font-size:1.1rem;"></i></a>
               </div>
             ` : ''}
 
@@ -5301,9 +7296,9 @@ $(function () {
                 <button type="button" class="feed-title-btn" data-platform="media"
                   data-title="Major Media Feature Interview" data-entity="${esc(p.name)}" data-url="${esc(p.media_interview_url)}"
                   title="Click to view major media interview">
-                  <span class="feed-title"><i class="fa-solid fa-comment-dots" style="color:#d97706;"></i> Media Interview <i class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+                  <span class="feed-title"><i class="bi bi-chat-square-quote-fill" style="color:#d97706;"></i> Media Interview <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
                 </button>
-                <a href="${esc(p.media_interview_url)}" target="_blank" class="feed-right-icon-link" title="Open Media Interview in new tab"><i class="fa-solid fa-arrow-up-right-from-square" style="color:#d97706;font-size:1.1rem;"></i></a>
+                <a href="${esc(p.media_interview_url)}" target="_blank" class="feed-right-icon-link" title="Open Media Interview in new tab"><i class="bi bi-box-arrow-up-right" style="color:#d97706;font-size:1.1rem;"></i></a>
               </div>
             ` : ''}
 
@@ -5312,9 +7307,9 @@ $(function () {
                 <button type="button" class="feed-title-btn" data-platform="annual_report"
                   data-title="BNY Annual Report & Proxy" data-entity="${esc(p.name)}" data-url="${esc(p.annual_report_url)}"
                   title="Click to view Annual Report / Proxy">
-                  <span class="feed-title"><i class="fa-solid fa-file-pdf" style="color:#b91c1c;"></i> Annual Report &amp; Proxy <i class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+                  <span class="feed-title"><i class="bi bi-file-earmark-pdf-fill" style="color:#b91c1c;"></i> Annual Report &amp; Proxy <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
                 </button>
-                <a href="${esc(p.annual_report_url)}" target="_blank" class="feed-right-icon-link" title="Open Annual Report in new tab"><i class="fa-solid fa-arrow-up-right-from-square" style="color:#b91c1c;font-size:1.1rem;"></i></a>
+                <a href="${esc(p.annual_report_url)}" target="_blank" class="feed-right-icon-link" title="Open Annual Report in new tab"><i class="bi bi-box-arrow-up-right" style="color:#b91c1c;font-size:1.1rem;"></i></a>
               </div>
             ` : ''}
 
@@ -5323,9 +7318,9 @@ $(function () {
                 <button type="button" class="feed-title-btn" data-platform="zoominfo"
                   data-title="ZoomInfo Contact Profile" data-entity="${esc(p.name)}" data-url="${esc(p.zoominfo_url)}"
                   title="Click to view ZoomInfo profile">
-                  <span class="feed-title"><i class="fa-solid fa-phone" style="color:#2563eb;"></i> ZoomInfo Profile <i class="fa-solid fa-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
+                  <span class="feed-title"><i class="bi bi-telephone-fill" style="color:#2563eb;"></i> ZoomInfo Profile <i class="bi bi-chevron-right" style="font-size:.7rem;margin-left:auto;"></i></span>
                 </button>
-                <a href="${esc(p.zoominfo_url)}" target="_blank" class="feed-right-icon-link" title="Open ZoomInfo in new tab"><i class="fa-solid fa-arrow-up-right-from-square" style="color:#2563eb;font-size:1.1rem;"></i></a>
+                <a href="${esc(p.zoominfo_url)}" target="_blank" class="feed-right-icon-link" title="Open ZoomInfo in new tab"><i class="bi bi-box-arrow-up-right" style="color:#2563eb;font-size:1.1rem;"></i></a>
               </div>
             ` : ''}
 
@@ -5336,8 +7331,8 @@ $(function () {
                   ? esc(p.rss_url)
                   : `https://news.google.com/search?q=${encodeURIComponent(p.name + " " + activeAccount.name)}`
               }" title="Click to view Google News articles and press mentions">
-                <span class="feed-title"><i class="fa-solid fa-newspaper" style="color:#4285f4;"
-                  ></i> Google News <i class="fa-solid fa-chevron-right"
+                <span class="feed-title"><i class="bi bi-newspaper" style="color:#4285f4;"
+                  ></i> Google News <i class="bi bi-chevron-right"
                   style="font-size:.7rem;margin-left:auto;"></i></span>
               </button>
               <a href="${
@@ -5366,8 +7361,11 @@ $(function () {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          key: (rawData.name || key).toLowerCase().replace(/\s+/g, "_"),
-          display_name: rawData.name,
+          key: rawData.key || (rawData.name || key).toLowerCase().replace(/\s+/g, "_"),
+          display_name: rawData.name || rawData.full_name || rawData.display_name,
+          name: rawData.name || rawData.full_name,
+          title: rawData.title || null,
+          company_name: activeAccount ? (activeAccount.legal_name || activeAccount.name) : null,
           linkedin_url: rawData.linkedin_url || null,
           account_id: activeAccount ? activeAccount.id : null,
           enrich_ai_dossier: true,
@@ -5375,8 +7373,14 @@ $(function () {
       });
       if (!res.ok) throw new Error("Failed to fetch persona dossier");
       const data = await res.json();
-      stagedDataStore[key] = data.person;
-      return data.person;
+      const person = data.person;
+      stagedDataStore[key] = person;
+      if (person) {
+        if (person.key) stagedDataStore[person.key] = person;
+        if (rawData.key) stagedDataStore[rawData.key] = person;
+        if (rawData.id) stagedDataStore[String(rawData.id)] = person;
+      }
+      return person;
     } else {
       // For LOB: Fetch live multi-source enriched LOB data
       const res = await fetch(`${API_BASE}/api/lobs/fetch`, {
@@ -5968,35 +7972,20 @@ $(function () {
       stagedData: [],
     };
 
-    // Reset LOB buttons
-    $("#lobBatchPull")
-      .prop("disabled", false)
-      .removeClass("running done")
-      .html('<i class="fa-solid fa-cloud-arrow-down"></i> Pull All');
-    $("#lobBatchValidate")
-      .prop("disabled", true)
-      .removeClass("running done")
-      .html('<i class="fa-solid fa-shield-halved"></i> Validate All');
-    $("#lobBatchDump")
-      .prop("disabled", true)
-      .removeClass("running done")
-      .html('<i class="fa-solid fa-database"></i> Dump All');
+    // Reset LOB buttons — #lobBatchPull is now "Batch Console", only reset progress state
+    // #lobBatchValidate and #lobBatchDump were removed from HTML — jQuery no-ops on missing elements
+    $("#lobBatchPull").prop("disabled", false).removeClass("running done");
+    $("#lobBatchValidate").prop("disabled", false).removeClass("running done");
+    $("#lobBatchDump").prop("disabled", false).removeClass("running done");
     $("#lobBatchProgress").addClass("d-none");
 
-    // Reset Persona buttons
-    $("#personaBatchPull")
-      .prop("disabled", false)
-      .removeClass("running done")
-      .html('<i class="fa-solid fa-cloud-arrow-down"></i> Pull All');
-    $("#personaBatchValidate")
-      .prop("disabled", true)
-      .removeClass("running done")
-      .html('<i class="fa-solid fa-shield-halved"></i> Validate All');
-    $("#personaBatchDump")
-      .prop("disabled", true)
-      .removeClass("running done")
-      .html('<i class="fa-solid fa-database"></i> Dump All');
+    // Reset Persona buttons — #personaBatchPull is now "Batch Console" so only reset progress
+    // #personaBatchValidate and #personaBatchDump were removed — jQuery no-ops on missing elements
+    $("#personaBatchPull").prop("disabled", false).removeClass("running done");
+    $("#personaBatchValidate").prop("disabled", false).removeClass("running done");
+    $("#personaBatchDump").prop("disabled", false).removeClass("running done");
     $("#personaBatchProgress").addClass("d-none");
+
   }
 
   // Hook into account selection to reset batch states
@@ -6010,11 +7999,15 @@ $(function () {
 
   async function runBatchLobPipeline(action) {
     if (!activeAccount || lobBatchState.running) return;
+    setGlobalPipelineStatus(true, `L2: LOB ${action.toUpperCase()}`);
     const lobs = activeAccount.lobs || [];
 
     // ── Initial Discovery Case: When 0 LOBs exist yet for this account ──
     if (lobs.length === 0) {
-      if (action !== "pull") return;
+      if (action !== "pull") {
+        setGlobalPipelineStatus(false, "L2: LOB");
+        return;
+      }
       lobBatchState.running = true;
       $("#lobBatchProgress").removeClass("d-none");
       const $fill = $("#lobProgressFill");
@@ -6024,7 +8017,7 @@ $(function () {
       const $dumpBtn = $("#lobBatchDump");
 
       $fill.removeClass("validate dump");
-      $pullBtn.prop("disabled", true).addClass("running").html('<i class="fa-solid fa-hourglass-half"></i> Discovering...');
+      $pullBtn.prop("disabled", true).addClass("running").html('<i class="bi bi-hourglass-split"></i> Discovering...');
       $fill.css("width", "50%");
       $status.html(`Discovering Operating Subsidiaries & LOBs for <strong>${esc(activeAccount.name)}</strong>...`);
 
@@ -6055,19 +8048,20 @@ $(function () {
 
           $fill.css("width", "100%");
           $status.html(`<strong>✔ Complete:</strong> Discovered <span class="batch-success">${discovered.length} Lines of Business & Subsidiaries</span>`);
-          $pullBtn.removeClass("running").addClass("done").html('<i class="fa-solid fa-cloud-arrow-down"></i> Pulled ✔');
+          $pullBtn.removeClass("running").addClass("done").html('<i class="bi bi-cloud-arrow-down"></i> Pulled ✔');
           lobBatchState.pulled = true;
           $validateBtn.prop("disabled", false);
         } else {
           $status.html(`<span class="batch-fail">Discovery failed: ${res.statusText}</span>`);
-          $pullBtn.removeClass("running").prop("disabled", false).html('<i class="fa-solid fa-cloud-arrow-down"></i> Pull All');
+          $pullBtn.removeClass("running").prop("disabled", false).html('<i class="bi bi-cloud-arrow-down"></i> Pull All');
         }
       } catch (err) {
         $status.html(`<span class="batch-fail">Error: ${err.message}</span>`);
-        $pullBtn.removeClass("running").prop("disabled", false).html('<i class="fa-solid fa-cloud-arrow-down"></i> Pull All');
+        $pullBtn.removeClass("running").prop("disabled", false).html('<i class="bi bi-cloud-arrow-down"></i> Pull All');
       }
 
       lobBatchState.running = false;
+      setGlobalPipelineStatus(false, "L2: LOB Discovery");
       return;
     }
 
@@ -6098,7 +8092,7 @@ $(function () {
       action === "pull" ? $pullBtn : action === "validate" ? $validateBtn : $dumpBtn;
     const actionLabel =
       action === "pull" ? "Pulling" : action === "validate" ? "Validating" : "Dumping";
-    actionBtn.addClass("running").html(`<i class="fa-solid fa-hourglass-half"></i> ${actionLabel}...`);
+    actionBtn.addClass("running").html(`<i class="bi bi-hourglass-split"></i> ${actionLabel}...`);
 
     for (let i = 0; i < lobs.length; i++) {
       const lob = lobs[i];
@@ -6192,19 +8186,20 @@ $(function () {
 
     if (action === "pull") {
       lobBatchState.pulled = true;
-      actionBtn.html('<i class="fa-solid fa-cloud-arrow-down"></i> Pulled ✔');
+      actionBtn.html('<i class="bi bi-cloud-arrow-down"></i> Pulled ✔');
       $validateBtn.prop("disabled", false);
     } else if (action === "validate") {
       lobBatchState.validated = true;
-      actionBtn.html('<i class="fa-solid fa-shield-halved"></i> Validated ✔');
+      actionBtn.html('<i class="bi bi-shield-check"></i> Validated ✔');
       $dumpBtn.prop("disabled", false);
     } else if (action === "dump") {
       lobBatchState.dumped = true;
-      actionBtn.html('<i class="fa-solid fa-database"></i> Dumped ✔');
+      actionBtn.html('<i class="bi bi-database-check"></i> Dumped ✔');
       if (successCount > 0) refreshAccountsCache();
     }
 
     lobBatchState.running = false;
+    setGlobalPipelineStatus(false, `L2: LOB ${action.toUpperCase()}`);
     if (activeAccount && activeAccount.name) {
       refreshPipelineRuns(activeAccount.name);
     }
@@ -6214,6 +8209,7 @@ $(function () {
 
   async function runBatchPersonaPipeline(action) {
     if (!activeAccount || personaBatchState.running) return;
+    setGlobalPipelineStatus(true, `L3: Personas ${action.toUpperCase()}`);
 
     // Get current personas (could be filtered by LOB)
     let personas = activeLob
@@ -6225,7 +8221,10 @@ $(function () {
 
     // ── Initial Discovery Case: When 0 Personas exist yet ──
     if (personas.length === 0) {
-      if (action !== "pull") return;
+      if (action !== "pull") {
+        setGlobalPipelineStatus(false, "L3: Personas");
+        return;
+      }
       personaBatchState.running = true;
       $("#personaBatchProgress, #allPersonasBatchProgress").removeClass("d-none");
       const $fill = $("#personaProgressFill, #allPersonasProgressFill");
@@ -6235,7 +8234,7 @@ $(function () {
       const $dumpBtn = $("#personaBatchDump, #allPersonasBatchDump");
 
       $fill.removeClass("validate dump");
-      $pullBtn.prop("disabled", true).addClass("running").html('<i class="fa-solid fa-hourglass-half"></i> Discovering Contacts...');
+      $pullBtn.prop("disabled", true).addClass("running").html('<i class="bi bi-hourglass-split"></i> Discovering Contacts...');
       $fill.css("width", "50%");
       $status.html(`Discovering Executive Hierarchy & Contacts for <strong>${esc(activeAccount.name)}</strong>...`);
 
@@ -6265,20 +8264,21 @@ $(function () {
 
           $fill.css("width", "100%");
           $status.html(`<strong>✔ Complete:</strong> Discovered <span class="batch-success">${flatList.length} Contacts & Executives</span>`);
-          $pullBtn.removeClass("running").addClass("done").html('<i class="fa-solid fa-cloud-arrow-down"></i> Pulled ✔');
+          $pullBtn.removeClass("running").addClass("done").html('<i class="bi bi-cloud-arrow-down"></i> Pulled ✔');
           personaBatchState.pulled = true;
           $validateBtn.prop("disabled", false);
           $dumpBtn.prop("disabled", false);
         } else {
           $status.html(`<span class="batch-fail">Hierarchy fetch failed: ${res.statusText}</span>`);
-          $pullBtn.removeClass("running").prop("disabled", false).html('<i class="fa-solid fa-cloud-arrow-down"></i> Pull All');
+          $pullBtn.removeClass("running").prop("disabled", false).html('<i class="bi bi-cloud-arrow-down"></i> Pull All');
         }
       } catch (err) {
         $status.html(`<span class="batch-fail">Error: ${err.message}</span>`);
-        $pullBtn.removeClass("running").prop("disabled", false).html('<i class="fa-solid fa-cloud-arrow-down"></i> Pull All');
+        $pullBtn.removeClass("running").prop("disabled", false).html('<i class="bi bi-cloud-arrow-down"></i> Pull All');
       }
 
       personaBatchState.running = false;
+      setGlobalPipelineStatus(false, "L3: Personas Discovery");
       return;
     }
 
@@ -6306,7 +8306,7 @@ $(function () {
       action === "pull" ? $pullBtn : action === "validate" ? $validateBtn : $dumpBtn;
     const actionLabel =
       action === "pull" ? "Pulling" : action === "validate" ? "Validating" : "Dumping";
-    actionBtn.addClass("running").html(`<i class="fa-solid fa-hourglass-half"></i> ${actionLabel}...`);
+    actionBtn.addClass("running").html(`<i class="bi bi-hourglass-split"></i> ${actionLabel}...`);
 
     for (let i = 0; i < personas.length; i++) {
       const p = personas[i];
@@ -6330,8 +8330,11 @@ $(function () {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              key: personaName.toLowerCase().replace(/\s+/g, "_"),
+              key: p.key || personaName.toLowerCase().replace(/\s+/g, "_"),
               display_name: personaName,
+              name: personaName,
+              title: p.title || null,
+              company_name: activeAccount ? (activeAccount.legal_name || activeAccount.name) : null,
               linkedin_url: p.linkedin_url || null,
               account_id: activeAccount.id,
               enrich_ai_dossier: true,
@@ -6396,19 +8399,20 @@ $(function () {
 
     if (action === "pull") {
       personaBatchState.pulled = true;
-      actionBtn.html('<i class="fa-solid fa-cloud-arrow-down"></i> Pulled ✔');
+      actionBtn.html('<i class="bi bi-cloud-arrow-down"></i> Pulled ✔');
       $validateBtn.prop("disabled", false);
     } else if (action === "validate") {
       personaBatchState.validated = true;
-      actionBtn.html('<i class="fa-solid fa-shield-halved"></i> Validated ✔');
+      actionBtn.html('<i class="bi bi-shield-check"></i> Validated ✔');
       $dumpBtn.prop("disabled", false);
     } else if (action === "dump") {
       personaBatchState.dumped = true;
-      actionBtn.html('<i class="fa-solid fa-database"></i> Dumped ✔');
+      actionBtn.html('<i class="bi bi-database-check"></i> Dumped ✔');
       if (successCount > 0) refreshAccountsCache();
     }
 
     personaBatchState.running = false;
+    setGlobalPipelineStatus(false, `L3: Personas ${action.toUpperCase()}`);
     if (activeAccount && activeAccount.name) {
       refreshPipelineRuns(activeAccount.name);
     }
@@ -6416,9 +8420,13 @@ $(function () {
 
   // ─── Batch Button Click Handlers ─────────────────────────────────────────
 
-  // LOB batch buttons
+  // LOB batch buttons — #lobBatchPull is now "Batch Console"; always opens Batch Console (LOB tab)
   $("#lobBatchPull").on("click", function () {
-    runBatchLobPipeline("pull");
+    if (!activeAccount) {
+      showNotification("Please select an active account first.", "warning");
+      return;
+    }
+    openBatchConsole("lob", activeAccount);
   });
   $("#lobBatchValidate").on("click", function () {
     runBatchLobPipeline("validate");
@@ -6427,9 +8435,14 @@ $(function () {
     runBatchLobPipeline("dump");
   });
 
-  // Persona batch buttons (LOB level and Account Directory level)
+  // Persona "Batch Console" buttons (LOB level and Account Directory level)
+  // — now always opens Batch Console regardless of persona count
   $("#personaBatchPull, #allPersonasBatchPull").on("click", function () {
-    runBatchPersonaPipeline("pull");
+    if (!activeAccount) {
+      showNotification("Please select an active account first.", "warning");
+      return;
+    }
+    openBatchConsole("persona", activeAccount);
   });
   $("#personaBatchValidate, #allPersonasBatchValidate").on("click", function () {
     runBatchPersonaPipeline("validate");
@@ -6459,7 +8472,7 @@ $(function () {
            data-entity-type="account" data-key="${acctKey}" style="margin-bottom:18px;">
         <div class="detail-panel-header" style="display:flex;align-items:flex-start;gap:14px;">
           <div style="flex:1;">
-            <span class="pill pill-brand detail-panel-badge"><i class="fa-solid fa-city"
+            <span class="pill pill-brand detail-panel-badge"><i class="bi bi-buildings"
               ></i> Account Data Pipeline</span>
             <h2 class="detail-panel-title">${esc(account.name)}</h2>
             <p class="detail-panel-subtitle"
@@ -6471,15 +8484,15 @@ $(function () {
               <button type="button" class="panel-btn panel-btn-pull acct-btn-pull"
                 title="Pull live firmographics from 11 sources — SEC EDGAR, GLEIF, Apify Crunchbase,
                   Glassdoor, Diffbot KG, Serper, Wikipedia, OpenCorporates, FMP, CourtListener, FEC"><i
-                class="fa-solid fa-cloud-arrow-down"></i> Pull</button>
+                class="bi bi-cloud-arrow-down"></i> Pull</button>
               <button type="button" class="panel-btn panel-btn-validate acct-btn-validate"
                       ${validateDisabled}
                       title="Validate completeness and data quality score across all 89 columns"><i
-                        class="fa-solid fa-shield-halved"></i> Validate</button>
+                        class="bi bi-shield-check"></i> Validate</button>
               <button type="button" class="panel-btn panel-btn-dump acct-btn-dump"
                       ${dumpDisabled}
                       title="Persist all enriched account data into PostgreSQL accounts table"><i
-                        class="fa-solid fa-database"></i> Dump DB</button>
+                        class="bi bi-database-check"></i> Dump DB</button>
             </div>
             <div class="panel-status-msg" id="acctPanelStatusMsg"
               >${state.message || "Ready for data ingestion cycle."}</div>
@@ -6500,7 +8513,7 @@ $(function () {
     const $btn = $(this);
     const $status = $("#acctPanelStatusMsg");
 
-    $btn.html('<i class="fa-solid fa-hourglass-half"></i> Pulling...').prop("disabled", true);
+    $btn.html('<i class="bi bi-hourglass-split"></i> Pulling...').prop("disabled", true);
     $status.html(
       `<span style="color:var(--text-muted);">` +
         `Contacting 11 sources — SEC, GLEIF, Crunchbase, Diffbot, Glassdoor... this may take 30–60 sec` +
@@ -6539,7 +8552,7 @@ $(function () {
             .slice(0, 20)
             .map(
               (n) =>
-                `<span class="data-tag" style="font-size:.72rem;"><i class="fa-solid fa-folder"></i> ${esc(n)}</span>`,
+                `<span class="data-tag" style="font-size:.72rem;"><i class="bi bi-folder2"></i> ${esc(n)}</span>`,
             )
             .join(" ") +
           (discoveredLobs.length > 20
@@ -6556,7 +8569,7 @@ $(function () {
             .slice(0, 8)
             .map(
               (p) =>
-                `<span class="data-tag" style="font-size:.72rem;"><i class="fa-solid fa-user"></i>
+                `<span class="data-tag" style="font-size:.72rem;"><i class="bi bi-person"></i>
                   ${esc(p.name)}</span>`,
             )
             .join(" ") +
@@ -6575,7 +8588,7 @@ $(function () {
     } catch (e) {
       console.error("Account pull error:", e);
       state.message = `<span style="color:#ef4444;">Pull failed — ${esc(e.message)}</span>`;
-      $btn.html('<i class="fa-solid fa-cloud-arrow-down"></i> Pull').prop("disabled", false);
+      $btn.html('<i class="bi bi-cloud-arrow-down"></i> Pull').prop("disabled", false);
       $status.html(state.message);
     }
   });
@@ -6588,7 +8601,7 @@ $(function () {
     const $btn = $(this);
     const $status = $("#acctPanelStatusMsg");
 
-    $btn.html('<i class="fa-solid fa-hourglass-half"></i> Validating...').prop("disabled", true);
+    $btn.html('<i class="bi bi-hourglass-split"></i> Validating...').prop("disabled", true);
     $status.html(
       '<span style="color:var(--text-muted);">Running quality checks across 89 columns...</span>',
     );
@@ -6625,7 +8638,7 @@ $(function () {
     } catch (e) {
       console.error("Account validate error:", e);
       state.message = `<span style="color:#ef4444;">Validation failed — ${esc(e.message)}</span>`;
-      $btn.html('<i class="fa-solid fa-shield-halved"></i> Validate').prop("disabled", false);
+      $btn.html('<i class="bi bi-shield-check"></i> Validate').prop("disabled", false);
       $status.html(state.message);
     }
   });
@@ -6638,7 +8651,7 @@ $(function () {
     const $btn = $(this);
     const $status = $("#acctPanelStatusMsg");
 
-    $btn.html('<i class="fa-solid fa-hourglass-half"></i> Saving...').prop("disabled", true);
+    $btn.html('<i class="bi bi-hourglass-split"></i> Saving...').prop("disabled", true);
     $status.html(
       '<span style="color:var(--text-muted);">Writing to PostgreSQL accounts table...</span>',
     );
@@ -6677,7 +8690,7 @@ $(function () {
     } catch (e) {
       console.error("Account dump error:", e);
       state.message = `<span style="color:#ef4444;">Dump failed — ${esc(e.message)}</span>`;
-      $btn.html('<i class="fa-solid fa-database"></i> Dump DB').prop("disabled", false);
+      $btn.html('<i class="bi bi-database-check"></i> Dump DB').prop("disabled", false);
       $status.html(state.message);
     }
   });
@@ -6685,7 +8698,7 @@ $(function () {
   // ─── Notification Toast Helper ──────────────────────────────────────────
   function showNotification(message, type = "success") {
     const isSuccess = type === "success";
-    const icon = isSuccess ? "fa-solid fa-circle-check" : "fa-solid fa-triangle-exclamation";
+    const icon = isSuccess ? "bi-check-circle-fill" : "bi-exclamation-triangle-fill";
     const bg = isSuccess
       ? "linear-gradient(135deg,#059669,#10b981)"
       : "linear-gradient(135deg,#dc2626,#ef4444)";
@@ -6697,7 +8710,7 @@ $(function () {
                   border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,0.18);
                   display:flex;align-items:center;gap:12px;font-size:0.85rem;
                   font-weight:600;transition:all 0.3s ease;">
-        <i class="${icon}" style="font-size:1.15rem;"></i>
+        <i class="bi ${icon}" style="font-size:1.15rem;"></i>
         <div style="flex:1;line-height:1.35;">${message}</div>
       </div>
     `);
@@ -6739,18 +8752,19 @@ $(function () {
       return;
     }
     $("#newAccountName").removeClass("is-invalid");
-    const domain = $("#newAccountDomain")
-      .val()
+    let rawDomain = ($("#newAccountDomain").val() || "").trim();
+    const domain = rawDomain
+      .replace(/^https?:\/\//i, "")
+      .split("/")[0]
+      .split("?")[0]
+      .replace(/^www\./i, "")
       .trim()
-      .replace(/^https?:\/\//, "")
-      .replace(/\/$/, "");
+      .toLowerCase();
 
     const originalBtnText = $btn.html();
-    $btn.html('<i class="fa-solid fa-hourglass-half"></i> Creating in DB...').prop("disabled", true);
+    $btn.html('<i class="bi bi-hourglass-split"></i> Initializing in DB...').prop("disabled", true);
 
     try {
-      // 1. Persist initial account row in PostgreSQL immediately so it has an official ID and survives
-      // page refresh
       const res = await fetch(`${API_BASE}/api/account/create`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -6767,12 +8781,14 @@ $(function () {
       const realId = data.account_id;
 
       // Close modal
-      bootstrap.Modal.getInstance(document.getElementById("addAccountModal")).hide();
+      const modalEl = document.getElementById("addAccountModal");
+      const bsModal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+      bsModal.hide();
       $btn.html(originalBtnText).prop("disabled", false);
 
       // Show top-right floating success toast
       showNotification(
-        `✅ Account <strong>${esc(companyName)}</strong> created successfully (ID: ${realId})`,
+        `✅ Account <strong>${esc(companyName)}</strong> initialized successfully (ID: ${realId})`,
         "success",
       );
 
@@ -6784,12 +8800,13 @@ $(function () {
         id: realId,
         key: data.key || companyName.toLowerCase().replace(/[^a-z0-9]+/g, "_"),
         name: companyName,
+        display_name: companyName,
         domain: domain || null,
         primary_domain: domain || null,
         website_url: domain ? `https://${domain}` : null,
-        ticker: "NEW",
-        revenue: domain || "Domain not set",
-        location: "—",
+        ticker: null,
+        revenue: null,
+        location: null,
         desc: "Account registered in database. Run Pull → Validate → Dump to enrich with 11 sources.",
         lobs: [],
         personas: [],
@@ -6805,6 +8822,10 @@ $(function () {
         message: "",
       };
 
+      // Clear cache so newly added account is fetched fresh
+      try { sessionStorage.removeItem("pipeline_accounts_cache"); } catch (e) {}
+      refreshAccountsCache();
+
       // Add to MOCK_DATA.accounts (replacing any duplicate if present)
       MOCK_DATA.accounts = (MOCK_DATA.accounts || []).filter((a) => a.id !== realId);
       MOCK_DATA.accounts.unshift(newAccountObj);
@@ -6819,6 +8840,401 @@ $(function () {
     }
   });
 
+  // ══════════════════════════════════════════════════════════════════════
+  // ENTERPRISE DATA MANAGEMENT & GRANULAR PURGE CONSOLE INTERACTIVITY
+  // ══════════════════════════════════════════════════════════════════════
+
+  let currentPurgeSummary = null;
+
+  // Helper to recalculate purge selection count and summary label
+  function updatePurgeSelectionSummary() {
+    const isEntire = $("#purgeOptionEntireAccount").is(":checked");
+    const $btn = $("#btnExecutePurge");
+
+    if (isEntire) {
+      $("#purgeConfirmContainer").removeClass("d-none");
+      $("#purgeGranularSections").css("opacity", "0.35").css("pointer-events", "none");
+      $("#purgeSelectedSummaryText").html(
+        '<strong style="color:#dc2626;"><i class="bi bi-exclamation-triangle-fill"></i> Complete Account Destruction Selected</strong> &bull; All LOBs, personas &amp; signals will be purged'
+      );
+      $("#btnPurgeText").text("Permanently Delete Entire Account");
+
+      // Verify confirmation text input (tolerant to typos, suffixes, punctuation, spaces)
+      const enteredRaw = ($("#purgeConfirmInput").val() || "").trim();
+      let enteredNorm = enteredRaw.toUpperCase().replace(/\s+/g, " ");
+      // Fix common typo like 'DELLETE' -> 'DELETE'
+      enteredNorm = enteredNorm.replace(/^DEL+E+T+E*/, "DELETE");
+      const enteredClean = enteredNorm.replace(/[^A-Z0-9\s]/g, "").trim();
+
+      const targetName = (activeAccount ? (activeAccount.name || activeAccount.display_name || "") : "").toUpperCase();
+      const cleanBrand = targetName.replace(/[,.]/g, "").replace(/\b(INC|CORP|CORPORATION|LLC|LTD|PLC|CO|COMPANY)\b/g, "").trim();
+      const targetKey = (activeAccount && activeAccount.key ? activeAccount.key.toUpperCase() : "").replace(/[^A-Z0-9\s]/g, "").trim();
+
+      const validMatches = [
+        `DELETE ${cleanBrand}`,
+        `DELETE ${targetName.replace(/[^A-Z0-9\s]/g, "").replace(/\s+/g, " ").trim()}`,
+        `DELETE ${targetKey}`,
+        "DELETE"
+      ];
+
+      const isMatch = enteredClean.length > 0 && (
+        validMatches.includes(enteredClean) ||
+        (enteredClean.startsWith("DELETE") && cleanBrand && enteredClean.includes(cleanBrand)) ||
+        (enteredClean.startsWith("DELETE") && targetKey && enteredClean.includes(targetKey))
+      );
+
+      const $feedback = $("#purgeConfirmFeedback");
+      if (isMatch) {
+        $feedback.show().html('<span style="color:#16a34a;font-weight:600;"><i class="bi bi-check-circle-fill"></i> Confirmation verified. Safe to proceed.</span>');
+        $("#purgeConfirmInput").css({"border-color": "#16a34a", "background-color": "#f0fdf4"});
+        $btn.prop("disabled", false);
+      } else {
+        if (enteredRaw.length > 0) {
+          $feedback.show().html(`<span style="color:#dc2626;"><i class="bi bi-info-circle"></i> Type <code>DELETE ${cleanBrand || targetName}</code> or click Auto-fill</span>`);
+          $("#purgeConfirmInput").css({"border-color": "#f87171", "background-color": "#ffffff"});
+        } else {
+          $feedback.hide();
+          $("#purgeConfirmInput").css({"border-color": "#fca5a5", "background-color": "#ffffff"});
+        }
+        $btn.prop("disabled", true);
+      }
+      return;
+    }
+
+    $("#purgeConfirmContainer").addClass("d-none");
+    $("#purgeGranularSections").css("opacity", "1").css("pointer-events", "auto");
+    $("#btnPurgeText").text("Purge Selected Data");
+
+    if (!currentPurgeSummary) {
+      $("#purgeSelectedSummaryText").text("Loading account data metrics...");
+      $btn.prop("disabled", true);
+      return;
+    }
+
+    let selectedItemsCount = 0;
+    const parts = [];
+
+    // LOBs
+    if ($("#purgeOptionLobs").is(":checked")) {
+      const lobsCnt = currentPurgeSummary.lobs_count || 0;
+      selectedItemsCount += lobsCnt;
+      parts.push(`${lobsCnt} LOBs`);
+    }
+
+    // Personas by Tier
+    if ($("#purgeTierCSuite").is(":checked")) {
+      const cnt = currentPurgeSummary.personas.c_suite || 0;
+      selectedItemsCount += cnt;
+      parts.push(`${cnt} C-Suite`);
+    }
+    if ($("#purgeTierVp").is(":checked")) {
+      const cnt = currentPurgeSummary.personas.vp_head || 0;
+      selectedItemsCount += cnt;
+      parts.push(`${cnt} VPs`);
+    }
+    if ($("#purgeTierDirector").is(":checked")) {
+      const cnt = currentPurgeSummary.personas.director || 0;
+      selectedItemsCount += cnt;
+      parts.push(`${cnt} Directors`);
+    }
+    if ($("#purgeTierManager").is(":checked")) {
+      const cnt = currentPurgeSummary.personas.manager_other || 0;
+      selectedItemsCount += cnt;
+      parts.push(`${cnt} Managers`);
+    }
+
+    // Signals
+    $(".purge-sig-cb:checked").each(function () {
+      const sigKey = $(this).data("sig");
+      const cnt = currentPurgeSummary.signals[sigKey] || 0;
+      selectedItemsCount += cnt;
+      if (cnt > 0) {
+        parts.push(`${cnt} ${sigKey.replace(/_/g, " ")}`);
+      }
+    });
+
+    if (selectedItemsCount > 0 || parts.length > 0) {
+      $("#purgeSelectedSummaryText").html(
+        `<strong style="color:#b91c1c;">Selected for removal (${selectedItemsCount} records):</strong> ${esc(parts.join(", "))}`
+      );
+      $btn.prop("disabled", false);
+    } else {
+      $("#purgeSelectedSummaryText").text("No items selected for removal");
+      $btn.prop("disabled", true);
+    }
+  }
+
+  // Open Data Management / Purge Modal
+  // ── Account Header: Open Batch Console ────────────────────────────────────
+  $(document).on("click", "#acctOpenBatchBtn", function () {
+    if (!activeAccount) {
+      showNotification("Please select an active account first.", "warning");
+      return;
+    }
+    openBatchConsole("account", activeAccount);
+  });
+
+  // ── LOB Delete ──────────────────────────────────────────────────────────────
+  $(document).on("click", ".lob-delete-btn", async function (e) {
+    e.stopPropagation();
+    const lobId   = $(this).data("lob-id");
+    const lobName = $(this).data("lob-name") || `LOB #${lobId}`;
+    if (!lobId) return;
+
+    const confirmed = confirm(`Delete "${lobName}"?\n\nThis will permanently remove this Line of Business and all its sub-LOBs from the database. This cannot be undone.`);
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch(`/api/lobs/${lobId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        showNotification(`Delete failed: ${err.detail || res.statusText}`, "error");
+        return;
+      }
+      showNotification(`"${lobName}" deleted successfully.`, "success");
+      // Close the LOB detail panel and refresh by re-clicking the account item
+      $("#lobDetailViewContainer").addClass("d-none").empty();
+      if (activeAccount) {
+        const acctId = activeAccount.id;
+        $(`#accountList .account-item[data-id="${acctId}"]`).trigger("click");
+      }
+    } catch (err) {
+      showNotification(`Delete error: ${err.message}`, "error");
+    }
+  });
+
+  // ── Persona Delete ──────────────────────────────────────────────────────────
+  $(document).on("click", ".persona-delete-btn", async function (e) {
+    e.stopPropagation();
+    const personaId   = $(this).data("persona-id");
+    const personaName = $(this).data("persona-name") || `Persona #${personaId}`;
+    if (!personaId) return;
+
+    const confirmed = confirm(`Delete "${personaName}"?\n\nThis will permanently remove this persona from the database. This cannot be undone.`);
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch(`/api/personas/${personaId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        showNotification(`Delete failed: ${err.detail || res.statusText}`, "error");
+        return;
+      }
+      showNotification(`"${personaName}" deleted successfully.`, "success");
+      // Close persona detail panel and refresh by re-clicking the account item
+      $("#personaDetailView").addClass("d-none").empty();
+      if (activeAccount) {
+        const acctId = activeAccount.id;
+        $(`#accountList .account-item[data-id="${acctId}"]`).trigger("click");
+      }
+    } catch (err) {
+      showNotification(`Delete error: ${err.message}`, "error");
+    }
+  });
+
+  $(document).on("click", "#acctDataManageBtn", async function () {
+
+    if (!activeAccount) {
+      showNotification("Please select an active account first.", "warning");
+      return;
+    }
+
+    const acctName = activeAccount.name || activeAccount.display_name || "Account";
+    $("#purgeTargetAccountName").text(acctName);
+    const cleanBrand = acctName.replace(/[,.]/g, "").replace(/\b(Inc|Corp|Corporation|LLC|Ltd|PLC|Co|Company)\b/gi, "").trim();
+    const expectedConfirm = `DELETE ${cleanBrand.toUpperCase()}`;
+    $("#purgeExpectedConfirmText").text(expectedConfirm);
+    $("#purgeConfirmInput").val("").css({"border-color": "#fca5a5", "background-color": "#ffffff"});
+    $("#purgeConfirmFeedback").hide();
+    $("#purgeOptionEntireAccount").prop("checked", false);
+    $(".purge-cb").prop("checked", false);
+    $(".purge-item-box").removeClass("selected");
+    $("#purgeConfirmContainer").addClass("d-none");
+    $("#purgeGranularSections").css("opacity", "1").css("pointer-events", "auto");
+    $("#btnExecutePurge").prop("disabled", true).html('<i class="bi bi-trash3"></i> <span id="btnPurgeText">Purge Selected Data</span>');
+
+    const modalEl = document.getElementById("dataManageModal");
+    const bsModal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    bsModal.show();
+
+    // Fetch live data summary from API
+    try {
+      const res = await fetch(`${API_BASE}/api/accounts/${activeAccount.id}/data-summary`);
+      if (res.ok) {
+        currentPurgeSummary = await res.json();
+        // Update count badges
+        $("#cntPurgeLobs").text(`${currentPurgeSummary.lobs_count} LOBs`);
+        $("#cntPurgeCSuite").text(currentPurgeSummary.personas.c_suite);
+        $("#cntPurgeVp").text(currentPurgeSummary.personas.vp_head);
+        $("#cntPurgeDirector").text(currentPurgeSummary.personas.director);
+        $("#cntPurgeManager").text(currentPurgeSummary.personas.manager_other);
+
+        $("#cntPurgeNews").text(currentPurgeSummary.signals.posts_news);
+        $("#cntPurgeJobs").text(currentPurgeSummary.signals.jobs);
+        $("#cntPurgeOpp").text(currentPurgeSummary.signals.opportunity_signals);
+        $("#cntPurgeDigests").text(currentPurgeSummary.signals.weekly_digests);
+        $("#cntPurgeCxo").text(currentPurgeSummary.signals.cxo_movements);
+        $("#cntPurgeActions").text(currentPurgeSummary.signals.action_items);
+      }
+    } catch (err) {
+      console.warn("Failed to fetch account data summary:", err);
+    }
+    updatePurgeSelectionSummary();
+  });
+
+  // Entire Account toggle handler
+  $("#purgeOptionEntireAccount").on("change", function () {
+    updatePurgeSelectionSummary();
+  });
+
+  // Confirmation text input handler
+  $("#purgeConfirmInput").on("input", function () {
+    updatePurgeSelectionSummary();
+  });
+
+  // Auto-fill confirmation helper button & code pill click handlers
+  $(document).on("click", "#btnAutoFillPurgeConfirm, #purgeExpectedConfirmText", function () {
+    const textToFill = $("#purgeExpectedConfirmText").text().trim();
+    if (textToFill) {
+      $("#purgeConfirmInput").val(textToFill).trigger("input");
+    }
+  });
+
+  // Checkbox change handlers
+  $(document).on("change", ".purge-cb", function () {
+    $(this).closest(".purge-item-box").toggleClass("selected", $(this).is(":checked"));
+    updatePurgeSelectionSummary();
+  });
+
+  // Toggle all persona tiers button
+  $("#btnToggleAllPersonaTiers").on("click", function () {
+    const allChecked = $(".purge-tier-cb:checked").length === $(".purge-tier-cb").length;
+    $(".purge-tier-cb").prop("checked", !allChecked).each(function () {
+      $(this).closest(".purge-item-box").toggleClass("selected", !allChecked);
+    });
+    $(this).text(allChecked ? "Select All Tiers" : "Deselect All Tiers");
+    updatePurgeSelectionSummary();
+  });
+
+  // Toggle all signals button
+  $("#btnToggleAllSignals").on("click", function () {
+    const allChecked = $(".purge-sig-cb:checked").length === $(".purge-sig-cb").length;
+    $(".purge-sig-cb").prop("checked", !allChecked).each(function () {
+      $(this).closest(".purge-item-box").toggleClass("selected", !allChecked);
+    });
+    $(this).text(allChecked ? "Select All Signals" : "Deselect All Signals");
+    updatePurgeSelectionSummary();
+  });
+
+  // Execute Purge button handler
+  $("#btnExecutePurge").on("click", async function () {
+    if (!activeAccount) return;
+
+    const $btn = $(this);
+    const origHtml = $btn.html();
+    $btn.prop("disabled", true).html('<i class="spinner-border spinner-border-sm"></i> Purging Data...');
+
+    const isEntire = $("#purgeOptionEntireAccount").is(":checked");
+    const payload = {
+      delete_account_record: isEntire,
+      delete_lobs: $("#purgeOptionLobs").is(":checked"),
+      personas: {
+        all: false,
+        c_suite: $("#purgeTierCSuite").is(":checked"),
+        vp_head: $("#purgeTierVp").is(":checked"),
+        director: $("#purgeTierDirector").is(":checked"),
+        manager_other: $("#purgeTierManager").is(":checked"),
+      },
+      signals: {
+        opportunity_signals: $("#purgeSigOpp").is(":checked"),
+        weekly_digests: $("#purgeSigDigests").is(":checked"),
+        posts_news: $("#purgeSigNews").is(":checked"),
+        cxo_movements: $("#purgeSigCxo").is(":checked"),
+        jobs: $("#purgeSigJobs").is(":checked"),
+        action_items: $("#purgeSigActions").is(":checked"),
+      },
+      confirmation_text: isEntire ? $("#purgeConfirmInput").val().trim() : null,
+    };
+
+    try {
+      const res = await fetch(`${API_BASE}/api/accounts/${activeAccount.id}/purge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || "Purge request failed.");
+      }
+
+      // Close modal
+      const modalEl = document.getElementById("dataManageModal");
+      bootstrap.Modal.getInstance(modalEl).hide();
+      $btn.html(origHtml).prop("disabled", false);
+
+      const targetId = activeAccount.id;
+      const targetName = activeAccount.name || activeAccount.display_name || "Account";
+
+      if (isEntire) {
+        // Clear caches
+        try { sessionStorage.removeItem("pipeline_accounts_cache"); } catch (e) {}
+        refreshAccountsCache();
+
+        // Remove from local accounts list
+        MOCK_DATA.accounts = (MOCK_DATA.accounts || []).filter((a) => a.id !== targetId);
+
+        // Reset active state
+        activeAccount = null;
+        activeLob = null;
+        activePersona = null;
+
+        // Re-render sidebar
+        renderSidebar();
+
+        // Return view to empty state
+        $("#dashboardContainer").addClass("d-none");
+        $("#emptyState").removeClass("d-none");
+
+        showNotification(
+          `🗑️ Enterprise Account <strong>${esc(targetName)}</strong> and all intelligence records permanently purged from database.`,
+          "success",
+        );
+      } else {
+        // Selective Purge: Refresh the active account data in-place!
+        showNotification(
+          `🧹 Selected intelligence purged for <strong>${esc(targetName)}</strong> (${data.deleted.personas_deleted || 0} personas, ${data.deleted.lobs_deleted || 0} LOBs, ${data.deleted.signals_deleted || 0} signals).`,
+          "success",
+        );
+
+        // Fetch fresh account from API
+        const refreshRes = await fetch(`${API_BASE}/api/accounts/${targetId}`);
+        if (refreshRes.ok) {
+          const freshAccount = await refreshRes.json();
+          // Update in local accounts list
+          const idx = (MOCK_DATA.accounts || []).findIndex((a) => a.id === targetId);
+          if (idx >= 0) {
+            MOCK_DATA.accounts[idx] = freshAccount;
+          }
+          activeAccount = freshAccount;
+
+          // Re-render view in-place
+          $("#accountHeroContainer").html(renderModernAccountHeader(activeAccount));
+          $("#completenessContainer").html(renderModernCompleteness(activeAccount));
+          renderLobCardsList($("#lobCardsContainer"), activeAccount.lobs || []);
+          renderAllPersonasDirectory(activeAccount);
+          renderModernBreadcrumbs();
+          updateBatchTriggerPills(activeAccount);
+        }
+      }
+    } catch (err) {
+      console.error("Purge error:", err);
+      $btn.html(origHtml).prop("disabled", false);
+      showNotification(`❌ Purge operation failed: ${esc(err.message)}`, "error");
+    }
+  });
+
+
   // API Docs Nav Button
   $("#apiDocsNav").on("click", function () {
     window.open(`${API_BASE}/docs`, "_blank");
@@ -6832,7 +9248,8 @@ $(function () {
     }
     const $btn = $(this);
     const origHtml = $btn.html();
-    $btn.prop("disabled", true).html('<i class="fa-solid fa-hourglass-half"></i>&nbsp;<span>Running...</span>');
+    $btn.prop("disabled", true).html('<i class="bi bi-hourglass-split"></i>&nbsp;<span>Running...</span>');
+    setGlobalPipelineStatus(true, "Composite Pipeline");
     showNotification(`🚀 Triggering composite pipeline for <strong>${esc(activeAccount.name)}</strong>...`, "info");
 
     try {
@@ -6854,6 +9271,7 @@ $(function () {
       showNotification(`❌ Pipeline execution failed: ${esc(e.message)}`, "error");
     } finally {
       $btn.prop("disabled", false).html(origHtml);
+      setGlobalPipelineStatus(false, "Composite Pipeline");
       if (activeAccount && activeAccount.name) {
         refreshPipelineRuns(activeAccount.name);
       }
@@ -6867,7 +9285,7 @@ $(function () {
     const sublobId = $btn.data("sublob-id");
     if (!sublobId) return;
 
-    $btn.prop("disabled", true).html('<i class="fa-solid fa-hourglass"></i>');
+    $btn.prop("disabled", true).html('<i class="bi bi-hourglass"></i>');
     try {
       const res = await fetch(`${API_BASE}/api/sub-lobs/${sublobId}`, {
         method: "PATCH",
@@ -6880,16 +9298,16 @@ $(function () {
         $card.addClass("verified");
         $btn.replaceWith(`
           <span class="badge" style="background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;font-size:0.68rem;padding:3px 7px;">
-            <i class="fa-solid fa-circle-check"></i> Verified
+            <i class="bi bi-check-circle-fill"></i> Verified
           </span>
         `);
       } else {
         showNotification("Failed to update Sub-LOB verification.", "error");
-        $btn.prop("disabled", false).html('<i class="fa-solid fa-circle-check"></i>');
+        $btn.prop("disabled", false).html('<i class="bi bi-check2-circle"></i>');
       }
     } catch (err) {
       showNotification(`Error: ${err.message}`, "error");
-      $btn.prop("disabled", false).html('<i class="fa-solid fa-circle-check"></i>');
+      $btn.prop("disabled", false).html('<i class="bi bi-check2-circle"></i>');
     }
   });
 
@@ -6902,7 +9320,7 @@ $(function () {
 
     $body.html(`
       <div style="text-align:center;padding:36px 20px;color:#0284c7;">
-        <i class="fa-solid fa-arrows-rotate spin" style="font-size:2.2rem;"></i>
+        <i class="bi bi-arrow-repeat spin" style="font-size:2.2rem;"></i>
         <div style="margin-top:12px;font-weight:600;font-size:0.9rem;">Loading Verified Sub-LOB Dossier...</div>
       </div>
     `);
@@ -6955,9 +9373,9 @@ $(function () {
 
     $verifyBtn.attr("data-sublob-id", sub.id);
     if (isVerified) {
-      $verifyBtn.removeClass("btn-primary").addClass("btn-success").html('<i class="fa-solid fa-circle-check"></i> Verified ✓');
+      $verifyBtn.removeClass("btn-primary").addClass("btn-success").html('<i class="bi bi-check-circle-fill"></i> Verified ✓');
     } else {
-      $verifyBtn.removeClass("btn-success").addClass("btn-primary").html('<i class="fa-solid fa-circle-check"></i> Mark Verified');
+      $verifyBtn.removeClass("btn-success").addClass("btn-primary").html('<i class="bi bi-check2-circle"></i> Mark Verified');
     }
 
     $body.html(`
@@ -6965,9 +9383,9 @@ $(function () {
       <div style="background:linear-gradient(135deg,#f8fafc,#f1f5f9);border:1px solid #e2e8f0;border-radius:10px;padding:16px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">
         <div>
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
-            <span class="badge" style="background:#e0f2fe;color:#0284c7;font-weight:700;"><i class="fa-solid fa-sitemap"></i> ${esc(entityLevel)}</span>
+            <span class="badge" style="background:#e0f2fe;color:#0284c7;font-weight:700;"><i class="bi bi-diagram-3"></i> ${esc(entityLevel)}</span>
             <span class="badge-solid-green">${esc(status)}</span>
-            ${isVerified ? `<span class="badge" style="background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;"><i class="fa-solid fa-circle-check"></i> Manually Verified</span>` : `<span class="badge" style="background:#f8fafc;color:#64748b;border:1px solid #e2e8f0;"><i class="fa-solid fa-circle-minus"></i> AI Inferred</span>`}
+            ${isVerified ? `<span class="badge" style="background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;"><i class="bi bi-check-circle-fill"></i> Manually Verified</span>` : `<span class="badge" style="background:#f8fafc;color:#64748b;border:1px solid #e2e8f0;"><i class="bi bi-dash-circle"></i> AI Inferred</span>`}
           </div>
           <h4 style="margin:0;font-size:1.15rem;font-weight:700;color:#0f172a;">${esc(sName)}</h4>
           ${sLegal && sLegal !== sName ? `<div style="font-size:0.8rem;color:#64748b;margin-top:2px;">Legal Registration: <strong>${esc(sLegal)}</strong></div>` : ''}
@@ -6975,7 +9393,7 @@ $(function () {
         <div>
           ${lei ? `
             <a href="https://search.gleif.org/#/record/${esc(lei)}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-primary" style="font-size:0.75rem;padding:5px 12px;border-radius:6px;font-weight:600;">
-              <i class="fa-solid fa-shield-halved"></i> GLEIF Golden Copy <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:0.65rem;"></i>
+              <i class="bi bi-shield-check"></i> GLEIF Golden Copy <i class="bi bi-box-arrow-up-right" style="font-size:0.65rem;"></i>
             </a>
           ` : ''}
         </div>
@@ -6987,7 +9405,7 @@ $(function () {
           <div class="sublob-detail-label">LEI IDENTIFIER (ISO 17442)</div>
           <div class="sublob-detail-value" style="font-family:monospace;display:flex;align-items:center;justify-content:space-between;">
             <span>${esc(lei || '—')}</span>
-            ${lei ? `<button type="button" class="btn btn-xs copy-lei-btn" data-lei="${esc(lei)}" style="padding:1px 6px;font-size:0.7rem;border:1px solid #cbd5e1;background:#fff;border-radius:4px;" title="Copy LEI"><i class="fa-solid fa-clipboard"></i></button>` : ''}
+            ${lei ? `<button type="button" class="btn btn-xs copy-lei-btn" data-lei="${esc(lei)}" style="padding:1px 6px;font-size:0.7rem;border:1px solid #cbd5e1;background:#fff;border-radius:4px;" title="Copy LEI"><i class="bi bi-clipboard"></i></button>` : ''}
           </div>
         </div>
 
@@ -7011,7 +9429,7 @@ $(function () {
         <div class="sublob-detail-cell">
           <div class="sublob-detail-label">CONTROLLING PARENT LOB</div>
           <div class="sublob-detail-value" style="color:#0284c7;display:flex;align-items:center;gap:5px;">
-            <i class="fa-solid fa-building"></i> ${esc(parentName)}
+            <i class="bi bi-building"></i> ${esc(parentName)}
           </div>
         </div>
 
@@ -7020,7 +9438,7 @@ $(function () {
           <div class="sublob-detail-value" style="font-family:monospace;">
             ${parentLei && parentLei !== '—' ? `
               <a href="https://search.gleif.org/#/record/${esc(parentLei)}" target="_blank" rel="noopener noreferrer" style="color:#0284c7;">
-                ${esc(parentLei)} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:0.65rem;"></i>
+                ${esc(parentLei)} <i class="bi bi-box-arrow-up-right" style="font-size:0.65rem;"></i>
               </a>
             ` : '—'}
           </div>
@@ -7029,7 +9447,7 @@ $(function () {
         <div class="sublob-detail-cell">
           <div class="sublob-detail-label">DIGITAL DOMAIN</div>
           <div class="sublob-detail-value">
-            ${domain ? `<span style="color:#0284c7;"><i class="fa-solid fa-globe"></i> ${esc(domain)}</span>` : '<span style="color:#94a3b8;">Inherited from parent LOB</span>'}
+            ${domain ? `<span style="color:#0284c7;"><i class="bi bi-globe"></i> ${esc(domain)}</span>` : '<span style="color:#94a3b8;">Inherited from parent LOB</span>'}
           </div>
         </div>
 
@@ -7038,7 +9456,7 @@ $(function () {
           <div class="sublob-detail-value">
             ${website ? `
               <a href="${esc(website)}" target="_blank" rel="noopener noreferrer" style="color:#0284c7;word-break:break-all;">
-                ${esc(website)} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:0.65rem;"></i>
+                ${esc(website)} <i class="bi bi-box-arrow-up-right" style="font-size:0.65rem;"></i>
               </a>
             ` : '<span style="color:#94a3b8;">—</span>'}
           </div>
@@ -7047,7 +9465,7 @@ $(function () {
         <div class="sublob-detail-cell">
           <div class="sublob-detail-label">MANUAL VERIFICATION STATUS</div>
           <div class="sublob-detail-value" style="display:flex;align-items:center;gap:6px;">
-            <i class="${isVerified ? 'fa-solid fa-circle-check' : 'fa-solid fa-circle-minus'}" style="color:${isVerified ? '#059669' : '#94a3b8'};"></i>
+            <i class="bi ${isVerified ? 'bi-check-circle-fill' : 'bi-dash-circle'}" style="color:${isVerified ? '#059669' : '#94a3b8'};"></i>
             <span>${isVerified ? 'Verified by Sales Engineer' : 'AI Inferred (Unverified)'}</span>
           </div>
         </div>
@@ -7061,7 +9479,7 @@ $(function () {
       <!-- Collapsible Raw Metadata Payload -->
       <div style="margin-top:16px;">
         <button type="button" class="btn btn-sm btn-outline-secondary btn-toggle-raw-json" style="font-size:0.75rem;">
-          <i class="fa-solid fa-code"></i> View Raw Ingestion Metadata (JSON) <i class="fa-solid fa-chevron-down"></i>
+          <i class="bi bi-code-slash"></i> View Raw Ingestion Metadata (JSON) <i class="bi bi-chevron-down"></i>
         </button>
         <div class="raw-json-container d-none" style="margin-top:10px;">
           <pre style="font-size:.7rem;max-height:220px;overflow:auto;background:#0f172a;color:#f8fafc;padding:12px;border-radius:8px;margin:0;white-space:pre-wrap;">${esc(JSON.stringify(meta, null, 2))}</pre>
@@ -7094,7 +9512,7 @@ $(function () {
     if (!subId) return;
 
     const $btn = $(this);
-    $btn.prop("disabled", true).html('<i class="fa-solid fa-arrows-rotate spin"></i> Verifying...');
+    $btn.prop("disabled", true).html('<i class="bi bi-arrow-repeat spin"></i> Verifying...');
     try {
       const res = await fetch(`${API_BASE}/api/sub-lobs/${subId}`, {
         method: "PATCH",
@@ -7103,7 +9521,7 @@ $(function () {
       });
       if (res.ok) {
         showNotification("✔ Sub-LOB marked as manually verified in database!", "success");
-        $btn.removeClass("btn-primary").addClass("btn-success").html('<i class="fa-solid fa-circle-check"></i> Verified ✓');
+        $btn.removeClass("btn-primary").addClass("btn-success").html('<i class="bi bi-check-circle-fill"></i> Verified ✓');
         if (activeLob && Array.isArray(activeLob.sub_lobs)) {
           const s = activeLob.sub_lobs.find(x => String(x.id) === String(subId));
           if (s) {
@@ -7114,7 +9532,7 @@ $(function () {
         $(`.sublob-card[data-sublob-id="${subId}"]`).addClass("verified");
         $(`.sublob-card[data-sublob-id="${subId}"] .btn-verify-sublob`).replaceWith(`
           <span class="badge" style="background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;font-size:0.68rem;padding:3px 7px;">
-            <i class="fa-solid fa-circle-check"></i> Verified
+            <i class="bi bi-check-circle-fill"></i> Verified
           </span>
         `);
         if (activeAccount && activeAccount.name) {
@@ -7122,11 +9540,11 @@ $(function () {
         }
       } else {
         showNotification("Verification update failed.", "error");
-        $btn.prop("disabled", false).html('<i class="fa-solid fa-circle-check"></i> Mark Verified');
+        $btn.prop("disabled", false).html('<i class="bi bi-check2-circle"></i> Mark Verified');
       }
     } catch (err) {
       showNotification(`Error: ${err.message}`, "error");
-      $btn.prop("disabled", false).html('<i class="fa-solid fa-circle-check"></i> Mark Verified');
+      $btn.prop("disabled", false).html('<i class="bi bi-check2-circle"></i> Mark Verified');
     }
   });
 
@@ -7184,7 +9602,7 @@ $(function () {
     }
 
     const $btn = $(this);
-    $btn.prop("disabled", true).html('<i class="fa-solid fa-arrows-rotate spin"></i> Saving...');
+    $btn.prop("disabled", true).html('<i class="bi bi-arrow-repeat spin"></i> Saving...');
 
     try {
       const payload = { [channelKey]: feedUrl };
@@ -7217,7 +9635,7 @@ $(function () {
     } catch (err) {
       showNotification(`Error: ${err.message}`, "error");
     } finally {
-      $btn.prop("disabled", false).html('<i class="fa-solid fa-check"></i> Save &amp; Activate Feed');
+      $btn.prop("disabled", false).html('<i class="bi bi-check2"></i> Save &amp; Activate Feed');
     }
   });
 
@@ -7227,21 +9645,21 @@ $(function () {
     if (!activeAccount) return;
 
     const allChannels = [
-      { name: "X / Twitter Live Activity", key: "twitter_live_url", url: activeAccount.twitter_live_url, icon: "fa-brands fa-x-twitter" },
-      { name: "Google News Live RSS Feed", key: "rss_url", url: activeAccount.rss_url || activeAccount.news_query, icon: "fa-solid fa-newspaper" },
-      { name: "Reddit Community Discussions", key: "reddit_rss_url", url: activeAccount.reddit_rss_url || activeAccount.reddit_query, icon: "fa-brands fa-reddit" },
-      { name: "Google Patents Portfolio", key: "google_patents_url", url: activeAccount.google_patents_url, icon: "fa-solid fa-circle-check" },
-      { name: "YouTube Executive Media", key: "youtube_search_url", url: activeAccount.youtube_search_url, icon: "fa-brands fa-youtube" },
-      { name: "Wikidata Knowledge Entity", key: "wikidata_entity_url", url: activeAccount.wikidata_entity_url, icon: "fa-solid fa-diagram-project" },
-      { name: "Google Trends Analytics", key: "google_trends_url", url: activeAccount.google_trends_url, icon: "fa-solid fa-arrow-trend-up" },
-      { name: "Glassdoor Workplace Reviews", key: "glassdoor_url", url: activeAccount.glassdoor_url, icon: "fa-solid fa-star" },
-      { name: "GitHub Repositories", key: "github_url", url: activeAccount.github_url, icon: "fa-brands fa-github" },
-      { name: "Corporate Press & Blog", key: "blog_url", url: activeAccount.blog_url, icon: "fa-solid fa-book" },
-      { name: "SEC EDGAR Search URL", key: "sec_edgar_url", url: activeAccount.sec_edgar_url, icon: "fa-solid fa-file-lines" },
-      { name: "SEC Filings RSS Feed", key: "sec_filings_rss", url: activeAccount.sec_filings_rss, icon: "fa-solid fa-rss" },
-      { name: "OpenAlex Academic Institution", key: "openalex_institution_url", url: activeAccount.openalex_institution_url, icon: "fa-solid fa-graduation-cap" },
-      { name: "Official Corporate Website", key: "website_url", url: activeAccount.website_url || (activeAccount.domain ? 'https://' + activeAccount.domain : ''), icon: "fa-solid fa-globe" },
-      { name: "LinkedIn Corporate Page", key: "linkedin_url", url: activeAccount.linkedin_url, icon: "fa-brands fa-linkedin" },
+      { name: "X / Twitter Live Activity", key: "twitter_live_url", url: activeAccount.twitter_live_url, icon: "bi-twitter-x" },
+      { name: "Google News Live RSS Feed", key: "rss_url", url: activeAccount.rss_url || activeAccount.news_query, icon: "bi-newspaper" },
+      { name: "Reddit Community Discussions", key: "reddit_rss_url", url: activeAccount.reddit_rss_url || activeAccount.reddit_query, icon: "bi-reddit" },
+      { name: "Google Patents Portfolio", key: "google_patents_url", url: activeAccount.google_patents_url, icon: "bi-patch-check-fill" },
+      { name: "YouTube Executive Media", key: "youtube_search_url", url: activeAccount.youtube_search_url, icon: "bi-youtube" },
+      { name: "Wikidata Knowledge Entity", key: "wikidata_entity_url", url: activeAccount.wikidata_entity_url, icon: "bi-diagram-2" },
+      { name: "Google Trends Analytics", key: "google_trends_url", url: activeAccount.google_trends_url, icon: "bi-graph-up-arrow" },
+      { name: "Glassdoor Workplace Reviews", key: "glassdoor_url", url: activeAccount.glassdoor_url, icon: "bi-star-fill" },
+      { name: "GitHub Repositories", key: "github_url", url: activeAccount.github_url, icon: "bi-github" },
+      { name: "Corporate Press & Blog", key: "blog_url", url: activeAccount.blog_url, icon: "bi-journal-text" },
+      { name: "SEC EDGAR Search URL", key: "sec_edgar_url", url: activeAccount.sec_edgar_url, icon: "bi-file-earmark-text" },
+      { name: "SEC Filings RSS Feed", key: "sec_filings_rss", url: activeAccount.sec_filings_rss, icon: "bi-rss" },
+      { name: "OpenAlex Academic Institution", key: "openalex_institution_url", url: activeAccount.openalex_institution_url, icon: "bi-mortarboard-fill" },
+      { name: "Official Corporate Website", key: "website_url", url: activeAccount.website_url || (activeAccount.domain ? 'https://' + activeAccount.domain : ''), icon: "bi-globe" },
+      { name: "LinkedIn Corporate Page", key: "linkedin_url", url: activeAccount.linkedin_url, icon: "bi-linkedin" },
     ];
 
     $("#allActiveFeedsSubtitle").text(`Multi-source automated intelligence feeds for ${activeAccount.name || activeAccount.legal_name}`);
@@ -7256,7 +9674,7 @@ $(function () {
               <div>
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
                   <div style="display:flex;align-items:center;gap:8px;font-weight:700;color:#0f172a;font-size:0.86rem;">
-                    <i class="${ch.icon}" style="color:#0284c7;font-size:1rem;"></i>
+                    <i class="bi ${ch.icon}" style="color:#0284c7;font-size:1rem;"></i>
                     <span>${esc(ch.name)}</span>
                   </div>
                   <span class="${isActive ? 'badge-solid-green' : 'badge-solid-gray'}" style="font-size:0.65rem;padding:2px 7px;">
@@ -7264,17 +9682,17 @@ $(function () {
                   </span>
                 </div>
                 <div style="font-size:0.75rem;color:#64748b;word-break:break-all;">
-                  ${isActive ? `<a href="${esc(norm)}" target="_blank" rel="noopener noreferrer" style="color:#0284c7;text-decoration:none;">${esc(ch.url.length > 55 ? ch.url.substring(0, 52) + '...' : ch.url)} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:0.65rem;"></i></a>` : '<span style="color:#94a3b8;font-style:italic;">No endpoint configured</span>'}
+                  ${isActive ? `<a href="${esc(norm)}" target="_blank" rel="noopener noreferrer" style="color:#0284c7;text-decoration:none;">${esc(ch.url.length > 55 ? ch.url.substring(0, 52) + '...' : ch.url)} <i class="bi bi-box-arrow-up-right" style="font-size:0.65rem;"></i></a>` : '<span style="color:#94a3b8;font-style:italic;">No endpoint configured</span>'}
                 </div>
               </div>
               <div style="display:flex;align-items:center;justify-content:flex-end;gap:6px;margin-top:4px;">
                 ${isActive ? `
                   <a href="${esc(norm)}" target="_blank" rel="noopener noreferrer" class="btn btn-xs btn-outline-primary" style="padding:3px 10px;font-size:0.72rem;border-radius:6px;text-decoration:none;font-weight:600;">
-                    <i class="fa-solid fa-arrow-up-right-from-square"></i> Launch
+                    <i class="bi bi-box-arrow-up-right"></i> Launch
                   </a>
                 ` : `
                   <button type="button" class="btn btn-xs btn-outline-secondary btn-configure-feed-channel" data-channel-key="${ch.key}" data-channel-name="${esc(ch.name)}" style="padding:3px 10px;font-size:0.72rem;border-radius:6px;">
-                    <i class="fa-solid fa-gear"></i> Configure
+                    <i class="bi bi-gear"></i> Configure
                   </button>
                 `}
               </div>
@@ -7312,12 +9730,2164 @@ $(function () {
       $extraCards.hide();
       $btn.attr("data-expanded", "false");
       $btn.find("span").text(`View all ${totalCount} Lines of Business (+${extraCount} more)`);
-      $btn.find("i").removeClass("fa-solid fa-chevron-up").addClass("fa-solid fa-chevron-down");
+      $btn.find("i").removeClass("bi-chevron-up").addClass("bi-chevron-down");
     } else {
       $extraCards.css("display", "flex");
       $btn.attr("data-expanded", "true");
       $btn.find("span").text(`Show less (top 10 Divisions)`);
-      $btn.find("i").removeClass("fa-solid fa-chevron-down").addClass("fa-solid fa-chevron-up");
+      $btn.find("i").removeClass("bi-chevron-down").addClass("bi-chevron-up");
+    }
+  });
+
+  // ─── Pipeline Telemetry & Credits Usage Modal ──────────────────────────────
+  let activeCreditUsageData = null;
+
+  function getCreditIcon(name, defaultIcon) {
+    const n = (name || "").toLowerCase();
+    if (n.includes("sec") || n.includes("regulatory") || n.includes("gleif") || n.includes("identity")) return "bi-shield-check";
+    if (n.includes("diffbot") || n.includes("graph") || n.includes("entity")) return "bi-diagram-3";
+    if (n.includes("finnhub") || n.includes("fmp") || n.includes("market") || n.includes("watchlist")) return "bi-graph-up-arrow";
+    if ((n.includes("serp") || n.includes("google")) && !n.includes("patent")) return "bi-search";
+    if (n.includes("linkedin") || n.includes("company") || n.includes("banking")) return "bi-building";
+    if (n.includes("tavily") || n.includes("competitor") || n.includes("ai")) return "bi-cpu";
+    if (n.includes("patent")) return "bi-lightbulb";
+    if (n.includes("profile") || n.includes("persona") || n.includes("leadership") || n.includes("people")) return "bi-people";
+    if (n.includes("gemini") || n.includes("llm") || n.includes("neural") || n.includes("biography")) return "bi-robot";
+    return defaultIcon || "bi-plug";
+  }
+
+  function renderCreditResourceRows(resources, theme) {
+    if (!resources || !resources.length) {
+      return `<div style="padding:10px;text-align:center;color:#94a3b8;font-size:0.75rem;">No resources recorded</div>`;
+    }
+    const colorClass = theme === "account" ? "purple" : theme === "lob" ? "green" : "violet";
+    
+    return resources.map(res => {
+      const icon = getCreditIcon(res.name, theme === "account" ? "bi-shield-check" : theme === "lob" ? "bi-building" : "bi-robot");
+      return `
+        <div class="credit-resource-row">
+          <div class="credit-icon-box icon-${colorClass}">
+            <i class="bi ${icon}"></i>
+          </div>
+          <div class="credit-resource-info">
+            <div class="credit-resource-name" title="${esc(res.name)}">${esc(res.name)}</div>
+            <div class="credit-resource-meta">
+              <span style="display:inline-flex;align-items:center;gap:4px;">
+                <i class="bi bi-key-fill" style="opacity:0.6;font-size:0.72rem;"></i>
+                <code style="font-size:0.7rem;color:#475569;background:#f1f5f9;padding:1px 5px;border-radius:4px;">${esc(res.api_key_masked)}</code>
+              </span>
+            </div>
+          </div>
+          <div class="credit-resource-progress-col">
+            <div style="display:flex;justify-content:space-between;font-size:0.68rem;color:#64748b;margin-bottom:2px;">
+              <span>${esc(res.calls_label)}</span>
+              <span style="font-weight:700;color:#334155;">${res.percentage_of_run}%</span>
+            </div>
+            <div class="credit-progress-track">
+              <div class="credit-progress-fill-${colorClass}" style="width:${Math.min(100, Math.max(2, res.percentage_of_run))}%;"></div>
+            </div>
+          </div>
+          <div class="credit-resource-num">
+            <span class="credit-val-big">${Number(res.credits).toLocaleString()}</span>
+            <span class="credit-val-unit">credits</span>
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  async function openCreditUsageModal(accountId, runId) {
+    const targetAccountId = accountId || (activeAccount ? activeAccount.id : 27);
+    const url = runId 
+      ? `/api/pipeline/runs/${runId}/credit-breakdown`
+      : `/api/accounts/${targetAccountId}/credit-breakdown`;
+
+    try {
+      const modalEl = document.getElementById("creditUsageModal");
+      if (!modalEl) {
+        console.error("creditUsageModal element not found in DOM");
+        return;
+      }
+      const bsModal = bootstrap.Modal.getOrCreateInstance(modalEl);
+      bsModal.show();
+
+      const resp = await fetch(url);
+      if (!resp.ok) {
+        throw new Error(`Server returned ${resp.status}`);
+      }
+      const data = await resp.json();
+      activeCreditUsageData = data;
+
+      // Header
+      if (data.title) $("#creditUsageModalTitle").text(data.title);
+      if (data.subtitle) $("#creditUsageModalSubtitle").text(data.subtitle);
+      if (data.status) {
+        const isCompleted = data.status.toLowerCase() === "completed" || data.status.toLowerCase() === "staged" || data.status.toLowerCase() === "success";
+        const dotColor = isCompleted ? "#059669" : "#94a3b8";
+        const badgeBg = isCompleted ? "#ecfdf5" : "#f1f5f9";
+        const badgeColor = isCompleted ? "#059669" : "#64748b";
+        $("#creditUsageStatusBadge").css({"background": badgeBg, "color": badgeColor, "border-color": isCompleted ? "#a7f3d0" : "#cbd5e1"}).html(`
+          <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${dotColor};"></span>
+          ${esc(data.status)}
+        `);
+      }
+
+      // KPIs
+      if (data.kpis) {
+        $("#kpiTotalCredits").text(data.kpis.total_credits_label || Number(data.kpis.total_credits || 0).toLocaleString());
+        $("#kpiTotalCreditsSub").text(data.kpis.vs_avg_run || "");
+        $("#kpiRunDuration").text(data.kpis.duration || "0s");
+        $("#kpiRunStages").text(data.kpis.stages_sources || "");
+        $("#kpiCostPerCredit").text(data.kpis.est_cost_per_credit || "$0.0021");
+        $("#kpiCostTotal").text(data.kpis.total_cost_this_run || "$0.00");
+      }
+
+      // Section A (Account)
+      if (data.sections && data.sections.account) {
+        const sec = data.sections.account;
+        $("#accountSectionSubtitle").text(sec.subtitle || "");
+        $("#accountSubtotalHeader").text(sec.subtotal_label || "");
+        $("#accountCombinedCredits").text(sec.combined_label || "");
+        $("#accountCombinedPct").text(sec.combined_subtext || "");
+        $("#accountResourcesList").html(renderCreditResourceRows(sec.resources, "account"));
+      }
+
+      // Section L (LOB)
+      if (data.sections && data.sections.lob) {
+        const sec = data.sections.lob;
+        $("#lobSectionSubtitle").text(sec.subtitle || "");
+        $("#lobSubtotalHeader").text(sec.subtotal_label || "");
+        $("#lobCombinedCredits").text(sec.combined_label || "");
+        $("#lobCombinedPct").text(sec.combined_subtext || "");
+        $("#lobResourcesList").html(renderCreditResourceRows(sec.resources, "lob"));
+      }
+
+      // Section P (Persona)
+      if (data.sections && data.sections.persona) {
+        const sec = data.sections.persona;
+        $("#personaSectionSubtitle").text(sec.subtitle || "");
+        $("#personaSubtotalHeader").text(sec.subtotal_label || "");
+        $("#personaCombinedCredits").text(sec.combined_label || "");
+        $("#personaCombinedPct").text(sec.combined_subtext || "");
+        $("#personaResourcesList").html(renderCreditResourceRows(sec.resources, "persona"));
+      }
+
+      // Grand Total Card
+      if (data.grand_total) {
+        const gt = data.grand_total;
+        $("#grandTotalCredits").text(gt.total_credits_label || `${Number(gt.total_credits).toLocaleString()} credits`);
+        $("#grandTotalCostNote").text(gt.cost_note || "");
+        
+        if (gt.shares && gt.shares.length) {
+          const segBars = gt.shares.map(s => 
+            `<div style="width:${s.pct}%;background:${s.color};" title="${esc(s.name)} (${s.pct}%)"></div>`
+          ).join("");
+          $("#creditSegmentedBar").html(segBars);
+
+          const legendItems = gt.shares.map(s => `
+            <span style="display:inline-flex;align-items:center;gap:5px;">
+              <span style="width:8px;height:8px;border-radius:2px;background:${s.color};"></span> ${esc(s.name)} &bull; ${Number(s.credits).toLocaleString()} cr (${s.pct}%)
+            </span>
+          `).join("");
+          $("#creditLegendRow").html(legendItems);
+        }
+      }
+
+    } catch (err) {
+      console.error("Failed to load credit breakdown:", err);
+    }
+  }
+
+  function exportCreditUsageCsv() {
+    if (!activeCreditUsageData) {
+      alert("No credit usage data available to export.");
+      return;
+    }
+    const d = activeCreditUsageData;
+    const rows = [
+      ["Sales AI - Pipeline Run Telemetry Credit Ledger"],
+      ["Run ID", d.run_id || "N/A"],
+      ["Company", d.company_name || "N/A"],
+      ["Started", d.subtitle || "N/A"],
+      ["Total Credits", d.kpis ? d.kpis.total_credits : 0],
+      ["Est Cost", d.kpis ? d.kpis.total_cost_this_run : "$0.00"],
+      [],
+      ["Tier", "Resource Name", "Masked API Key", "Calls / Ops", "Credits", "% of Run"]
+    ];
+
+    const tiers = [
+      { key: "account", label: "ACCOUNT" },
+      { key: "lob", label: "LOB" },
+      { key: "persona", label: "PERSONA" }
+    ];
+
+    tiers.forEach(t => {
+      const sec = d.sections ? d.sections[t.key] : null;
+      if (sec && sec.resources) {
+        sec.resources.forEach(r => {
+          rows.push([
+            t.label,
+            `"${(r.name || '').replace(/"/g, '""')}"`,
+            `"${(r.api_key_masked || '').replace(/"/g, '""')}"`,
+            `"${(r.calls_label || '').replace(/"/g, '""')}"`,
+            r.credits,
+            `${r.percentage_of_run}%`
+          ]);
+        });
+      }
+    });
+
+    const csvContent = "data:text/csv;charset=utf-8," + rows.map(e => e.join(",")).join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    const filename = `credit_usage_${(d.company_name || 'run').toLowerCase().replace(/[^a-z0-9]/g, '_')}_${d.run_id || 'ledger'}.csv`;
+    link.setAttribute("download", filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  // Click handlers
+  $(document).on("click", "#btnOpenCreditUsageModal, [data-action='view-credits']", function (e) {
+    e.preventDefault();
+    openCreditUsageModal();
+  });
+
+  $(document).on("click", "#btnExportCreditUsageCsv", function (e) {
+    e.preventDefault();
+    exportCreditUsageCsv();
+  });
+
+  // ══════════════════════════════════════════════════════════════════
+  // ENTERPRISE BATCH CONSOLE & SEQUENTIAL PIPELINE ENGINE
+  // ══════════════════════════════════════════════════════════════════
+
+  const batchConsoleState = {
+    entityType: "persona", // 'persona' or 'lob'
+    targetAccount: null,
+    selectedKeys: new Set(),
+    isRunning: false,
+    abortRequested: false,
+    filteredItems: [],
+  };
+
+  // Helper: check if a persona is truly deeply enriched (has Gemini AI dossier, extended profile, education, or past companies)
+  function isPersonaItemEnriched(p) {
+    if (!p) return false;
+    if (p.is_enriched === true) return true;
+
+    // 1. AI Sales Dossier fields (generated exclusively by Gemini AI multi-source synthesis)
+    if (typeof p.value_proposition === "string" && p.value_proposition.trim().length > 10) return true;
+    if (typeof p.communication_style === "string" && p.communication_style.trim().length > 10) return true;
+    if (typeof p.personalized_icebreaker === "string" && p.personalized_icebreaker.trim().length > 10) return true;
+
+    // 2. Extended Profile object (deep dossier extraction)
+    if (p.extended_profile && typeof p.extended_profile === "object" && Object.keys(p.extended_profile).length > 0) return true;
+
+    // 3. Education History (extracted by Apify / LinkedIn / Exa, must have non-empty array)
+    if (Array.isArray(p.education_history) && p.education_history.length > 0) return true;
+    if (typeof p.education_history === "string" && p.education_history.trim().length > 4 && p.education_history !== "[]") return true;
+
+    // 4. Past Companies / Career Timeline (extracted by Exa / LinkedIn, must have non-empty array)
+    if (Array.isArray(p.past_companies) && p.past_companies.length > 0) return true;
+    if (typeof p.past_companies === "string" && p.past_companies.trim().length > 4 && p.past_companies !== "[]" && p.past_companies !== "{}") return true;
+
+    // Anything else (Apollo single-job stubs, generic search links, etc.) is a pending stub
+    return false;
+  }
+
+  // Helper: check if an LOB is truly deeply enriched (has corporate tech, competitors, filings, or LEI)
+  function isLobItemEnriched(l) {
+    if (!l) return false;
+    if (l.is_enriched === true) return true;
+    
+    // Deeply enriched LOBs have technologies, competitors, financials, patents, LEI, or overview populated
+    if (Array.isArray(l.technologies) && l.technologies.length > 0) return true;
+    if (Array.isArray(l.competitors) && l.competitors.length > 0) return true;
+    if (Array.isArray(l.financial_snippets) && l.financial_snippets.length > 0) return true;
+    if (Array.isArray(l.patents) && l.patents.length > 0) return true;
+    if (l.financial_snippets && typeof l.financial_snippets === "object" && Object.keys(l.financial_snippets).length > 0) return true;
+    if (l.patents && typeof l.patents === "object" && Object.keys(l.patents).length > 0) return true;
+    if (l.lei_code || l.jurisdiction) return true;
+    if (typeof l.overview === "string" && l.overview.trim().length > 25) return true;
+
+    return false;
+  }
+
+  // Standardized Seniority Tier Key resolver for Personas
+  function getPersonaTierKey(item) {
+    if (!item) return "other";
+    const t = String(item.tier || "").toLowerCase().trim();
+    const sr = String(item.seniority_raw || "").toLowerCase().trim();
+    const title = String(item.title || "").toLowerCase().trim();
+
+    if (t === "c_suite" || t === "c-suite" || t.includes("executive") || sr === "c_suite" || sr.includes("csuite") || sr === "tier1_csuite_and_officers" || sr.includes("board")) {
+      return "c_suite";
+    }
+    if (t === "vp_level" || t === "vp" || t.includes("vice president") || sr === "vp_level" || sr === "tier2_global_and_division_heads" || sr.includes("vp")) {
+      return "vp";
+    }
+    if (t === "director_level" || t === "director" || sr.includes("director")) {
+      return "director";
+    }
+    if (t === "manager_level" || t === "manager" || sr.includes("manager")) {
+      return "manager";
+    }
+
+    if (/\b(ceo|cfo|coo|cto|cio|ciso|cro|cmo|cpo|chief|president|founder|chairman)\b/i.test(title)) return "c_suite";
+    if (/\b(managing director|vice president|\bvp\b|\bevp\b|\bsvp\b|\bavp\b)\b/i.test(title)) return "vp";
+    if (/\b(director|head of)\b/i.test(title)) return "director";
+    if (/\b(manager|lead|supervisor)\b/i.test(title)) return "manager";
+
+    return "other";
+  }
+
+  // Update small badge counters on the trigger strip (below Account Hero)
+  function updateBatchTriggerPills(account) {
+    const acctsList = (typeof MOCK_DATA !== "undefined" && Array.isArray(MOCK_DATA.accounts))
+      ? MOCK_DATA.accounts
+      : [];
+    $("#batchAccountStubCount").text(`${acctsList.length || 5} Total`);
+
+    if (!account) return;
+    const personas = account.personas || [];
+    const lobs = account.lobs || [];
+
+    let pPending = 0;
+    personas.forEach((p) => {
+      if (!isPersonaItemEnriched(p)) pPending++;
+    });
+
+    let lPending = 0;
+    lobs.forEach((l) => {
+      if (!isLobItemEnriched(l)) lPending++;
+    });
+
+    $("#batchPersonaStubCount").text(pPending > 0 ? `${pPending} Pending` : `${personas.length} Total`);
+    $("#batchLobStubCount").text(lPending > 0 ? `${lPending} Pending` : `${lobs.length} Total`);
+  }
+
+  // Open Batch Console Modal
+  function openBatchConsole(entityType, account) {
+    const acctsList = (typeof MOCK_DATA !== "undefined" && Array.isArray(MOCK_DATA.accounts) && MOCK_DATA.accounts.length)
+      ? MOCK_DATA.accounts
+      : [];
+    let targetAcct = account || activeAccount;
+    if (!targetAcct) {
+      if (acctsList.length > 0) {
+        targetAcct = acctsList[0];
+        activeAccount = targetAcct;
+      } else {
+        showToast("Please select an enterprise account first", "warning");
+        return;
+      }
+    }
+
+    batchConsoleState.entityType = entityType || "persona";
+    batchConsoleState.targetAccount = targetAcct;
+    batchConsoleState.selectedKeys.clear();
+    batchConsoleState.isRunning = false;
+    batchConsoleState.abortRequested = false;
+
+    // Populate Company Selector Dropdown
+    const $select = $("#batchCompanySelector");
+    $select.empty();
+    if (batchConsoleState.entityType === "account") {
+      $select.append(`<option value="all" selected>All Enterprise Accounts (${acctsList.length})</option>`);
+    }
+    const dropdownList = acctsList.length > 0 ? acctsList : [targetAcct];
+    dropdownList.forEach((a) => {
+      const isSelected = (batchConsoleState.entityType !== "account" && a.id === targetAcct.id) ? "selected" : "";
+      $select.append(`<option value="${a.id}" ${isSelected}>${esc(a.name || a.legal_name || "Account")}</option>`);
+    });
+
+    // Update Entity Switcher Tabs
+    $(".batch-entity-tab").removeClass("active");
+    $(`.batch-entity-tab[data-entity="${batchConsoleState.entityType}"]`).addClass("active");
+
+    // Configure Headers & Labels based on Entity Type
+    if (batchConsoleState.entityType === "account") {
+      $("#batchConsoleHeaderIcon").html('<i class="bi bi-building"></i>');
+      $("#batchConsoleTitle").text("Batch Account Intelligence Console");
+      $("#batchKpiTotalLabel").text("Total Accounts");
+      $("#batchKpiPendingLabel").text("Pending Accounts");
+      $("#batchTierFilter").addClass("d-none");
+      $("#batchColThName").text("ACCOUNT / INSTITUTION");
+      $("#batchColThCompany").text("DOMAIN & TICKER");
+      $("#batchColThTitle").text("SEC CIK & TYPE");
+      $("#batchColThTier").text("COVERAGE");
+    } else if (batchConsoleState.entityType === "lob") {
+      $("#batchConsoleHeaderIcon").html('<i class="bi bi-diagram-3-fill"></i>');
+      $("#batchConsoleTitle").text("Batch LOB Intelligence Console");
+      $("#batchKpiTotalLabel").text("Total LOBs");
+      $("#batchKpiPendingLabel").text("Pending Divisions");
+      $("#batchTierFilter").addClass("d-none");
+      $("#batchColThName").text("LINE OF BUSINESS");
+      $("#batchColThCompany").text("COMPANY");
+      $("#batchColThTitle").text("SEGMENT & OVERVIEW");
+      $("#batchColThTier").text("RELATIONSHIP");
+    } else {
+      $("#batchConsoleHeaderIcon").html('<i class="bi bi-people-fill"></i>');
+      $("#batchConsoleTitle").text("Batch People Enrichment Console");
+      $("#batchKpiTotalLabel").text("Total People");
+      $("#batchKpiPendingLabel").text("Pending Stubs");
+      $("#batchTierFilter").removeClass("d-none");
+      $("#batchColThName").text("NAME & EXECUTIVE");
+      $("#batchColThCompany").text("COMPANY");
+      $("#batchColThTitle").text("TITLE & DEPT");
+      $("#batchColThTier").text("TIER");
+    }
+
+    // Reset toolbar controls
+    $("#batchSearchInput").val("");
+    $("#batchStatusFilter").val("pending");
+    $("#batchTierFilter").val("all");
+    $("#batchLiveProgressWrap").addClass("d-none");
+    $("#batchStopBtn").addClass("d-none");
+    $("#batchRunEnrichmentBtn").prop("disabled", true);
+    $("#batchMasterCheckbox").prop("checked", false);
+
+    // Refresh KPIs and Table
+    refreshBatchConsole();
+
+    // Show modal and backdrop explicitly with display styles
+    $("#batchEnrichmentBackdrop").removeClass("d-none").css("display", "block");
+    $("#batchEnrichmentModal").removeClass("d-none").css("display", "flex");
+  }
+
+  // Switch Entity Type inside the modal without closing it!
+  function switchBatchEntity(newEntityType) {
+    if (batchConsoleState.isRunning) {
+      showToast("Please wait for current batch run to finish or click Stop", "warning");
+      return;
+    }
+    const acctsList = (typeof MOCK_DATA !== "undefined" && Array.isArray(MOCK_DATA.accounts))
+      ? MOCK_DATA.accounts
+      : [];
+    let targetAcct = batchConsoleState.targetAccount || activeAccount || (acctsList.length ? acctsList[0] : null);
+
+    batchConsoleState.entityType = newEntityType;
+    batchConsoleState.selectedKeys.clear();
+
+    // Re-populate / synchronize company dropdown based on mode
+    const $select = $("#batchCompanySelector");
+    $select.empty();
+    if (newEntityType === "account") {
+      $select.append(`<option value="all" selected>All Enterprise Accounts (${acctsList.length})</option>`);
+      acctsList.forEach((a) => {
+        $select.append(`<option value="${a.id}">${esc(a.name || a.legal_name || "Account")}</option>`);
+      });
+    } else {
+      acctsList.forEach((a) => {
+        const isSelected = targetAcct && a.id === targetAcct.id ? "selected" : "";
+        $select.append(`<option value="${a.id}" ${isSelected}>${esc(a.name || a.legal_name || "Account")}</option>`);
+      });
+    }
+
+    // Update Switcher Tab UI
+    $(".batch-entity-tab").removeClass("active");
+    $(`.batch-entity-tab[data-entity="${newEntityType}"]`).addClass("active");
+
+    // Configure Headers & Column Labels based on Entity Type
+    if (newEntityType === "account") {
+      $("#batchConsoleHeaderIcon").html('<i class="bi bi-building"></i>');
+      $("#batchConsoleTitle").text("Batch Account Intelligence Console");
+      $("#batchKpiTotalLabel").text("Total Accounts");
+      $("#batchKpiPendingLabel").text("Pending Accounts");
+      $("#batchTierFilter").addClass("d-none");
+      $("#batchColThName").text("ACCOUNT / INSTITUTION");
+      $("#batchColThCompany").text("DOMAIN & TICKER");
+      $("#batchColThTitle").text("SEC CIK & TYPE");
+      $("#batchColThTier").text("COVERAGE");
+    } else if (newEntityType === "lob") {
+      $("#batchConsoleHeaderIcon").html('<i class="bi bi-diagram-3-fill"></i>');
+      $("#batchConsoleTitle").text("Batch LOB Intelligence Console");
+      $("#batchKpiTotalLabel").text("Total LOBs");
+      $("#batchKpiPendingLabel").text("Pending Divisions");
+      $("#batchTierFilter").addClass("d-none");
+      $("#batchColThName").text("LINE OF BUSINESS");
+      $("#batchColThCompany").text("COMPANY");
+      $("#batchColThTitle").text("SEGMENT & OVERVIEW");
+      $("#batchColThTier").text("RELATIONSHIP");
+    } else {
+      $("#batchConsoleHeaderIcon").html('<i class="bi bi-people-fill"></i>');
+      $("#batchConsoleTitle").text("Batch People Enrichment Console");
+      $("#batchKpiTotalLabel").text("Total People");
+      $("#batchKpiPendingLabel").text("Pending Stubs");
+      $("#batchTierFilter").removeClass("d-none");
+      $("#batchColThName").text("NAME & EXECUTIVE");
+      $("#batchColThCompany").text("COMPANY");
+      $("#batchColThTitle").text("TITLE & DEPT");
+      $("#batchColThTier").text("TIER");
+    }
+
+    // Reset filters and table
+    $("#batchSearchInput").val("");
+    $("#batchStatusFilter").val("pending");
+    $("#batchTierFilter").val("all");
+    $("#batchLiveProgressWrap").addClass("d-none");
+    $("#batchStopBtn").addClass("d-none");
+    $("#batchRunEnrichmentBtn").prop("disabled", true);
+    $("#batchMasterCheckbox").prop("checked", false);
+
+    refreshBatchConsole();
+  }
+
+  // Close Batch Console Modal
+  function closeBatchConsole() {
+    if (batchConsoleState.isRunning) {
+      if (!confirm("A batch enrichment is currently running in sequential mode. Do you want to stop the queue and close?")) {
+        return;
+      }
+      batchConsoleState.abortRequested = true;
+    }
+    $("#batchEnrichmentBackdrop, #batchEnrichmentModal").addClass("d-none").css("display", "none");
+    $("#batchLiveProgressWrap").addClass("d-none");
+  }
+
+  // Account Enrichment Verification Check
+  function isAccountItemEnriched(acct) {
+    if (!acct) return false;
+    if (acct.is_enriched) return true;
+    if (acct.sec_cik && (acct.sec_edgar_url || acct.patents_granted || acct.it_spend)) return true;
+    const cols = calculateDbColumnsFilled(acct, "account");
+    return cols.filled >= 25;
+  }
+
+  // Refresh KPIs, filter records, and re-render table
+  function refreshBatchConsole() {
+    const acctsList = (typeof MOCK_DATA !== "undefined" && Array.isArray(MOCK_DATA.accounts))
+      ? MOCK_DATA.accounts
+      : [];
+    const acct = batchConsoleState.targetAccount || (acctsList.length ? acctsList[0] : null);
+    if (!acct && batchConsoleState.entityType !== "account") return;
+
+    const entityType = batchConsoleState.entityType;
+    let allItems = [];
+    if (entityType === "account") {
+      const selectedId = $("#batchCompanySelector").val();
+      if (selectedId && selectedId !== "all") {
+        const single = acctsList.find((a) => a.id === parseInt(selectedId, 10));
+        allItems = single ? [single] : acctsList;
+      } else {
+        allItems = acctsList;
+      }
+    } else if (entityType === "lob") {
+      allItems = acct?.lobs || [];
+    } else {
+      allItems = acct?.personas || [];
+    }
+
+    // Compute Telemetry KPIs (reflects active Seniority Tier filter when selected)
+    const tierFilter = $("#batchTierFilter").val() || "all";
+    let kpiPool = allItems;
+    if (entityType === "persona" && tierFilter && tierFilter !== "all") {
+      const normFilter = tierFilter.toLowerCase().replace(/[^a-z0-9]/g, "");
+      kpiPool = allItems.filter((i) => {
+        const k = getPersonaTierKey(i).toLowerCase().replace(/[^a-z0-9]/g, "");
+        return k === normFilter;
+      });
+    }
+
+    let total = kpiPool.length;
+    let enrichedCount = 0;
+    let pendingCount = 0;
+
+    kpiPool.forEach((item) => {
+      let enriched = false;
+      if (entityType === "account") enriched = isAccountItemEnriched(item);
+      else if (entityType === "lob") enriched = isLobItemEnriched(item);
+      else enriched = isPersonaItemEnriched(item);
+
+      if (enriched) enrichedCount++;
+      else pendingCount++;
+    });
+
+    $("#batchKpiTotal").text(total);
+    $("#batchKpiEnriched").text(enrichedCount);
+    $("#batchKpiPending").text(pendingCount);
+
+    // Sync Switcher Tab badges dynamically with active selection scope
+    const currentVal = $("#batchCompanySelector").val();
+    const isAllScope = (entityType === "account" && currentVal === "all");
+    if (isAllScope) {
+      const allLobsSum = acctsList.reduce((s, a) => s + (a.lobs?.length || 0), 0);
+      const allPersonasSum = acctsList.reduce((s, a) => s + (a.personas?.length || 0), 0);
+      $("#batchEntityAccountBadge").text(acctsList.length || 0);
+      $("#batchEntityLobBadge").text(allLobsSum);
+      $("#batchEntityPersonaBadge").text(allPersonasSum);
+    } else {
+      $("#batchEntityAccountBadge").text(1);
+      $("#batchEntityLobBadge").text(acct?.lobs?.length || 0);
+      $("#batchEntityPersonaBadge").text(acct?.personas?.length || 0);
+    }
+
+    // Apply Filter Criteria
+    const searchQuery = ($("#batchSearchInput").val() || "").trim().toLowerCase();
+    const statusFilter = $("#batchStatusFilter").val() || "all";
+
+    const filtered = allItems.filter((item) => {
+      let enriched = false;
+      if (entityType === "account") enriched = isAccountItemEnriched(item);
+      else if (entityType === "lob") enriched = isLobItemEnriched(item);
+      else enriched = isPersonaItemEnriched(item);
+
+      // Status filter
+      if (statusFilter === "pending" && enriched) return false;
+      if (statusFilter === "enriched" && !enriched) return false;
+
+      // Tier filter (personas only)
+      if (entityType === "persona" && tierFilter && tierFilter !== "all") {
+        const itemTierKey = getPersonaTierKey(item);
+        const normFilter = tierFilter.toLowerCase().replace(/[^a-z0-9]/g, "");
+        const normKey = itemTierKey.toLowerCase().replace(/[^a-z0-9]/g, "");
+        if (normKey !== normFilter) return false;
+      }
+
+      // Search query
+      if (searchQuery) {
+        const name = (item.name || item.display_name || item.full_name || item.legal_name || "").toLowerCase();
+        const title = (item.title || item.stock_symbol || "").toLowerCase();
+        const dept = (item.department || item.domain || item.primary_domain || "").toLowerCase();
+        const key = (item.key || "").toLowerCase();
+        if (!name.includes(searchQuery) && !title.includes(searchQuery) && !dept.includes(searchQuery) && !key.includes(searchQuery)) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+
+    batchConsoleState.filteredItems = filtered;
+    renderBatchTable(filtered);
+    updateSelectionBadges();
+  }
+
+  // ── Database Schema Dimensions (97 Account, 89 Persona & 29 LOB columns) ──
+  const ACCOUNT_97_COLUMNS = [
+    "id", "key", "display_name", "legal_name", "domain", "primary_domain", "website_url",
+    "crunchbase_url", "operating_status", "company_type", "founded_date", "founded_year",
+    "employee_count_range", "short_description", "full_description", "headquarters_location",
+    "city", "state", "country", "postal_code", "phone_number", "sanitized_phone",
+    "contact_email", "linkedin_url", "twitter_url", "twitter_handle", "facebook_url",
+    "estimated_revenue_range", "total_funding_amount", "total_funding_amount_usd",
+    "total_funding_currency", "last_funding_type", "last_funding_date", "num_funding_rounds",
+    "funding_status", "stock_symbol", "stock_exchange", "sec_cik", "sec_name",
+    "ipo_status", "ipo_date", "num_suborganizations", "num_acquisitions",
+    "global_traffic_rank", "monthly_visits", "bounce_rate", "visit_duration",
+    "page_views_per_visit", "heat_score", "trend_score_90d", "active_tech_count",
+    "it_spend", "patents_granted", "trademarks_registered", "total_apps", "total_downloads",
+    "num_founders", "num_contacts", "created_at", "updated_at", "extracted_at",
+    "schema_version", "lobs_count", "total_contacts_captured", "c_suite_count",
+    "vp_count", "director_count", "manager_count", "sec_edgar_url", "sec_filings_rss",
+    "sec_submissions_url", "twitter_live_url", "reddit_query", "reddit_rss_url",
+    "news_query", "rss_url", "google_patents_url", "google_trends_url", "youtube_search_url",
+    "openalex_institution_url", "wikidata_entity_url", "blog_url", "youtube_channel_id",
+    "industries", "industry_groups", "aliases", "founders", "headquarters_regions",
+    "keywords", "multi_source_intelligence", "organisational_hierarchy_tree", "raw_data",
+    "github_url", "glassdoor_url", "osint_feed_manifest", "is_manually_verified",
+    "manually_verified_at"
+  ];
+
+  const PERSONA_89_COLUMNS = [
+    "id", "account_id", "lob_id", "external_id", "key", "display_name", "full_name",
+    "first_name", "last_name", "title", "tier", "seniority_raw", "departments",
+    "email", "email_status", "phone", "linkedin_url", "crunchbase_permalink",
+    "city", "state", "country", "source", "hierarchy_level", "decision_authority",
+    "budget_authority", "raw_data", "osint_feed_manifest", "corporate_bio_url",
+    "crunchbase_url", "sec_cik", "sec_insider_trades_url", "fec_contributions_url",
+    "quiver_insider_url", "bloomberg_url", "wsj_article_url", "media_interview_url",
+    "annual_report_url", "zoominfo_url", "rss_url", "youtube_url", "podcast_url",
+    "openinsider_url", "secform4_url", "wayback_url", "theorg_url", "seeking_alpha_url",
+    "external_board_url", "twitter_handle", "twitter_live_url", "google_patents_url",
+    "google_scholar_url", "openalex_author_url", "orcid_search_url", "wikidata_person_url",
+    "reddit_rss_url", "google_trends_url", "youtube_interviews_url", "podcast_search_url",
+    "reddit_query", "news_query", "patents_query", "youtube_channel_id", "degree",
+    "institution", "prior_company", "communication_style", "engagement_rate",
+    "value_proposition", "personalized_icebreaker", "social_platform", "social_profile_url",
+    "social_presence_level", "skills", "target_kpis", "operational_pain_points",
+    "key_objections", "headline", "employment_history", "past_companies", "previous_titles",
+    "current_role_tenure_months", "is_new_in_role", "career_trajectory_score",
+    "education_history", "personal_email", "direct_mobile_phone", "is_manually_verified",
+    "manually_verified_at", "extended_profile"
+  ];
+
+  const LOB_29_COLUMNS = [
+    "id", "account_id", "key", "lob_name", "domain", "website_url", "crunchbase_url",
+    "relationship_type", "overview", "audited_segment_revenue", "operating_head",
+    "segment_headcount", "lei_code", "jurisdiction", "technologies", "competitors",
+    "logo_url", "financial_snippets", "wikipedia_url", "patents", "raw_data",
+    "osint_feed_manifest", "is_manually_verified", "manually_verified_at",
+    "google_news_rss_url", "reddit_rss_url", "google_patents_url", "google_trends_url",
+    "youtube_search_url"
+  ];
+
+  // Dynamic DB Columns Filled Calculation
+  function calculateDbColumnsFilled(item, entityType) {
+    const tot = entityType === "account" ? 97 : (entityType === "persona" ? 89 : 29);
+    if (!item) return { filled: 0, total: tot, pct: 0 };
+    const cols = entityType === "account" ? ACCOUNT_97_COLUMNS : (entityType === "persona" ? PERSONA_89_COLUMNS : LOB_29_COLUMNS);
+    let filled = 0;
+    cols.forEach((c) => {
+      const v = item[c];
+      if (v !== null && v !== undefined && v !== "" && v !== "N/A" && v !== "—") {
+        if (Array.isArray(v)) {
+          if (v.length > 0) filled++;
+        } else if (typeof v === "object") {
+          if (Object.keys(v).length > 0) filled++;
+        } else {
+          filled++;
+        }
+      }
+    });
+    const total = cols.length;
+    const pct = Math.min(100, Math.round((filled / total) * 100));
+    return { filled, total, pct };
+  }
+
+  // Dynamic Data Sources / Channels Detection
+  function detectItemSources(item, isPersona) {
+    const list = [];
+    if (!item) return list;
+
+    if (batchConsoleState.entityType === "account") {
+      if (item.sec_cik || item.sec_edgar_url) list.push({ label: "SEC EDGAR", cls: "source-sec" });
+      if (item.patents_granted || item.google_patents_url) list.push({ label: "USPTO Patents", cls: "source-patents" });
+      if (item.crunchbase_url) list.push({ label: "Crunchbase", cls: "source-crunchbase" });
+      if (item.linkedin_url) list.push({ label: "LinkedIn", cls: "source-linkedin" });
+      if (item.wikipedia_url || item.wikidata_entity_url) list.push({ label: "Wikipedia", cls: "source-gemini" });
+      if (item.news_query || item.rss_url) list.push({ label: "News / RSS", cls: "source-news" });
+      if (item.stock_symbol) list.push({ label: "Market / IPO", cls: "source-apollo" });
+      return list;
+    }
+
+    if (batchConsoleState.entityType === "lob") {
+      if (item.lei_code || item.jurisdiction) list.push({ label: "GLEIF", cls: "source-apollo" });
+      if (item.technologies && (Array.isArray(item.technologies) ? item.technologies.length > 0 : Object.keys(item.technologies).length > 0)) list.push({ label: "Tech Graph", cls: "source-gemini" });
+      if (item.competitors && (Array.isArray(item.competitors) ? item.competitors.length > 0 : Object.keys(item.competitors).length > 0)) list.push({ label: "Competitors", cls: "source-fullenrich" });
+      if (item.financial_snippets && (Array.isArray(item.financial_snippets) ? item.financial_snippets.length > 0 : Object.keys(item.financial_snippets).length > 0)) list.push({ label: "SEC Filings", cls: "source-sec" });
+      if (item.google_news_rss_url) list.push({ label: "Google News", cls: "source-news" });
+      if (item.reddit_rss_url) list.push({ label: "Reddit", cls: "source-reddit" });
+      if (item.google_patents_url || (Array.isArray(item.patents) && item.patents.length > 0)) list.push({ label: "USPTO Patents", cls: "source-patents" });
+      if (item.google_trends_url) list.push({ label: "Trends", cls: "source-exa" });
+      if (item.youtube_search_url) list.push({ label: "YouTube", cls: "source-youtube" });
+      if (item.wikipedia_url) list.push({ label: "Wikipedia", cls: "source-gemini" });
+      if (item.website_url || item.domain) list.push({ label: "Web Crawl", cls: "source-linkedin" });
+      return list;
+    }
+
+    if (item.linkedin_url && String(item.linkedin_url).includes("linkedin.com")) {
+      list.push({ label: "LinkedIn", cls: "source-linkedin" });
+    }
+    if (item.email || item.phone || item.apollo_id || (item.raw_data && item.raw_data.id)) {
+      list.push({ label: "Apollo", cls: "source-apollo" });
+    }
+    if (item.value_proposition || item.personalized_icebreaker || item.communication_style) {
+      list.push({ label: "Gemini AI", cls: "source-gemini" });
+    }
+    if (item.sec_cik || item.sec_insider_trades_url || item.secform4_url) {
+      list.push({ label: "SEC EDGAR", cls: "source-sec" });
+    }
+    if (item.news_query || item.rss_url || item.bloomberg_url || item.google_news_rss_url) {
+      list.push({ label: "News / PR", cls: "source-news" });
+    }
+    if (item.google_patents_url || item.patents_query || (item.patents && Object.keys(item.patents).length > 0)) {
+      list.push({ label: "Patents", cls: "source-patents" });
+    }
+    if (item.reddit_query || item.reddit_rss_url) {
+      list.push({ label: "Reddit", cls: "source-reddit" });
+    }
+    if (item.twitter_handle || item.twitter_live_url) {
+      list.push({ label: "Twitter / X", cls: "source-twitter" });
+    }
+    if (item.google_scholar_url || item.openalex_author_url || item.orcid_search_url) {
+      list.push({ label: "Scholar", cls: "source-scholar" });
+    }
+    if (item.is_enriched && list.length <= 1) {
+      list.push({ label: "Exa AI", cls: "source-exa" });
+      list.push({ label: "FullEnrich", cls: "source-fullenrich" });
+    }
+    return list;
+  }
+
+  // Real-Time Last Run Time Formatter
+  function formatRunTime(isoString) {
+    if (!isoString) return { relative: "Never run", exact: "Pending first run", isNever: true };
+    try {
+      const d = new Date(isoString);
+      if (isNaN(d.getTime())) return { relative: "Never run", exact: "Pending first run", isNever: true };
+      const now = new Date();
+      const diffSec = Math.floor((now - d) / 1000);
+      let rel = "";
+      if (diffSec < 60) rel = "Just now";
+      else if (diffSec < 3600) rel = `${Math.floor(diffSec / 60)}m ago`;
+      else if (diffSec < 86400) rel = `${Math.floor(diffSec / 3600)}h ago`;
+      else if (diffSec < 604800) rel = `${Math.floor(diffSec / 86400)}d ago`;
+      else rel = d.toLocaleDateString();
+
+      const exact = d.toLocaleString(undefined, {
+        month: "short", day: "numeric", year: "numeric",
+        hour: "2-digit", minute: "2-digit"
+      });
+      return { relative: rel, exact, isNever: false };
+    } catch (_) {
+      return { relative: "Never run", exact: "Pending first run", isNever: true };
+    }
+  }
+
+  // Render Table Rows (Screen 1 Directory)
+  function renderBatchTable(items) {
+    const $tbody = $("#batchTableBody");
+    $tbody.empty();
+
+    if (!items || items.length === 0) {
+      $("#batchTableEmpty").removeClass("d-none");
+      return;
+    }
+    $("#batchTableEmpty").addClass("d-none");
+
+    const isPersona = batchConsoleState.entityType === "persona";
+    const acct = batchConsoleState.targetAccount;
+    const company = acct?.legal_name || acct?.name || "BNY";
+
+    items.forEach((item, idx) => {
+      const key = item.key || item.id || `item_${idx}`;
+      const isSelected = batchConsoleState.selectedKeys.has(key);
+
+      // Handle Account row rendering
+      if (batchConsoleState.entityType === "account") {
+        const acctName = item.legal_name || item.display_name || item.name || "Enterprise Account";
+        const domain = item.primary_domain || item.domain || "—";
+        const ticker = item.stock_symbol ? `${item.stock_symbol} (${item.stock_exchange || 'NYSE'})` : "Private / OTC";
+        const cik = item.sec_cik ? `CIK: ${item.sec_cik}` : "No CIK";
+        const compType = item.company_type || "Public";
+        const lCount = item.lobs?.length || item.lobs_count || 0;
+        const pCount = item.personas?.length || item.total_contacts_captured || 0;
+        const coverage = `${lCount} LOBs • ${pCount} People`;
+        const enriched = isAccountItemEnriched(item);
+        const timeInfo = formatRunTime(item.updated_at || item.created_at);
+        const sources = detectItemSources(item, false);
+        const dbCols = calculateDbColumnsFilled(item, "account");
+
+        const chipsHtml = sources.length > 0
+          ? `<div class="batch-source-chips">${sources.map(s => `<span class="batch-source-chip ${s.cls}">${esc(s.label)}</span>`).join('')}</div>`
+          : `<span class="text-muted" style="font-size:0.68rem;">Pending Sources</span>`;
+
+        const fillBarColor = dbCols.pct >= 70 ? "#10b981" : (dbCols.pct >= 40 ? "#3b82f6" : "#f59e0b");
+        const dbColsHtml = `
+          <div class="batch-db-cols-meter" title="${dbCols.filled} out of ${dbCols.total} database columns populated (${dbCols.pct}%)">
+            <div class="batch-db-cols-text">
+              <span>${dbCols.filled}/${dbCols.total} cols</span>
+              <span style="color:${fillBarColor};">${dbCols.pct}%</span>
+            </div>
+            <div class="batch-db-cols-bar">
+              <div class="batch-db-cols-fill" style="width:${dbCols.pct}%;background:${fillBarColor};"></div>
+            </div>
+          </div>
+        `;
+
+        let statusBadge = "";
+        if (enriched) {
+          statusBadge = `<span class="batch-status-badge batch-status-enriched"><i class="bi bi-check-circle-fill"></i> Enriched (${dbCols.pct}%)</span>`;
+        } else {
+          statusBadge = `<span class="batch-status-badge batch-status-stub"><i class="bi bi-hourglass-split"></i> Pending Stub</span>`;
+        }
+
+        const rowHtml = `
+          <tr class="batch-table-row ${isSelected ? 'batch-row-selected' : ''}" data-key="${esc(key)}">
+            <td style="text-align: center;">
+              <input type="checkbox" class="batch-row-checkbox batch-custom-checkbox" data-key="${esc(key)}" ${isSelected ? 'checked' : ''}>
+            </td>
+            <td>
+              <div class="batch-name-cell">
+                <span class="batch-name-primary">${esc(acctName)}</span>
+                <span class="batch-name-sub">${esc(domain)}</span>
+              </div>
+            </td>
+            <td>
+              <div style="font-weight: 500; font-size: 0.76rem;">${esc(domain)}</div>
+              <div class="text-muted" style="font-size: 0.70rem;">${esc(ticker)}</div>
+            </td>
+            <td>
+              <div style="font-weight: 500;">${esc(cik)}</div>
+              <div class="text-muted" style="font-size: 0.70rem;">${esc(compType)}</div>
+            </td>
+            <td>
+              <span class="batch-tier-badge" style="background:rgba(16,185,129,0.1);color:#10b981;border:1px solid rgba(16,185,129,0.3);">${esc(coverage)}</span>
+            </td>
+            <td>
+              <div class="batch-time-cell">
+                <span class="batch-time-rel ${timeInfo.isNever ? 'text-muted' : ''}">${esc(timeInfo.relative)}</span>
+                <span class="batch-time-exact">${esc(timeInfo.exact)}</span>
+              </div>
+            </td>
+            <td>
+              ${chipsHtml}
+            </td>
+            <td>
+              ${dbColsHtml}
+            </td>
+            <td>
+              ${statusBadge}
+            </td>
+            <td style="text-align: right;">
+              ${enriched ? `
+                <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end;">
+                  <button type="button" class="batch-row-btn batch-single-run-btn batch-btn-reenrich" data-key="${esc(key)}" title="Additive Re-enrichment: updates corporate intelligence without losing data">
+                    <i class="bi bi-arrow-repeat"></i> Re-enrich
+                  </button>
+                  ${lCount === 0 ? `
+                  <button type="button" class="batch-row-btn batch-discover-lobs-btn"
+                    data-account-id="${item.id}"
+                    data-account-name="${esc(item.legal_name || item.display_name || item.name || '')}"
+                    data-account-domain="${esc(item.primary_domain || item.domain || '')}"
+                    data-account-cik="${esc(item.sec_cik || '')}"
+                    style="background:rgba(16,185,129,0.1);color:#10b981;border:1px solid rgba(16,185,129,0.3);white-space:nowrap;"
+                    title="Discover Operating Subsidiaries & Lines of Business via SEC Exhibit 21, GLEIF, and corporate intelligence sources">
+                    <i class="bi bi-diagram-3"></i> Discover LOBs
+                  </button>` : ''}
+                  ${pCount === 0 ? `
+                  <button type="button" class="batch-row-btn batch-discover-people-btn"
+                    data-account-id="${item.id}"
+                    data-account-name="${esc(item.legal_name || item.display_name || item.name || '')}"
+                    data-account-domain="${esc(item.primary_domain || item.domain || '')}"
+                    data-account-cik="${esc(item.sec_cik || '')}"
+                    style="background:rgba(139,92,246,0.1);color:#8b5cf6;border:1px solid rgba(139,92,246,0.3);white-space:nowrap;"
+                    title="Discover Executive Leadership & Contacts via Apollo, Corporate Web, and OSINT (4-tier hierarchy)">
+                    <i class="bi bi-people"></i> Discover People
+                  </button>` : ''}
+                </div>
+              ` : `
+                <button type="button" class="batch-row-btn batch-single-run-btn batch-btn-enrich" data-key="${esc(key)}" title="Run 11-source deep account intelligence enrichment">
+                  <i class="bi bi-lightning-charge-fill"></i> Enrich
+                </button>
+              `}
+            </td>
+          </tr>
+        `;
+        $tbody.append(rowHtml);
+        return;
+      }
+      const enriched = isPersona ? isPersonaItemEnriched(item) : isLobItemEnriched(item);
+
+      const name = item.name || item.display_name || item.full_name || "Unnamed";
+      const title = item.title || (isPersona ? "Executive" : "Operating Segment");
+      const dept = item.department || (isPersona ? "" : (item.description || ""));
+      let tierDisplay = "Division";
+      let isCSuite = false;
+      if (isPersona) {
+        const tierKey = getPersonaTierKey(item);
+        if (tierKey === "c_suite") { tierDisplay = "C-Suite"; isCSuite = true; }
+        else if (tierKey === "vp") { tierDisplay = "VP / MD"; }
+        else if (tierKey === "director") { tierDisplay = "Director"; }
+        else if (tierKey === "manager") { tierDisplay = "Manager"; }
+        else { tierDisplay = item.tier || "Professional"; }
+      } else {
+        tierDisplay = item.relationship_type || item.category || "Division";
+      }
+      // Dynamic metrics
+      const timeInfo = formatRunTime(item.last_run_at || item.updated_at || item.created_at);
+      const sources = detectItemSources(item, isPersona);
+      const dbCols = calculateDbColumnsFilled(item, isPersona ? "persona" : "lob");
+
+      const score = item.validation_score || item._score || dbCols.pct;
+
+      let statusBadge = "";
+      if (enriched) {
+        statusBadge = `<span class="batch-status-badge batch-status-enriched"><i class="bi bi-check-circle-fill"></i> Enriched (${score}%)</span>`;
+      } else {
+        statusBadge = `<span class="batch-status-badge batch-status-stub"><i class="bi bi-hourglass-split"></i> Pending Stub</span>`;
+      }
+
+      const chipsHtml = sources.length > 0
+        ? `<div class="batch-source-chips">${sources.map(s => `<span class="batch-source-chip ${s.cls}">${esc(s.label)}</span>`).join('')}</div>`
+        : `<span class="text-muted" style="font-size:0.68rem;">Pending Sources</span>`;
+
+      const fillBarColor = dbCols.pct >= 70 ? "#10b981" : (dbCols.pct >= 40 ? "#3b82f6" : "#f59e0b");
+      const dbColsHtml = `
+        <div class="batch-db-cols-meter" title="${dbCols.filled} out of ${dbCols.total} database columns populated (${dbCols.pct}%)">
+          <div class="batch-db-cols-text">
+            <span>${dbCols.filled}/${dbCols.total} cols</span>
+            <span style="color:${fillBarColor};">${dbCols.pct}%</span>
+          </div>
+          <div class="batch-db-cols-bar">
+            <div class="batch-db-cols-fill" style="width:${dbCols.pct}%;background:${fillBarColor};"></div>
+          </div>
+        </div>
+      `;
+
+      const rowHtml = `
+        <tr class="batch-table-row ${isSelected ? 'batch-row-selected' : ''}" data-key="${esc(key)}">
+          <td style="text-align: center;">
+            <input type="checkbox" class="batch-row-checkbox batch-custom-checkbox" data-key="${esc(key)}" ${isSelected ? 'checked' : ''}>
+          </td>
+          <td>
+            <div class="batch-name-cell">
+              <span class="batch-name-primary">${esc(name)}</span>
+              <span class="batch-name-sub">${esc(item.headline || item.prior_company || (item.domain || ""))}</span>
+            </div>
+          </td>
+          <td>
+            <div style="font-weight: 500; font-size: 0.76rem;">${esc(company)}</div>
+          </td>
+          <td>
+            <div style="font-weight: 500;">${esc(title)}</div>
+            ${dept ? `<div class="text-muted" style="font-size: 0.70rem;">${esc(dept)}</div>` : ""}
+          </td>
+          <td>
+            <span class="batch-tier-badge ${isCSuite ? 'batch-tier-csuite' : ''}">${esc(tierDisplay)}</span>
+          </td>
+          <td>
+            <div class="batch-time-cell">
+              <span class="batch-time-rel ${timeInfo.isNever ? 'text-muted' : ''}">${esc(timeInfo.relative)}</span>
+              <span class="batch-time-exact">${esc(timeInfo.exact)}</span>
+            </div>
+          </td>
+          <td>
+            ${chipsHtml}
+          </td>
+          <td>
+            ${dbColsHtml}
+          </td>
+          <td>
+            ${statusBadge}
+          </td>
+          <td style="text-align: right;">
+            ${enriched ? `
+              <button type="button" class="batch-row-btn batch-single-run-btn batch-btn-reenrich" data-key="${esc(key)}" title="Additive Re-enrichment: updates profile with new intelligence without duplicates or losing data">
+                <i class="bi bi-arrow-repeat"></i> Re-enrich
+              </button>
+            ` : `
+              <button type="button" class="batch-row-btn batch-single-run-btn batch-btn-enrich" data-key="${esc(key)}" title="Run multi-source deep enrichment">
+                <i class="bi bi-lightning-charge-fill"></i> Enrich
+              </button>
+            `}
+          </td>
+        </tr>
+      `;
+      $tbody.append(rowHtml);
+    });
+  }
+
+  // Update selection counters and action buttons
+  function updateSelectionBadges() {
+    const count = batchConsoleState.selectedKeys.size;
+    $("#batchSelectedBadge").text(`${count} selected`);
+
+    const acctsList = (typeof MOCK_DATA !== "undefined" && Array.isArray(MOCK_DATA.accounts))
+      ? MOCK_DATA.accounts
+      : [];
+    const acct = batchConsoleState.targetAccount || (acctsList.length ? acctsList[0] : null);
+    const entityType = batchConsoleState.entityType;
+    let allItems = [];
+    if (entityType === "account") {
+      allItems = acctsList;
+    } else if (entityType === "lob") {
+      allItems = acct?.lobs || [];
+    } else {
+      allItems = acct?.personas || [];
+    }
+
+    let enrichedSelected = 0;
+    let pendingSelected = 0;
+
+    batchConsoleState.selectedKeys.forEach((key) => {
+      const item = allItems.find((i) => (i.key || i.id) === key);
+      if (item) {
+        let enriched = false;
+        if (entityType === "account") enriched = isAccountItemEnriched(item);
+        else if (entityType === "lob") enriched = isLobItemEnriched(item);
+        else enriched = isPersonaItemEnriched(item);
+
+        if (enriched) enrichedSelected++;
+        else pendingSelected++;
+      }
+    });
+
+    const $runBtn = $("#batchRunEnrichmentBtn");
+    if (count === 0) {
+      $runBtn.html('<i class="bi bi-play-fill"></i> Run Enrichment (<span id="batchRunCountText">0</span>)');
+      $runBtn.removeClass("btn-batch-run-reenrich");
+    } else if (pendingSelected === 0 && enrichedSelected > 0) {
+      $runBtn.html(`<i class="bi bi-arrow-repeat"></i> Re-enrich Selected (<span id="batchRunCountText">${count}</span>)`);
+      $runBtn.addClass("btn-batch-run-reenrich");
+    } else if (enrichedSelected === 0 && pendingSelected > 0) {
+      $runBtn.html(`<i class="bi bi-lightning-charge-fill"></i> Enrich Selected (<span id="batchRunCountText">${count}</span>)`);
+      $runBtn.removeClass("btn-batch-run-reenrich");
+    } else {
+      $runBtn.html(`<i class="bi bi-play-fill"></i> Process Selected (<span id="batchRunCountText">${count}</span>) <small style="opacity:0.85;">[${pendingSelected} New, ${enrichedSelected} Re-enrich]</small>`);
+      $runBtn.removeClass("btn-batch-run-reenrich");
+    }
+
+    $runBtn.prop("disabled", count === 0 || batchConsoleState.isRunning);
+
+    // Update master checkbox state
+    const visibleKeys = batchConsoleState.filteredItems.map((i) => i.key || i.id);
+    const allChecked = visibleKeys.length > 0 && visibleKeys.every((k) => batchConsoleState.selectedKeys.has(k));
+    $("#batchMasterCheckbox").prop("checked", allChecked);
+  }
+
+  // Sequential Batch Execution Engine (Free-Tier Safe & Rate Protected)
+  async function runBatchEnrichment() {
+    if (batchConsoleState.selectedKeys.size === 0 || batchConsoleState.isRunning) return;
+
+    const acctsList = (typeof MOCK_DATA !== "undefined" && Array.isArray(MOCK_DATA.accounts))
+      ? MOCK_DATA.accounts
+      : [];
+    const acct = batchConsoleState.targetAccount || (acctsList.length ? acctsList[0] : null);
+    if (!acct && batchConsoleState.entityType !== "account") return;
+
+    const entityType = batchConsoleState.entityType;
+    const isAccount = entityType === "account";
+    const isPersona = entityType === "persona";
+    const isLob = entityType === "lob";
+
+    let allItems = [];
+    if (isAccount) {
+      allItems = acctsList;
+    } else if (isLob) {
+      allItems = acct?.lobs || [];
+    } else {
+      allItems = acct?.personas || [];
+    }
+
+    // Filter queue to selected items
+    const queue = allItems.filter((item) => {
+      const key = item.key || item.id;
+      return batchConsoleState.selectedKeys.has(key);
+    });
+
+    if (queue.length === 0) return;
+
+    // Set Running State
+    batchConsoleState.isRunning = true;
+    batchConsoleState.abortRequested = false;
+
+    // UI Updates for Running State
+    $("#batchRunEnrichmentBtn").prop("disabled", true);
+    $("#batchStopBtn").removeClass("d-none");
+    $("#batchLiveProgressWrap").removeClass("d-none");
+    $("#batchProgressBarFill").css("width", "0%");
+    $("#batchCompanySelector, #batchSearchInput, #batchStatusFilter, #batchTierFilter").prop("disabled", true);
+
+    let successCount = 0;
+    let failCount = 0;
+
+    for (let i = 0; i < queue.length; i++) {
+      if (batchConsoleState.abortRequested) {
+        showToast("Batch enrichment stopped by user", "warning");
+        break;
+      }
+
+      const item = queue[i];
+      const key = item.key || item.id;
+      const itemName = item.name || item.display_name || item.full_name || item.legal_name || "Target";
+      const itemTitle = item.title || (isAccount ? "Enterprise Account" : (isPersona ? "Executive" : "Operating Segment"));
+
+      // Highlight active row & scroll into view
+      $("#batchTableBody tr").removeClass("batch-row-active");
+      const $row = $(`#batchTableBody tr[data-key="${key}"]`);
+      if ($row.length) {
+        $row.addClass("batch-row-active");
+        $row.find(".batch-status-badge").replaceWith(
+          '<span class="batch-status-badge batch-status-running"><span class="spinner-border spinner-border-sm" style="width:0.75rem;height:0.75rem;"></span> Enriching...</span>'
+        );
+      }
+
+      // Update Live Progress Bar & Ticker
+      const progressPct = Math.round((i / queue.length) * 100);
+      $("#batchProgressBarFill").css("width", `${progressPct}%`);
+      $("#batchProgressMetrics").text(`${i} / ${queue.length} completed (${progressPct}%)`);
+      $("#batchLiveStatusText").html(
+        `Running <strong>${i + 1} of ${queue.length}</strong> &mdash; ${esc(itemName)} (${esc(itemTitle)})... <span class="text-muted">[SEC EDGAR + GLEIF + Patents + FullEnrich + Gemini]</span>`
+      );
+
+      try {
+        if (isAccount) {
+          // ── Account Step 1: Multi-source Fetch (SEC, Patents, Wiki, GLEIF, FEC)
+          const acctRes = await fetch(`${API_BASE}/api/account/fetch`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              company_name: item.legal_name || item.name || item.display_name,
+              target_url: item.primary_domain || item.domain || "bny.com",
+            }),
+          });
+          if (!acctRes.ok) throw new Error("Account fetch returned status " + acctRes.status);
+          const acctData = await acctRes.json();
+          const enrichedAccount = acctData.account || acctData;
+
+          if (item.id) enrichedAccount.id = item.id;
+          if (item.key) enrichedAccount.key = item.key;
+
+          // ── Account Step 2: Validate Completeness
+          let score = 90;
+          try {
+            const valRes = await fetch(`${API_BASE}/api/account/validate`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(enrichedAccount),
+            });
+            if (valRes.ok) {
+              const valData = await valRes.json();
+              score = valData.score || valData.completeness_score || score;
+            }
+          } catch (_) {}
+
+          // ── Account Step 3: Dump to DB
+          await fetch(`${API_BASE}/api/account/dump-db`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              account_id: item.id,
+              account_data: enrichedAccount,
+            }),
+          });
+
+          item.last_run_at = new Date().toISOString();
+          Object.assign(item, enrichedAccount);
+          item.is_enriched = true;
+          item.validation_score = score;
+          successCount++;
+
+          if ($row.length) {
+            $row.find(".batch-status-badge").replaceWith(
+              `<span class="batch-status-badge batch-status-enriched"><i class="bi bi-check-circle-fill"></i> Enriched (${score}%)</span>`
+            );
+            $row.find(".batch-single-run-btn").replaceWith(
+              `<button type="button" class="batch-row-btn batch-single-run-btn batch-btn-reenrich" data-key="${esc(key)}" title="Additive Re-enrichment"><i class="bi bi-arrow-repeat"></i> Re-enrich</button>`
+            );
+            const timeInfo = formatRunTime(item.last_run_at);
+            $row.find(".batch-time-cell").html(
+              `<span class="batch-time-rel">${esc(timeInfo.relative)}</span><span class="batch-time-exact">${esc(timeInfo.exact)}</span>`
+            );
+            const updatedSources = detectItemSources(item, false);
+            if (updatedSources.length > 0) {
+              $row.find(".batch-source-chips, td:nth-child(7) .text-muted").replaceWith(
+                `<div class="batch-source-chips">${updatedSources.map(s => `<span class="batch-source-chip ${s.cls}">${esc(s.label)}</span>`).join('')}</div>`
+              );
+            }
+            const updatedCols = calculateDbColumnsFilled(item, "account");
+            const fillCol = updatedCols.pct >= 70 ? "#10b981" : (updatedCols.pct >= 40 ? "#3b82f6" : "#f59e0b");
+            $row.find(".batch-db-cols-meter").html(
+              `<div class="batch-db-cols-text"><span>${updatedCols.filled}/${updatedCols.total} cols</span><span style="color:${fillCol};">${updatedCols.pct}%</span></div><div class="batch-db-cols-bar"><div class="batch-db-cols-fill" style="width:${updatedCols.pct}%;background:${fillCol};"></div></div>`
+            );
+          }
+        } else if (isPersona) {
+          // ── Persona Step 1: Multi-source Fetch (Exa, LinkedIn, Serper, Apollo, Dossier)
+          const pullRes = await fetch(`${API_BASE}/api/personas/fetch`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              id: item.id || null,
+              key: item.key || (itemName || key).toLowerCase().replace(/\s+/g, "_"),
+              display_name: itemName,
+              name: itemName,
+              title: item.title || null,
+              company_name: acct.legal_name || acct.name,
+              linkedin_url: item.linkedin_url || null,
+              account_id: acct.id,
+              enrich_ai_dossier: true,
+            }),
+          });
+          if (!pullRes.ok) throw new Error("Multi-source fetch returned status " + pullRes.status);
+          const pullData = await pullRes.json();
+          const enrichedPerson = pullData.person || pullData;
+
+          // Non-destructive identity lock: preserve existing database PK & keys to guarantee in-place update without duplicates
+          if (item.id) enrichedPerson.id = item.id;
+          if (item.account_id) enrichedPerson.account_id = item.account_id;
+          if (item.lob_id) enrichedPerson.lob_id = item.lob_id;
+          if (!enrichedPerson.linkedin_url && item.linkedin_url) enrichedPerson.linkedin_url = item.linkedin_url;
+
+          // ── Persona Step 2: Validate Completeness
+          let score = calculateDbColumnsFilled(enrichedPerson, "persona").pct;
+          try {
+            const valRes = await fetch(`${API_BASE}/api/personas/validate-single`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(enrichedPerson),
+            });
+            if (valRes.ok) {
+              const valData = await valRes.json();
+              if (valData.score != null) score = valData.score;
+            }
+          } catch (valErr) {
+            console.warn("Validation non-fatal:", valErr);
+          }
+
+          // ── Persona Step 3: Dump Single to Universal DB (upsert into existing row)
+          const dumpRes = await fetch(`${API_BASE}/api/personas/dump-single-db`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              account_id: acct.id,
+              person_data: enrichedPerson,
+            }),
+          });
+          if (!dumpRes.ok) throw new Error("Dump to database failed with status " + dumpRes.status);
+
+          // Update memory & row
+          item.last_run_at = new Date().toISOString();
+          Object.assign(item, enrichedPerson);
+          item.is_enriched = true;
+          item.validation_score = score;
+          successCount++;
+
+          if ($row.length) {
+            const updatedCols = calculateDbColumnsFilled(item, "persona");
+            const fillCol = updatedCols.pct >= 70 ? "#10b981" : (updatedCols.pct >= 40 ? "#3b82f6" : "#f59e0b");
+            $row.find(".batch-status-badge").replaceWith(
+              `<span class="batch-status-badge batch-status-enriched"><i class="bi bi-check-circle-fill"></i> Enriched (${updatedCols.pct}%)</span>`
+            );
+            $row.find(".batch-single-run-btn").replaceWith(
+              `<button type="button" class="batch-row-btn batch-single-run-btn batch-btn-reenrich" data-key="${esc(key)}" title="Additive Re-enrichment: updates profile with new intelligence without duplicates or losing data"><i class="bi bi-arrow-repeat"></i> Re-enrich</button>`
+            );
+            const timeInfo = formatRunTime(item.last_run_at);
+            $row.find(".batch-time-cell").html(
+              `<span class="batch-time-rel">${esc(timeInfo.relative)}</span><span class="batch-time-exact">${esc(timeInfo.exact)}</span>`
+            );
+            const updatedSources = detectItemSources(item, true);
+            if (updatedSources.length > 0) {
+              $row.find(".batch-source-chips, td:nth-child(7) .text-muted").replaceWith(
+                `<div class="batch-source-chips">${updatedSources.map(s => `<span class="batch-source-chip ${s.cls}">${esc(s.label)}</span>`).join('')}</div>`
+              );
+            }
+            $row.find(".batch-db-cols-meter").html(
+              `<div class="batch-db-cols-text"><span>${updatedCols.filled}/${updatedCols.total} cols</span><span style="color:${fillCol};">${updatedCols.pct}%</span></div><div class="batch-db-cols-bar"><div class="batch-db-cols-fill" style="width:${updatedCols.pct}%;background:${fillCol};"></div></div>`
+            );
+          }
+        } else {
+          // ── LOB Step 1: Multi-source Fetch
+          const lobRes = await fetch(`${API_BASE}/api/lobs/fetch`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              id: item.id || null,
+              account_id: acct.id,
+              company_name: acct.name,
+              lob_name: item.name || item.lob_name || key,
+              lob_domain: item.domain || item.primary_domain || null,
+            }),
+          });
+          if (!lobRes.ok) throw new Error("LOB fetch returned status " + lobRes.status);
+          const lobData = await lobRes.json();
+          const enrichedLob = lobData.lob || (lobData.lobs && lobData.lobs[0]) || item;
+
+          if (item.id) enrichedLob.id = item.id;
+          if (item.account_id) enrichedLob.account_id = item.account_id;
+
+          // ── LOB Step 2: Validate
+          try {
+            await fetch(`${API_BASE}/api/lobs/validate-single`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(enrichedLob),
+            });
+          } catch (_) {}
+
+          // ── LOB Step 3: Dump to DB
+          await fetch(`${API_BASE}/api/lobs/dump-single-db`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              account_id: acct.id,
+              lob_data: enrichedLob,
+            }),
+          });
+
+          item.last_run_at = new Date().toISOString();
+          Object.assign(item, enrichedLob);
+          item.is_enriched = true;
+          successCount++;
+
+          if ($row.length) {
+            const updatedCols = calculateDbColumnsFilled(item, "lob");
+            const fillCol = updatedCols.pct >= 70 ? "#10b981" : (updatedCols.pct >= 40 ? "#3b82f6" : "#f59e0b");
+            $row.find(".batch-status-badge").replaceWith(
+              `<span class="batch-status-badge batch-status-enriched"><i class="bi bi-check-circle-fill"></i> Enriched (${updatedCols.pct}%)</span>`
+            );
+            $row.find(".batch-single-run-btn").replaceWith(
+              `<button type="button" class="batch-row-btn batch-single-run-btn batch-btn-reenrich" data-key="${esc(key)}" title="Additive Re-enrichment: updates division intelligence without duplicates"><i class="bi bi-arrow-repeat"></i> Re-enrich</button>`
+            );
+            const timeInfo = formatRunTime(item.last_run_at);
+            $row.find(".batch-time-cell").html(
+              `<span class="batch-time-rel">${esc(timeInfo.relative)}</span><span class="batch-time-exact">${esc(timeInfo.exact)}</span>`
+            );
+            const updatedSources = detectItemSources(item, false);
+            if (updatedSources.length > 0) {
+              $row.find(".batch-source-chips, td:nth-child(7) .text-muted").replaceWith(
+                `<div class="batch-source-chips">${updatedSources.map(s => `<span class="batch-source-chip ${s.cls}">${esc(s.label)}</span>`).join('')}</div>`
+              );
+            }
+            $row.find(".batch-db-cols-meter").html(
+              `<div class="batch-db-cols-text"><span>${updatedCols.filled}/${updatedCols.total} cols</span><span style="color:${fillCol};">${updatedCols.pct}%</span></div><div class="batch-db-cols-bar"><div class="batch-db-cols-fill" style="width:${updatedCols.pct}%;background:${fillCol};"></div></div>`
+            );
+          }
+        }
+      } catch (err) {
+        console.error(`Batch enrichment failure for ${key}:`, err);
+        failCount++;
+        if ($row.length) {
+          $row.find(".batch-status-badge").replaceWith(
+            `<span class="batch-status-badge batch-status-error" title="${esc(err.message)}"><i class="bi bi-exclamation-triangle-fill"></i> Error</span>`
+          );
+        }
+      }
+
+      // Update live KPI cards
+      const curPending = parseInt($("#batchKpiPending").text(), 10) || 0;
+      const curEnriched = parseInt($("#batchKpiEnriched").text(), 10) || 0;
+      if (curPending > 0) $("#batchKpiPending").text(curPending - 1);
+      $("#batchKpiEnriched").text(curEnriched + 1);
+
+      // Free-tier rate protection throttle: 500ms between calls
+      await new Promise((r) => setTimeout(r, 500));
+    }
+
+    // ── Batch Run Completed ──
+    $("#batchTableBody tr").removeClass("batch-row-active");
+    $("#batchProgressBarFill").css("width", "100%");
+    $("#batchProgressMetrics").text(`${queue.length} / ${queue.length} completed (100%)`);
+    $("#batchLiveStatusText").html(
+      `<strong>✔ Batch Finished:</strong> <span class="text-success">${successCount} succeeded</span>` +
+        (failCount ? ` · <span class="text-danger">${failCount} failed</span>` : "") +
+        ` out of ${queue.length} records processed sequentially.`
+    );
+
+    // Reset Controls
+    batchConsoleState.isRunning = false;
+    $("#batchStopBtn").addClass("d-none");
+    $("#batchRunEnrichmentBtn").prop("disabled", false);
+    $("#batchCompanySelector, #batchSearchInput, #batchStatusFilter, #batchTierFilter").prop("disabled", false);
+
+    // Refresh Underlying Account Views
+    updateBatchTriggerPills(activeAccount);
+    if (isAccount) {
+      if (typeof renderAccountHero === "function") renderAccountHero(activeAccount);
+      if (typeof renderCompletenessCard === "function") renderCompletenessCard(activeAccount);
+      if (typeof renderAccountOverview === "function") renderAccountOverview(activeAccount);
+    } else if (isPersona) {
+      renderAllPersonasDirectory(activeAccount);
+    } else {
+      renderLobCardsList($("#lobCardsContainer"), activeAccount.lobs || []);
+    }
+
+    showToast(`Batch completed: ${successCount} enriched successfully!`, "success");
+  }
+
+  // ── Batch Console Event Listeners ──
+
+  // Open button in Sidebar (below Add New Account)
+  $(document).on("click", "#sidebarBatchConsoleBtn", function (e) {
+    e.preventDefault();
+    openBatchConsole(batchConsoleState.entityType || "account", activeAccount);
+  });
+
+  // Open buttons (Account, People, and LOBs)
+  $(document).on("click", "#openAccountBatchModalBtn", function (e) {
+    e.preventDefault();
+    openBatchConsole("account", activeAccount);
+  });
+
+  $(document).on("click", "#openPersonaBatchModalBtn", function (e) {
+    e.preventDefault();
+    openBatchConsole("persona", activeAccount);
+  });
+
+  $(document).on("click", "#openLobBatchModalBtn", function (e) {
+    e.preventDefault();
+    openBatchConsole("lob", activeAccount);
+  });
+
+  // Switch entity tab inside Batch Console (Accounts, LOBs, People) with zero modal closing
+  $(document).on("click", ".batch-entity-tab", function (e) {
+    e.preventDefault();
+    const entity = $(this).data("entity");
+    if (entity) switchBatchEntity(entity);
+  });
+
+  // Close buttons & backdrop
+  $(document).on("click", "#closeBatchConsoleBtn, #batchConsoleFooterCloseBtn", function (e) {
+    e.preventDefault();
+    closeBatchConsole();
+  });
+
+  $(document).on("click", "#batchEnrichmentBackdrop", function (e) {
+    if (e.target === this) closeBatchConsole();
+  });
+
+  $(document).on("keydown", function (e) {
+    if (e.key === "Escape") {
+      if (!$("#batchRunDetailsBackdrop").hasClass("d-none")) {
+        closeBatchRunDetailsModal();
+        return;
+      }
+      if (!$("#batchEnrichmentModal").hasClass("d-none")) {
+        closeBatchConsole();
+      }
+    }
+  });
+
+  // Target Company selector change
+  $(document).on("change", "#batchCompanySelector", function () {
+    const selectedVal = $(this).val();
+    const acctsList = (typeof MOCK_DATA !== "undefined" && Array.isArray(MOCK_DATA.accounts))
+      ? MOCK_DATA.accounts
+      : [];
+    if (selectedVal === "all") {
+      batchConsoleState.selectedKeys.clear();
+      refreshBatchConsole();
+      return;
+    }
+    const selectedId = parseInt(selectedVal, 10);
+    const found = acctsList.find((a) => a.id === selectedId);
+    if (found) {
+      batchConsoleState.targetAccount = found;
+      activeAccount = found;
+      batchConsoleState.selectedKeys.clear();
+      refreshBatchConsole();
+    }
+  });
+
+  // Filters & Search
+  let searchDebounceTimer = null;
+  $(document).on("input", "#batchSearchInput", function () {
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(() => {
+      refreshBatchConsole();
+    }, 200);
+  });
+
+  $(document).on("change", "#batchStatusFilter, #batchTierFilter", function () {
+    batchConsoleState.selectedKeys.clear();
+    refreshBatchConsole();
+  });
+
+  $(document).on("click", "#batchRefreshTableBtn", function (e) {
+    e.preventDefault();
+    refreshBatchConsole();
+  });
+
+  // Master Checkbox toggle
+  $(document).on("change", "#batchMasterCheckbox", function () {
+    const isChecked = $(this).is(":checked");
+    batchConsoleState.filteredItems.forEach((item) => {
+      const key = item.key || item.id;
+      if (isChecked) batchConsoleState.selectedKeys.add(key);
+      else batchConsoleState.selectedKeys.delete(key);
+    });
+    $(".batch-row-checkbox").prop("checked", isChecked);
+    $(".batch-table-row").toggleClass("batch-row-selected", isChecked);
+    updateSelectionBadges();
+  });
+
+  // Quick Select Pending Unenriched
+  $(document).on("click", "#batchSelectPendingBtn", function (e) {
+    e.preventDefault();
+    const isPersona = batchConsoleState.entityType === "persona";
+    batchConsoleState.selectedKeys.clear();
+    batchConsoleState.filteredItems.forEach((item) => {
+      const enriched = isPersona ? isPersonaItemEnriched(item) : isLobItemEnriched(item);
+      if (!enriched) {
+        batchConsoleState.selectedKeys.add(item.key || item.id);
+      }
+    });
+    refreshBatchConsole();
+  });
+
+  // Quick Select Already Enriched (for Re-enrichment)
+  $(document).on("click", "#batchSelectEnrichedBtn", function (e) {
+    e.preventDefault();
+    const isPersona = batchConsoleState.entityType === "persona";
+    batchConsoleState.selectedKeys.clear();
+    batchConsoleState.filteredItems.forEach((item) => {
+      const enriched = isPersona ? isPersonaItemEnriched(item) : isLobItemEnriched(item);
+      if (enriched) {
+        batchConsoleState.selectedKeys.add(item.key || item.id);
+      }
+    });
+    refreshBatchConsole();
+  });
+
+  // Quick Select First N Records (respects active filter: Pending, All, Tier, Search)
+  function selectFirstNRecords(n) {
+    const countVal = parseInt(n, 10);
+    if (isNaN(countVal) || countVal <= 0) {
+      $("#batchSelectCountInput").focus();
+      return;
+    }
+    const isPersona = batchConsoleState.entityType === "persona";
+    const statusFilter = $("#batchStatusFilter").val() || "pending";
+    batchConsoleState.selectedKeys.clear();
+
+    let candidates = batchConsoleState.filteredItems;
+    // If the user is on "All Records", prefer unenriched stubs first for enrichment
+    if (statusFilter === "all") {
+      const unenriched = candidates.filter((item) => {
+        const enriched = isPersona ? isPersonaItemEnriched(item) : isLobItemEnriched(item);
+        return !enriched;
+      });
+      candidates = unenriched.length > 0 ? unenriched : candidates;
+    }
+
+    const targetSlice = candidates.slice(0, countVal);
+    targetSlice.forEach((item) => {
+      batchConsoleState.selectedKeys.add(item.key || item.id);
+    });
+    refreshBatchConsole();
+  }
+
+  $(document).on("click", "#batchSelectCountBtn", function (e) {
+    e.preventDefault();
+    const val = $("#batchSelectCountInput").val();
+    selectFirstNRecords(val);
+  });
+
+  $(document).on("keydown", "#batchSelectCountInput", function (e) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const val = $(this).val();
+      selectFirstNRecords(val);
+    }
+  });
+
+  $(document).on("click", ".btn-batch-preset-n", function (e) {
+    e.preventDefault();
+    const val = $(this).data("n");
+    $("#batchSelectCountInput").val(val);
+    selectFirstNRecords(val);
+  });
+
+  // Individual Row Checkbox toggle
+  $(document).on("change", ".batch-row-checkbox", function () {
+    const key = $(this).data("key");
+    const isChecked = $(this).is(":checked");
+    if (isChecked) {
+      batchConsoleState.selectedKeys.add(key);
+      $(this).closest("tr").addClass("batch-row-selected");
+    } else {
+      batchConsoleState.selectedKeys.delete(key);
+      $(this).closest("tr").removeClass("batch-row-selected");
+    }
+    updateSelectionBadges();
+  });
+
+  // Clear Selection
+  $(document).on("click", "#batchClearSelectionBtn", function (e) {
+    e.preventDefault();
+    batchConsoleState.selectedKeys.clear();
+    $(".batch-row-checkbox, #batchMasterCheckbox").prop("checked", false);
+    $(".batch-table-row").removeClass("batch-row-selected");
+    updateSelectionBadges();
+  });
+
+  // Run Batch Enrichment button
+  $(document).on("click", "#batchRunEnrichmentBtn", function (e) {
+    e.preventDefault();
+    runBatchEnrichment();
+  });
+
+  // Stop Batch button
+  $(document).on("click", "#batchStopBtn", function (e) {
+    e.preventDefault();
+    batchConsoleState.abortRequested = true;
+    $(this).prop("disabled", true).text("Stopping...");
+  });
+
+  // Single row Enrich button inside table
+  $(document).on("click", ".batch-single-run-btn", function (e) {
+    e.preventDefault();
+    const key = $(this).data("key");
+    batchConsoleState.selectedKeys.clear();
+    batchConsoleState.selectedKeys.add(key);
+    updateSelectionBadges();
+    runBatchEnrichment();
+  });
+
+  // ── Discover LOBs button (Batch Console account row, post-enrichment) ──
+  $(document).on("click", ".batch-discover-lobs-btn", async function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const $btn = $(this);
+    const acctId = $btn.data("account-id");
+    const acctName = $btn.data("account-name");
+    const acctDomain = $btn.data("account-domain");
+
+    // Build a minimal account context so runBatchLobPipeline works correctly
+    const prevAccount = activeAccount;
+    if (!activeAccount || activeAccount.id != acctId) {
+      activeAccount = {
+        id: acctId,
+        name: acctName,
+        domain: acctDomain,
+        primary_domain: acctDomain,
+        sec_cik: $btn.data("account-cik") || null,
+        lobs: [],
+        personas: prevAccount && prevAccount.id == acctId ? (prevAccount.personas || []) : [],
+      };
+    }
+
+    $btn.prop("disabled", true)
+        .html('<i class="bi bi-hourglass-split"></i> Discovering LOBs...')
+        .css({"opacity":"0.7","pointer-events":"none"});
+
+    // Close Batch Console so the LOB progress bar in the main view is visible
+    closeBatchConsole();
+
+    // Trigger the existing LOB batch pull pipeline (0-LOBs path → discovery mode)
+    await runBatchLobPipeline("pull");
+
+    // Refresh so the row now shows LOB count and hides the Discover LOBs button
+    refreshBatchConsole();
+  });
+
+  // ── Discover People button (Batch Console account row, post-enrichment) ──
+  $(document).on("click", ".batch-discover-people-btn", async function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const $btn = $(this);
+    const acctId = $btn.data("account-id");
+    const acctName = $btn.data("account-name");
+    const acctDomain = $btn.data("account-domain");
+
+    const prevAccount = activeAccount;
+    if (!activeAccount || activeAccount.id != acctId) {
+      activeAccount = {
+        id: acctId,
+        name: acctName,
+        domain: acctDomain,
+        primary_domain: acctDomain,
+        sec_cik: $btn.data("account-cik") || null,
+        personas: [],
+        lobs: prevAccount && prevAccount.id == acctId ? (prevAccount.lobs || []) : [],
+      };
+    }
+
+    $btn.prop("disabled", true)
+        .html('<i class="bi bi-hourglass-split"></i> Discovering People...')
+        .css({"opacity":"0.7","pointer-events":"none"});
+
+    // Close Batch Console so the Persona discovery progress bar is visible
+    closeBatchConsole();
+
+    // Trigger the existing persona hierarchy discovery pipeline (0-personas path)
+    await runBatchPersonaPipeline("pull");
+
+    // Refresh so the row now shows People count and hides the Discover People button
+    refreshBatchConsole();
+  });
+
+
+
+  // ── Screen Navigation Tabs (Directory vs Recent Runs History) ──
+  $(document).on("click", "#batchTabDirectoryBtn", function (e) {
+    e.preventDefault();
+    $(".batch-screen-tab").removeClass("active");
+    $(this).addClass("active");
+    $("#batchScreenHistory").addClass("d-none");
+    $("#batchScreenDirectory").removeClass("d-none");
+  });
+
+  $(document).on("click", "#batchTabHistoryBtn", function (e) {
+    e.preventDefault();
+    $(".batch-screen-tab").removeClass("active");
+    $(this).addClass("active");
+    $("#batchScreenDirectory").addClass("d-none");
+    $("#batchScreenHistory").removeClass("d-none");
+    loadBatchRunHistory();
+  });
+
+  // ── Fullscreen Toggle ──
+  $(document).on("click", "#batchConsoleFullscreenBtn", function (e) {
+    e.preventDefault();
+    const $modal = $("#batchEnrichmentModal");
+    $modal.toggleClass("batch-fullscreen");
+    const isFull = $modal.hasClass("batch-fullscreen");
+    $(this).html(isFull ? '<i class="bi bi-fullscreen-exit"></i>' : '<i class="bi bi-arrows-fullscreen"></i>');
+    $(this).attr("title", isFull ? "Exit Fullscreen" : "Toggle Fullscreen");
+  });
+
+  // ── Screen 2: Telemetry Execution History Logic ──
+  const batchHistoryState = {
+    runs: [],
+    filteredRuns: [],
+  };
+
+  async function loadBatchRunHistory() {
+    const acct = batchConsoleState.targetAccount;
+    const compName = acct ? (acct.name || acct.legal_name || "") : "";
+    const $tbody = $("#batchHistoryTableBody");
+    $tbody.html('<tr><td colspan="8" style="text-align:center;padding:28px;"><div class="spinner-border spinner-border-sm text-primary"></div> Loading real-time execution runs from PostgreSQL...</td></tr>');
+    $("#batchHistoryEmpty").addClass("d-none");
+
+    try {
+      let url = `${API_BASE}/api/pipeline/runs?exclude_dumps=false&limit=150`;
+      if (compName) {
+        url += `&company_name=${encodeURIComponent(compName)}`;
+      }
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const data = await res.json();
+      batchHistoryState.runs = data.runs || [];
+      filterAndRenderBatchHistory();
+    } catch (err) {
+      console.error("Failed to load batch run history:", err);
+      $tbody.html(`<tr><td colspan="8" style="text-align:center;color:#ef4444;padding:24px;">Failed to load telemetry history: ${esc(err.message)}</td></tr>`);
+    }
+  }
+
+  function filterAndRenderBatchHistory() {
+    const runs = batchHistoryState.runs || [];
+    const search = ($("#batchHistorySearchInput").val() || "").trim().toLowerCase();
+    const lvlFilter = $("#batchHistoryLevelFilter").val() || "all";
+    const statusFilter = $("#batchHistoryStatusFilter").val() || "all";
+
+    const filtered = runs.filter((r) => {
+      const isFailed = (r.status === "failed" || r.status === "error" || (r.error_message && String(r.error_message).trim().length > 0));
+      const isOk = !isFailed && (r.status === "success" || r.status === "completed" || r.status === "staged" || r.status === "validated" || r.status === "ok");
+
+      if (lvlFilter !== "all") {
+        const lvl = (r.pipeline_level || "").toLowerCase();
+        if (lvl !== lvlFilter) return false;
+      }
+      if (statusFilter !== "all") {
+        if (statusFilter === "success" && !isOk) return false;
+        if (statusFilter === "failed" && !isFailed) return false;
+      }
+      if (search) {
+        const target = (r.entities_extracted?.full_name || r.entities_extracted?.lob_name || r.entities_extracted?.company || r.company_name || r.target_url || r.run_id || "").toLowerCase();
+        const action = (r.action || "").toLowerCase();
+        if (!target.includes(search) && !action.includes(search)) return false;
+      }
+      return true;
+    });
+
+    batchHistoryState.filteredRuns = filtered;
+
+    // Update History KPIs
+    const totalRuns = runs.length;
+    const failedRuns = runs.filter(r => r.status === "failed" || r.status === "error" || (r.error_message && String(r.error_message).trim().length > 0)).length;
+    const successRuns = totalRuns - failedRuns;
+    const successRate = totalRuns ? Math.round((successRuns / totalRuns) * 100) : 100;
+    const totalDur = runs.reduce((acc, r) => acc + (parseFloat(r.duration_seconds) || 0), 0);
+    const avgDur = totalRuns ? (totalDur / totalRuns).toFixed(1) : "0.0";
+
+    $("#historyKpiTotal").text(totalRuns);
+    $("#historyKpiSuccessRate").text(`${successRate}%`);
+    $("#historyKpiAvgDuration").text(`${avgDur}s`);
+
+    // Render Table
+    const $tbody = $("#batchHistoryTableBody");
+    $tbody.empty();
+
+    if (filtered.length === 0) {
+      $("#batchHistoryEmpty").removeClass("d-none");
+      return;
+    }
+    $("#batchHistoryEmpty").addClass("d-none");
+
+    filtered.forEach((r) => {
+      const timeInfo = formatRunTime(r.started_at || r.completed_at);
+      const isPersona = (r.pipeline_level === "persona" || (r.run_id && r.run_id.includes("_persona_")));
+      const isLob = (r.pipeline_level === "lob" || (r.run_id && r.run_id.includes("_lob_")));
+      const kindBadge = isPersona
+        ? '<span class="badge" style="background:rgba(99,102,241,0.12);color:#6366f1;font-weight:600;"><i class="bi bi-person-fill"></i> Person</span>'
+        : (isLob
+          ? '<span class="badge" style="background:rgba(14,165,233,0.12);color:#0284c7;font-weight:600;"><i class="bi bi-diagram-3-fill"></i> LOB</span>'
+          : '<span class="badge" style="background:rgba(16,185,129,0.12);color:#059669;font-weight:600;"><i class="bi bi-building"></i> Account</span>');
+
+      const targetName = r.entities_extracted?.full_name || r.entities_extracted?.lob_name || r.entities_extracted?.title || r.entities_extracted?.company || r.company_name || r.run_id;
+      const targetSub = r.target_url || r.action || (r.entities_extracted?.account_id ? `Account #${r.entities_extracted.account_id}` : "");
+
+      // Channels
+      const channels = [];
+      if (r.target_url && r.target_url.includes("linkedin.com")) channels.push("LinkedIn");
+      channels.push("Exa AI");
+      if (isPersona) {
+        channels.push("Gemini AI");
+        channels.push("Apollo");
+      } else {
+        channels.push("SEC EDGAR");
+        channels.push("GLEIF LEI");
+      }
+      const chipsHtml = channels.map(c => `<span class="batch-source-chip source-linkedin" style="font-size:0.65rem;">${esc(c)}</span>`).join(" ");
+
+      const score = r.quality_score != null ? Math.round(r.quality_score) : null;
+      const duration = (parseFloat(r.duration_seconds) || 0).toFixed(1) + "s";
+      const isFailed = (r.status === "failed" || r.status === "error" || (r.error_message && String(r.error_message).trim().length > 0));
+      const statusBadge = isFailed
+        ? '<span class="badge" style="background:rgba(239,68,68,0.12);color:#ef4444;font-weight:600;" title="' + esc(r.error_message || 'Execution error') + '"><i class="bi bi-exclamation-triangle-fill"></i> failed</span>'
+        : '<span class="badge" style="background:rgba(16,185,129,0.12);color:#10b981;font-weight:600;"><i class="bi bi-check-circle-fill"></i> ok</span>';
+
+      const rowHtml = `
+        <tr>
+          <td>
+            <div class="batch-time-cell">
+              <span class="batch-time-rel">${esc(timeInfo.relative)}</span>
+              <span class="batch-time-exact">${esc(timeInfo.exact)}</span>
+            </div>
+          </td>
+          <td>${kindBadge}</td>
+          <td>
+            <div style="font-weight:600;color:var(--text-primary);">${esc(targetName)}</div>
+            ${targetSub ? `<div class="text-muted" style="font-size:0.70rem;overflow:hidden;text-overflow:ellipsis;max-width:240px;">${esc(targetSub)}</div>` : ""}
+          </td>
+          <td><div class="batch-source-chips">${chipsHtml}</div></td>
+          <td>
+            ${score != null ? `<span style="font-weight:600;color:#10b981;">Score: ${score}%</span>` : `<span class="text-muted" style="font-size:0.75rem;">—</span>`}
+          </td>
+          <td><span class="text-muted" style="font-size:0.75rem;">${esc(duration)}</span></td>
+          <td>${statusBadge}</td>
+          <td style="text-align:right;">
+            <button type="button" class="btn btn-xs btn-outline-secondary batch-view-run-log-btn" data-run-id="${esc(r.run_id)}" style="font-size:0.70rem;padding:2px 8px;">
+              <i class="bi bi-file-earmark-code"></i> Details
+            </button>
+          </td>
+        </tr>
+      `;
+      $tbody.append(rowHtml);
+    });
+  }
+
+  // History Toolbar Filters
+  let historySearchDebounce = null;
+  $(document).on("input", "#batchHistorySearchInput", function () {
+    clearTimeout(historySearchDebounce);
+    historySearchDebounce = setTimeout(() => {
+      filterAndRenderBatchHistory();
+    }, 200);
+  });
+
+  $(document).on("change", "#batchHistoryLevelFilter, #batchHistoryStatusFilter", function () {
+    filterAndRenderBatchHistory();
+  });
+
+  $(document).on("click", "#batchHistoryRefreshBtn", function (e) {
+    e.preventDefault();
+    loadBatchRunHistory();
+  });
+
+  // ── Telemetry Run Audit Details Modal Handler ──
+  async function openBatchRunDetailsModal(runId) {
+    let run = (batchHistoryState.runs || []).find(r => r.run_id === runId);
+
+    // Fetch full, exact record from backend API if available
+    try {
+      const res = await fetch(`${API_BASE}/api/pipeline/runs/${encodeURIComponent(runId)}`);
+      if (res.ok) {
+        const full = await res.json();
+        if (full && full.run_id) run = full;
+      }
+    } catch (_) {}
+
+    if (!run) {
+      showToast("Run audit record not found", "error");
+      return;
+    }
+
+    const isPersona = (run.pipeline_level === "persona" || (run.run_id && run.run_id.includes("_persona_")));
+    const isLob = (run.pipeline_level === "lob" || (run.run_id && run.run_id.includes("_lob_")));
+    const isFailed = (run.status === "failed" || run.status === "error" || (run.error_message && String(run.error_message).trim().length > 0));
+    const timeInfo = formatRunTime(run.started_at || run.completed_at);
+
+    // Badges
+    const statusBadge = isFailed
+      ? '<span class="badge" style="background:rgba(239,68,68,0.12);color:#ef4444;font-weight:700;"><i class="bi bi-exclamation-triangle-fill"></i> Failed</span>'
+      : '<span class="badge" style="background:rgba(16,185,129,0.12);color:#10b981;font-weight:700;"><i class="bi bi-check-circle-fill"></i> Succeeded (OK)</span>';
+
+    const levelBadge = isPersona
+      ? '<span class="badge" style="background:rgba(99,102,241,0.12);color:#6366f1;font-weight:600;"><i class="bi bi-person-fill"></i> Persona</span>'
+      : (isLob
+        ? '<span class="badge" style="background:rgba(14,165,233,0.12);color:#0284c7;font-weight:600;"><i class="bi bi-diagram-3-fill"></i> LOB</span>'
+        : '<span class="badge" style="background:rgba(16,185,129,0.12);color:#059669;font-weight:600;"><i class="bi bi-building"></i> Account</span>');
+
+    const actionBadge = `<span class="badge bg-secondary-subtle text-secondary-emphasis" style="font-weight:600;text-transform:uppercase;">${esc(run.action || "run")}</span>`;
+
+    $("#batchRunDetailsStatusBadge").html(statusBadge);
+    $("#batchRunDetailsLevelBadge").html(levelBadge);
+    $("#batchRunDetailsActionBadge").html(actionBadge);
+
+    $("#batchRunDetailsRunId").text(run.run_id);
+    $("#batchRunDetailsTime").text(`${timeInfo.exact} (${timeInfo.relative})`);
+
+    // Error banner
+    if (isFailed && run.error_message) {
+      $("#batchRunDetailsErrorMessage").text(run.error_message);
+      $("#batchRunDetailsErrorBanner").removeClass("d-none");
+    } else {
+      $("#batchRunDetailsErrorBanner").addClass("d-none");
+    }
+
+    // Quick Metrics
+    $("#batchRunDetailsDuration").text(`${(parseFloat(run.duration_seconds) || 0).toFixed(2)}s`);
+    $("#batchRunDetailsQualityScore").text(run.quality_score != null ? `${Math.round(run.quality_score)}% (Grade ${run.quality_grade || 'B'})` : "Unscored");
+    $("#batchRunDetailsCredits").text(`${run.total_credits_used || 0} cr`);
+
+    const targetName = run.entities_extracted?.full_name || run.entities_extracted?.lob_name || run.entities_extracted?.title || run.entities_extracted?.company || run.company_name || "N/A";
+    const targetSub = run.target_url || (run.entities_extracted?.account_id ? `Account #${run.entities_extracted.account_id}` : run.company_name || "");
+    $("#batchRunDetailsTargetName").text(targetName).attr("title", targetName);
+    $("#batchRunDetailsTargetSub").text(targetSub).attr("title", targetSub);
+
+    // Tab 1: Entities Extracted
+    const entities = run.entities_extracted || {};
+    const entityKeys = Object.keys(entities);
+    $("#batchRunDetailsEntitiesCount").text(entityKeys.length);
+    if (entityKeys.length === 0) {
+      $("#batchRunDetailsEntitiesContainer").html('<div class="text-muted p-3" style="font-size:0.80rem;">No specific extracted entity attributes logged for this run.</div>');
+    } else {
+      let entHtml = "";
+      entityKeys.forEach(k => {
+        let val = entities[k];
+        if (typeof val === "object" && val !== null) {
+          val = JSON.stringify(val);
+        } else {
+          val = String(val ?? "—");
+        }
+        entHtml += `
+          <div class="batch-entity-card">
+            <div class="batch-entity-card-key">${esc(k.replace(/_/g, ' '))}</div>
+            <div class="batch-entity-card-val">${esc(val)}</div>
+          </div>
+        `;
+      });
+      $("#batchRunDetailsEntitiesContainer").html(entHtml);
+    }
+
+    // Tab 2: Credits Breakdown
+    const credBreakdown = run.credits_breakdown || {};
+    const sections = credBreakdown.sections || {};
+    let credHtml = "";
+    if (Object.keys(sections).length > 0) {
+      credHtml += `<div class="d-flex flex-column gap-2">`;
+      for (const [sKey, sec] of Object.entries(sections)) {
+        if (!sec.resources || sec.resources.length === 0) continue;
+        credHtml += `
+          <div style="border:1px solid var(--border-color);border-radius:8px;padding:12px;background:rgba(0,0,0,0.01);">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <strong style="font-size:0.82rem;">${esc(sec.title || sKey)}</strong>
+              <span class="badge bg-primary-subtle text-primary" style="font-size:0.75rem;">${esc(sec.subtotal_label || `${sec.subtotal_credits || 0} cr`)}</span>
+            </div>
+            <div class="d-flex flex-column gap-1">
+              ${(sec.resources || []).map(r => `
+                <div class="d-flex justify-content-between align-items-center" style="font-size:0.75rem;padding:4px 0;border-bottom:1px dashed var(--border-color);">
+                  <div>
+                    <span style="font-weight:600;">${esc(r.name || r.id)}</span>
+                    <span class="text-muted ms-1" style="font-size:0.70rem;">(${esc(r.calls_label || '1 call')})</span>
+                  </div>
+                  <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-secondary-subtle text-secondary" style="font-size:0.68rem;">${esc(r.status || 'OK')}</span>
+                    <strong style="color:var(--text-primary);">${r.credits || 0} cr</strong>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }
+      credHtml += `</div>`;
+    }
+    if (!credHtml) {
+      credHtml = `<div class="p-3 text-muted" style="font-size:0.80rem;">No detailed vendor credit breakdown recorded for this execution step. Total billable credits: <strong>${run.total_credits_used || 0} cr</strong>.</div>`;
+    }
+    $("#batchRunDetailsCreditsContainer").html(credHtml);
+
+    // Tab 3: Execution Chronology Logs
+    const logs = run.execution_logs || [];
+    $("#batchRunDetailsLogsCount").text(logs.length);
+    if (logs.length === 0) {
+      $("#batchRunDetailsLogsContainer").html('<div class="text-muted p-3" style="font-size:0.80rem;">No chronological events recorded in execution log.</div>');
+    } else {
+      let logsHtml = '<div class="d-flex flex-column gap-2">';
+      logs.forEach((logItem, idx) => {
+        const logTime = logItem.timestamp ? new Date(logItem.timestamp).toLocaleTimeString() : `#${idx + 1}`;
+        const logStatus = logItem.status || "completed";
+        const isLogErr = (logStatus === "failed" || logItem.error);
+        logsHtml += `
+          <div style="border:1px solid var(--border-color);border-radius:8px;padding:10px 14px;background:rgba(0,0,0,0.01);">
+            <div class="d-flex justify-content-between align-items-center">
+              <div class="d-flex align-items-center gap-2">
+                <span class="badge ${isLogErr ? 'bg-danger-subtle text-danger' : 'bg-success-subtle text-success'}" style="font-size:0.70rem;">
+                  <i class="bi ${isLogErr ? 'bi-x-circle' : 'bi-check-circle'}"></i> ${esc(logStatus)}
+                </span>
+                <strong style="font-size:0.80rem;">Action: ${esc(logItem.action || 'run')} (${esc(logItem.level || 'pipeline')})</strong>
+              </div>
+              <span class="text-muted" style="font-size:0.70rem;">${esc(logTime)} &bull; ${(parseFloat(logItem.duration_seconds) || 0).toFixed(2)}s</span>
+            </div>
+            ${logItem.error ? `<div class="text-danger mt-1" style="font-size:0.75rem;"><i class="bi bi-exclamation-triangle"></i> ${esc(logItem.error)}</div>` : ''}
+            ${logItem.particulars ? `<div class="text-muted mt-1" style="font-size:0.72rem;word-break:break-all;">${esc(JSON.stringify(logItem.particulars))}</div>` : ''}
+          </div>
+        `;
+      });
+      logsHtml += '</div>';
+      $("#batchRunDetailsLogsContainer").html(logsHtml);
+    }
+
+    // Tab 4: Raw JSON
+    const fullJson = JSON.stringify(run, null, 2);
+    $("#batchRunDetailsRawJson").text(fullJson);
+
+    // Reset tabs to Entities active
+    $(".batch-details-tab-btn").removeClass("active");
+    $(".batch-details-tab-btn[data-tab='entities']").addClass("active");
+    $(".batch-details-pane").addClass("d-none");
+    $("#batchTabEntities").removeClass("d-none");
+
+    // Open modal
+    $("#batchRunDetailsBackdrop").removeClass("d-none");
+  }
+
+  function closeBatchRunDetailsModal() {
+    $("#batchRunDetailsBackdrop").addClass("d-none");
+  }
+
+  // Details Modal Event Listeners
+  $(document).on("click", ".batch-view-run-log-btn", function (e) {
+    e.preventDefault();
+    const runId = $(this).data("run-id");
+    openBatchRunDetailsModal(runId);
+  });
+
+  $(document).on("click", ".batch-details-tab-btn", function (e) {
+    e.preventDefault();
+    const tabName = $(this).data("tab");
+    $(".batch-details-tab-btn").removeClass("active");
+    $(this).addClass("active");
+
+    $(".batch-details-pane").addClass("d-none");
+    if (tabName === "entities") $("#batchTabEntities").removeClass("d-none");
+    else if (tabName === "credits") $("#batchTabCredits").removeClass("d-none");
+    else if (tabName === "logs") $("#batchTabLogs").removeClass("d-none");
+    else if (tabName === "raw") $("#batchTabRaw").removeClass("d-none");
+  });
+
+  $(document).on("click", "#copyRunIdBtn", function (e) {
+    e.preventDefault();
+    const runId = $("#batchRunDetailsRunId").text();
+    if (runId) {
+      navigator.clipboard.writeText(runId);
+      showToast("Run ID copied to clipboard!", "success");
+    }
+  });
+
+  $(document).on("click", "#copyRunRawJsonBtn, #batchDetailsCopyAllBtn", function (e) {
+    e.preventDefault();
+    const jsonText = $("#batchRunDetailsRawJson").text();
+    if (jsonText) {
+      navigator.clipboard.writeText(jsonText);
+      showToast("Telemetry JSON audit copied to clipboard!", "success");
+    }
+  });
+
+  $(document).on("click", "#closeBatchRunDetailsBtn, #batchDetailsDismissBtn", function (e) {
+    e.preventDefault();
+    closeBatchRunDetailsModal();
+  });
+
+  $(document).on("click", "#batchRunDetailsBackdrop", function (e) {
+    if (e.target === this) {
+      closeBatchRunDetailsModal();
     }
   });
 });
