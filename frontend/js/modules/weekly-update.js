@@ -13,7 +13,7 @@ export function renderWeeklyEmailCard(email, opts) {
   opts = opts || {};
   if (!email) {
     return `<div class="empty-block">
-      <div class="empty-block-icon"><i class="bi bi-envelope"></i></div>
+      <div class="empty-block-icon"><i class="fa-solid fa-envelope"></i></div>
       <div class="empty-block-text">No weekly sales update email generated yet for this account.</div>
     </div>`;
   }
@@ -27,7 +27,7 @@ export function renderWeeklyEmailCard(email, opts) {
         ${priorityPill(email.priority)}
       </div>
       <div class="weekly-email-body">${(email.body || '').split('\n').filter(Boolean).map(p => `<p>${esc(p)}</p>`).join('')}</div>
-      ${email.confidence ? `<div class="weekly-email-meta"><i class="bi bi-shield-check"></i> Confidence: ${esc(email.confidence)}</div>` : ''}
+      ${email.confidence ? `<div class="weekly-email-meta"><i class="fa-solid fa-shield-halved"></i> Confidence: ${esc(email.confidence)}</div>` : ''}
       ${(email.data_gaps || []).length ? `<details class="weekly-email-details"><summary>Data gaps (${email.data_gaps.length})</summary>${email.data_gaps.map(g => `<p>${esc(g)}</p>`).join('')}</details>` : ''}
       ${(email.do_not_say || []).length ? `<details class="weekly-email-details"><summary>Do not say (${email.do_not_say.length})</summary>${email.do_not_say.map(g => `<p>${esc(g)}</p>`).join('')}</details>` : ''}
     </div>`;
@@ -36,7 +36,7 @@ export function renderWeeklyEmailCard(email, opts) {
 export function renderWeeklyUpdateHistoryList(pastOnly) {
   if (!pastOnly.length) {
     return `<div class="empty-block">
-      <div class="empty-block-icon"><i class="bi bi-archive"></i></div>
+      <div class="empty-block-icon"><i class="fa-solid fa-box-archive"></i></div>
       <div class="empty-block-text">No past weekly updates archived yet — check back after next week's pipeline run.</div>
     </div>`;
   }
@@ -59,8 +59,8 @@ export function renderWeeklyUpdateTab(account) {
   return `
     <div class="panel">
       <div class="panel-title">
-        <span><i class="bi bi-envelope-paper-fill"></i> Sales Weekly Update Mail</span>
-        <span class="context-badge ai"><i class="bi bi-stars"></i> LLM Generated</span>
+        <span><i class="fa-solid fa-envelope-open-text"></i> Sales Weekly Update Mail</span>
+        <span class="context-badge ai"><i class="fa-solid fa-star"></i> LLM Generated</span>
       </div>
       <p class="section-desc">Auto-generated weekly sales briefing email for this account, regenerated on every pipeline run.</p>
       <div id="weeklyUpdateCurrentBody">${renderWeeklyEmailCard(current, { current: true })}</div>
@@ -68,7 +68,7 @@ export function renderWeeklyUpdateTab(account) {
 
     <div class="panel">
       <div class="panel-title">
-        <span><i class="bi bi-clock-history"></i> Past Weekly Updates</span>
+        <span><i class="fa-solid fa-clock-rotate-left"></i> Past Weekly Updates</span>
         <span class="context-badge live">${pastOnly.length} archived</span>
       </div>
       <p class="section-desc">Previously generated weekly update emails, preserved here even after a newer version replaces the live one above.</p>

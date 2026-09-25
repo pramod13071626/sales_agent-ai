@@ -8,6 +8,7 @@ import { loadRealAccounts, loadMatrixAccounts } from './real-accounts.js';
 import { openDossier } from './drawer.js';
 import { esc, formatMoney } from './utils.js';
 import { renderSkeleton } from '../skeleton.js';
+import { ccState } from './state.js';
 
 async function loadEnrichedAccounts() {
   const [raw, matrix] = await Promise.all([loadRealAccounts(), loadMatrixAccounts()]);
@@ -36,7 +37,23 @@ async function renderWidget(listId, emptyMessage, computeEntries, rowHtml) {
     list.innerHTML = '<li class="cc-drawer-empty">Could not load account data.</li>';
     return;
   }
-  const entries = computeEntries(accounts);
+
+  let filteredAccounts = accounts;
+  const activeAcctId = ccState.activeAccountId;
+  const activeAcctName = ccState.selectedAccountName;
+  if (activeAcctId || activeAcctName) {
+    filteredAccounts = accounts.filter(a => {
+      if (activeAcctId && (a.id === activeAcctId || String(a.id) === String(activeAcctId))) return true;
+      if (activeAcctName && (a.name || a.display_name)) {
+        const n = (a.name || a.display_name).toLowerCase();
+        const sel = activeAcctName.toLowerCase();
+        if (n.includes(sel) || sel.includes(n)) return true;
+      }
+      return false;
+    });
+  }
+
+  const entries = computeEntries(filteredAccounts);
   if (!entries.length) {
     list.innerHTML = `<li class="cc-drawer-empty">${emptyMessage}</li>`;
     return;
@@ -93,64 +110,4 @@ function coverageRowHtml({ account: a, total }) {
 }
 export function renderCoverageGaps() {
   return renderWidget('ccCoverageList', 'Every account has at least one C-suite contact mapped.', coverageEntries, coverageRowHtml);
-}
-
-// ── Competitor mentions ─────────────────────────────────────────────────
-function extractCompetitorName(c) {
-  if (!c) return '';
-  if (typeof c === 'string') return c.trim();
-  if (typeof c === 'object') return (c.name || c.display_name || c.competitor || '').trim();
-  return String(c).trim();
-}
-
-function competitorsFor(a) {
-  const set = new Set();
-  (a.lobs || []).forEach(l => {
-    (l.competitors || []).forEach(c => {
-      const name = extractCompetitorName(c);
-      if (name) set.add(name);
-    });
-  });
-  return [...set];
-}
-function competitorEntries(accounts) {
-  return accounts
-    .map(a => ({ account: a, competitors: competitorsFor(a) }))
-    .filter(e => e.competitors.length > 0)
-    .sort((a, b) => b.competitors.length - a.competitors.length);
-}
-function competitorRowHtml({ account: a, competitors }) {
-  return `
-    <li class="cc-feed-row cc-clickable-row" data-account-id="${a.id}">
-      <div class="cc-feed-body">
-        <div class="cc-feed-title-row"><span class="cc-feed-title">${esc(a.name || a.display_name)}</span></div>
-        <div class="cc-feed-summary">Competitors tracked: ${esc(competitors.slice(0, 3).join(', '))}${competitors.length > 3 ? ` +${competitors.length - 3} more` : ''}</div>
-      </div>
-      <div class="cc-feed-count">${competitors.length}</div>
-    </li>`;
-}
-export function renderCompetitorMentions() {
-  return renderWidget('ccCompetitorList', 'No competitors tracked yet for your accounts.', competitorEntries, competitorRowHtml);
-}
-
-// ── Tech & IP signals ────────────────────────────────────────────────────
-function techEntries(accounts) {
-  return accounts
-    .filter(a => (a.active_tech_count || 0) > 0 || (a.patents_granted || 0) > 0)
-    .sort((a, b) => (b.active_tech_count || 0) - (a.active_tech_count || 0));
-}
-function techRowHtml(a) {
-  const parts = [];
-  if (a.active_tech_count) parts.push(`${a.active_tech_count} active technologies`);
-  if (a.patents_granted) parts.push(`${a.patents_granted} patent${a.patents_granted !== 1 ? 's' : ''}`);
-  return `
-    <li class="cc-feed-row cc-clickable-row" data-account-id="${a.id}">
-      <div class="cc-feed-body">
-        <div class="cc-feed-title-row"><span class="cc-feed-title">${esc(a.name)}</span></div>
-        <div class="cc-feed-summary">${esc(parts.join(' · '))}${a.it_spend ? ` · IT spend: ${esc(a.it_spend)}` : ''}</div>
-      </div>
-    </li>`;
-}
-export function renderTechSignals() {
-  return renderWidget('ccTechList', 'No tech footprint or patent data on file for your accounts.', techEntries, techRowHtml);
 }

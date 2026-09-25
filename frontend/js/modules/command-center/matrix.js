@@ -4,6 +4,17 @@ import { openDossier } from './drawer.js';
 import { loadMatrixAccounts } from './real-accounts.js';
 import { renderSkeleton } from '../skeleton.js';
 
+// Chart.js's own default font ('Helvetica Neue'/Arial) doesn't follow this
+// app's CSS at all — canvas text isn't affected by page font-family — so
+// without this the priority matrix would keep rendering in a different
+// typeface than everything else after the Roboto switch. Set once, module-
+// load time, guarded the same way renderMatrix() itself guards Chart's
+// presence (the CDN <script> may not be loaded on every page that imports
+// this module transitively).
+if (typeof Chart !== 'undefined') {
+  Chart.defaults.font.family = "Roboto, system-ui, -apple-system, sans-serif";
+}
+
 const RADIUS_MIN = 12, RADIUS_MAX = 38;
 
 function radiusFor(dealPotential, dealMin, dealMax) {

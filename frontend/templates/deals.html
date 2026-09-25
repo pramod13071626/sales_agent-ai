@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Deals Pipeline | Sales Intelligence</title>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="css/tokens.css?v=3.0">
+  <link rel="stylesheet" href="css/base.css?v=3.0">
+  <link rel="stylesheet" href="css/shell.css?v=3.0">
+  <link rel="stylesheet" href="css/deals.css?v=1.1">
+</head>
+<body>
+
+<div class="dash-shell">
+
+{% include "partials/topbar.html" %}
+
+  <div class="dash-body dl-body">
+    <main class="dl-main" aria-label="Deals pipeline">
+      <header class="dl-header">
+        <div>
+          <a href="/" class="dl-back"><i class="fa-solid fa-arrow-left"></i> Accounts</a>
+          <h1 class="dl-title"><i class="fa-solid fa-diagram-next"></i> Deals pipeline</h1>
+          <p class="dl-sub" id="dlSummary">Loading…</p>
+        </div>
+        <div class="dl-tools">
+          <div class="dl-search"><i class="fa-solid fa-magnifying-glass"></i><input id="dlSearch" type="search" placeholder="Search deals or accounts" aria-label="Search deals"></div>
+          <select id="dlAccount" class="dl-select" aria-label="Filter by account"><option value="">All accounts</option></select>
+          <label class="dl-toggle"><input type="checkbox" id="dlMine"> My deals</label>
+          <button type="button" class="dl-btn dl-btn-primary" id="dlNew"><i class="fa-solid fa-plus"></i> New deal</button>
+        </div>
+      </header>
+
+      <div class="dl-board" id="dlBoard" aria-label="Pipeline stages"></div>
+
+      <section class="dl-closed" id="dlClosed" aria-label="Closed deals"></section>
+    </main>
+  </div>
+</div>
+
+<!-- Deal room (drawer) -->
+<div class="dl-overlay" id="dlOverlay" hidden></div>
+<aside class="dl-room" id="dlRoom" role="dialog" aria-modal="true" aria-labelledby="dlRoomTitle" hidden></aside>
+
+<!-- New deal dialog -->
+<div class="dl-modal-wrap" id="dlModal" hidden>
+  <form class="dl-modal" id="dlNewForm" role="dialog" aria-modal="true" aria-labelledby="dlNewTitle" autocomplete="off">
+    <header><h2 id="dlNewTitle">New deal</h2><button type="button" class="dl-icon" data-close-modal aria-label="Close"><i class="fa-solid fa-xmark"></i></button></header>
+    <label>Account<select id="dlNewAccount" required></select></label>
+    <label>Deal name<input id="dlNewName" required maxlength="200" placeholder="e.g. BNY — Applied AI governance pilot"></label>
+    <div class="dl-row">
+      <label>Value<input id="dlNewValue" type="number" min="0" step="1000" placeholder="250000"></label>
+      <label>Currency<select id="dlNewCurrency"><option>USD</option><option>EUR</option><option>GBP</option><option>INR</option></select></label>
+      <label>Expected close<input id="dlNewClose" type="date"></label>
+    </div>
+    <fieldset><legend>StradIT offerings</legend><div class="dl-chips" id="dlNewOfferings"></div></fieldset>
+    <div class="dl-row">
+      <label class="dl-grow">Next step<input id="dlNewNext" maxlength="500" placeholder="e.g. Intro call with the CIO"></label>
+      <label>Due<input id="dlNewNextDue" type="date"></label>
+    </div>
+    <label>Starting stage<select id="dlNewStage"></select></label>
+    <footer><button type="button" class="dl-btn" data-close-modal>Cancel</button><button type="submit" class="dl-btn dl-btn-primary">Create deal</button></footer>
+  </form>
+</div>
+
+<div class="toast" id="toast"></div>
+
+{% include "partials/copilot-dock.html" %}
+<script type="module" src="js/modules/deals/main.js?v=1.1"></script>
+</body>
+</html>

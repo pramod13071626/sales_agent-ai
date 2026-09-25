@@ -52,7 +52,7 @@ from collectors.validator import DataQualityValidator
 from serializer import MasterSerializer
 from serializers.account_serializer import slugify
 
-from sqlalchemy import or_
+from sqlalchemy import or_, text as sql_text
 from sqlalchemy.orm import selectinload
 from db.connection import get_session
 from db.models import (
@@ -84,6 +84,9 @@ from services.account_service import AccountService
 from services.lob_service import LobService, LobValidator
 from services.persona_service import PersonaService, PersonaValidator
 from services.pipeline_run_logger import PipelineRunLogger
+from services import callprep_service
+# Contact privacy: work email/phone only — personal email & direct mobile never reach the browser
+from apps.sales_copilot import privacy as contact_privacy
 from pdf_export import build_persona_profile_pdf, build_psychological_profile_pdf
 import auth
 import email_sender
@@ -262,7 +265,13 @@ if FASTAPI_AVAILABLE:
                 auth.revoke_refresh_token(session, raw_refresh)
             finally:
                 session.close()
-        response.delete_cookie("refresh_token", path="/api/auth")
+        response.delete_cookie(
+            "refresh_token",
+            path="/api/auth",
+            httponly=True,
+            samesite="lax",
+            secure=_COOKIE_SECURE,
+        )
         return {"ok": True}
 
     @app.get("/api/auth/me", tags=["0. Authentication"])
@@ -1393,11 +1402,9 @@ if FASTAPI_AVAILABLE:
             "tier": p.tier,
             "seniority_raw": p.seniority_raw,
             "departments": p.departments or ["Executive"],
-            "email": p.email,
+            "email": contact_privacy.safe_email(p.email),
             "email_status": p.email_status or ("Verified" if p.email else None),
-            "phone": p.phone,
-            "personal_email": p.personal_email,
-            "direct_mobile_phone": p.direct_mobile_phone,
+            "phone": contact_privacy.safe_phone(p.phone, p.direct_mobile_phone),
             "linkedin_url": p.linkedin_url,
             "crunchbase_permalink": p.crunchbase_permalink,
             "city": p.city,
@@ -1472,6 +1479,8 @@ if FASTAPI_AVAILABLE:
             "last_run_at": last_run_at or (p.manually_verified_at.isoformat() if getattr(p, "manually_verified_at", None) else None),
             "extended_profile": getattr(p, "extended_profile", None) or {},
             "raw_data": p.raw_data,
+            "extended_profile": contact_privacy.scrub_extended_profile(getattr(p, "extended_profile", None) or {}),
+            "raw_data": contact_privacy.scrub_raw(p.raw_data, p.personal_email, p.direct_mobile_phone),
         }
 
     def _serialize_persona_summary(p: Persona) -> Dict[str, Any]:
@@ -4178,6 +4187,14 @@ if FASTAPI_AVAILABLE:
     app.include_router(lobs_router)
     app.include_router(personas_router)
 
+    # Sales Copilot (RAG chat) — own module, own tables; see apps/sales_copilot/README.md
+    from apps.sales_copilot.api import install as install_copilot
+    install_copilot(app)
+
+    # Deals pipeline (Intro → Discovery → Proposal → Pilot → Contract) — apps/sales_copilot/README.md §21
+    from apps.sales_deals.api import install as install_deals
+    install_deals(app)
+
     # ══════════════════════════════════════════════════════
     # SOLID REST API ENDPOINTS
     # ══════════════════════════════════════════════════════
@@ -4465,8 +4482,8 @@ if FASTAPI_AVAILABLE:
                         "tier": p.tier,
                         "seniority_tier": p.tier,
                         "seniority_raw": p.seniority_raw,
-                        "email": p.email,
-                        "phone": p.phone,
+                        "email": contact_privacy.safe_email(p.email),
+                        "phone": contact_privacy.safe_phone(p.phone, p.direct_mobile_phone),
                         "city": p.city,
                         "state": p.state,
                         "country": p.country,
@@ -4474,8 +4491,7 @@ if FASTAPI_AVAILABLE:
                         "budget_authority": p.budget_authority,
                         "departments": p.departments or ["Executive"],
                         "linkedin_url": p.linkedin_url,
-                        "twitter_url": p.twitter_live_url
-                        or (f"https://twitter.com/{p.twitter_handle}" if p.twitter_handle else None),
+                        "twitter_url": f"https://twitter.com/{p.twitter_handle}" if p.twitter_handle else None,
                         "skills": p.skills or [],
                         "target_kpis": p.target_kpis or [],
                         "operational_pain_points": p.operational_pain_points or [],
@@ -4490,7 +4506,7 @@ if FASTAPI_AVAILABLE:
                         "social_platform": p.social_platform,
                         "social_profile_url": p.social_profile_url,
                         "social_presence_level": p.social_presence_level,
-                        "raw_data": p.raw_data,
+                        "raw_data": contact_privacy.scrub_raw(p.raw_data, p.personal_email, p.direct_mobile_phone),
                     }
                 )
             return {"account_id": account_id, "total_personas": len(result), "personas": result}
@@ -4512,8 +4528,8 @@ if FASTAPI_AVAILABLE:
                 "name": p.full_name or p.display_name or "Executive",
                 "title": p.title,
                 "tier": p.tier,
-                "email": p.email,
-                "phone": p.phone,
+                "email": contact_privacy.safe_email(p.email),
+                "phone": contact_privacy.safe_phone(p.phone, p.direct_mobile_phone),
                 "location": f"{p.city or ''}, {p.country or ''}".strip(", "),
                 "decision_authority": p.decision_authority,
                 "budget_authority": p.budget_authority,
@@ -4526,7 +4542,7 @@ if FASTAPI_AVAILABLE:
                 "value_proposition": p.value_proposition,
                 "operational_pain_points": p.operational_pain_points or [],
                 "target_kpis": p.target_kpis or [],
-                "raw_data": p.raw_data,
+                "raw_data": contact_privacy.scrub_raw(p.raw_data, p.personal_email, p.direct_mobile_phone),
             }
         finally:
             session.close()
@@ -5216,8 +5232,8 @@ if FASTAPI_AVAILABLE:
             persona_dict = {
                 "name": p.full_name or p.display_name or "Executive",
                 "title": p.title,
-                "email": p.email,
-                "phone": p.phone,
+                "email": contact_privacy.safe_email(p.email),
+                "phone": contact_privacy.safe_phone(p.phone, p.direct_mobile_phone),
                 "linkedin_url": p.linkedin_url,
                 "city": p.city,
                 "state": p.state,
@@ -5325,6 +5341,30 @@ if FASTAPI_AVAILABLE:
             raise HTTPException(status_code=500, detail=f"Failed to generate dossier PDF: {str(e)}")
         finally:
             session.close()
+    def _resolve_person_target_key(session, p: "Persona"):
+        """The content-pipeline person target this persona's profiles are
+        generated from: its existing digest's key, else p.key / name slugs —
+        whichever is registered either in people_targets.py's hardcoded or
+        custom_targets.json entries (PEOPLE_ALIASES) or in Postgres' targets
+        table. The DB is checked here directly because people_targets'
+        own DB merge can't run in this process (its `import db` resolves to
+        this app's db package). Returns (target_key or None, candidates)."""
+        content_pipeline_dir = Path(__file__).resolve().parent / "apps" / "content_pipeline"
+        sys.path.insert(0, str(content_pipeline_dir))
+        from apps.content_pipeline.people_targets import ALIASES as PEOPLE_ALIASES
+
+        existing = _resolve_persona_digest(session, p)
+        candidates = [existing.target_key] if existing else []
+        candidates += [p.key, slugify(p.full_name or ""), _slugify_dropping_initials(p.full_name or "")]
+        candidates = [c for c in candidates if c]
+        in_db = {
+            r[0] for r in session.execute(
+                sql_text("SELECT key FROM targets WHERE kind = 'person' AND key = ANY(:keys)"),
+                {"keys": candidates},
+            ).fetchall()
+        }
+        target_key = next((c for c in candidates if c in PEOPLE_ALIASES or c in in_db), None)
+        return target_key, candidates
 
     @app.get("/api/personas/{persona_id}/psychological-profile", tags=["3. Personas & Buying Committee"])
     def get_persona_psychological_profile(persona_id: int, user: User = Depends(auth.require_persona_account_access)):
@@ -5356,6 +5396,263 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
+    def _generate_persona_profiles(session, p: "Persona", user_id: Optional[int] = None):
+        """Runs the person digest subprocess that synthesizes BOTH the
+        Personality and Psychological profiles in one pass (--profiles-only
+        always builds both, see apps/content_pipeline/digest/pipeline.py)
+        and returns the freshly-written Digest row. Shared by the
+        personality-profile and psychological-profile /generate endpoints
+        below so a click on either button doesn't run the subprocess twice.
+        Raises HTTPException on any failure."""
+        content_pipeline_dir = Path(__file__).resolve().parent / "apps" / "content_pipeline"
+
+        # apps/content_pipeline has its own top-level module named `db`
+        # (apps/content_pipeline/db.py) — a straight name collision with
+        # this app's own `db` package, already loaded under that same
+        # name in this process's sys.modules. `import db` inside that
+        # app's own code (people_targets.py, digest/pipeline.py) would
+        # silently resolve to THIS app's db package instead of its own
+        # once cached, no matter what sys.path says. Running it as a
+        # separate process — exactly its own CLI entrypoint, exactly as
+        # a human would run it — sidesteps the collision entirely
+        # instead of fighting Python's module cache for it.
+        sys.path.insert(0, str(content_pipeline_dir))
+        target_key, candidates = _resolve_person_target_key(session, p)
+        if not target_key:
+            raise HTTPException(
+                status_code=400,
+                detail=f"'{p.full_name}' isn't registered in people_targets.py under any key this resolves "
+                f"({', '.join(c for c in candidates if c)}) — add them there before generating a profile.",
+            )
+
+        # --profiles-only: on-demand generation for exactly the two
+        # profiles, skipping the separate email-rollup LLM call nobody
+        # asked for here. --all-posts: a UI click is a deliberate
+        # "(re)generate now", not a scheduled incremental digest.
+        # --since-days 3650: --all-posts only bypasses the "new since
+        # last run" filter, NOT the recency window underneath it — a
+        # contact whose captured posts are all older than the default
+        # 14 days (e.g. no recent public activity) would otherwise
+        # always fail with "no posts in scope" on a fresh generation.
+        #
+        # Logs to an explicit UTF-8-opened file rather than
+        # capture_output=True/text=True — on this box, letting the
+        # parent auto-decode the captured pipes (locale-dependent, not
+        # UTF-8) silently returned stdout=stderr=None instead of
+        # raising, hiding every real error. This is the same "open the
+        # file as UTF-8 yourself" workaround already needed manually
+        # all session for this app's own Windows-console encoding issue
+        # (main.py's banner prints a Unicode box-drawing character).
+        proc_env = dict(os.environ, PYTHONIOENCODING="utf-8")
+
+        # Shared OpenRouter quota (apps/sales_copilot/README.md §10.4): one request per
+        # channel with posts + personality + psychological. Reserve up front so a click
+        # can't start a run the team's remaining budget can't finish.
+        from apps.sales_copilot import llm as quota
+        n_channels = session.execute(
+            sql_text("SELECT count(DISTINCT channel) FROM posts WHERE target_key = :k"), {"k": target_key}
+        ).scalar() or 0
+        try:
+            usage_ids = quota.reserve(session, "profiles", user_id, est_tokens=30000, requests_=max(1, n_channels) + 2)
+        except quota.QuotaExceeded as e:
+            raise HTTPException(status_code=429, detail=str(e))
+
+        log_fd, log_path = tempfile.mkstemp(suffix=".log", prefix="profile_gen_")
+        os.close(log_fd)
+        output = ""
+        try:
+            with open(log_path, "w", encoding="utf-8") as log_fh:
+                result = subprocess.run(
+                    [sys.executable, "main.py", "digest", target_key, "--person", "--all-posts", "--profiles-only", "--since-days", "3650"],
+                    cwd=str(content_pipeline_dir), env=proc_env,
+                    stdout=log_fh, stderr=subprocess.STDOUT, timeout=300,
+                )
+            with open(log_path, "r", encoding="utf-8", errors="replace") as log_fh:
+                output = log_fh.read()
+        finally:
+            try:
+                os.remove(log_path)
+            except OSError:
+                pass
+            # Settle the reservations with what the pipeline actually sent ([llm-usage] lines).
+            sent = re.findall(r"\[llm-usage\] status=(\d+) in=(\d+) out=(\d+)", output or "")
+            for uid, (st, tin, tout) in zip(usage_ids, sent):
+                quota.finalize(session, uid, ok=st == "200", status_code=int(st), model=None,
+                               tokens_in=int(tin), tokens_out=int(tout))
+            quota.release(session, usage_ids[len(sent):])
+            for st, tin, tout in sent[len(usage_ids):]:
+                quota.record(session, "profiles", user_id, ok=st == "200", status_code=int(st),
+                             tokens_in=int(tin), tokens_out=int(tout))
+
+        if result.returncode != 0:
+            # "No posts in scope" isn't a pipeline failure — it means this
+            # contact genuinely has zero captured public content to
+            # synthesize from (distinct from "not registered" above, where
+            # nobody's even trying to capture anything for them). Surface
+            # it as a 400 like the not-registered case so the frontend
+            # shows the same "please connect content for this contact"
+            # message instead of a generic "something went wrong" retry
+            # prompt — a real subprocess crash still falls through to 502.
+            # Checked first: when the LLM quota is exhausted every channel call
+            # fails, and older pipeline builds then reported that as "no posts".
+            if re.search(r"free-models-per-day|rate limit exceeded|HTTP 429", output or "", re.I):
+                raise HTTPException(
+                    status_code=429,
+                    detail="The AI service's daily request limit has been reached — try again after it resets.",
+                )
+            if re.search(r"no posts in scope|nothing to summarise", output or "", re.I):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"No captured public content is available yet for '{p.full_name}' — nothing to synthesize a profile from.",
+                )
+            raise HTTPException(
+                status_code=502,
+                detail=f"Digest generation failed (exit {result.returncode}): {(output or '(no output)')[-1000:]}",
+            )
+
+        # The subprocess's own db.upsert_digest() call already wrote the
+        # fresh row to Postgres — re-read it here rather than parsing
+        # the subprocess's stdout/local JSON file.
+        session.expire_all()
+        digest_row = _resolve_persona_digest(session, p)
+        return digest_row, output
+
+    @app.get("/api/personas/{persona_id}/personality-profile", tags=["3. Personas & Buying Committee"])
+    def get_persona_personality_profile(persona_id: int, user: User = Depends(auth.require_persona_account_access)):
+        """Retrieve the compiled Executive Personality Profile for a persona.
+
+        Returns profile=None (not a fabricated placeholder) when nothing has
+        been generated yet — the frontend shows an honest "not generated"
+        state, with a Generate button, for that instead of canned text."""
+        session = get_session()
+        try:
+            p = session.query(Persona).filter_by(id=persona_id).first()
+            if not p:
+                raise HTTPException(status_code=404, detail="Persona not found.")
+            digest_row = _resolve_persona_digest(session, p)
+
+            profile = None
+            if digest_row and digest_row.digest and isinstance(digest_row.digest, dict):
+                profile = digest_row.digest.get("personality_profile")
+            if not profile and p.raw_data and isinstance(p.raw_data, dict):
+                profile = p.raw_data.get("personality_profile")
+
+            return {
+                "persona_id": p.id,
+                "persona_name": p.full_name,
+                "title": p.title,
+                "profile": profile,
+            }
+        finally:
+            session.close()
+
+    @app.post("/api/personas/{persona_id}/personality-profile/generate", tags=["3. Personas & Buying Committee"])
+    def generate_persona_personality_profile(persona_id: int, user: User = Depends(auth.require_persona_account_access)):
+        """Trigger on-demand live generation of the personality profile using LLM synthesis."""
+        session = get_session()
+        try:
+            p = session.query(Persona).filter_by(id=persona_id).first()
+            if not p:
+                raise HTTPException(status_code=404, detail="Persona not found.")
+
+            digest_row, output = _generate_persona_profiles(session, p, user.id)
+            personality = (digest_row.digest or {}).get("personality_profile") if digest_row else None
+            if not personality:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Digest ran but produced no personality_profile. Output: {output[-1000:]}",
+                )
+
+            return {
+                "status": "success",
+                "persona_id": p.id,
+                "profile": personality
+            }
+        finally:
+            session.close()
+
+    # Per-channel post caps the digest applies — mirrors cap=25 and
+    # _HIGH_VOLUME_CAP in apps/content_pipeline/digest/selection.py (not
+    # imported: that app's `db` module collides with ours, see
+    # _generate_persona_profiles).
+    _PROFILE_DIGEST_CAP = 25
+    _PROFILE_DIGEST_CHANNEL_CAP = {"news": 12, "blog": 12, "sec_mentions": 10, "sec": 10}
+
+    @app.get("/api/personas/{persona_id}/profile-readiness", tags=["3. Personas & Buying Committee"])
+    def get_persona_profile_readiness(persona_id: int, user: User = Depends(auth.require_persona_account_access)):
+        """What the Personality/Psychological "Generate now" button has to work
+        with: whether the contact is a tracked target, captured posts per
+        channel (and how many the digest would use), and which background
+        fields exist. Read-only — no LLM calls."""
+        session = get_session()
+        try:
+            p = session.query(Persona).filter_by(id=persona_id).first()
+            if not p:
+                raise HTTPException(status_code=404, detail="Persona not found.")
+
+            target_key, _ = _resolve_person_target_key(session, p)
+
+            channels = []
+            if target_key:
+                rows = session.execute(
+                    sql_text("SELECT channel, count(*) FROM posts WHERE target_key = :k GROUP BY channel ORDER BY 2 DESC"),
+                    {"k": target_key},
+                ).fetchall()
+                for channel, n in rows:
+                    cap = min(_PROFILE_DIGEST_CAP, _PROFILE_DIGEST_CHANNEL_CAP.get(channel, _PROFILE_DIGEST_CAP))
+                    channels.append({"channel": channel, "captured": n, "used": min(n, cap)})
+
+            location = ", ".join(x for x in (p.city, p.state, p.country) if x)
+            background = [
+                {"field": "title", "label": "Job title", "present": bool(p.title)},
+                {"field": "education", "label": "Education", "present": bool(p.degree or p.institution)},
+                {"field": "prior_company", "label": "Prior company", "present": bool(p.prior_company)},
+                {"field": "skills", "label": "Skills", "present": bool(p.skills)},
+                {"field": "location", "label": "Location", "present": bool(location)},
+            ]
+            total_captured = sum(c["captured"] for c in channels)
+            return {
+                "persona_id": p.id,
+                "target_key": target_key,
+                "registered": bool(target_key),
+                "channels": channels,
+                "total_captured": total_captured,
+                "total_used": sum(c["used"] for c in channels),
+                "background": background,
+                # one summary call per channel with posts + personality + psychological
+                "llm_requests": len(channels) + 2 if channels else 0,
+                "ready": bool(target_key) and total_captured > 0,
+            }
+        finally:
+            session.close()
+
+    @app.post("/api/personas/{persona_id}/callprep/generate", tags=["3. Personas & Buying Committee"])
+    def generate_persona_callprep(
+        persona_id: int, force: bool = False, user: User = Depends(auth.require_persona_account_access)
+    ):
+        """On-demand Sales Call-Prep & Battlecards for one persona (services/callprep_service.py).
+        Skips the LLM and returns status "unchanged" when the persona's inputs haven't changed,
+        unless force=true."""
+        session = get_session()
+        try:
+            try:
+                out = callprep_service.generate_persona(session, persona_id, force=force, user_id=user.id)
+            except ValueError as e:
+                raise HTTPException(status_code=404, detail=str(e))
+            except callprep_service.QuotaExceeded as e:
+                raise HTTPException(status_code=429, detail=f"LLM daily quota reached: {e}")
+            except callprep_service.LLMError as e:
+                raise HTTPException(status_code=502, detail=f"Call-prep generation failed: {e}")
+            return {
+                "status": out["status"],
+                "persona_id": persona_id,
+                "level": out["level"],
+                "usage": out["usage"],
+                "persona": _serialize_persona_full(out["persona"]),
+            }
+        finally:
+            session.close()
+
     @app.post("/api/personas/{persona_id}/psychological-profile/generate", tags=["3. Personas & Buying Committee"])
     def generate_persona_psychological_profile(persona_id: int, user: User = Depends(auth.require_persona_account_access)):
         """Trigger on-demand live generation of the psychological profile using LLM synthesis."""
@@ -5365,79 +5662,7 @@ if FASTAPI_AVAILABLE:
             if not p:
                 raise HTTPException(status_code=404, detail="Persona not found.")
 
-            content_pipeline_dir = Path(__file__).resolve().parent / "apps" / "content_pipeline"
-
-            # apps/content_pipeline has its own top-level module named `db`
-            # (apps/content_pipeline/db.py) — a straight name collision with
-            # this app's own `db` package, already loaded under that same
-            # name in this process's sys.modules. `import db` inside that
-            # app's own code (people_targets.py, digest/pipeline.py) would
-            # silently resolve to THIS app's db package instead of its own
-            # once cached, no matter what sys.path says. Running it as a
-            # separate process — exactly its own CLI entrypoint, exactly as
-            # a human would run it — sidesteps the collision entirely
-            # instead of fighting Python's module cache for it.
-            sys.path.insert(0, str(content_pipeline_dir))
-            from apps.content_pipeline.people_targets import ALIASES as PEOPLE_ALIASES
-
-            existing = _resolve_persona_digest(session, p)
-            candidates = [existing.target_key] if existing else []
-            candidates += [p.key, slugify(p.full_name or ""), _slugify_dropping_initials(p.full_name or "")]
-            target_key = next((c for c in candidates if c and c in PEOPLE_ALIASES), None)
-            if not target_key:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"'{p.full_name}' isn't registered in people_targets.py under any key this resolves "
-                    f"({', '.join(c for c in candidates if c)}) — add them there before generating a profile.",
-                )
-
-            # --profiles-only: on-demand generation for exactly the two
-            # profiles, skipping the separate email-rollup LLM call nobody
-            # asked for here. --all-posts: a UI click is a deliberate
-            # "(re)generate now", not a scheduled incremental digest.
-            # --since-days 3650: --all-posts only bypasses the "new since
-            # last run" filter, NOT the recency window underneath it — a
-            # contact whose captured posts are all older than the default
-            # 14 days (e.g. no recent public activity) would otherwise
-            # always fail with "no posts in scope" on a fresh generation.
-            #
-            # Logs to an explicit UTF-8-opened file rather than
-            # capture_output=True/text=True — on this box, letting the
-            # parent auto-decode the captured pipes (locale-dependent, not
-            # UTF-8) silently returned stdout=stderr=None instead of
-            # raising, hiding every real error. This is the same "open the
-            # file as UTF-8 yourself" workaround already needed manually
-            # all session for this app's own Windows-console encoding issue
-            # (main.py's banner prints a Unicode box-drawing character).
-            proc_env = dict(os.environ, PYTHONIOENCODING="utf-8")
-            log_fd, log_path = tempfile.mkstemp(suffix=".log", prefix="profile_gen_")
-            os.close(log_fd)
-            try:
-                with open(log_path, "w", encoding="utf-8") as log_fh:
-                    result = subprocess.run(
-                        [sys.executable, "main.py", "digest", target_key, "--person", "--all-posts", "--profiles-only", "--since-days", "3650"],
-                        cwd=str(content_pipeline_dir), env=proc_env,
-                        stdout=log_fh, stderr=subprocess.STDOUT, timeout=300,
-                    )
-                with open(log_path, "r", encoding="utf-8", errors="replace") as log_fh:
-                    output = log_fh.read()
-            finally:
-                try:
-                    os.remove(log_path)
-                except OSError:
-                    pass
-
-            if result.returncode != 0:
-                raise HTTPException(
-                    status_code=502,
-                    detail=f"Digest generation failed (exit {result.returncode}): {(output or '(no output)')[-1000:]}",
-                )
-
-            # The subprocess's own db.upsert_digest() call already wrote the
-            # fresh row to Postgres — re-read it here rather than parsing
-            # the subprocess's stdout/local JSON file.
-            session.expire_all()
-            digest_row = _resolve_persona_digest(session, p)
+            digest_row, output = _generate_persona_profiles(session, p, user.id)
             psych = (digest_row.digest or {}).get("psychological_profile") if digest_row else None
             if not psych:
                 raise HTTPException(
@@ -6090,6 +6315,63 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
+    _XLSX_MEDIA = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+    def _xlsx_response(content: bytes, filename: str):
+        from fastapi import Response
+        return Response(content, media_type=_XLSX_MEDIA,
+                        headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+    @app.get("/api/me/action-items/export", tags=["8. Action Items"])
+    def export_my_action_items(status: Optional[str] = None, account_id: Optional[int] = None,
+                               priority: Optional[str] = None, user: User = Depends(auth.get_current_user)):
+        """My Tasks as Excel — same access rules and filters as the /tasks page."""
+        from apps.sales_copilot import exports
+        items = list_my_action_items(status=status, user=user)["action_items"]
+        if account_id:
+            items = [i for i in items if i.get("account_id") == account_id]
+        if priority:
+            items = [i for i in items if i.get("priority") == priority]
+        headers = ["Title", "Status", "Priority", "Due", "Account", "Contact", "Description", "Created"]
+        rows = [[i.get("title"), i.get("status"), i.get("priority"), (i.get("due_date") or "")[:10],
+                 i.get("account_name"), (i.get("persona") or {}).get("name") if isinstance(i.get("persona"), dict) else i.get("persona_name"),
+                 i.get("description"), (i.get("created_at") or "")[:10]] for i in items]
+        content = exports.rows_xlsx("My tasks", headers, rows, [48, 12, 10, 12, 22, 24, 60, 12],
+                                    about=[["Exported for", user.full_name or user.email], ["Exported at", exports._now()],
+                                           ["Filters", f"status={status or 'all'}, priority={priority or 'all'}, account={account_id or 'all'}"],
+                                           ["Rows", len(rows)]])
+        return _xlsx_response(content, "my-tasks.xlsx")
+
+    @app.get("/api/accounts/{account_id}/people/export", tags=["3. Personas & Buying Committee"])
+    def export_account_people(account_id: int, user: User = Depends(auth.require_account_access)):
+        """Buying committee / contact list for one account as Excel. Business contact
+        fields only (work email/phone) — personal email/mobile are never exported."""
+        from apps.sales_copilot import exports
+        session = get_session()
+        try:
+            acct = session.query(Account).filter_by(id=account_id).first()
+            if not acct:
+                raise HTTPException(status_code=404, detail="Account not found.")
+            from apps.sales_copilot import privacy
+            rows = session.execute(sql_text(f"""
+                SELECT coalesce(p.full_name, p.display_name), p.title, p.tier, l.lob_name, p.decision_authority,
+                       p.budget_authority, {privacy.SAFE_EMAIL_SQL}, {privacy.SAFE_PHONE_SQL}, p.linkedin_url,
+                       concat_ws(', ', p.city, p.country), (p.value_proposition IS NOT NULL), p.id
+                FROM personas p LEFT JOIN lobs l ON l.id = p.lob_id
+                WHERE p.account_id = :a
+                ORDER BY p.hierarchy_level NULLS LAST, 1"""), {"a": account_id}).fetchall()
+        finally:
+            session.close()
+        name = acct.display_name or acct.legal_name or acct.key
+        headers = ["Name", "Title", "Tier", "Line of business", "Decision authority", "Budget authority",
+                   "Work email", "Phone", "LinkedIn", "Location", "Call-prep ready", "Profile link"]
+        data = [[r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9], "yes" if r[10] else "",
+                 f"/profile?account={account_id}&persona_id={r[11]}"] for r in rows]
+        content = exports.rows_xlsx("Contacts", headers, data, [26, 40, 14, 24, 22, 18, 30, 18, 40, 22, 12, 34],
+                                    about=[["Account", name], ["Exported for", user.full_name or user.email],
+                                           ["Exported at", exports._now()], ["Contacts", len(data)]])
+        return _xlsx_response(content, exports.safe_filename(f"{name}-contacts", "xlsx"))
+
     @app.get("/api/content", tags=["4. Content Intelligence"])
     def get_content_intelligence():
         """Retrieve aggregated social listening posts and LLM channel digests."""
@@ -6372,11 +6654,32 @@ if FASTAPI_AVAILABLE:
             ai_rx = re.compile(r"\bai\b|artificial|machine learning|\bml\b|genai|process analyst|automation", re.I)
             cloud_rx = re.compile(r"cloud|full-stack|full stack|platform|devops|systems lead|software engineer", re.I)
 
+            # Same taxonomy as HIRING_DOMAINS in jobs-radar.js (the per-account
+            # Hiring Trend Radar deep-dive) — ported here so the Command Center
+            # tile's "top hiring category" agrees with what a rep sees on
+            # click-through, rather than inventing a second classification.
+            # Matched in this order, first hit wins; core_operations is the
+            # catch-all for anything none of the others match (mirrors the
+            # client-side "assign to primary dominant domain" logic exactly).
+            hiring_domains = [
+                {"id": "ai_automation", "name": "AI & Process Automation", "icon": "fa-solid fa-microchip",
+                 "rx": re.compile(r"\bai\b|artificial intelligence|machine learning|\bml\b|genai|generative ai|\bllm\b|copilot|process analyst|deep learning|\bnlp\b|automation|cognitive|neural|agentic|prompt", re.I)},
+                {"id": "cloud_platform", "name": "Cloud & Platform Modernization", "icon": "fa-solid fa-cloud",
+                 "rx": re.compile(r"cloud|infrastructure|full-stack|full stack|platform|devops|architect|systems lead|site reliability|\bsre\b|\baws\b|\bazure\b|\bgcp\b|kubernetes|microservices|distributed systems|software engineer", re.I)},
+                {"id": "data_analytics", "name": "Data Engineering & Analytics", "icon": "fa-solid fa-chart-column",
+                 "rx": re.compile(r"\bdata\b|quantitative|analytics|\bbi\b|data science|\betl\b|\bsql\b|snowflake|databricks|pipeline|warehouse|business intelligence|lakehouse", re.I)},
+                {"id": "risk_compliance", "name": "Risk, Compliance & Control", "icon": "fa-solid fa-shield-halved",
+                 "rx": re.compile(r"\brisk\b|compliance|\bcontrol\b|cyber|security|audit|governance|identity|fraud|surveillance|regulatory|collateral", re.I)},
+                {"id": "core_operations", "name": "Core Business & Operations", "icon": "fa-solid fa-sitemap",
+                 "rx": re.compile(r"product management|\bpom\b|operations|credit|investor services|client processing|custody|asset servicing|settlement|trading|wealth|portfolio|specialist|accountant|\bsales\b|manager", re.I)},
+            ]
+
             leadership_count = 0
             contract_roles = []
             loc_counts: Dict[str, int] = {}
             ai_count = 0
             cloud_count = 0
+            category_counts: Dict[str, int] = {d["id"]: 0 for d in hiring_domains}
 
             for j in jobs:
                 t = j.title or ""
@@ -6404,7 +6707,20 @@ if FASTAPI_AVAILABLE:
                 elif cloud_rx.search(t):
                     cloud_count += 1
 
+                matched_domain = next((d["id"] for d in hiring_domains if d["rx"].search(t)), "core_operations")
+                category_counts[matched_domain] += 1
+
             top_hubs = [{"location": loc, "count": count} for loc, count in sorted(loc_counts.items(), key=lambda x: x[1], reverse=True)[:6]]
+
+            top_category = None
+            if total_roles:
+                top_id, top_count = max(category_counts.items(), key=lambda kv: kv[1])
+                if top_count > 0:
+                    top_domain = next(d for d in hiring_domains if d["id"] == top_id)
+                    top_category = {
+                        "id": top_domain["id"], "name": top_domain["name"], "icon": top_domain["icon"],
+                        "count": top_count,
+                    }
 
             return {
                 "account_id": account.id,
@@ -6418,6 +6734,7 @@ if FASTAPI_AVAILABLE:
                     "ai": ai_count,
                     "cloud": cloud_count,
                 },
+                "top_category": top_category,
                 "contract_leads": contract_roles[:5],
             }
         finally:
@@ -6802,17 +7119,23 @@ if FASTAPI_AVAILABLE:
     if frontend_dir.exists():
         templates = Jinja2Templates(directory=str(frontend_dir / "templates"))
 
+        _NO_CACHE_HEADERS = {
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        }
+
         @app.get("/", response_class=HTMLResponse, include_in_schema=False)
         async def dashboard_home(request: Request):
-            return templates.TemplateResponse(request, "index.html")
+            return templates.TemplateResponse(request, "index.html", headers=_NO_CACHE_HEADERS)
 
         @app.get("/login", response_class=HTMLResponse, include_in_schema=False)
         async def login_page(request: Request):
-            return templates.TemplateResponse(request, "login.html")
+            return templates.TemplateResponse(request, "login.html", headers=_NO_CACHE_HEADERS)
 
         @app.get("/reset-password", response_class=HTMLResponse, include_in_schema=False)
         async def reset_password_page(request: Request):
-            return templates.TemplateResponse(request, "reset-password.html")
+            return templates.TemplateResponse(request, "reset-password.html", headers=_NO_CACHE_HEADERS)
 
         @app.get("/admin", response_class=HTMLResponse, include_in_schema=False)
         async def admin_page(request: Request):
@@ -6820,7 +7143,7 @@ if FASTAPI_AVAILABLE:
             anyone (no server-side session to gate on), but every
             /api/admin/* call it makes is independently protected by
             Depends(auth.require_role("super_admin"))."""
-            return templates.TemplateResponse(request, "admin.html")
+            return templates.TemplateResponse(request, "admin.html", headers=_NO_CACHE_HEADERS)
 
         @app.get("/profile", response_class=HTMLResponse, include_in_schema=False)
         async def contact_profile_page(request: Request):
@@ -6828,7 +7151,7 @@ if FASTAPI_AVAILABLE:
             drawer's "View Profile" button (?account=<id>&persona_id=<id>).
             Reuses the same drawer markup/rendering as the dashboard's
             sliding drawer; see frontend/js/modules/profile-page.js."""
-            return templates.TemplateResponse(request, "profile.html")
+            return templates.TemplateResponse(request, "profile.html", headers=_NO_CACHE_HEADERS)
 
         @app.get("/command-center", response_class=HTMLResponse, include_in_schema=False)
         async def sales_command_center_page(request: Request):
@@ -6836,7 +7159,20 @@ if FASTAPI_AVAILABLE:
             priority matrix, priority signal feed, playbook and exec
             movements timeline. Currently runs on mock seed data; see
             frontend/js/modules/command-center/data.js."""
-            return templates.TemplateResponse(request, "command-center.html")
+            return templates.TemplateResponse(request, "command-center.html", headers=_NO_CACHE_HEADERS)
+
+        @app.get("/deals", response_class=HTMLResponse, include_in_schema=False)
+        async def deals_page(request: Request):
+            """Deals pipeline board + deal room (apps/sales_copilot/README.md §21).
+            ?deal=ID opens a deal; ?account_id= filters the board."""
+            return templates.TemplateResponse(request, "deals.html", headers=_NO_CACHE_HEADERS)
+
+        @app.get("/copilot", response_class=HTMLResponse, include_in_schema=False)
+        async def copilot_page(request: Request):
+            """Sales Copilot workspace — RAG chat over the sales DB
+            (apps/sales_copilot/README.md §19). Accepts ?persona_id= / ?account_id=
+            to open a chat pre-scoped to that contact or account."""
+            return templates.TemplateResponse(request, "copilot.html", headers=_NO_CACHE_HEADERS)
 
         @app.get("/tasks", response_class=HTMLResponse, include_in_schema=False)
         async def tasks_page(request: Request):
@@ -6845,7 +7181,7 @@ if FASTAPI_AVAILABLE:
             status/priority/account filtering and sorting. See
             TASK_MANAGEMENT_README.md. A team/manager-wide view is a
             deliberately deferred v2 (no endpoint for it exists yet)."""
-            return templates.TemplateResponse(request, "tasks.html")
+            return templates.TemplateResponse(request, "tasks.html", headers=_NO_CACHE_HEADERS)
 
         class NoCacheStaticFiles(StaticFiles):
             """Forces browsers to revalidate every CSS/JS fetch against the

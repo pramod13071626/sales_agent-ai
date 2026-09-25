@@ -63,9 +63,18 @@ export async function login(email, password) {
 export async function logout() {
   try {
     await nativeFetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+  } catch (err) {
+    console.warn('Logout request failed, continuing client purge:', err);
   } finally {
     clearSession();
     clearAccountsCache();
+    try {
+      sessionStorage.clear();
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('user');
+    } catch (e) {
+      /* ignore storage access restrictions */
+    }
   }
 }
 

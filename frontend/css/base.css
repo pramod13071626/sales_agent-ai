@@ -3,7 +3,7 @@
 html, body { height: 100%; }
 body {
   margin: 0;
-  font-family: Inter, system-ui, -apple-system, sans-serif;
+  font-family: Roboto, system-ui, -apple-system, sans-serif;
   background: var(--content-bg);
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;

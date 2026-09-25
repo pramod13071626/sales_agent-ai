@@ -517,12 +517,14 @@ body.admin-page-body {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #0061FF, #60A5FA);
+  background: linear-gradient(135deg, var(--brand), var(--brand-light));
   color: #fff;
   font-size: 0.75rem;
   font-weight: 700;
   display: grid;
   place-items: center;
+  border: 2px solid var(--panel-bg);
+  box-shadow: var(--shadow);
   flex-shrink: 0;
   text-transform: uppercase;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);

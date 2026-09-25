@@ -93,7 +93,7 @@ def run(
         f"(channels: {channel_client.model})"
     )
 
-    channels, considered = [], 0
+    channels, considered, channel_errors = [], 0, []
     for channel in store.doc.get("data", {}):
         posts = select_posts(store, channel, new_only, since_days, cap)
         if not posts:
@@ -119,8 +119,13 @@ def run(
                 cache.put(key, channel, sig, result)
         except LLMError as e:
             print(f"   {channel:<9} ❌ {e}")
+            channel_errors.append(e)
 
     if not channels:
+        if channel_errors:
+            # Posts existed but every summary call failed (e.g. the LLM's daily
+            # quota) — not the same thing as having no content to summarise.
+            raise RuntimeError(f"LLM failed on every channel — {channel_errors[0]}")
         raise RuntimeError("Nothing to summarise — no posts in scope.")
 
     if profiles_only:
@@ -214,6 +219,11 @@ def run(
             except LLMError as e:
                 print(f"   psychological profile ❌ {e}")
                 psychological_profile = None
+                # --profiles-only exists only to produce these two profiles: if the
+                # personality one failed too, fail the run instead of saving a
+                # digest whose "profile" is just the error placeholder above.
+                if profiles_only and (personality_profile or {}).get("executive_summary", "").startswith("Not generated"):
+                    raise RuntimeError(f"Profile synthesis failed — {e}")
 
         if suggest_actions:
             # Same cache-signature pattern as personality_profile above —

@@ -38,8 +38,8 @@ export function renderAlertHierarchy(h) {
     <details class="alert-hierarchy">
       <summary>Org hierarchy — ${esc(h.scopeName)} (${h.total} contact${h.total !== 1 ? 's' : ''})</summary>
       ${h.isLob ? (h.subLobs.length
-        ? `<div class="chip-row" style="margin:8px 0;">${h.subLobs.map(s => `<span class="chip"><i class="bi bi-diagram-2"></i> ${esc(s.name)}</span>`).join('')}</div>`
-        : `<div class="hierarchy-note"><i class="bi bi-info-circle"></i> No sub-divisions mapped for this LOB.</div>`) : ''}
+        ? `<div class="chip-row" style="margin:8px 0;">${h.subLobs.map(s => `<span class="chip"><i class="fa-solid fa-diagram-project"></i> ${esc(s.name)}</span>`).join('')}</div>`
+        : `<div class="hierarchy-note"><i class="fa-solid fa-circle-info"></i> No sub-divisions mapped for this LOB.</div>`) : ''}
       ${h.groups.map(g => `
         <div class="hierarchy-group">
           <div class="hierarchy-group-label">${esc(g.label)} <span class="hierarchy-group-count">${g.people.length}</span></div>
@@ -146,7 +146,7 @@ export function renderAlertCards(matches, opts) {
   opts = opts || {};
   if (!matches.length) {
     return `<div class="empty-block">
-      <div class="empty-block-icon"><i class="bi bi-bell-slash"></i></div>
+      <div class="empty-block-icon"><i class="fa-solid fa-bell-slash"></i></div>
       <div class="empty-block-text">${esc(opts.emptyText || "Captured content doesn't reference any StradIT service line yet.")}</div>
     </div>`;
   }
@@ -161,22 +161,22 @@ export function renderAlertCards(matches, opts) {
     return `
       <div class="alert-card">
         <div class="alert-header">
-          <i class="bi ${m.icon}"></i>
+          <i class="${m.icon}"></i>
           <span class="alert-title">${esc(m.label)} opportunity</span>
           ${accountCount ? `<span class="pill">${accountCount} account${accountCount !== 1 ? 's' : ''}</span>` : ''}
           <span class="pill pill-brand">${m.hitCount} signal${m.hitCount !== 1 ? 's' : ''}</span>
         </div>
         <div class="alert-pitch">${esc(m.pitch)}</div>
         <div class="alert-evidence">
-          <i class="bi bi-quote"></i> ${esc(snippet)}
+          <i class="fa-solid fa-quote-left"></i> ${esc(snippet)}
           ${evMeta ? `<span class="alert-evidence-meta">— ${esc(evMeta)}</span>` : ''}
-          ${ev.url ? `<a href="${esc(ev.url)}" target="_blank"><i class="bi bi-box-arrow-up-right"></i></a>` : ''}
+          ${ev.url ? `<a href="${esc(ev.url)}" target="_blank"><i class="fa-solid fa-arrow-up-right-from-square"></i></a>` : ''}
         </div>
         ${rec ? renderAlertHierarchy(buildAlertHierarchy(matchAccount, rec)) : (matchAccount ? `
           <div class="alert-contact alert-contact-empty">
-            <i class="bi bi-person-x"></i> No contacts mapped for ${esc(matchAccount.name)} yet.
+            <i class="fa-solid fa-user-xmark"></i> No contacts mapped for ${esc(matchAccount.name)} yet.
           </div>` : '')}
-        ${ev.accountId != null ? `<button type="button" class="alert-view-account" data-jump-account="${ev.accountId}">Open ${esc(ev.account || 'account')} <i class="bi bi-arrow-right"></i></button>` : ''}
+        ${ev.accountId != null ? `<button type="button" class="alert-view-account" data-jump-account="${ev.accountId}">Open ${esc(ev.account || 'account')} <i class="fa-solid fa-arrow-right"></i></button>` : ''}
       </div>`;
   }).join('');
 }

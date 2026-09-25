@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sales Command Center | Sales Intelligence</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
   <link rel="stylesheet" href="css/tokens.css?v=3.0">
   <link rel="stylesheet" href="css/base.css?v=3.0">
   <link rel="stylesheet" href="css/shell.css?v=3.0">
@@ -38,30 +38,46 @@
     <main class="dash-main">
       <header class="cc-header">
         <div class="cc-header-left">
-          <div class="cc-breadcrumb"><a href="/"><i class="bi bi-arrow-left"></i> Accounts</a></div>
+          <div class="cc-breadcrumb"><a href="/"><i class="fa-solid fa-arrow-left"></i> Accounts</a></div>
           <h1 class="cc-title">Sales Command Center</h1>
           <p class="cc-subtitle" id="ccSubtitle">Loading…</p>
         </div>
+        <div class="cc-header-controls">
+          <div class="cc-global-filter-wrap">
+            <label for="ccGlobalAccountSelect" class="cc-filter-label"><i class="fa-solid fa-building"></i> Filter Account:</label>
+            <div class="cc-select-box">
+              <select id="ccGlobalAccountSelect" class="cc-global-account-select" aria-label="Filter by account">
+                <option value="">All Accounts (Global Portfolio)</option>
+              </select>
+              <button type="button" class="cc-btn-clear-filter" id="ccClearGlobalAccountBtn" title="Clear account filter" style="display:none;">
+                <i class="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+          </div>
+          <button type="button" class="cc-btn cc-btn-outline cc-customize-btn" id="ccCustomizeBtn" title="Customize visible dashboard widgets">
+            <i class="fa-solid fa-sliders"></i> Customize View
+          </button>
+        </div>
       </header>
 
-      <section class="cc-kpi-strip" id="ccKpiStrip"></section>
+      <section class="cc-kpi-strip" id="ccKpiStrip" data-widget-id="kpi"></section>
 
       <section class="cc-row cc-row-2col cc-row-matrix-feed">
-        <div class="cc-panel cc-matrix-panel">
+        <div class="cc-panel cc-matrix-panel" data-widget-id="matrix">
           <div class="cc-panel-head">
             <div class="cc-panel-head-left">
               <h2>Account priority matrix</h2>
               <span class="cc-panel-note">Bubble size (deal potential) is estimated — no CRM pipeline value on file</span>
             </div>
             <button type="button" class="cc-help-btn" data-widget-info="matrix" title="About Account Priority Matrix" aria-label="About Account Priority Matrix">
-              <i class="bi bi-question-circle"></i>
+              <i class="fa-solid fa-circle-question"></i>
             </button>
           </div>
           <div class="cc-matrix-canvas-wrap">
             <canvas id="ccMatrixCanvas"></canvas>
           </div>
           <div class="cc-matrix-legend">
-            <span class="cc-legend-title"><i class="bi bi-fire" style="color:#ef4444;"></i> Heat Scale:</span>
+            <span class="cc-legend-title"><i class="fa-solid fa-fire" style="color:#ef4444;"></i> Heat Scale:</span>
             <span class="cc-legend-tier"><span class="cc-legend-dot" style="background:#0ea5e9;"></span> 0–50 Cool</span>
             <span class="cc-legend-tier"><span class="cc-legend-dot" style="background:#f59e0b;"></span> 50–68 Warm</span>
             <span class="cc-legend-tier"><span class="cc-legend-dot" style="background:#f97316;"></span> 68–80 Hot</span>
@@ -69,11 +85,13 @@
           </div>
         </div>
 
-        <div class="cc-panel cc-feed-panel">
+        <div class="cc-panel cc-feed-panel" data-widget-id="priority_feed">
           <div class="cc-panel-head">
-            <h2>Priority signal feed</h2>
+            <div class="cc-panel-head-left">
+              <h2>Priority signal feed</h2>
+            </div>
             <button type="button" class="cc-help-btn" data-widget-info="priority_feed" title="About Priority Signal Feed" aria-label="About Priority Signal Feed">
-              <i class="bi bi-question-circle"></i>
+              <i class="fa-solid fa-circle-question"></i>
             </button>
           </div>
           <div class="cc-feed-filter-row">
@@ -85,49 +103,58 @@
       </section>
 
       <section class="cc-row cc-row-2col">
-        <div class="cc-panel cc-playbook-panel">
+        <div class="cc-panel cc-playbook-panel" data-widget-id="playbook">
           <div class="cc-panel-head">
-            <h2>This week's playbook</h2>
+            <div class="cc-panel-head-left">
+              <h2>This week's playbook</h2>
+            </div>
             <button type="button" class="cc-help-btn" data-widget-info="playbook" title="About This Week's Playbook" aria-label="About This Week's Playbook">
-              <i class="bi bi-question-circle"></i>
+              <i class="fa-solid fa-circle-question"></i>
             </button>
           </div>
           <ol class="cc-playbook-list" id="ccPlaybookList"></ol>
         </div>
 
-        <div class="cc-panel cc-timeline-panel">
+        <div class="cc-panel cc-timeline-panel" data-widget-id="timeline">
           <div class="cc-panel-head">
-            <h2>Exec movements &middot; last 30 days</h2>
+            <div class="cc-panel-head-left">
+              <h2>Exec movements &middot; last 30 days</h2>
+            </div>
             <button type="button" class="cc-help-btn" data-widget-info="timeline" title="About Executive Movements" aria-label="About Executive Movements">
-              <i class="bi bi-question-circle"></i>
+              <i class="fa-solid fa-circle-question"></i>
             </button>
+          </div>
+          <div class="cc-feed-filter-row">
+            <div class="cc-chip-row" id="ccTimelineFilters"></div>
           </div>
           <ul class="cc-timeline-list" id="ccTimelineList"></ul>
         </div>
       </section>
 
       <section class="cc-row cc-row-2col">
-        <div class="cc-panel">
+        <div class="cc-panel" data-widget-id="due_soon">
           <div class="cc-panel-head">
-            <h2>Due soon</h2>
+            <div class="cc-panel-head-left">
+              <h2>Due soon</h2>
+            </div>
             <div class="cc-panel-actions">
-              <a class="cc-panel-link" href="/tasks">View all <i class="bi bi-arrow-right"></i></a>
+              <a class="cc-panel-link" href="/tasks">View all <i class="fa-solid fa-arrow-right"></i></a>
               <button type="button" class="cc-help-btn" data-widget-info="due_soon" title="About Due Soon & Tasks" aria-label="About Due Soon & Tasks">
-                <i class="bi bi-question-circle"></i>
+                <i class="fa-solid fa-circle-question"></i>
               </button>
             </div>
           </div>
           <ul class="cc-feed-list" id="ccDueSoonList"></ul>
         </div>
 
-        <div class="cc-panel">
+        <div class="cc-panel" data-widget-id="hiring">
           <div class="cc-panel-head">
             <div class="cc-panel-head-left">
               <h2>Hiring signals</h2>
               <span class="cc-panel-note" id="ccHiringPanelNote">Multi-Organization Executive Flash Intel · 1,141 live roles monitored</span>
             </div>
             <button type="button" class="cc-help-btn" data-widget-info="hiring" title="About Hiring Signals" aria-label="About Hiring Signals">
-              <i class="bi bi-question-circle"></i>
+              <i class="fa-solid fa-circle-question"></i>
             </button>
           </div>
           <ul class="cc-feed-list" id="ccHiringList"></ul>
@@ -135,14 +162,14 @@
       </section>
 
       <section class="cc-row">
-        <div class="cc-panel">
+        <div class="cc-panel" data-widget-id="strategic_tracks">
           <div class="cc-panel-head">
             <div class="cc-panel-head-left">
               <h2>Strategic investment tracks &amp; key sponsoring decision makers</h2>
               <span class="cc-panel-note">Executive Sponsoring Tracks &middot; Multi-Organization Intelligence</span>
             </div>
             <button type="button" class="cc-help-btn" data-widget-info="strategic_tracks" title="About Strategic Investment Tracks" aria-label="About Strategic Investment Tracks">
-              <i class="bi bi-question-circle"></i>
+              <i class="fa-solid fa-circle-question"></i>
             </button>
           </div>
           <div id="ccTracksList"></div>
@@ -150,24 +177,26 @@
       </section>
 
       <section class="cc-row cc-row-2col">
-        <div class="cc-panel">
+        <div class="cc-panel" data-widget-id="capital">
           <div class="cc-panel-head">
             <div class="cc-panel-head-left">
               <h2>Capital events</h2>
               <span class="cc-panel-note">Funding, IPO &amp; acquisitions, last 12 months</span>
             </div>
             <button type="button" class="cc-help-btn" data-widget-info="capital" title="About Capital Events" aria-label="About Capital Events">
-              <i class="bi bi-question-circle"></i>
+              <i class="fa-solid fa-circle-question"></i>
             </button>
           </div>
           <ul class="cc-feed-list" id="ccCapitalList"></ul>
         </div>
 
-        <div class="cc-panel">
+        <div class="cc-panel" data-widget-id="coverage">
           <div class="cc-panel-head">
-            <h2>Org coverage gaps</h2>
+            <div class="cc-panel-head-left">
+              <h2>Org coverage gaps</h2>
+            </div>
             <button type="button" class="cc-help-btn" data-widget-info="coverage" title="About Org Coverage Gaps" aria-label="About Org Coverage Gaps">
-              <i class="bi bi-question-circle"></i>
+              <i class="fa-solid fa-circle-question"></i>
             </button>
           </div>
           <ul class="cc-feed-list" id="ccCoverageList"></ul>
@@ -175,64 +204,42 @@
       </section>
 
       <section class="cc-row cc-row-2col">
-        <div class="cc-panel">
-          <div class="cc-panel-head">
-            <h2>Competitor mentions</h2>
-            <button type="button" class="cc-help-btn" data-widget-info="competitor" title="About Competitor Mentions" aria-label="About Competitor Mentions">
-              <i class="bi bi-question-circle"></i>
-            </button>
-          </div>
-          <ul class="cc-feed-list" id="ccCompetitorList"></ul>
-        </div>
-
-        <div class="cc-panel">
-          <div class="cc-panel-head">
-            <h2>Tech &amp; IP signals</h2>
-            <button type="button" class="cc-help-btn" data-widget-info="tech_signals" title="About Tech & IP Signals" aria-label="About Tech & IP Signals">
-              <i class="bi bi-question-circle"></i>
-            </button>
-          </div>
-          <ul class="cc-feed-list" id="ccTechList"></ul>
-        </div>
-      </section>
-
-      <section class="cc-row cc-row-2col">
-        <div class="cc-panel">
+        <div class="cc-panel" data-widget-id="pain_points">
           <div class="cc-panel-head">
             <div class="cc-panel-head-left">
-              <h2>Objections &amp; pain points</h2>
-              <span class="cc-panel-note">Ranked by how many personas mention them</span>
+              <h2>Top pain points</h2>
+              <span class="cc-panel-note">Ranked by persona frequency across target accounts</span>
             </div>
-            <button type="button" class="cc-help-btn" data-widget-info="objections" title="About Objections & Pain Points" aria-label="About Objections & Pain Points">
-              <i class="bi bi-question-circle"></i>
+            <button type="button" class="cc-help-btn" data-widget-info="pain_points" title="About Top Pain Points" aria-label="About Top Pain Points">
+              <i class="fa-solid fa-circle-question"></i>
             </button>
           </div>
-          <div id="ccObjectionsBody"></div>
+          <div id="ccPainBody"></div>
         </div>
 
-        <div class="cc-panel">
+        <div class="cc-panel" data-widget-id="objections">
           <div class="cc-panel-head">
             <div class="cc-panel-head-left">
-              <h2>New &amp; changed decision-makers</h2>
-              <span class="cc-panel-note">Last 30 days, cross-checked against your buying committee</span>
+              <h2>Key objections</h2>
+              <span class="cc-panel-note">Ranked by persona frequency across target accounts</span>
             </div>
-            <button type="button" class="cc-help-btn" data-widget-info="decision_makers" title="About New & Changed Decision-Makers" aria-label="About New & Changed Decision-Makers">
-              <i class="bi bi-question-circle"></i>
+            <button type="button" class="cc-help-btn" data-widget-info="objections" title="About Key Objections" aria-label="About Key Objections">
+              <i class="fa-solid fa-circle-question"></i>
             </button>
           </div>
-          <ul class="cc-feed-list" id="ccDecisionMakersList"></ul>
+          <div id="ccObjectionBody"></div>
         </div>
       </section>
 
       <section class="cc-row">
-        <div class="cc-panel">
+        <div class="cc-panel" data-widget-id="news">
           <div class="cc-panel-head">
             <div class="cc-panel-head-left">
               <h2>Google News</h2>
               <span class="cc-panel-note">Recent coverage captured for your accounts</span>
             </div>
             <button type="button" class="cc-help-btn" data-widget-info="news" title="About Google News" aria-label="About Google News">
-              <i class="bi bi-question-circle"></i>
+              <i class="fa-solid fa-circle-question"></i>
             </button>
           </div>
           <ul class="cc-feed-list" id="ccNewsList"></ul>
@@ -247,27 +254,50 @@
 <div class="cc-info-modal" id="ccWidgetInfoModal" role="dialog" aria-modal="true" aria-labelledby="ccWidgetInfoTitle">
   <div class="cc-info-modal-header">
     <div class="cc-info-modal-title-wrap">
-      <div class="cc-info-modal-icon-box"><i class="bi bi-info-circle-fill" id="ccWidgetInfoIcon"></i></div>
+      <div class="cc-info-modal-icon-box"><i class="fa-solid fa-circle-info" id="ccWidgetInfoIcon"></i></div>
       <div>
         <span class="cc-info-modal-badge" id="ccWidgetInfoBadge">Sales Intelligence</span>
         <h3 class="cc-info-modal-title" id="ccWidgetInfoTitle">Widget Guide</h3>
       </div>
     </div>
-    <button type="button" class="cc-info-modal-close" id="ccWidgetInfoClose" title="Close"><i class="bi bi-x-lg"></i></button>
+    <button type="button" class="cc-info-modal-close" id="ccWidgetInfoClose" title="Close"><i class="fa-solid fa-xmark"></i></button>
   </div>
   <div class="cc-info-modal-body">
     <div class="cc-info-section">
-      <div class="cc-info-section-title"><i class="bi bi-card-text"></i> Overview</div>
+      <div class="cc-info-section-title"><i class="fa-solid fa-rectangle-list"></i> Overview</div>
       <p class="cc-info-section-text" id="ccWidgetInfoSummary"></p>
     </div>
     <div class="cc-info-section cc-info-section-action">
-      <div class="cc-info-section-title"><i class="bi bi-lightning-charge-fill"></i> How to Use in Your Sales Workflow</div>
+      <div class="cc-info-section-title"><i class="fa-solid fa-bolt"></i> How to Use in Your Sales Workflow</div>
       <p class="cc-info-section-text" id="ccWidgetInfoAction"></p>
     </div>
     <div class="cc-info-section cc-info-section-meta">
-      <div class="cc-info-section-title"><i class="bi bi-database-fill-check"></i> Monitored Telemetry &amp; Signals</div>
+      <div class="cc-info-section-title"><i class="fa-solid fa-database"></i> Data Source &amp; Ingested Telemetry</div>
       <p class="cc-info-section-text cc-info-signals" id="ccWidgetInfoSignals"></p>
     </div>
+  </div>
+</div>
+
+<!-- Customize Dashboard Widgets Modal -->
+<div class="cc-custom-modal-backdrop" id="ccCustomizeBackdrop"></div>
+<div class="cc-custom-modal" id="ccCustomizeModal" role="dialog" aria-modal="true" aria-labelledby="ccCustomizeTitle">
+  <div class="cc-custom-modal-header">
+    <div class="cc-custom-modal-title-wrap">
+      <div class="cc-custom-icon-box"><i class="fa-solid fa-table-columns"></i></div>
+      <div>
+        <h3 class="cc-custom-modal-title" id="ccCustomizeTitle">Customize Dashboard Widgets</h3>
+        <p class="cc-custom-modal-subtitle">Personalize your Command Center layout. Toggle any widget on or off.</p>
+      </div>
+    </div>
+    <button type="button" class="cc-custom-modal-close" id="ccCustomizeClose" title="Close"><i class="fa-solid fa-xmark"></i></button>
+  </div>
+  <div class="cc-custom-modal-body" id="ccWidgetToggleList"></div>
+  <div class="cc-custom-modal-footer">
+    <div class="cc-custom-footer-left">
+      <button type="button" class="cc-btn cc-btn-ghost cc-btn-sm" id="ccResetWidgetsBtn"><i class="fa-solid fa-rotate-left"></i> Reset Defaults</button>
+      <button type="button" class="cc-btn cc-btn-outline cc-btn-sm" id="ccShowAllWidgetsBtn"><i class="fa-solid fa-eye"></i> Show All</button>
+    </div>
+    <button type="button" class="cc-btn cc-btn-primary cc-btn-sm" id="ccSaveWidgetsBtn"><i class="fa-solid fa-check"></i> Apply &amp; Save</button>
   </div>
 </div>
 
@@ -275,7 +305,7 @@
 <aside class="cc-drawer" id="ccDrawer">
   <div class="cc-drawer-header">
     <div class="cc-drawer-title" id="ccDrawerTitle">Account</div>
-    <button type="button" class="cc-drawer-close" id="ccDrawerClose" title="Close"><i class="bi bi-x-lg"></i></button>
+    <button type="button" class="cc-drawer-close" id="ccDrawerClose" title="Close"><i class="fa-solid fa-xmark"></i></button>
   </div>
   <div class="cc-drawer-body" id="ccDrawerBody"></div>
 </aside>
@@ -284,6 +314,7 @@
 
 {% include "partials/drawer.html" %}
 
-<script type="module" src="js/modules/command-center/main.js?v=4.3"></script>
+<script type="module" src="js/modules/command-center/main.js?v=4.4"></script>
+{% include "partials/copilot-dock.html" %}
 </body>
 </html>

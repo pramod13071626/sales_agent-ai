@@ -4,7 +4,7 @@ import { el } from './dom.js';
 export function initThemeToggle() {
   const btn = el('themeToggle');
   const icon = btn.querySelector('i');
-  function setIcon(theme) { icon.className = theme === 'dark' ? 'bi bi-sun' : 'bi bi-moon-stars'; }
+  function setIcon(theme) { icon.className = theme === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon'; }
   let saved = null;
   try { saved = localStorage.getItem('scraperTheme'); } catch (e) { /* private browsing / storage disabled */ }
   if (saved) {

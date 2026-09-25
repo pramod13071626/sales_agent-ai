@@ -75,8 +75,8 @@ function renderRecentlyUpdatedBody() {
   }
   return recentlyUpdated.map(a => `
     <button type="button" class="digest-list-row clickable" data-jump-account="${a.id}" title="Click to open ${esc(a.name)}">
-      <span class="digest-list-name"><i class="bi bi-building"></i> ${esc(a.name)}</span>
-      <span class="digest-list-meta">${esc(timeAgo(a.extracted_at))} <i class="bi bi-chevron-right"></i></span>
+      <span class="digest-list-name"><i class="fa-solid fa-building"></i> ${esc(a.name)}</span>
+      <span class="digest-list-meta">${esc(timeAgo(a.extracted_at))} <i class="fa-solid fa-chevron-right"></i></span>
     </button>`).join('');
 }
 
@@ -87,8 +87,8 @@ function renderMostMappedBody() {
   if (!topByContacts.length) return '';
   return topByContacts.map(a => `
     <button type="button" class="digest-list-row clickable" data-jump-account="${a.id}" title="Click to open ${esc(a.name)}">
-      <span class="digest-list-name"><i class="bi bi-building"></i> ${esc(a.name)}</span>
-      <span class="digest-list-meta">${a.total_contacts_captured || 0} contacts <i class="bi bi-chevron-right"></i></span>
+      <span class="digest-list-name"><i class="fa-solid fa-building"></i> ${esc(a.name)}</span>
+      <span class="digest-list-meta">${a.total_contacts_captured || 0} contacts <i class="fa-solid fa-chevron-right"></i></span>
     </button>`).join('');
 }
 
@@ -101,7 +101,7 @@ function renderContentDigestSummary() {
 
   if (!allKeys.size) {
     return `<div class="empty-block">
-      <div class="empty-block-icon"><i class="bi bi-inbox"></i></div>
+      <div class="empty-block-icon"><i class="fa-solid fa-inbox"></i></div>
       <div class="empty-block-text">No content intelligence captured yet for any account. This needs a content-crawling + LLM-analysis step to populate.</div>
     </div>`;
   }
@@ -137,9 +137,9 @@ function renderContentDigestSummary() {
 
   return `
     <div class="chip-row" style="margin-bottom:12px;">
-      <span class="chip"><i class="bi bi-collection"></i> ${totalPosts} posts captured</span>
-      <span class="chip"><i class="bi bi-stars"></i> ${realDigestCount} real digest${realDigestCount !== 1 ? 's' : ''} ready</span>
-      ${personaPostCount ? `<span class="chip"><i class="bi bi-person-lines-fill"></i> ${personaPostCount} posts on mapped contacts</span>` : ''}
+      <span class="chip"><i class="fa-solid fa-layer-group"></i> ${totalPosts} posts captured</span>
+      <span class="chip"><i class="fa-solid fa-star"></i> ${realDigestCount} real digest${realDigestCount !== 1 ? 's' : ''} ready</span>
+      ${personaPostCount ? `<span class="chip"><i class="fa-solid fa-address-card"></i> ${personaPostCount} posts on mapped contacts</span>` : ''}
     </div>
 
     ${readyAccounts.length ? readyAccounts.map(r => `
@@ -149,9 +149,9 @@ function renderContentDigestSummary() {
       </button>`).join('') : ''}
 
     ${orphanKeys.length ? `
-      <div class="content-provenance" style="margin-top:12px;"><i class="bi bi-info-circle"></i> Captured but not a tracked account yet — run the pipeline for these to unlock full analysis:</div>
+      <div class="content-provenance" style="margin-top:12px;"><i class="fa-solid fa-circle-info"></i> Captured but not a tracked account yet — run the pipeline for these to unlock full analysis:</div>
       <div class="chip-row" style="margin-top:6px;">
-        ${orphanKeys.map(k => `<span class="chip"><i class="bi bi-building"></i> ${esc((digests[k] && digests[k].digest.company) || k)} — ${(posts[k] || []).length} posts</span>`).join('')}
+        ${orphanKeys.map(k => `<span class="chip"><i class="fa-solid fa-building"></i> ${esc((digests[k] && digests[k].digest.company) || k)} — ${(posts[k] || []).length} posts</span>`).join('')}
       </div>` : ''}
   `;
 }
@@ -182,20 +182,20 @@ function renderGlobalDomainExpansionBody() {
   });
   if (!rows.length) {
     return `<div class="empty-block">
-      <div class="empty-block-icon"><i class="bi bi-layers"></i></div>
+      <div class="empty-block-icon"><i class="fa-solid fa-layer-group"></i></div>
       <div class="empty-block-text">No emerging domain-expansion opportunities detected yet across any account.</div>
     </div>`;
   }
   return rows.map(({ account, opportunity: o }) => `
     <div class="opportunity-card opportunity-card-brand">
       <div class="opportunity-header">
-        <i class="bi ${esc(o.icon || 'bi-layers')}"></i>
+        <i class="${esc(o.icon || 'fa-solid fa-layer-group')}"></i>
         <span class="opportunity-title">${esc(o.title)}</span>
         ${o.status ? `<span class="pill ${esc(o.statusClass || 'pill-brand')}">${esc(o.status)}</span>` : ''}
       </div>
       ${o.domain ? `<div class="opportunity-note"><strong>${esc(o.domain)}</strong>${o.demandSignal ? ` — ${esc(o.demandSignal)}` : ''}</div>` : ''}
-      ${o.proposedScope ? `<div class="opportunity-idea"><i class="bi bi-lightbulb"></i> <strong>Suggested build:</strong> ${esc(o.proposedScope)}</div>` : ''}
-      <button type="button" class="alert-view-account" data-jump-account="${account.id}">Open ${esc(account.name)} <i class="bi bi-arrow-right"></i></button>
+      ${o.proposedScope ? `<div class="opportunity-idea"><i class="fa-solid fa-lightbulb"></i> <strong>Suggested build:</strong> ${esc(o.proposedScope)}</div>` : ''}
+      <button type="button" class="alert-view-account" data-jump-account="${account.id}">Open ${esc(account.name)} <i class="fa-solid fa-arrow-right"></i></button>
     </div>`).join('');
 }
 
@@ -203,12 +203,12 @@ function renderGlobalRecentJobsBody() {
   const jobs = recentJobsCache || [];
   if (!jobs.length) {
     return `<div class="empty-block">
-      <div class="empty-block-icon"><i class="bi bi-linkedin"></i></div>
+      <div class="empty-block-icon"><i class="fa-brands fa-linkedin"></i></div>
       <div class="empty-block-text">No LinkedIn job postings captured yet across any account.</div>
     </div>`;
   }
   return jobs.map(j => renderJobCard(j, { showAccountLink: true, accountId: j.account_id, accountName: j.account_name })).join('')
-    + '<button type="button" class="alert-view-account" id="viewAllJobsBtn" style="margin-top:12px;"><i class="bi bi-grid-3x3-gap"></i> View All Job Postings</button>';
+    + '<button type="button" class="alert-view-account" id="viewAllJobsBtn" style="margin-top:12px;"><i class="fa-solid fa-table-cells-large"></i> View All Job Postings</button>';
 }
 
 // Ported from dev's feature-cxo-pipline branch (originally inline in the pre-refactor
@@ -257,14 +257,14 @@ function renderCxoMovementsBody() {
   }
 
   const tabs = [
-    { id: 'all', label: 'All', icon: 'bi-arrow-left-right', count: counts.all || movements.length },
-    { id: 'joined', label: 'Joined', icon: 'bi-person-plus-fill', count: counts.joined || 0 },
-    { id: 'resigned', label: 'Resigned', icon: 'bi-person-dash-fill', count: counts.resigned || 0 },
-    { id: 'retired', label: 'Retired', icon: 'bi-clock-history', count: counts.retired || 0 },
-    { id: 'promoted', label: 'Promoted', icon: 'bi-arrow-up-circle-fill', count: counts.promoted || 0 }
+    { id: 'all', label: 'All', icon: 'fa-solid fa-right-left', count: counts.all || movements.length },
+    { id: 'joined', label: 'Joined', icon: 'fa-solid fa-user-plus', count: counts.joined || 0 },
+    { id: 'resigned', label: 'Resigned', icon: 'fa-solid fa-user-xmark', count: counts.resigned || 0 },
+    { id: 'retired', label: 'Retired', icon: 'fa-solid fa-clock-rotate-left', count: counts.retired || 0 },
+    { id: 'promoted', label: 'Promoted', icon: 'fa-solid fa-circle-up', count: counts.promoted || 0 }
   ].map(t => `
     <button type="button" class="tab-btn ${state.activeMovementTab === t.id ? 'active' : ''}" data-movement-tab="${t.id}" style="padding:6px 10px; font-size:.74rem;">
-      <i class="bi ${t.icon}"></i> ${esc(t.label)} <span class="tab-badge">${t.count}</span>
+      <i class="${t.icon}"></i> ${esc(t.label)} <span class="tab-badge">${t.count}</span>
     </button>
   `).join('');
 
@@ -286,23 +286,23 @@ function renderCxoMovementsBody() {
 
               <div class="movement-meta-row">
                 <div class="movement-meta-item">
-                  <i class="bi bi-building"></i>
+                  <i class="fa-solid fa-building"></i>
                   <span><strong>Company:</strong> ${esc(m.company_name)}</span>
-                  ${m.account_id ? `<button type="button" class="cxo-company-btn" data-jump-account="${m.account_id}" style="margin-left:4px; font-size:.65rem; padding:1px 5px;">View Org <i class="bi bi-arrow-right"></i></button>` : ''}
+                  ${m.account_id ? `<button type="button" class="cxo-company-btn" data-jump-account="${m.account_id}" style="margin-left:4px; font-size:.65rem; padding:1px 5px;">View Org <i class="fa-solid fa-arrow-right"></i></button>` : ''}
                 </div>
                 ${m.effective_date ? `
                   <div class="movement-meta-item">
-                    <i class="bi bi-calendar3"></i>
+                    <i class="fa-solid fa-calendar-days"></i>
                     <span><strong>Timing / Date:</strong> ${esc(m.effective_date)}</span>
                   </div>` : ''}
                 ${m.previous_role ? `
                   <div class="movement-meta-item">
-                    <i class="bi bi-briefcase"></i>
+                    <i class="fa-solid fa-briefcase"></i>
                     <span><strong>Previous Role / Tenure:</strong> ${esc(m.previous_role)}</span>
                   </div>` : ''}
                 ${m.new_company ? `
                   <div class="movement-meta-item">
-                    <i class="bi bi-box-arrow-up-right"></i>
+                    <i class="fa-solid fa-arrow-up-right-from-square"></i>
                     <span><strong>New Organization:</strong> ${esc(m.new_company)}</span>
                   </div>` : ''}
               </div>
@@ -311,8 +311,8 @@ function renderCxoMovementsBody() {
             </div>
 
             <div class="movement-footer">
-              <span class="movement-source"><i class="bi bi-newspaper"></i> ${esc(m.source || m.publisher_domain || 'News Wire')}</span>
-              ${m.article_url ? `<a href="${esc(m.article_url)}" target="_blank" class="movement-link">Source Article <i class="bi bi-box-arrow-up-right"></i></a>` : ''}
+              <span class="movement-source"><i class="fa-solid fa-newspaper"></i> ${esc(m.source || m.publisher_domain || 'News Wire')}</span>
+              ${m.article_url ? `<a href="${esc(m.article_url)}" target="_blank" class="movement-link">Source Article <i class="fa-solid fa-arrow-up-right-from-square"></i></a>` : ''}
             </div>
           </div>
         `;
@@ -320,7 +320,7 @@ function renderCxoMovementsBody() {
     </div>
   ` : `
     <div class="empty-block" style="padding:20px 10px; text-align:center;">
-      <div class="empty-block-icon" style="font-size:1.6rem; color:var(--text-muted); margin-bottom:6px;"><i class="bi bi-arrow-left-right"></i></div>
+      <div class="empty-block-icon" style="font-size:1.6rem; color:var(--text-muted); margin-bottom:6px;"><i class="fa-solid fa-right-left"></i></div>
       <div style="font-weight:700; font-size:.88rem; color:var(--text-primary); margin-bottom:4px;">No ${currentYear} movements in this category</div>
       <div style="font-size:.76rem; color:var(--text-secondary);">Showing ${currentYear} executive transitions only. Older movements are still on file per-account.</div>
     </div>
@@ -353,10 +353,10 @@ async function renderSection(container) {
     console.error(`Digest section "${sectionId}" failed to render`, err);
     container.innerHTML = `
       <div class="empty-block">
-        <div class="empty-block-icon"><i class="bi bi-exclamation-triangle"></i></div>
+        <div class="empty-block-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
         <div class="empty-block-text">Couldn't render this section.</div>
         <button type="button" class="alert-view-account" data-retry-section="${sectionId}" style="margin-top:10px;">
-          <i class="bi bi-arrow-clockwise"></i> Retry
+          <i class="fa-solid fa-arrow-rotate-right"></i> Retry
         </button>
       </div>`;
   }
@@ -400,7 +400,7 @@ export function renderDigest() {
 
   if (!state.accounts.length) {
     dashEmpty.innerHTML = `
-      <div class="dash-empty-icon"><i class="bi bi-building"></i></div>
+      <div class="dash-empty-icon"><i class="fa-solid fa-building"></i></div>
       <p class="dash-empty-title">No accounts yet</p>
       <p class="dash-empty-sub">Run the pipeline to populate your first account, then select it from the left panel.</p>`;
     dashEmpty.classList.remove('digest-mode');
@@ -426,10 +426,10 @@ export function renderDigest() {
         ${showRecent ? `
           <div class="panel">
             <div class="panel-title">
-              <span><i class="bi bi-clock-history"></i> Recently Updated Accounts</span>
+              <span><i class="fa-solid fa-clock-rotate-left"></i> Recently Updated Accounts</span>
               <div class="panel-title-tools">
-                <span class="context-badge live"><i class="bi bi-arrow-repeat"></i> Fresh Scrapes</span>
-                <button type="button" class="panel-hide-btn" data-hide-section="recently_updated" title="Hide this section from dashboard"><i class="bi bi-x-lg"></i></button>
+                <span class="context-badge live"><i class="fa-solid fa-arrows-rotate"></i> Fresh Scrapes</span>
+                <button type="button" class="panel-hide-btn" data-hide-section="recently_updated" title="Hide this section from dashboard"><i class="fa-solid fa-xmark"></i></button>
               </div>
             </div>
             <p class="section-desc">Accounts with the most recent pipeline updates, data enrichments, or fresh signal captures.</p>
@@ -440,10 +440,10 @@ export function renderDigest() {
         ${showMapped ? `
           <div class="panel">
             <div class="panel-title">
-              <span><i class="bi bi-people-fill"></i> Most-Mapped Accounts</span>
+              <span><i class="fa-solid fa-users"></i> Most-Mapped Accounts</span>
               <div class="panel-title-tools">
-                <span class="context-badge live"><i class="bi bi-check2-all"></i> Org Coverage</span>
-                <button type="button" class="panel-hide-btn" data-hide-section="most_mapped" title="Hide this section from dashboard"><i class="bi bi-x-lg"></i></button>
+                <span class="context-badge live"><i class="fa-solid fa-check-double"></i> Org Coverage</span>
+                <button type="button" class="panel-hide-btn" data-hide-section="most_mapped" title="Hide this section from dashboard"><i class="fa-solid fa-xmark"></i></button>
               </div>
             </div>
             <p class="section-desc">Accounts with the deepest organizational charts and highest volume of executive contacts identified.</p>
@@ -459,10 +459,10 @@ export function renderDigest() {
     socialHtml = `
       <div class="panel">
         <div class="panel-title">
-          <span><i class="bi bi-broadcast-pin"></i> Social &amp; Content Intelligence Digest</span>
+          <span><i class="fa-solid fa-tower-broadcast"></i> Social &amp; Content Intelligence Digest</span>
           <div class="panel-title-tools">
-            <span class="context-badge ai"><i class="bi bi-stars"></i> Cross-Account AI</span>
-            <button type="button" class="panel-hide-btn" data-hide-section="social_digest" title="Hide this section from dashboard"><i class="bi bi-x-lg"></i></button>
+            <span class="context-badge ai"><i class="fa-solid fa-star"></i> Cross-Account AI</span>
+            <button type="button" class="panel-hide-btn" data-hide-section="social_digest" title="Hide this section from dashboard"><i class="fa-solid fa-xmark"></i></button>
           </div>
         </div>
         <p class="section-desc">Overview of all captured social discourse, executive LinkedIn themes, and LLM-synthesized takeaways across all tracked enterprises.</p>
@@ -479,10 +479,10 @@ export function renderDigest() {
         ${showAlerts ? `
           <div class="panel">
             <div class="panel-title">
-              <span><i class="bi bi-lightning-charge-fill"></i> Global Sales Alerts &amp; StradIT Service Line Opportunities</span>
+              <span><i class="fa-solid fa-bolt"></i> Global Sales Alerts &amp; StradIT Service Line Opportunities</span>
               <div class="panel-title-tools">
-                <span class="context-badge ai"><i class="bi bi-stars"></i> AI Matcher</span>
-                <button type="button" class="panel-hide-btn" data-hide-section="sales_alerts" title="Hide this section from dashboard"><i class="bi bi-x-lg"></i></button>
+                <span class="context-badge ai"><i class="fa-solid fa-star"></i> AI Matcher</span>
+                <button type="button" class="panel-hide-btn" data-hide-section="sales_alerts" title="Hide this section from dashboard"><i class="fa-solid fa-xmark"></i></button>
               </div>
             </div>
             <p class="section-desc">High-priority service alignment opportunities detected across all accounts based on keyword citations and public statements.</p>
@@ -493,10 +493,10 @@ export function renderDigest() {
         ${showDomain ? `
           <div class="panel">
             <div class="panel-title">
-              <span><i class="bi bi-rocket-takeoff-fill"></i> Emerging Domain Expansion &amp; Custom Integration</span>
+              <span><i class="fa-solid fa-rocket"></i> Emerging Domain Expansion &amp; Custom Integration</span>
               <div class="panel-title-tools">
-                <span class="context-badge live"><i class="bi bi-layers-fill"></i> Across All Accounts</span>
-                <button type="button" class="panel-hide-btn" data-hide-section="domain_expansion" title="Hide this section from dashboard"><i class="bi bi-x-lg"></i></button>
+                <span class="context-badge live"><i class="fa-solid fa-layer-group"></i> Across All Accounts</span>
+                <button type="button" class="panel-hide-btn" data-hide-section="domain_expansion" title="Hide this section from dashboard"><i class="fa-solid fa-xmark"></i></button>
               </div>
             </div>
             <p class="section-desc">Trending enterprise initiatives and adjacent technology domains where StradIT can engineer custom integrated solutions, rolled up across every tracked account.</p>
@@ -515,10 +515,10 @@ export function renderDigest() {
         ${showCxoMovements ? `
           <div class="panel">
             <div class="panel-title">
-              <span><i class="bi bi-arrow-left-right" style="color:var(--brand);"></i> Executive Leadership Transitions &amp; CXO Movements</span>
+              <span><i class="fa-solid fa-right-left" style="color:var(--brand);"></i> Executive Leadership Transitions &amp; CXO Movements</span>
               <div class="panel-title-tools">
-                <span class="context-badge live"><i class="bi bi-broadcast"></i> Live Signal Monitor</span>
-                <button type="button" class="panel-hide-btn" data-hide-section="cxo_movements" title="Hide this section from dashboard"><i class="bi bi-x-lg"></i></button>
+                <span class="context-badge live"><i class="fa-solid fa-tower-broadcast"></i> Live Signal Monitor</span>
+                <button type="button" class="panel-hide-btn" data-hide-section="cxo_movements" title="Hide this section from dashboard"><i class="fa-solid fa-xmark"></i></button>
               </div>
             </div>
             <p class="section-desc">Track this year's executive appointments, departures, and role movements across enterprise accounts, most recent first.</p>
@@ -529,10 +529,10 @@ export function renderDigest() {
         ${showJobs ? `
           <div class="panel">
             <div class="panel-title">
-              <span><i class="bi bi-linkedin"></i> Recent LinkedIn Job Postings</span>
+              <span><i class="fa-brands fa-linkedin"></i> Recent LinkedIn Job Postings</span>
               <div class="panel-title-tools">
-                <span class="context-badge live"><i class="bi bi-broadcast"></i> Across All Accounts</span>
-                <button type="button" class="panel-hide-btn" data-hide-section="linkedin_jobs" title="Hide this section from dashboard"><i class="bi bi-x-lg"></i></button>
+                <span class="context-badge live"><i class="fa-solid fa-tower-broadcast"></i> Across All Accounts</span>
+                <button type="button" class="panel-hide-btn" data-hide-section="linkedin_jobs" title="Hide this section from dashboard"><i class="fa-solid fa-xmark"></i></button>
               </div>
             </div>
             <p class="section-desc">Newest scraped job postings across every tracked account — a hiring-activity signal worth flagging on calls.</p>
@@ -549,17 +549,17 @@ export function renderDigest() {
     <div class="digest-header">
       <div class="digest-header-top">
         <div class="digest-header-main">
-          <h2 class="digest-title"><i class="bi bi-bar-chart-line-fill"></i> Global Accounts Dashboard</h2>
+          <h2 class="digest-title"><i class="fa-solid fa-chart-line"></i> Global Accounts Dashboard</h2>
           <p class="digest-sub">Live intelligence workspace tracking <strong>${state.accounts.length} enterprise account${state.accounts.length !== 1 ? 's' : ''}</strong>. Continuously aggregates signals from executive social feeds, SEC filings, organizational hierarchies, and StradIT service-fit opportunities.</p>
         </div>
         <div class="digest-header-actions">
           <div class="digest-customize-wrap">
             <button type="button" class="digest-customize-btn" id="digestCustomizeBtn" title="Show or hide dashboard sections">
-              <i class="bi bi-sliders"></i> Customize View <span class="customize-badge">${visibleCount}/${DIGEST_SECTIONS.length}</span> <i class="bi bi-chevron-down"></i>
+              <i class="fa-solid fa-sliders"></i> Customize View <span class="customize-badge">${visibleCount}/${DIGEST_SECTIONS.length}</span> <i class="fa-solid fa-chevron-down"></i>
             </button>
             <div class="digest-customize-menu d-none" id="digestCustomizeMenu">
               <div class="digest-customize-menu-header">
-                <span><i class="bi bi-layout-text-window"></i> Dashboard Sections</span>
+                <span><i class="fa-solid fa-window-restore"></i> Dashboard Sections</span>
                 <div class="digest-menu-actions">
                   <button type="button" class="customize-link-btn" id="digestShowAllBtn">Show All</button>
                   <span class="sep">·</span>
@@ -572,7 +572,7 @@ export function renderDigest() {
                   return `
                     <label class="digest-customize-item ${isChecked ? 'active' : ''}">
                       <input type="checkbox" class="digest-section-cb" data-section-id="${s.id}" ${isChecked ? 'checked' : ''}>
-                      <i class="bi ${s.icon} item-icon"></i>
+                      <i class="${s.icon} item-icon"></i>
                       <div class="item-info">
                         <div class="item-name">${esc(s.label)}</div>
                         <div class="item-desc">${esc(s.desc)}</div>
@@ -595,7 +595,7 @@ export function renderDigest() {
         <div class="step-guide-item"><span class="step-guide-num">2</span> <strong>Inspect LOBs:</strong> Drill into specific operating divisions</div>
         <div class="step-guide-item"><span class="step-guide-num">3</span> <strong>Review Signals:</strong> Match offerings with live buyer pain points</div>
         <div class="step-guide-item"><span class="step-guide-num">4</span> <strong>Open Call Prep:</strong> Click contacts for tailored talk tracks</div>
-        <button type="button" class="step-guide-hide-btn" data-hide-section="step_guide" title="Hide workflow guide"><i class="bi bi-x-lg"></i></button>
+        <button type="button" class="step-guide-hide-btn" data-hide-section="step_guide" title="Hide workflow guide"><i class="fa-solid fa-xmark"></i></button>
       </div>
     ` : ''}
 
@@ -609,14 +609,14 @@ export function renderDigest() {
 
     ${noSectionsVisible ? `
       <div class="empty-block" style="padding: 36px 20px; text-align: center;">
-        <div class="empty-block-icon" style="font-size: 2rem; color: var(--text-muted); margin-bottom: 10px;"><i class="bi bi-layout-sidebar-inset"></i></div>
+        <div class="empty-block-icon" style="font-size: 2rem; color: var(--text-muted); margin-bottom: 10px;"><i class="fa-solid fa-table-columns"></i></div>
         <div style="font-weight: 700; font-size: 1.05rem; color: var(--text-primary); margin-bottom: 6px;">All sections are currently hidden</div>
         <div style="color: var(--text-secondary); font-size: 0.82rem; margin-bottom: 16px; max-width: 420px; margin-left: auto; margin-right: auto;">You can customize your dashboard layout and re-enable any intelligence module dynamically.</div>
-        <button type="button" class="btn btn-primary btn-sm" id="digestEmptyShowAllBtn"><i class="bi bi-eye"></i> Show All Sections</button>
+        <button type="button" class="btn btn-primary btn-sm" id="digestEmptyShowAllBtn"><i class="fa-solid fa-eye"></i> Show All Sections</button>
       </div>
     ` : ''}
 
-    <div class="digest-cta"><i class="bi bi-arrow-left-circle-fill"></i> <span><strong>Ready to explore?</strong> Select any account from the left panel to open its complete intelligence dossier and contact matrix.</span></div>
+    <div class="digest-cta"><i class="fa-solid fa-circle-left"></i> <span><strong>Ready to explore?</strong> Select any account from the left panel to open its complete intelligence dossier and contact matrix.</span></div>
   `;
 
   observeDigestSections();

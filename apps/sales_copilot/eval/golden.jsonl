@@ -1,0 +1,25 @@
+{"id": "prep-robin", "q": "Prep me for a call with Robin Vince", "intent": "person_brief", "persona": 220, "gold": {"keys": ["callprep:220", "persona:220"]}}
+{"id": "objections-robin", "q": "What objections will Robin Vince raise?", "intent": "person_brief", "persona": 220, "gold": {"keys": ["callprep:220"]}}
+{"id": "draft-robin", "q": "Draft a short intro email to Robin Vince", "intent": "draft", "persona": 220, "gold": {"keys": ["callprep:220", "persona:220"]}}
+{"id": "pronoun-followup", "q": "what will he push back on?", "context": {"persona_id": 220}, "intent": "person_brief", "persona": 220, "gold": {"keys": ["callprep:220"]}}
+{"id": "decision-makers-bny", "q": "Who are the decision-makers at BNY?", "intent": "list_people"}
+{"id": "vps-tech-bny", "q": "Which BNY VPs work in technology?", "intent": "list_people"}
+{"id": "csuite-blackrock", "q": "List the C-suite at BlackRock", "intent": "list_people"}
+{"id": "changes-robin", "q": "What changed for Robin Vince in the last 30 days?", "intent": "what_changed", "persona": 220}
+{"id": "remember", "q": "remember that Robin prefers morning calls", "context": {"persona_id": 220}, "intent": "remember"}
+{"id": "hiring-blackrock", "q": "What is BlackRock hiring for right now?", "intent": "open_question", "gold": {"doc_type": "job_theme", "account": 27}}
+{"id": "digital-ta-bny", "q": "What has BNY launched in digital transfer agency?", "gold": {"title_contains": "Digital Transfer Agency", "account": 11}}
+{"id": "securities-finance-coo", "q": "Who runs operations for securities finance at BNY?", "gold": {"keys": ["persona:460"]}}
+{"id": "news-bny", "q": "What's new at BNY?", "intent": "account_brief"}
+{"id": "acl-northern-trust", "q": "Northern Trust Project Acacia digital assets", "acl": [11, 14, 27], "expect_no_accounts": [23, 24]}
+{"id": "acl-vanguard", "q": "Vanguard news and hiring", "acl": [11, 14, 27], "expect_no_accounts": [23, 24]}
+{"id": "greeting", "q": "Hi", "intent": "smalltalk", "no_llm": true}
+{"id": "greeting-typo", "q": "Good mornming", "intent": "smalltalk", "no_llm": true}
+{"id": "thanks", "q": "thanks, that helps!", "intent": "smalltalk", "no_llm": true}
+{"id": "bye", "q": "bye", "intent": "smalltalk", "no_llm": true}
+{"id": "abusive-en", "q": "you stupid bot, this is bullshit", "intent": "moderated", "no_llm": true}
+{"id": "abusive-hinglish", "q": "chutiya bot", "intent": "moderated", "no_llm": true}
+{"id": "abusive-disguised", "q": "f u c k this", "intent": "moderated", "no_llm": true}
+{"id": "greeting-then-question", "q": "Hi, prep me for a call with Robin Vince", "intent": "person_brief", "persona": 220, "gold": {"keys": ["callprep:220", "persona:220"]}}
+{"id": "thanks-not-smalltalk", "q": "Draft a thank you email to Robin Vince", "intent": "draft", "persona": 220}
+{"id": "niger-not-abusive", "q": "Does BNY have operations in Niger?", "intent": "open_question"}

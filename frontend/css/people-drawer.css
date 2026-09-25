@@ -48,6 +48,8 @@
   background: var(--brand);
   color: #fff; font-size: .72rem; font-weight: 700;
   display: grid; place-items: center;
+  border: 2px solid var(--panel-bg);
+  box-shadow: var(--shadow);
 }
 .contact-body { flex: 1; min-width: 0; }
 .contact-name { font-size: .84rem; font-weight: 700; }
@@ -195,6 +197,8 @@
   background: var(--brand);
   color: #fff; font-weight: 700; font-size: 1.1rem;
   display: grid; place-items: center;
+  border: 3px solid var(--panel-bg);
+  box-shadow: var(--shadow-hover);
 }
 .drawer-contact-name {
   font-size: 1.05rem; font-weight: 800;

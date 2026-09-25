@@ -10,7 +10,7 @@ export function renderContentPanel(account) {
 
   if (!targetKey || (!posts.length && !digestEntry)) {
     return `<div class="empty-block">
-      <div class="empty-block-icon"><i class="bi bi-inbox"></i></div>
+      <div class="empty-block-icon"><i class="fa-solid fa-inbox"></i></div>
       <div class="empty-block-text">No content intelligence captured yet for this account.</div>
     </div>`;
   }
@@ -38,7 +38,7 @@ export function renderContentPanel(account) {
 
 
 export function renderChannelCard(ch) {
-  const icon = CHANNEL_ICON[ch.channel] || 'bi-globe2';
+  const icon = CHANNEL_ICON[ch.channel] || 'fa-solid fa-earth-americas';
   const label = ch.channel_label || CHANNEL_LABEL[ch.channel] || ch.channel;
   const strengthPill = STRENGTH_PILL[ch.evidence_strength] || '';
   const storyline = ch.storyline || {};
@@ -47,7 +47,7 @@ export function renderChannelCard(ch) {
   return `
     <div class="content-channel-card">
       <div class="content-channel-header">
-        <span class="content-channel-icon"><i class="bi ${icon}"></i></span>
+        <span class="content-channel-icon"><i class="${icon}"></i></span>
         <span class="content-channel-label">${esc(label)}</span>
         ${ch.evidence_strength ? `<span class="pill ${strengthPill}">${esc(ch.evidence_strength)}</span>` : ''}
         <span class="content-channel-count">${ch.posts_considered != null ? `${ch.posts_considered} posts` : ''}</span>
@@ -60,7 +60,7 @@ export function renderChannelCard(ch) {
           <summary>Observed facts (${ch.observed.length})</summary>
           ${(ch.themes && ch.themes.length) ? `<div class="chip-row" style="margin:8px 0;">${ch.themes.map(t => `<span class="chip">${esc(t)}</span>`).join('')}</div>` : ''}
           <ul class="content-fact-list">
-            ${ch.observed.map(o => `<li>${esc(o.fact)}${o.source_url ? ` <a href="${esc(o.source_url)}" target="_blank" title="Source"><i class="bi bi-box-arrow-up-right"></i></a>` : ''}</li>`).join('')}
+            ${ch.observed.map(o => `<li>${esc(o.fact)}${o.source_url ? ` <a href="${esc(o.source_url)}" target="_blank" title="Source"><i class="fa-solid fa-arrow-up-right-from-square"></i></a>` : ''}</li>`).join('')}
           </ul>
         </details>` : ''}
 
@@ -75,7 +75,7 @@ export function renderChannelCard(ch) {
 
       ${doNotSay.length ? `
         <div class="content-warning">
-          <div class="content-warning-title"><i class="bi bi-exclamation-octagon"></i> Do not say</div>
+          <div class="content-warning-title"><i class="fa-solid fa-triangle-exclamation"></i> Do not say</div>
           <ul>${doNotSay.map(w => `<li>${esc(w)}</li>`).join('')}</ul>
         </div>` : ''}
     </div>
@@ -84,14 +84,14 @@ export function renderChannelCard(ch) {
 
 export function renderRawPostsFallback(posts, note) {
   if (!posts.length) {
-    return `<div class="empty-block"><div class="empty-block-icon"><i class="bi bi-inbox"></i></div><div class="empty-block-text">${esc(note)}</div></div>`;
+    return `<div class="empty-block"><div class="empty-block-icon"><i class="fa-solid fa-inbox"></i></div><div class="empty-block-text">${esc(note)}</div></div>`;
   }
   const byChannel = {};
   posts.forEach(p => { (byChannel[p.channel] = byChannel[p.channel] || []).push(p); });
   return `
-    <div class="content-provenance" style="margin-bottom:10px;"><i class="bi bi-info-circle"></i> ${esc(note)}</div>
+    <div class="content-provenance" style="margin-bottom:10px;"><i class="fa-solid fa-circle-info"></i> ${esc(note)}</div>
     <div class="chip-row">
-      ${Object.entries(byChannel).map(([ch, arr]) => `<span class="chip"><i class="bi ${CHANNEL_ICON[ch] || 'bi-globe2'}"></i> ${CHANNEL_LABEL[ch] || ch}: ${arr.length}</span>`).join('')}
+      ${Object.entries(byChannel).map(([ch, arr]) => `<span class="chip"><i class="${CHANNEL_ICON[ch] || 'fa-solid fa-earth-americas'}"></i> ${CHANNEL_LABEL[ch] || ch}: ${arr.length}</span>`).join('')}
     </div>
   `;
 }

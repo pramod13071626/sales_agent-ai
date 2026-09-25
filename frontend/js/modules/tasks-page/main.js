@@ -11,6 +11,7 @@ import { getCurrentUser } from '../auth-client.js';
 import { showToast } from '../toast.js';
 import { renderList, renderFilterChips } from '../action-items.js';
 import { initAccountsNav } from '../command-center/accounts-nav.js';
+import { downloadFile } from '../download.js';
 
 function el(id) { return document.getElementById(id); }
 
@@ -160,9 +161,26 @@ function init() {
   refetchAndRender();
 }
 
+function wireExport() {
+  const btn = el('tpExport');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    const params = new URLSearchParams();
+    if (tp.activeStatus && tp.activeStatus !== 'all') params.set('status', tp.activeStatus);
+    if (tp.accountFilter) params.set('account_id', tp.accountFilter);
+    if (tp.priorityFilter) params.set('priority', tp.priorityFilter);
+    try {
+      await downloadFile(`/api/me/action-items/export?${params}`, 'my-tasks.xlsx');
+      showToast('Tasks downloaded');
+    } catch (err) { showToast(err.message); }
+  });
+}
+wireExport();
+
 initTopbarAuth().then((user) => {
   if (!user) {
-    window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
+    document.body.style.display = 'none';
+    window.location.replace(`/login?next=${encodeURIComponent(window.location.pathname)}`);
     return;
   }
   if (user.role !== 'super_admin' && user.has_tasks_access === false) {
@@ -177,7 +195,7 @@ initTopbarAuth().then((user) => {
       const mainEl = document.getElementById('tasksMain') || document.body;
       mainEl.innerHTML = `
         <div class="empty-block" style="margin:80px auto; max-width:460px; text-align:center; padding:40px; background:var(--card-bg); border-radius:12px; border:1px solid var(--border-color);">
-          <div class="empty-block-icon" style="font-size:2.5rem; color:var(--text-muted); margin-bottom:16px;"><i class="bi bi-shield-lock"></i></div>
+          <div class="empty-block-icon" style="font-size:2.5rem; color:var(--text-muted); margin-bottom:16px;"><i class="fa-solid fa-shield-halved"></i></div>
           <div style="font-size:1.15rem; font-weight:700; color:var(--text-primary); margin-bottom:8px;">Tasks Access Restricted</div>
           <div style="font-size:0.85rem; color:var(--text-secondary); line-height:1.5;">You do not have access to Tasks. Please ask a Super Administrator to grant you permissions.</div>
         </div>`;
