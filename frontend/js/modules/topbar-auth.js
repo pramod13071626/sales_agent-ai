@@ -56,18 +56,11 @@ function render() {
     return;
   }
 
-<<<<<<< HEAD
-  const showTasks = currentOptions.showTasks !== false && (user.role === 'super_admin' || user.has_tasks_access !== false);
-  const displayName = user.full_name || user.email || 'User';
-  const userInitials = initials(displayName);
-  const roleName = formatUserRole(user.role);
-=======
   const isOnAdminPage = window.location.pathname.startsWith('/admin');
-  const showTasks = !isOnAdminPage && (user.role === 'super_admin' || user.has_tasks_access !== false);
+  const showTasks = currentOptions.showTasks !== false && !isOnAdminPage && (user.role === 'super_admin' || user.has_tasks_access !== false);
   const displayName = user.full_name || (user.email ? user.email.split('@')[0] : 'User');
   const initials = getUserInitials(user);
   const isSuperAdmin = user.role === 'super_admin';
->>>>>>> c7734eeda27a92ae732d527cace6d72dc24450c0
 
   el.innerHTML = `
     ${showTasks ? '<button type="button" id="topbarMyTasksBtn" class="topbar-link topbar-link-btn" title="View assigned action items"><i class="bi bi-list-check"></i> My Tasks <span class="tab-badge" id="topbarMyTasksBadge">…</span></button>' : ''}
@@ -79,35 +72,12 @@ function render() {
         <i class="bi bi-chevron-down topbar-profile-arrow"></i>
       </button>
 
-<<<<<<< HEAD
-        <div class="topbar-user-dropdown" id="topbarUserDropdown" role="menu" aria-hidden="true">
-          <div class="topbar-user-dropdown-header">
-            <div class="topbar-dropdown-avatar">${esc(userInitials)}</div>
-            <div class="topbar-dropdown-info">
-              <div class="topbar-dropdown-name">${esc(displayName)}</div>
-              <div class="topbar-dropdown-email" title="${esc(user.email)}">${esc(user.email)}</div>
-            </div>
-          </div>
-
-          <div class="topbar-dropdown-role-box">
-            <span class="topbar-role-label">User Role</span>
-            <span class="topbar-role-badge"><i class="fa-solid fa-user-shield"></i> ${esc(roleName)}</span>
-          </div>
-
-          <div class="topbar-dropdown-divider"></div>
-
-          <div class="topbar-dropdown-actions">
-            <button type="button" id="topbarDropdownLogoutBtn" class="topbar-dropdown-item topbar-dropdown-logout">
-              <i class="fa-solid fa-right-from-bracket"></i> Logout
-            </button>
-=======
       <div class="topbar-profile-dropdown" id="topbarProfileDropdown" role="menu">
         <div class="profile-dropdown-header">
           <div class="profile-dropdown-avatar">${esc(initials)}</div>
           <div class="profile-dropdown-info">
             <div class="profile-dropdown-name" title="${esc(displayName)}">${esc(displayName)}</div>
             <div class="profile-dropdown-email" title="${esc(user.email || '')}">${esc(user.email || '')}</div>
->>>>>>> c7734eeda27a92ae732d527cace6d72dc24450c0
           </div>
         </div>
 

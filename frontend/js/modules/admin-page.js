@@ -3,14 +3,9 @@ import './fetch-instrumentation.js';
 import { getCurrentUser, logout, refreshAccessToken } from './auth-client.js';
 import { initTopbarAuth } from './topbar-auth.js';
 import { initThemeToggle } from './theme.js';
-import { initTopbarAuth } from './topbar-auth.js';
 import { showToast } from './toast.js';
 
 initThemeToggle();
-<<<<<<< HEAD
-=======
-initTopbarAuth();
->>>>>>> c7734eeda27a92ae732d527cace6d72dc24450c0
 
 const esc = (s) => {
   const d = document.createElement('div');
