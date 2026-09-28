@@ -1562,3 +1562,15 @@ TestClient, and a live check on the dev server (port 8003).
 
 **Next:** deals D3 (stage toolkits: why-now, discovery questions + MEDDICC, value map + battlecard, pilot plan,
 close plan) and D4 (copilot `deal_card` indexing, deal-scoped chats, weekly pipeline digest).
+
+**Added 2026-09-25 — pipeline console (`/copilot-pipeline`, super_admin):**
+
+| Area | Where | Notes |
+|---|---|---|
+| Runs: **incremental sync**, **full re-embed** (every chunk embedded into `<collection>__rebuild`, then swapped in and the ledger rewritten; chat keeps the old vectors until the new set is complete), or **eval only**. Each can also run the guardrail/safety suite and the golden-set eval with gates. Every stage (schema → render → version & chunk → embed → write vectors → verify → guardrails → eval) is recorded with timings, metrics and logs in `rag_pipeline_runs` | `pipeline.py`, `ingest.sync(progress=, rebuild=)`, `store.swap` | Holds the same advisory lock as `sync.process`, so a run never overlaps the background sync |
+| Embedding inspector: one document through source rows → rendered version (SCD-2 history) → attribution → chunks (hash, tokens, shared-by count, guardrail flags) → vector (dims, norm, first 48 dims) → Chroma entries per account → nearest neighbours | `pipeline.trace_document` | Read-only |
+| Query trace: prepare (tsquery, dropped account terms) → embed → vector leg → keyword leg → RRF → verified/boosted/budgeted evidence with injection flags | `pipeline.trace_query` | No LLM request |
+
+API (`/api/copilotpipeline`): `GET /status`, `POST /runs {mode: sync|reembed|eval, guardrails, eval}` (409 while busy),
+`GET /runs`, `GET /runs/current`, `GET /runs/{id}`, `GET /documents?q=&doc_type=`, `GET /documents/{id}/trace?chunk=`,
+`POST /query-trace {q, account_id?, persona_id?}`.

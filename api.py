@@ -5660,6 +5660,14 @@ if FASTAPI_AVAILABLE:
             to open a chat pre-scoped to that contact or account."""
             return templates.TemplateResponse(request, "copilot.html", headers=_NO_CACHE_HEADERS)
 
+        @app.get("/copilot-pipeline", response_class=HTMLResponse, include_in_schema=False)
+        async def copilot_pipeline_page(request: Request):
+            """Copilot index pipeline console: run sync / full re-embed / eval +
+            guardrails step by step, inspect one document's chunks and vectors,
+            trace a question through retrieval. Data comes from
+            /api/copilotpipeline/*, each call protected by require_role("super_admin")."""
+            return templates.TemplateResponse(request, "copilot-pipeline.html", headers=_NO_CACHE_HEADERS)
+
         @app.get("/tasks", response_class=HTMLResponse, include_in_schema=False)
         async def tasks_page(request: Request):
             """Personal, cross-account Task Management page — every action

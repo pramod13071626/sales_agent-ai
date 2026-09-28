@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 import auth
-from apps.sales_copilot import chat, embed, exports, ingest, llm, retrieve, sync
+from apps.sales_copilot import chat, embed, exports, ingest, llm, pipeline, retrieve, sync
 from db.connection import get_session
 from db.models.user import User
 
@@ -370,6 +370,77 @@ def _safe(fn, **kw):
         pass   # recorded in sync.state()
 
 
+# ── Pipeline console (/copilot-pipeline page) — super_admin only ─────────────
+pipeline_router = APIRouter(prefix="/api/copilotpipeline", tags=["Sales Copilot pipeline"])
+_admin = auth.require_role("super_admin")
+
+
+class RunIn(BaseModel):
+    mode: str = Field("sync", pattern="^(sync|reembed|eval)$")
+    guardrails: bool = True
+    eval: bool = True
+
+
+class QueryTraceIn(BaseModel):
+    q: str = Field(..., min_length=1, max_length=500)
+    account_id: Optional[int] = None
+    persona_id: Optional[int] = None
+
+
+@pipeline_router.get("/status")
+def pipeline_status(user: User = Depends(_admin)):
+    """Index stats, embedding config, the live run (if any) and recent runs."""
+    return pipeline.overview()
+
+
+@pipeline_router.post("/runs")
+def pipeline_start(body: RunIn, user: User = Depends(_admin)):
+    """Start sync (incremental), reembed (full re-embed, swapped in when complete) or eval-only,
+    optionally followed by the guardrail suite and the golden-set eval."""
+    try:
+        return pipeline.start(body.mode, body.guardrails, body.eval, getattr(user, "id", None))
+    except pipeline.Busy as e:
+        raise HTTPException(409, str(e))
+
+
+@pipeline_router.get("/runs")
+def pipeline_runs(limit: int = 20, user: User = Depends(_admin)):
+    return pipeline.history(min(max(limit, 1), 100))
+
+
+@pipeline_router.get("/runs/current")
+def pipeline_current(user: User = Depends(_admin)):
+    return pipeline.current()
+
+
+@pipeline_router.get("/runs/{run_id}")
+def pipeline_run(run_id: str, user: User = Depends(_admin)):
+    run = pipeline.get_run(run_id)
+    if not run:
+        raise HTTPException(404, "Run not found.")
+    return run
+
+
+@pipeline_router.get("/documents")
+def pipeline_documents(q: str = "", doc_type: str = "", user: User = Depends(_admin), s=Depends(_session)):
+    return pipeline.search_documents(s, q, doc_type)
+
+
+@pipeline_router.get("/documents/{doc_id}/trace")
+def pipeline_document_trace(doc_id: int, chunk: int = 0, user: User = Depends(_admin), s=Depends(_session)):
+    """One document step by step: sources → versions → entities → chunks → vectors → Chroma → neighbours."""
+    out = pipeline.trace_document(s, doc_id, chunk)
+    if not out:
+        raise HTTPException(404, "Document not found.")
+    return out
+
+
+@pipeline_router.post("/query-trace")
+def pipeline_query_trace(body: QueryTraceIn, user: User = Depends(_admin), s=Depends(_session)):
+    """One question through retrieval: embed, vector leg, keyword leg, RRF, verify/boost/budget."""
+    return pipeline.trace_query(s, body.q, [body.account_id] if body.account_id else None, body.persona_id)
+
+
 def install(app) -> None:
     """Called from the main api.py: ensure tables, mount routes, warm the embedding model."""
     try:
@@ -377,6 +448,7 @@ def install(app) -> None:
     except Exception as e:
         print(f"[copilot] schema check failed: {e}")
     app.include_router(router)
+    app.include_router(pipeline_router)
     embed.warm_up_in_background()
     try:
         from apps.sales_copilot import privacy

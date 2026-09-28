@@ -81,7 +81,7 @@ function render() {
           <div class="topbar-dropdown-divider"></div>
 
           <div class="topbar-dropdown-actions">
-            ${user.role === 'super_admin' ? '<a href="/admin" class="topbar-dropdown-item"><i class="fa-solid fa-users-gear"></i> Admin Management</a>' : ''}
+            ${user.role === 'super_admin' ? '<a href="/admin" class="topbar-dropdown-item"><i class="fa-solid fa-users-gear"></i> Admin Management</a><a href="/copilot-pipeline" class="topbar-dropdown-item"><i class="fa-solid fa-diagram-project"></i> Copilot Pipeline</a>' : ''}
             <button type="button" id="topbarDropdownLogoutBtn" class="topbar-dropdown-item topbar-dropdown-logout">
               <i class="fa-solid fa-right-from-bracket"></i> Logout
             </button>

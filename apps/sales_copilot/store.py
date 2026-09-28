@@ -79,3 +79,45 @@ def all_ids(name: str, page: int = 5000) -> List[str]:
 
 def count(name: str) -> int:
     return collection(name).count()
+
+
+def drop(name: str) -> None:
+    """Delete a collection if it exists (used for rebuild staging collections)."""
+    c = client()              # outside _lock: client() takes it on first use
+    with _lock:
+        _collections.pop(name, None)
+        try:
+            c.delete_collection(name)
+        except Exception:
+            pass   # didn't exist
+
+
+def swap(staging: str, live: str) -> None:
+    """Replace `live` with the fully built `staging` collection (blue/green re-embed).
+    Searches in the brief gap between delete and rename fall back to keyword-only."""
+    col, c = collection(staging), client()
+    with _lock:
+        _collections.pop(live, None)
+        _collections.pop(staging, None)
+        try:
+            c.delete_collection(live)
+        except Exception:
+            pass
+        try:
+            col.modify(name=live)
+        except Exception:
+            # a search recreated an empty `live` in the gap: remove it and retry once
+            c.delete_collection(live)
+            col.modify(name=live)
+        _collections[live] = col
+
+
+def get_vectors(name: str, ids: List[str]) -> Dict[str, Dict[str, Any]]:
+    """{id: {"embedding": [...], "metadata": {...}}} for the ids present in the collection."""
+    if not ids:
+        return {}
+    res = collection(name).get(ids=ids, include=["embeddings", "metadatas"])
+    embs = res.get("embeddings")
+    embs = [] if embs is None else embs
+    return {rid: {"embedding": [float(x) for x in emb], "metadata": meta or {}}
+            for rid, emb, meta in zip(res["ids"], embs, res["metadatas"])}
