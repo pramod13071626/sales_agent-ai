@@ -22,6 +22,7 @@ from db.models.audit_log import AuditLog
 from db.models.user_account_access import UserAccountAccess
 from db.models.action_item import ActionItem
 from db.models.action_item_reminder import ActionItemReminder
+from db.models.api_config import SystemApiConfig
 
 __all__ = [
     "Base",
@@ -43,4 +44,5 @@ __all__ = [
     "UserAccountAccess",
     "ActionItem",
     "ActionItemReminder",
+    "SystemApiConfig",
 ]

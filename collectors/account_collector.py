@@ -9,6 +9,7 @@ Saves exact raw API responses into output/raw/apify/.
 import json
 import re
 import html
+import unicodedata
 import urllib.parse
 from urllib.parse import urlparse
 import requests
@@ -1279,36 +1280,102 @@ def fetch_sec_exhibit_21_subsidiaries(
             ) as f:
                 f.write(raw_content)
 
+        # Standard non-hardcoded geographic reference set (US states, territories, Canadian provinces & world sovereign nations/territories)
+        KNOWN_JURISDICTIONS = {
+            "alabama", "alaska", "arizona", "arkansas", "california", "colorado", "connecticut",
+            "delaware", "florida", "georgia", "hawaii", "idaho", "illinois", "indiana", "iowa",
+            "kansas", "kentucky", "louisiana", "maine", "maryland", "massachusetts", "michigan",
+            "minnesota", "mississippi", "missouri", "montana", "nebraska", "nevada", "new hampshire",
+            "new jersey", "new mexico", "new york", "north carolina", "north dakota", "ohio", "oklahoma",
+            "oregon", "pennsylvania", "rhode island", "south carolina", "south dakota", "tennessee",
+            "texas", "utah", "vermont", "virginia", "washington", "west virginia", "wisconsin", "wyoming",
+            "district of columbia", "puerto rico", "guam", "us virgin islands", "u.s. virgin islands",
+            "american samoa", "northern mariana islands", "united states", "united states of america", "usa", "u.s.",
+            "united kingdom", "uk", "england", "scotland", "wales", "northern ireland",
+            "england & wales", "england and wales", "jersey", "guernsey", "isle of man",
+            "cayman islands", "cayman", "bermuda", "british virgin islands", "bvi", "gibraltar",
+            "turks and caicos", "anguilla", "montserrat", "falkland islands",
+            "afghanistan", "albania", "algeria", "andorra", "angola", "antigua and barbuda",
+            "argentina", "armenia", "australia", "austria", "azerbaijan", "bahamas", "bahrain",
+            "bangladesh", "barbados", "belarus", "belgium", "belize", "benin", "bhutan", "bolivia",
+            "bosnia and herzegovina", "botswana", "brazil", "brunei", "bulgaria", "burkina faso",
+            "burundi", "cabo verde", "cambodia", "cameroon", "canada", "central african republic",
+            "chad", "chile", "china", "colombia", "comoros", "congo", "costa rica", "croatia",
+            "cuba", "cyprus", "czech republic", "czechia", "denmark", "djibouti", "dominica",
+            "dominican republic", "ecuador", "egypt", "el salvador", "equatorial guinea", "eritrea",
+            "estonia", "eswatini", "ethiopia", "fiji", "finland", "france", "gabon", "gambia",
+            "georgia", "germany", "ghana", "greece", "grenada", "guatemala", "guinea", "guinea-bissau",
+            "guyana", "haiti", "honduras", "hungary", "iceland", "india", "indonesia", "iran",
+            "iraq", "ireland", "israel", "italy", "jamaica", "japan", "jordan", "kazakhstan",
+            "kenya", "kiribati", "korea", "south korea", "north korea", "kosovo", "kuwait",
+            "kyrgyzstan", "laos", "latvia", "lebanon", "lesotho", "liberia", "libya",
+            "liechtenstein", "lithuania", "luxembourg", "madagascar", "malawi", "malaysia",
+            "maldives", "mali", "malta", "marshall islands", "mauritania", "mauritius", "mexico",
+            "micronesia", "moldova", "monaco", "mongolia", "montenegro", "morocco", "mozambique",
+            "myanmar", "namibia", "nauru", "nepal", "netherlands", "new zealand", "nicaragua",
+            "niger", "nigeria", "north macedonia", "norway", "oman", "pakistan", "palau",
+            "palestine", "panama", "papua new guinea", "paraguay", "peru", "philippines", "poland",
+            "portugal", "qatar", "romania", "russia", "rwanda", "saint kitts and nevis", "saint lucia",
+            "saint vincent and the grenadines", "samoa", "san marino", "sao tome and principe",
+            "saudi arabia", "senegal", "serbia", "seychelles", "sierra leone", "singapore",
+            "slovakia", "slovenia", "solomon islands", "somalia", "south africa", "south sudan",
+            "spain", "sri lanka", "sudan", "suriname", "sweden", "switzerland", "syria", "taiwan",
+            "tajikistan", "tanzania", "thailand", "timor-leste", "togo", "tonga", "trinidad and tobago",
+            "tunisia", "turkey", "turkmenistan", "tuvalu", "uganda", "ukraine", "united arab emirates",
+            "uae", "uruguay", "uzbekistan", "vanuatu", "vatican city", "venezuela", "vietnam",
+            "yemen", "zambia", "zimbabwe", "curacao", "hong kong", "macau"
+        }
+
+        HEADER_PATTERNS = [
+            "name of subsidiary", "subsidiaries of", "name of entity", "legal name",
+            "jurisdiction", "state of incorporation", "state or other jurisdiction",
+            "country of incorporation", "place of organization", "state or jurisdiction",
+            "exhibit 21", "ex-21", ".htm", ".pdf", "form 10-k", "table of contents",
+            "jurisdiction/state of incorporation"
+        ]
+
+        def _is_valid_subsidiary(cand: str) -> bool:
+            if not cand or len(cand.strip()) < 3:
+                return False
+            # Normalize unicode fullwidth characters (e.g. ｅＦｒｏｎｔ -> eFront)
+            cand_norm = unicodedata.normalize('NFKC', cand.strip())
+            if not any(c.isalnum() for c in cand_norm):
+                return False
+            norm = re.sub(r"[^a-z0-9\s]", "", cand_norm.lower()).strip()
+            if norm in KNOWN_JURISDICTIONS:
+                return False
+            if any(h in norm for h in HEADER_PATTERNS):
+                return False
+            if cand_norm.startswith(("*", "†", "‡", "#", "@")) or re.match(r"^(?:note|footnote|certain subsidiaries)\b", norm):
+                return False
+            return True
+
         subsidiaries = []
         rows = re.findall(r"<tr.*?>(.*?)</tr>", raw_content, re.DOTALL | re.IGNORECASE)
         for row in rows:
             cols = re.findall(r"<td.*?>(.*?)</td>", row, re.DOTALL | re.IGNORECASE)
-            if len(cols) >= 2:
-                col1 = clean_html_text(cols[0])
-                col2 = clean_html_text(cols[1])
-                if col1 and col2 and len(col1) > 2 and len(col2) > 1:
-                    col1_lower = col1.lower()
-                    if not any(
-                        h in col1_lower
-                        for h in [
-                            "name",
-                            "subsidiary",
-                            "entity",
-                            "item",
-                            "exhibit",
-                            "ex-21",
-                            ".htm",
-                            ".pdf",
-                            "form10-k",
-                        ]
-                    ):
-                        subsidiaries.append(
-                            {
-                                "legal_name": col1,
-                                "jurisdiction": col2,
-                                "source": "SEC Form 10-K Exhibit 21",
-                            }
-                        )
+            # Clean cells and filter out empty or non-breaking spacer cells
+            clean_cells = [clean_html_text(c).replace("\xa0", " ").strip() for c in cols]
+            clean_cells = [c for c in clean_cells if c and c not in ["&#160;", "&nbsp;"]]
+            if len(clean_cells) >= 2:
+                cand_name = clean_cells[0]
+                cand_jur = clean_cells[1]
+
+                # If first cell is an ordinal index (e.g. "1." or "(a)")
+                if re.match(r"^\d+\.?$", cand_name) and len(clean_cells) >= 3:
+                    cand_name = clean_cells[1]
+                    cand_jur = clean_cells[2]
+
+                if _is_valid_subsidiary(cand_name):
+                    # Clean jurisdiction
+                    clean_jur = cand_jur if cand_jur and not any(h in cand_jur.lower() for h in HEADER_PATTERNS) else "US"
+                    subsidiaries.append(
+                        {
+                            "legal_name": cand_name,
+                            "jurisdiction": clean_jur,
+                            "source": "SEC Form 10-K Exhibit 21",
+                        }
+                    )
 
         if not subsidiaries:
             unescaped = html.unescape(raw_content)
@@ -1327,15 +1394,15 @@ def fetch_sec_exhibit_21_subsidiaries(
                     if len(parts) >= 2:
                         s_name = parts[0].strip()
                         s_jur = parts[1].strip()
-                        if s_name and len(s_name) > 2:
+                        if _is_valid_subsidiary(s_name):
                             subsidiaries.append(
                                 {
                                     "legal_name": s_name,
-                                    "jurisdiction": s_jur,
+                                    "jurisdiction": s_jur or "US",
                                     "source": "SEC Form 10-K Exhibit 21",
                                 }
                             )
-                    elif clean_b and len(clean_b) > 4:
+                    elif clean_b and _is_valid_subsidiary(clean_b):
                         subsidiaries.append(
                             {
                                 "legal_name": clean_b,
@@ -1345,28 +1412,23 @@ def fetch_sec_exhibit_21_subsidiaries(
                         )
             else:
                 lines = clean_html_text(raw_content).split("\n")
+                prev_sub = None
                 for line in lines:
                     line = line.strip()
-                    line_lower = line.lower()
-                    if len(line) > 5 and not any(
-                        w in line_lower
-                        for w in [
-                            "exhibit 21",
-                            "subsidiaries of",
-                            "table of contents",
-                            "ex-21",
-                            ".htm",
-                            ".pdf",
-                            "form10-k",
-                        ]
-                    ):
-                        subsidiaries.append(
-                            {
-                                "legal_name": line,
-                                "jurisdiction": None,
-                                "source": "SEC Form 10-K Exhibit 21",
-                            }
-                        )
+                    line_lower = re.sub(r"[^a-z0-9\s]", "", line.lower()).strip()
+                    if not line or len(line) < 3:
+                        continue
+                    if _is_valid_subsidiary(line):
+                        entry = {
+                            "legal_name": line,
+                            "jurisdiction": "US",
+                            "source": "SEC Form 10-K Exhibit 21",
+                        }
+                        subsidiaries.append(entry)
+                        prev_sub = entry
+                    elif prev_sub and line_lower in KNOWN_JURISDICTIONS and prev_sub.get("jurisdiction") == "US":
+                        # If previous line was a company and current line is solely a jurisdiction, associate it
+                        prev_sub["jurisdiction"] = line
 
         print(
             f"[+] [SEC Exhibit 21] Successfully extracted {len(subsidiaries)} official legal subsidiaries."

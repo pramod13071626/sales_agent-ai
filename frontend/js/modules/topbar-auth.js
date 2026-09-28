@@ -29,13 +29,19 @@ document.getElementById('myTasksDrawerClose')?.addEventListener('click', closeMy
 document.getElementById('myTasksDrawerBackdrop')?.addEventListener('click', closeMyTasksDrawer);
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMyTasksDrawer(); });
 
-function formatUserRole(role) {
-  if (!role) return 'Standard User';
-  const r = String(role).toLowerCase().replace(/_/g, ' ');
-  if (r === 'super admin') return 'Super Administrator';
-  if (r === 'ae' || r === 'sales rep') return 'Account Executive';
-  if (r === 'leader' || r === 'sales leader') return 'Sales Leader';
-  return r.charAt(0).toUpperCase() + r.slice(1);
+function getUserInitials(user) {
+  if (!user) return 'U';
+  if (user.full_name) {
+    const parts = user.full_name.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+    return parts[0].substring(0, 2).toUpperCase();
+  }
+  if (user.email) {
+    return user.email.substring(0, 2).toUpperCase();
+  }
+  return 'U';
 }
 
 let currentOptions = {};
@@ -50,22 +56,30 @@ function render() {
     return;
   }
 
+<<<<<<< HEAD
   const showTasks = currentOptions.showTasks !== false && (user.role === 'super_admin' || user.has_tasks_access !== false);
   const displayName = user.full_name || user.email || 'User';
   const userInitials = initials(displayName);
   const roleName = formatUserRole(user.role);
+=======
+  const isOnAdminPage = window.location.pathname.startsWith('/admin');
+  const showTasks = !isOnAdminPage && (user.role === 'super_admin' || user.has_tasks_access !== false);
+  const displayName = user.full_name || (user.email ? user.email.split('@')[0] : 'User');
+  const initials = getUserInitials(user);
+  const isSuperAdmin = user.role === 'super_admin';
+>>>>>>> c7734eeda27a92ae732d527cace6d72dc24450c0
 
   el.innerHTML = `
-    <div class="topbar-user-menu-wrapper">
-      ${showTasks ? '<button type="button" id="topbarMyTasksBtn" class="topbar-link topbar-link-btn" title="My Action Items"><i class="fa-solid fa-list-check"></i> My Tasks <span class="tab-badge" id="topbarMyTasksBadge">…</span></button>' : ''}
-      
-      <div class="topbar-dropdown-container">
-        <button type="button" id="topbarUserDropdownBtn" class="topbar-user-btn" aria-expanded="false" aria-haspopup="true" title="User profile & options">
-          <span class="topbar-auth-avatar">${esc(userInitials)}</span>
-          <span class="topbar-user-name">${esc(displayName)}</span>
-          <i class="fa-solid fa-chevron-down topbar-user-chevron"></i>
-        </button>
+    ${showTasks ? '<button type="button" id="topbarMyTasksBtn" class="topbar-link topbar-link-btn" title="View assigned action items"><i class="bi bi-list-check"></i> My Tasks <span class="tab-badge" id="topbarMyTasksBadge">…</span></button>' : ''}
+    
+    <div class="topbar-profile-container" id="topbarProfileContainer">
+      <button type="button" class="topbar-profile-btn" id="topbarProfileBtn" aria-expanded="false" aria-haspopup="true" title="User profile for ${esc(displayName)}">
+        <div class="topbar-profile-avatar">${esc(initials)}</div>
+        <span class="topbar-profile-label">${esc(displayName)}</span>
+        <i class="bi bi-chevron-down topbar-profile-arrow"></i>
+      </button>
 
+<<<<<<< HEAD
         <div class="topbar-user-dropdown" id="topbarUserDropdown" role="menu" aria-hidden="true">
           <div class="topbar-user-dropdown-header">
             <div class="topbar-dropdown-avatar">${esc(userInitials)}</div>
@@ -86,59 +100,77 @@ function render() {
             <button type="button" id="topbarDropdownLogoutBtn" class="topbar-dropdown-item topbar-dropdown-logout">
               <i class="fa-solid fa-right-from-bracket"></i> Logout
             </button>
+=======
+      <div class="topbar-profile-dropdown" id="topbarProfileDropdown" role="menu">
+        <div class="profile-dropdown-header">
+          <div class="profile-dropdown-avatar">${esc(initials)}</div>
+          <div class="profile-dropdown-info">
+            <div class="profile-dropdown-name" title="${esc(displayName)}">${esc(displayName)}</div>
+            <div class="profile-dropdown-email" title="${esc(user.email || '')}">${esc(user.email || '')}</div>
+>>>>>>> c7734eeda27a92ae732d527cace6d72dc24450c0
           </div>
         </div>
+
+        <div class="profile-dropdown-role-row">
+          <span class="profile-role-tag ${isSuperAdmin ? 'role-super-admin' : 'role-user'}">
+            <i class="bi ${isSuperAdmin ? 'bi-shield-check' : 'bi-person-badge'}"></i>
+            ${isSuperAdmin ? 'Super Admin' : 'User'}
+          </span>
+        </div>
+
+        <div class="profile-dropdown-divider"></div>
+
+        <button type="button" class="profile-dropdown-item profile-dropdown-logout" id="topbarLogoutBtn" role="menuitem">
+          <i class="bi bi-box-arrow-right"></i>
+          <span>Logout</span>
+        </button>
       </div>
     </div>
   `;
 
-  const dropdownBtn = document.getElementById('topbarUserDropdownBtn');
-  const dropdownMenu = document.getElementById('topbarUserDropdown');
-  const logoutBtn = document.getElementById('topbarDropdownLogoutBtn');
+  const profileBtn = document.getElementById('topbarProfileBtn');
+  const profileDropdown = document.getElementById('topbarProfileDropdown');
+  const profileContainer = document.getElementById('topbarProfileContainer');
 
-  if (dropdownBtn && dropdownMenu) {
-    const toggleMenu = (e) => {
+  if (profileBtn && profileDropdown) {
+    profileBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      const isOpen = dropdownMenu.classList.contains('open');
+      const isOpen = profileDropdown.classList.contains('show');
       if (isOpen) {
-        dropdownMenu.classList.remove('open');
-        dropdownBtn.classList.remove('open');
-        dropdownBtn.setAttribute('aria-expanded', 'false');
+        profileDropdown.classList.remove('show');
+        profileBtn.classList.remove('active');
+        profileBtn.setAttribute('aria-expanded', 'false');
       } else {
-        dropdownMenu.classList.add('open');
-        dropdownBtn.classList.add('open');
-        dropdownBtn.setAttribute('aria-expanded', 'true');
-      }
-    };
-
-    dropdownBtn.addEventListener('click', toggleMenu);
-
-    // Close when clicking outside
-    document.addEventListener('click', (e) => {
-      if (!dropdownMenu.contains(e.target) && !dropdownBtn.contains(e.target)) {
-        dropdownMenu.classList.remove('open');
-        dropdownBtn.classList.remove('open');
-        dropdownBtn.setAttribute('aria-expanded', 'false');
+        profileDropdown.classList.add('show');
+        profileBtn.classList.add('active');
+        profileBtn.setAttribute('aria-expanded', 'true');
       }
     });
 
-    // Close on Escape key
+    document.addEventListener('click', (e) => {
+      if (profileContainer && !profileContainer.contains(e.target)) {
+        profileDropdown.classList.remove('show');
+        profileBtn.classList.remove('active');
+        profileBtn.setAttribute('aria-expanded', 'false');
+      }
+    });
+
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && dropdownMenu.classList.contains('open')) {
-        dropdownMenu.classList.remove('open');
-        dropdownBtn.classList.remove('open');
-        dropdownBtn.setAttribute('aria-expanded', 'false');
+      if (e.key === 'Escape') {
+        profileDropdown.classList.remove('show');
+        profileBtn.classList.remove('active');
+        profileBtn.setAttribute('aria-expanded', 'false');
       }
     });
   }
 
+  const logoutBtn = document.getElementById('topbarLogoutBtn');
   if (logoutBtn) {
     logoutBtn.addEventListener('click', async () => {
       await logout();
-      window.location.replace('/login');
+      window.location.href = '/login';
     });
   }
-
   if (showTasks) {
     const tasksBtn = document.getElementById('topbarMyTasksBtn');
     if (tasksBtn) {

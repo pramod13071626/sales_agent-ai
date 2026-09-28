@@ -111,3 +111,4 @@ function coverageRowHtml({ account: a, total }) {
 export function renderCoverageGaps() {
   return renderWidget('ccCoverageList', 'Every account has at least one C-suite contact mapped.', coverageEntries, coverageRowHtml);
 }
+
