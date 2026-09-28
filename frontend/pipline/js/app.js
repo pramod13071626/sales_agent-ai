@@ -103,10 +103,16 @@ $(function () {
     // Instant load from sessionStorage cache if available (eliminates refresh delay)
     if (!isRetry) {
       try {
-        const cached = sessionStorage.getItem("pipeline_accounts_cache");
+        sessionStorage.removeItem("pipeline_accounts_cache");
+        const cached = sessionStorage.getItem("pipeline_accounts_cache_v2");
         if (cached) {
           const parsed = JSON.parse(cached);
-          if (parsed && Array.isArray(parsed.accounts) && parsed.accounts.length > 0) {
+          if (
+            parsed &&
+            Array.isArray(parsed.accounts) &&
+            parsed.accounts.length > 0 &&
+            (parsed.accounts[0].website_url || (parsed.accounts[0].personas && parsed.accounts[0].personas[0] && (parsed.accounts[0].personas[0].google_scholar_url || parsed.accounts[0].personas[0].osint_feed_manifest)))
+          ) {
             MOCK_DATA = parsed;
             updateGlobalTelemetry();
             renderSidebar();
@@ -129,7 +135,7 @@ $(function () {
       }
     }
     try {
-      const url = `${API_BASE}/api/accounts`;
+      const url = `${API_BASE}/api/accounts?full=true`;
       console.log("[loadData] Fetching:", url);
       const token = sessionStorage.getItem('access_token') || localStorage.getItem('access_token');
       const headers = {};
@@ -185,7 +191,7 @@ $(function () {
       }
       MOCK_DATA = data;
       try {
-        sessionStorage.setItem("pipeline_accounts_cache", JSON.stringify(data));
+        sessionStorage.setItem("pipeline_accounts_cache_v2", JSON.stringify(data));
       } catch (e) {}
 
       updateGlobalTelemetry();
@@ -1976,6 +1982,8 @@ $(function () {
   function renderFullPersonaVault(p) {
     if (!p) return "";
     currentVaultContext = { entityType: "persona", id: p.id };
+    const feeds = (p.osint_feed_manifest && p.osint_feed_manifest.feeds) ? p.osint_feed_manifest.feeds : {};
+    const getVal = (col, feedKey) => p[col] || feeds[feedKey || col] || "";
 
     const verifiedStreams = [
       { label: "LinkedIn Profile URL", val: p.linkedin_url, icon: "bi-linkedin" },
@@ -2112,9 +2120,9 @@ $(function () {
           <div class="section-title-left">
             <span class="section-title-dot"></span>
             <i class="bi bi-mortarboard" style="color:#0284c7;font-size:0.95rem;"></i>
-            <span>4. Academic Background &amp; Degrees</span>
+            <span>4. Academic Background &amp; Education Credentials</span>
           </div>
-          <span class="section-subtitle-hint">Verified Academic Credentials &amp; Degrees</span>
+          <span class="section-subtitle-hint">Click pencil icon to edit inline</span>
         </div>
         <div class="snapshot-fields-grid">
           ${renderField("Degree", p.degree)}
@@ -3845,7 +3853,10 @@ $(function () {
     const domainMatch = Boolean(p.email && activeAccount.domain && p.email.toLowerCase().endsWith(activeAccount.domain.toLowerCase()));
     const titleValid = Boolean(p.title && (p.tier || p.seniority_raw));
     const authorityValid = Boolean(p.decision_authority || p.budget_authority);
-    const linkedinValid = Boolean(p.linkedin_url && p.linkedin_url.startsWith('http'));
+    const osintFeeds = (p.osint_feed_manifest && p.osint_feed_manifest.feeds) ? p.osint_feed_manifest.feeds : {};
+    const getVal = (col, feedKey) => p[col] || osintFeeds[feedKey || col] || "";
+
+    const linkedinValid = Boolean(getVal("linkedin_url") && String(getVal("linkedin_url")).startsWith('http'));
 
     const checkList = [emailValid, domainMatch, titleValid, authorityValid, linkedinValid];
     const passedChecksCount = checkList.filter(Boolean).length;
@@ -4080,7 +4091,7 @@ $(function () {
   // ══════════════════════════════════════════════════════════════════
   // EVENT: ACCOUNT SELECTION
   // ══════════════════════════════════════════════════════════════════
-  $("#accountList").on("click", ".account-item", function () {
+  $("#accountList").on("click", ".account-item", async function () {
     const id = $(this).data("id");
     activeAccount = MOCK_DATA.accounts.find((a) => a.id === id);
     if (!activeAccount) return;
@@ -4096,6 +4107,21 @@ $(function () {
     $(".account-item").removeClass("active");
     $(this).addClass("active");
     closeSidebar();
+
+    // If activeAccount doesn't have full fields (e.g. from a trimmed cache), fetch full dossier
+    if (!activeAccount.website_url && !activeAccount.short_description) {
+      try {
+        const token = sessionStorage.getItem('access_token') || localStorage.getItem('access_token');
+        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+        const acctRes = await fetch(`${API_BASE}/api/accounts/${id}`, { headers, credentials: 'include' });
+        if (acctRes.ok) {
+          const fullAcct = await acctRes.json();
+          const aIdx = MOCK_DATA.accounts.findIndex(a => a.id === id);
+          if (aIdx !== -1) MOCK_DATA.accounts[aIdx] = fullAcct;
+          activeAccount = fullAcct;
+        }
+      } catch (_) {}
+    }
 
     // Hide empty state, show dashboard
     $("#emptyState").addClass("d-none");
@@ -4960,20 +4986,27 @@ $(function () {
   // ══════════════════════════════════════════════════════════════════
   // EVENT: PERSONA CARD SELECTION (SLIDE-OVER EXECUTIVE DOSSIER DRAWER)
   // ══════════════════════════════════════════════════════════════════
-  $(document).on("click", ".persona-card", function (e) {
-    // If clicked on quick-action buttons inside the card, ignore drawer
-    if ($(e.target).closest(".persona-action-btn").length) {
-      return;
-    }
-
+  $(document).on("click", ".persona-card", async function () {
     $(".persona-card").removeClass("active");
     $(this).addClass("active");
 
     const pData = JSON.parse(decodeURIComponent($(this).attr("data-raw")));
     activePersona = pData;
 
-    // Direct 1-Click to Full Executive Dossier View (Bypass intermediate sidebar drawer)
-    closeExecutiveDossierDrawer();
+    // If activePersona doesn't have deep fields (e.g. google_scholar_url or osint_feed_manifest), fetch full persona detail
+    if (activePersona && activePersona.id && !activePersona.google_scholar_url && !activePersona.osint_feed_manifest) {
+      try {
+        const token = sessionStorage.getItem('access_token') || localStorage.getItem('access_token');
+        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+        const pRes = await fetch(`${API_BASE}/api/personas/${activePersona.id}`, { headers, credentials: 'include' });
+        if (pRes.ok) {
+          const fullP = await pRes.json();
+          activePersona = { ...activePersona, ...fullP };
+        }
+      } catch (_) {}
+    }
+
+    // Hide LOB detail view while viewing Persona
     $("#lobDetailViewContainer").addClass("d-none");
     $("#personaDetailViewContainer").html(renderModernPersonaDetailView(activePersona)).removeClass("d-none");
     renderModernBreadcrumbs();

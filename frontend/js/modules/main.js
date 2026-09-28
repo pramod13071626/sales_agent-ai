@@ -82,7 +82,12 @@ async function loadAccounts(user) {
 
     const targetAccount = deepLinkAccountId
       ? state.accounts.find(a => a.id === deepLinkAccountId)
-      : (deepLinkAccountKey ? state.accounts.find(a => a.key === deepLinkAccountKey) : null);
+      : (deepLinkAccountKey ? state.accounts.find(a => 
+          a.key === deepLinkAccountKey || 
+          a.name === deepLinkAccountKey ||
+          (a.name && a.name.toLowerCase() === deepLinkAccountKey.toLowerCase()) ||
+          (a.display_name && a.display_name.toLowerCase() === deepLinkAccountKey.toLowerCase())
+        ) : null);
 
     if (wantsJobsView) {
       if (user.role !== 'super_admin' && user.has_dashboard_access === false) {
@@ -98,13 +103,14 @@ async function loadAccounts(user) {
         await openAllJobsPage();
       }
     } else {
+      const normalizedTab = (deepLinkTab === 'personas' || deepLinkTab === 'persona') ? 'committee' : deepLinkTab;
       if (targetAccount) {
-        if (deepLinkTab) state.activeSalesTab = deepLinkTab;
+        if (normalizedTab) state.activeSalesTab = normalizedTab;
         if (deepLinkLobId) state.activeLobId = deepLinkLobId;
         jumpToAccount(targetAccount.id);
       } else if (user.role !== 'super_admin' && user.has_dashboard_access === false) {
         // User has no global digest access, but has assigned accounts: default to their first account dossier
-        if (deepLinkTab) state.activeSalesTab = deepLinkTab;
+        if (normalizedTab) state.activeSalesTab = normalizedTab;
         if (state.accounts.length > 0) {
           jumpToAccount(state.accounts[0].id);
         } else {
