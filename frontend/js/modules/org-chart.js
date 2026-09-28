@@ -70,9 +70,51 @@ export function renderOrgChart(account, lob) {
   const allPersonas = dedupePersonas(account.personas || []);
   const tree = account.organisational_hierarchy_tree || {};
 
-  // 1. Root Node (CEO / President)
-  const rootName = tree.full_name || (allPersonas.find(p => /chief executive|ceo|president/i.test(p.title || '')) || allPersonas[0] || {}).name;
-  const rootPersona = allPersonas.find(p => p.name === rootName) || {
+  // 1. Root Node (CEO / Chairman & President) with intelligent authority scoring
+  const candidateCEOs = [...allPersonas].map(p => {
+    let score = 0;
+    const title = (p.title || p.job_title || '').toLowerCase();
+    const name = (p.name || p.full_name || '').trim();
+    const isOfficeOf = /office of/i.test(title);
+
+    // Authority ranking: Chairman & CEO > President & CEO > CEO > President
+    if (/chairman\s*(?:and|&)\s*ceo/i.test(title) && !isOfficeOf) {
+      score += 100;
+    } else if (/^(?:group\s+)?chief executive officer/i.test(title) && !isOfficeOf) {
+      score += 85;
+    } else if (/president\s*(?:and|&)\s*ceo/i.test(title) && !isOfficeOf) {
+      score += 90;
+    } else if (/\bceo\b/i.test(title) && !/deputy|vice|assistant|associate|office of|coo|cfo|cio/i.test(title)) {
+      score += 70;
+    } else if (/\bpresident\b/i.test(title) && !/vice president|\bvp\b/i.test(title) && !isOfficeOf) {
+      score += 40;
+    }
+
+    // Prefer full names over masked initials (e.g., "Larry Fink" over "Laurence F.")
+    const parts = name.split(/\s+/);
+    const hasInitialOnly = parts.length > 1 && parts[parts.length - 1].replace(/\./g, '').length === 1;
+    if (hasInitialOnly) {
+      score -= 35;
+    } else {
+      score += 20;
+    }
+
+    // Demote staff, assistants, deputies, and support roles
+    if (/deputy|assistant|interim|office of|vice president|\bvp\b/i.test(title)) {
+      score -= 60;
+    }
+
+    // Prefer verified profiles with LinkedIn
+    if (p.linkedin_url) {
+      score += 15;
+    }
+
+    return { persona: p, score };
+  }).sort((a, b) => b.score - a.score);
+
+  const bestCEO = candidateCEOs[0] && candidateCEOs[0].score > 0 ? candidateCEOs[0].persona : null;
+  const rootName = tree.full_name || (bestCEO ? (bestCEO.name || bestCEO.full_name) : (allPersonas[0] || {}).name);
+  const rootPersona = (bestCEO && bestCEO.name === rootName ? bestCEO : allPersonas.find(p => p.name === rootName)) || {
     full_name: rootName || 'Chief Executive Officer',
     job_title: tree.job_title || 'President & Chief Executive Officer',
     seniority_tier: 'C-Suite',
