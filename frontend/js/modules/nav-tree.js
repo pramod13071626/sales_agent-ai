@@ -64,7 +64,7 @@ export function renderNavTree() {
   }
 
   if (!filtered.length) {
-    navTree.innerHTML = '<div class="nav-empty"><i class="bi bi-search" style="font-size:1.4rem;"></i>No accounts match the current filter or search.</div>';
+    navTree.innerHTML = '<div class="nav-empty"><i class="fa-solid fa-magnifying-glass" style="font-size:1.4rem;"></i>No accounts match the current filter or search.</div>';
     return;
   }
 
@@ -86,7 +86,7 @@ export function renderNavTree() {
           const lobContacts = (l.personas || []).length;
           return `
             <button type="button" class="nav-lob-card ${isLobActive ? 'active' : ''}" data-acct="${a.id}" data-lob="${l.id}" title="View ${esc(l.name)} division">
-              <span class="nav-lob-title"><i class="bi bi-folder2"></i> ${esc(l.name)}</span>
+              <span class="nav-lob-title"><i class="fa-solid fa-folder"></i> ${esc(l.name)}</span>
               ${lobContacts ? `<span class="nav-lob-badge">${lobContacts}</span>` : ''}
             </button>
             ${(l.subLobs || []).length ? `<div class="nav-sublobs">${(l.subLobs || []).map(s => `<div class="nav-sublob-row">${esc(s.name)}</div>`).join('')}</div>` : ''}
@@ -103,7 +103,7 @@ export function renderNavTree() {
             <span class="nav-score-badge ${scoreClass}">${esc(scoreLabel)}</span>
             ${lobs.length ? `
               <button type="button" class="nav-tree-toggle ${isOpen ? 'open' : ''}" data-toggle-acct="${a.id}" title="Toggle divisions">
-                <i class="bi bi-chevron-right"></i>
+                <i class="fa-solid fa-chevron-right"></i>
               </button>
             ` : ''}
           </div>
@@ -111,9 +111,9 @@ export function renderNavTree() {
           <div class="nav-account-sub">${esc(subtitle)}</div>
 
           <div class="nav-account-tags">
-            ${signalsCount ? `<span class="nav-micro-tag"><i class="bi bi-lightning-charge-fill text-warning"></i> ${signalsCount}</span>` : ''}
-            ${contactsCount ? `<span class="nav-micro-tag"><i class="bi bi-people-fill"></i> ${contactsCount} contacts</span>` : ''}
-            ${lobs.length ? `<span class="nav-micro-tag"><i class="bi bi-diagram-2"></i> ${lobs.length} LOB${lobs.length !== 1 ? 's' : ''}</span>` : ''}
+            ${signalsCount ? `<span class="nav-micro-tag"><i class="fa-solid fa-bolt text-warning"></i> ${signalsCount}</span>` : ''}
+            ${contactsCount ? `<span class="nav-micro-tag"><i class="fa-solid fa-users"></i> ${contactsCount} contacts</span>` : ''}
+            ${lobs.length ? `<span class="nav-micro-tag"><i class="fa-solid fa-diagram-project"></i> ${lobs.length} LOB${lobs.length !== 1 ? 's' : ''}</span>` : ''}
           </div>
         </div>
         ${lobsHtml}
@@ -137,7 +137,7 @@ if (navCollapseBtn && dashNav) {
   navCollapseBtn.addEventListener('click', function () {
     const isCollapsed = dashNav.classList.toggle('is-collapsed');
     if (navCollapseIcon) {
-      navCollapseIcon.className = isCollapsed ? 'bi bi-layout-sidebar' : 'bi bi-layout-sidebar-reverse';
+      navCollapseIcon.className = isCollapsed ? 'fa-solid fa-table-columns' : 'fa-solid fa-table-columns';
     }
     navCollapseBtn.setAttribute('title', isCollapsed ? 'Expand navigator' : 'Collapse navigator');
   });

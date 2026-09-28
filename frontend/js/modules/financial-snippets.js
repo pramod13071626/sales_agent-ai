@@ -4,7 +4,7 @@ export function renderFinancialSnippets(lob) {
   const snippets = lob.financial_snippets || [];
   if (!snippets.length) {
     return `<div class="empty-block">
-      <div class="empty-block-icon"><i class="bi bi-cash-stack"></i></div>
+      <div class="empty-block-icon"><i class="fa-solid fa-money-bill-wave"></i></div>
       <div class="empty-block-text">No financial snippets captured yet for this line of business.</div>
     </div>`;
   }
@@ -20,6 +20,6 @@ export function renderFinancialSnippets(lob) {
           </table>
         </div>`;
     }
-    return `<blockquote class="fin-snippet"><i class="bi bi-quote"></i> ${esc(s)}</blockquote>`;
+    return `<blockquote class="fin-snippet"><i class="fa-solid fa-quote-left"></i> ${esc(s)}</blockquote>`;
   }).join('');
 }

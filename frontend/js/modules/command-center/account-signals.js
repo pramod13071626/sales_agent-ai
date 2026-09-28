@@ -8,6 +8,7 @@ import { loadRealAccounts, loadMatrixAccounts } from './real-accounts.js';
 import { openDossier } from './drawer.js';
 import { esc, formatMoney } from './utils.js';
 import { renderSkeleton } from '../skeleton.js';
+import { ccState } from './state.js';
 
 async function loadEnrichedAccounts() {
   const [raw, matrix] = await Promise.all([loadRealAccounts(), loadMatrixAccounts()]);
@@ -36,7 +37,23 @@ async function renderWidget(listId, emptyMessage, computeEntries, rowHtml) {
     list.innerHTML = '<li class="cc-drawer-empty">Could not load account data.</li>';
     return;
   }
-  const entries = computeEntries(accounts);
+
+  let filteredAccounts = accounts;
+  const activeAcctId = ccState.activeAccountId;
+  const activeAcctName = ccState.selectedAccountName;
+  if (activeAcctId || activeAcctName) {
+    filteredAccounts = accounts.filter(a => {
+      if (activeAcctId && (a.id === activeAcctId || String(a.id) === String(activeAcctId))) return true;
+      if (activeAcctName && (a.name || a.display_name)) {
+        const n = (a.name || a.display_name).toLowerCase();
+        const sel = activeAcctName.toLowerCase();
+        if (n.includes(sel) || sel.includes(n)) return true;
+      }
+      return false;
+    });
+  }
+
+  const entries = computeEntries(filteredAccounts);
   if (!entries.length) {
     list.innerHTML = `<li class="cc-drawer-empty">${emptyMessage}</li>`;
     return;

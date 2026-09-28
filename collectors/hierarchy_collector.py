@@ -230,7 +230,7 @@ def build_required_person_data(
         else verified_urls.get("sec_insider_trades_url")
     )
 
-    return {
+    ret = {
         "key": slug_key,
         "display_name": display_name,
         "linkedin_url": resolved_li,
@@ -253,6 +253,24 @@ def build_required_person_data(
         "google_trends_url": verified_urls.get("google_trends_url"),
         "youtube_channel_id": verified_urls.get("youtube_channel_id"),
     }
+
+    try:
+        from services.persona_service import ExecutiveOsintUrlEngine
+        osint_res = ExecutiveOsintUrlEngine.generate_manifest_and_urls(
+            full_name=clean_name,
+            company_name=company_name,
+            title=title,
+            sec_cik=sec_cik,
+            linkedin_url=resolved_li,
+            twitter_handle=resolved_tw,
+            tier=tier,
+            raw_intel=verified_urls,
+        )
+        ret.update(osint_res)
+    except Exception as e:
+        print(f"[!] [build_required_person_data] Osint engine notice: {e}")
+
+    return ret
 
 
 def save_raw_apollo_response(
@@ -445,7 +463,7 @@ def query_tinyfish_search_via_monid(query: str, max_results: int = 5) -> Dict[st
         return {}
 
     try:
-        input_payload = {"query": query, "max_results": max_results}
+        input_payload = {"queryParams": {"query": query}}
         data = run_monid_endpoint("tinyfish", "/search", input_payload)
         output_obj = data.get("output", {})
         results = []
@@ -494,7 +512,7 @@ APOLLO_SEARCH_PASSES = [
             "SEVP",
             "General Counsel",
         ],
-        "max_pages": 3,
+        "max_pages": 5,
         "per_page": 100,
     },
     {
@@ -509,7 +527,7 @@ APOLLO_SEARCH_PASSES = [
             "Division President",
             "Senior Executive",
         ],
-        "max_pages": 4,
+        "max_pages": 5,
         "per_page": 100,
     },
     {
@@ -527,7 +545,7 @@ APOLLO_SEARCH_PASSES = [
             "Head of Data",
             "Head of Cloud",
         ],
-        "max_pages": 3,
+        "max_pages": 5,
         "per_page": 100,
     },
     {
@@ -718,12 +736,12 @@ def fetch_apollo_hierarchy_via_monid(
     company_name: Optional[str] = None,
     sec_cik: Optional[str] = None,
     raw_apollo_dir: Optional[Path] = None,
-    max_total_records: int = 500,
+    max_total_records: int = 1500,
 ) -> List[Dict[str, Any]]:
     """
     Enterprise-Grade 4-Pass Tiered Apollo Ingestion System with Multi-Page Pagination.
     Executes partitioned queries for C-Suite, Global Heads, Technology Leaders, and Management,
-    collecting up to max_total_records (default: 500) without title saturation.
+    collecting up to max_total_records (default: 1500) without title saturation.
     """
     print(
         f"[*] [Hierarchy] Querying Monid.ai for domain: '{company_domain}' "

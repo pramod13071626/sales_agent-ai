@@ -1,4 +1,5 @@
 """Choosing and formatting the posts a digest looks at."""
+import json
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
 
@@ -267,6 +268,25 @@ def _format_bio_and_channels(subject: str, bio: Dict[str, Any], channels: List[D
     )
 
 
+def _coerce_executive_summary(result: Dict[str, Any]) -> Dict[str, Any]:
+    """Both PERSONALITY_PROFILE_SYSTEM and PSYCHOLOGICAL_PROFILE_SYSTEM tell
+    the model executive_summary is a plain "3-5 sentences" string — unlike
+    every other section in the same schema, which really is a {summary,
+    evidence_strength, basis} object. Some models (seen live with the free
+    nvidia/nemotron tier) ignore that and pattern-match the shape of the
+    surrounding sections instead, returning executive_summary as one of
+    those objects too. Every consumer (profile-render.js, pdf_export.py)
+    expects a plain string, so normalize here — the one place every
+    profile passes through — rather than in each consumer.
+    """
+    value = result.get("executive_summary")
+    if isinstance(value, dict):
+        result["executive_summary"] = value.get("summary") or value.get("text") or json.dumps(value)
+    elif isinstance(value, list):
+        result["executive_summary"] = " ".join(str(v) for v in value)
+    return result
+
+
 def build_personality_profile(
     client: LLMClient,
     subject: str,
@@ -280,7 +300,7 @@ def build_personality_profile(
     pass.
     """
     prompt = _format_bio_and_channels(subject, bio, channels)
-    return client.complete_json(PERSONALITY_PROFILE_SYSTEM, prompt)
+    return _coerce_executive_summary(client.complete_json(PERSONALITY_PROFILE_SYSTEM, prompt))
 
 
 def build_action_item_suggestions(
@@ -313,7 +333,7 @@ def build_psychological_profile(
     See PSYCHOLOGICAL_PROFILE_SYSTEM in prompts.py.
     """
     prompt = _format_bio_and_channels(subject, bio, channels)
-    return client.complete_json(PSYCHOLOGICAL_PROFILE_SYSTEM, prompt)
+    return _coerce_executive_summary(client.complete_json(PSYCHOLOGICAL_PROFILE_SYSTEM, prompt))
 
 
 

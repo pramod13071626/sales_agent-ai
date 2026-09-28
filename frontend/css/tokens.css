@@ -1,73 +1,84 @@
-/* ── Dropbox Enterprise Design Tokens ───────────────────────── */
+/* ── Dastone Design Tokens ──────────────────────────────────── */
+/* Palette sourced from the Dastone v2.1.0 admin template's SCSS
+   (src/assets/scss/config/_variables.scss / _variables-dark.scss):
+   primary purple $primary (#6f6af8), its gray/status-color scale, and its
+   .25rem-based border-radius scale. Variable NAMES are unchanged from
+   before this remap — every component file already consumes these names,
+   so this file is the only one that needed new values.
+   Exception: --topbar-bg. Dastone's own light-mode topbar is white, but
+   this app's shell.css hardcodes white text/borders on the topbar (not
+   token-driven) — adopting white here would make that text invisible.
+   Kept the topbar dark, shifted into the new purple family instead of a
+   blind copy; the dark-theme value below IS Dastone's real dark topbar
+   color, since white text stays legible there. */
 :root {
   /* Brand */
-  --brand: #0061FF;
-  --brand-hover: #0052D9;
-  --brand-light: #3B82FF;
-  --brand-soft: #EBF3FF;
-  --brand-muted: rgba(0, 97, 255, 0.10);
+  --brand: #6F6AF8;
+  --brand-hover: #5854C6;
+  --brand-light: #8D89FA;
+  --brand-soft: #EEEDFE;
+  --brand-muted: rgba(111, 106, 248, 0.10);
 
   /* Surfaces */
-  --content-bg: #F7F8FA;
+  --content-bg: #F4F6F9;
   --panel-bg: #FFF;
-  --panel-border: #E8EAED;
-  --input-bg: #F2F4F7;
-  --badge-bg: #F2F4F7;
+  --panel-border: #EAF0F9;
+  --input-bg: #EAEFF5;
+  --badge-bg: #F4F6F9;
 
   /* Shadows */
-  --shadow: 0 1px 2px rgba(0,0,0,.05), 0 2px 8px rgba(0,0,0,.04);
-  --shadow-hover: 0 4px 12px rgba(0,0,0,.10), 0 8px 24px rgba(0,0,0,.06);
-  --shadow-modal: 0 16px 48px rgba(0,0,0,.18), 0 4px 16px rgba(0,0,0,.10);
+  --shadow: 0 0 2px 2px rgba(61,71,81,.05);
+  --shadow-hover: 0 0 4px 3px rgba(61,71,81,.05);
+  --shadow-modal: 0 0 5px 5px rgba(61,71,81,.1);
 
   /* Text */
-  --text-primary: #1A1D23;
-  --text-secondary: #4B5563;
-  --text-muted: #9CA3AF;
+  --text-primary: #303E67;
+  --text-secondary: #656D9A;
+  --text-muted: #96A0B5;
 
   /* Border */
-  --border-color: #E2E8F0;
-  --border-mid: #CBD5E1;
-  --border-dark: #94A3B8;
+  --border-color: #EAF0F9;
+  --border-mid: #D9E1EC;
+  --border-dark: #A8B5D1;
 
   /* Status */
-  --success: #00BA88;
-  --warning: #F5A623;
-  --danger: #FF4D4F;
+  --success: #22B783;
+  --warning: #FFB822;
+  --danger: #F5325C;
 
   /* Shape */
-  --radius-xs: 4px;
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 20px;
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius-md: 5px;
+  --radius-lg: 11px;
+  --radius-xl: 21px;
 
   /* Motion */
-  --transition: all .16s cubic-bezier(.4, 0, .2, 1);
-  --transition-slow: all .28s cubic-bezier(.4, 0, .2, 1);
+  --transition: all .2s ease-in-out;
+  --transition-slow: all .35s ease-in-out;
 
   /* Chrome */
-  --topbar-bg: #1B2559;
+  --topbar-bg: #221E3D;
   --topbar-height: 64px;
   --nav-width: 320px;
 }
 
 /* ── Dark Theme ─────────────────────────────────────────────── */
 [data-theme="dark"] {
-  --content-bg: #0D1117;
-  --panel-bg: #161B27;
-  --panel-border: #252E45;
-  --shadow: 0 1px 3px rgba(0,0,0,.4), 0 4px 16px rgba(0,0,0,.28);
+  --content-bg: #0F111A;
+  --panel-bg: #131621;
+  --panel-border: #1C202B;
+  --shadow: 0 2px 2px rgba(0,0,0,.4);
   --shadow-hover: 0 4px 12px rgba(0,0,0,.5), 0 8px 32px rgba(0,0,0,.35);
   --shadow-modal: 0 20px 60px rgba(0,0,0,.6), 0 8px 24px rgba(0,0,0,.4);
   --text-primary: #F1F5F9;
-  --text-secondary: #94A3B8;
-  --text-muted: #64748B;
-  --border-color: #2D3748;
-  --border-mid: #4A5568;
-  --border-dark: #718096;
-  --input-bg: #1E293B;
-  --badge-bg: #1E293B;
-  --brand-soft: rgba(0, 97, 255, .14);
-  --topbar-bg: #0D1117;
+  --text-secondary: #C3C3C3;
+  --text-muted: #AAB0B9;
+  --border-color: #1C202B;
+  --border-mid: #333645;
+  --border-dark: #4A5568;
+  --input-bg: #171B27;
+  --badge-bg: #171B27;
+  --brand-soft: rgba(111, 106, 248, .18);
+  --topbar-bg: #0F111A;
 }
-

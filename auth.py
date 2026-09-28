@@ -17,6 +17,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 import jwt
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 from dotenv import load_dotenv
@@ -252,11 +254,33 @@ def revoke_account_access(session, user_id: int, account_id: int) -> bool:
 
 def log_audit(session, actor_user_id: Optional[int], action: str,
               target_user_id: Optional[int] = None, details: Optional[dict] = None) -> None:
-    session.add(AuditLog(
+    """Insert an audit-log row.
+
+    Automatically heals a stale primary-key sequence (UniqueViolation) by
+    rolling back, resetting the sequence to MAX(id), and retrying once.
+    """
+    entry = AuditLog(
         actor_user_id=actor_user_id, action=action,
         target_user_id=target_user_id, details=details or {},
-    ))
-    session.commit()
+    )
+    session.add(entry)
+    try:
+        session.commit()
+    except IntegrityError as exc:
+        # psycopg2.errors.UniqueViolation on audit_log_pkey → stale sequence
+        session.rollback()
+        # Reset the sequence so the next nextval() is safe
+        session.execute(
+            text("SELECT setval('audit_log_id_seq', (SELECT MAX(id) FROM audit_log), true)")
+        )
+        session.commit()
+        # Retry the insert once with the corrected sequence
+        session.add(AuditLog(
+            actor_user_id=actor_user_id, action=action,
+            target_user_id=target_user_id, details=details or {},
+        ))
+        session.commit()
+
 
 
 # ── FastAPI dependencies ───────────────────────────────────────────

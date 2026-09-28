@@ -61,6 +61,20 @@ def _esc(text: Optional[str]) -> str:
     return escape(_clean(text or ""))
 
 
+def _summary_text(value) -> str:
+    """executive_summary is documented as a plain string, but some models
+    return it as a {summary, evidence_strength, basis} object like its
+    neighboring sections instead (normalized going forward in
+    apps/content_pipeline/digest/selection.py's _coerce_executive_summary,
+    but older already-saved digests can still have the stale shape) —
+    unwrap defensively so _clean()/_esc() never get a dict."""
+    if isinstance(value, dict):
+        return value.get("summary") or value.get("text") or ""
+    if isinstance(value, list):
+        return " ".join(str(v) for v in value)
+    return value or ""
+
+
 def _styles():
     ss = getSampleStyleSheet()
 
@@ -249,7 +263,7 @@ def build_persona_profile_pdf(
 
     # ── Executive Summary ───────────────────────────────────────
     profile = (digest or {}).get("personality_profile") or {}
-    exec_summary = profile.get("executive_summary") or (
+    exec_summary = _summary_text(profile.get("executive_summary")) or (
         f"{p_name} is an established enterprise executive with extensive experience driving strategic "
         f"growth, operational rigor, and modernization across complex institutional environments. "
         "Their leadership demonstrates structured governance and a proven track record navigating regulated markets."
@@ -429,7 +443,7 @@ def build_psychological_profile_pdf(
     if profile.get("executive_summary"):
         story.append(Paragraph("Executive Summary & Trajectory", styles["SectionHeader"]))
         story.append(HRFlowable(width="100%", color=COLOR_LINE_DARK, thickness=0.5, spaceAfter=6, spaceBefore=0))
-        story.append(Paragraph(_esc(profile["executive_summary"]), styles["DocBodyText"]))
+        story.append(Paragraph(_esc(_summary_text(profile["executive_summary"])), styles["DocBodyText"]))
         story.append(Spacer(1, 6))
 
     # ── Big Five Personality Traits ─────────────────────────────

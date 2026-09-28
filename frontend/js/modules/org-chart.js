@@ -50,7 +50,7 @@ export function renderOrgChart(account, lob) {
 
     if (!rootNode) {
       return `<div class="empty-block">
-        <div class="empty-block-icon"><i class="bi bi-diagram-2"></i></div>
+        <div class="empty-block-icon"><i class="fa-solid fa-diagram-project"></i></div>
         <div class="empty-block-text">No verified reporting-line tree captured yet for <strong>${esc(lob.name)}</strong>.</div>
       </div>`;
     }
@@ -70,9 +70,51 @@ export function renderOrgChart(account, lob) {
   const allPersonas = dedupePersonas(account.personas || []);
   const tree = account.organisational_hierarchy_tree || {};
 
-  // 1. Root Node (CEO / President)
-  const rootName = tree.full_name || (allPersonas.find(p => /chief executive|ceo|president/i.test(p.title || '')) || allPersonas[0] || {}).name;
-  const rootPersona = allPersonas.find(p => p.name === rootName) || {
+  // 1. Root Node (CEO / Chairman & President) with intelligent authority scoring
+  const candidateCEOs = [...allPersonas].map(p => {
+    let score = 0;
+    const title = (p.title || p.job_title || '').toLowerCase();
+    const name = (p.name || p.full_name || '').trim();
+    const isOfficeOf = /office of/i.test(title);
+
+    // Authority ranking: Chairman & CEO > President & CEO > CEO > President
+    if (/chairman\s*(?:and|&)\s*ceo/i.test(title) && !isOfficeOf) {
+      score += 100;
+    } else if (/^(?:group\s+)?chief executive officer/i.test(title) && !isOfficeOf) {
+      score += 85;
+    } else if (/president\s*(?:and|&)\s*ceo/i.test(title) && !isOfficeOf) {
+      score += 90;
+    } else if (/\bceo\b/i.test(title) && !/deputy|vice|assistant|associate|office of|coo|cfo|cio/i.test(title)) {
+      score += 70;
+    } else if (/\bpresident\b/i.test(title) && !/vice president|\bvp\b/i.test(title) && !isOfficeOf) {
+      score += 40;
+    }
+
+    // Prefer full names over masked initials (e.g., "Larry Fink" over "Laurence F.")
+    const parts = name.split(/\s+/);
+    const hasInitialOnly = parts.length > 1 && parts[parts.length - 1].replace(/\./g, '').length === 1;
+    if (hasInitialOnly) {
+      score -= 35;
+    } else {
+      score += 20;
+    }
+
+    // Demote staff, assistants, deputies, and support roles
+    if (/deputy|assistant|interim|office of|vice president|\bvp\b/i.test(title)) {
+      score -= 60;
+    }
+
+    // Prefer verified profiles with LinkedIn
+    if (p.linkedin_url) {
+      score += 15;
+    }
+
+    return { persona: p, score };
+  }).sort((a, b) => b.score - a.score);
+
+  const bestCEO = candidateCEOs[0] && candidateCEOs[0].score > 0 ? candidateCEOs[0].persona : null;
+  const rootName = tree.full_name || (bestCEO ? (bestCEO.name || bestCEO.full_name) : (allPersonas[0] || {}).name);
+  const rootPersona = (bestCEO && bestCEO.name === rootName ? bestCEO : allPersonas.find(p => p.name === rootName)) || {
     full_name: rootName || 'Chief Executive Officer',
     job_title: tree.job_title || 'President & Chief Executive Officer',
     seniority_tier: 'C-Suite',
@@ -99,25 +141,25 @@ export function renderOrgChart(account, lob) {
     {
       id: 'directors',
       title: 'Vice Presidents & Directors',
-      icon: 'bi-award',
+      icon: 'fa-solid fa-award',
       filter: p => /director/i.test(p.title || '')
     },
     {
       id: 'dept_app',
       title: 'Department & Application Leadership',
-      icon: 'bi-grid-1x2',
+      icon: 'fa-solid fa-table-cells',
       filter: p => /department head|application|tax manager|team lead/i.test(p.title || '')
     },
     {
       id: 'scrum_proj',
       title: 'Engineering, Project & Scrum Leads',
-      icon: 'bi-cpu',
+      icon: 'fa-solid fa-microchip',
       filter: p => /scrum|project lead|consultant/i.test(p.title || '')
     },
     {
       id: 'ops_lead',
       title: 'Operations & Enterprise Lead Managers',
-      icon: 'bi-briefcase',
+      icon: 'fa-solid fa-briefcase',
       filter: () => true // Catch-all for remaining VPs
     }
   ];
@@ -163,7 +205,7 @@ export function renderOrgChart(account, lob) {
         ${vpGroups.map(g => `
           <div class="orgchart-tier-block">
             <div class="orgchart-tier-header">
-              <span class="orgchart-tier-title"><i class="bi ${g.icon}"></i> ${esc(g.title)}</span>
+              <span class="orgchart-tier-title"><i class="${g.icon}"></i> ${esc(g.title)}</span>
               <span class="orgchart-tier-count">${g.people.length} mapped</span>
             </div>
             <div class="orgchart-tier-grid">

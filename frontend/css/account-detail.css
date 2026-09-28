@@ -455,7 +455,8 @@
   font-weight: 700;
   display: grid;
   place-items: center;
-  box-shadow: 0 1px 4px rgba(0, 97, 255, 0.2);
+  border: 2px solid var(--panel-bg);
+  box-shadow: var(--shadow);
   flex-shrink: 0;
 }
 .orgchart-name {

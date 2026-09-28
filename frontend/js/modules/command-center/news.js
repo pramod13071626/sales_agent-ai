@@ -4,6 +4,7 @@
 // of requiring a rep to open each account's own Content tab to see it.
 import { esc } from './utils.js';
 import { renderSkeleton } from '../skeleton.js';
+import { ccState } from './state.js';
 
 let newsPromise = null;
 
@@ -38,8 +39,22 @@ export async function renderNewsFeed() {
     return;
   }
 
+  const activeAcctId = ccState.activeAccountId;
+  const activeAcctName = ccState.selectedAccountName;
+  if (activeAcctId || activeAcctName) {
+    articles = articles.filter(a => {
+      if (activeAcctId && (a.account_id === activeAcctId || String(a.account_id) === String(activeAcctId))) return true;
+      if (activeAcctName && a.account_name) {
+        const c = a.account_name.toLowerCase();
+        const s = activeAcctName.toLowerCase();
+        if (c.includes(s) || s.includes(c)) return true;
+      }
+      return false;
+    });
+  }
+
   if (!articles.length) {
-    list.innerHTML = '<li class="cc-drawer-empty">No recent news captured yet for your accounts.</li>';
+    list.innerHTML = '<li class="cc-drawer-empty">No recent news captured yet for the selected account.</li>';
     return;
   }
 

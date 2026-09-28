@@ -114,7 +114,7 @@ body.profile-page-body {
   width: 76px;
   height: 76px;
   min-width: 76px;
-  border-radius: var(--radius-md);
+  border-radius: 50%;
   background: linear-gradient(135deg, var(--brand), #4f46e5);
   color: #fff;
   font-size: 1.6rem;
@@ -122,7 +122,8 @@ body.profile-page-body {
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 14px rgba(0, 97, 255, 0.25);
+  border: 3px solid var(--panel-bg);
+  box-shadow: var(--shadow-hover);
   letter-spacing: -0.5px;
 }
 .profile-hero-info {
@@ -139,7 +140,7 @@ body.profile-page-body {
   gap: 8px;
   letter-spacing: -0.3px;
 }
-.profile-hero-name i.bi-stars {
+.profile-hero-name i.fa-star {
   color: var(--brand);
   font-size: 1.1rem;
 }
@@ -891,7 +892,7 @@ body.profile-page-body {
 }
 .b5-meter-fill {
   height: 100%;
-  background: linear-gradient(90deg, #0061FF 0%, #00BA88 100%);
+  background: linear-gradient(90deg, var(--brand) 0%, var(--success) 100%);
   border-radius: 999px;
   transition: width .4s cubic-bezier(.4, 0, .2, 1);
 }

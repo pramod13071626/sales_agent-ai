@@ -5,6 +5,7 @@
 import { esc } from './utils.js';
 import { showToast } from '../toast.js';
 import { renderSkeleton } from '../skeleton.js';
+import { ccState } from './state.js';
 
 function dueLabel(iso) {
   const days = Math.round((new Date(iso).getTime() - Date.now()) / 86400000);
@@ -55,6 +56,21 @@ export async function renderDueSoon() {
     list.innerHTML = '<li class="cc-drawer-empty">Could not load tasks.</li>';
     return;
   }
+
+  const activeAcctId = ccState.activeAccountId;
+  const activeAcctName = ccState.selectedAccountName;
+  if (activeAcctId || activeAcctName) {
+    items = items.filter(i => {
+      if (activeAcctId && String(i.account_id) === String(activeAcctId)) return true;
+      if (activeAcctName && i.account_name) {
+        const c = i.account_name.toLowerCase();
+        const a = activeAcctName.toLowerCase();
+        if (c.includes(a) || a.includes(c)) return true;
+      }
+      return false;
+    });
+  }
+
   if (!items.length) {
     list.innerHTML = '<li class="cc-drawer-empty">Nothing due in the next 7 days.</li>';
     return;

@@ -5,6 +5,7 @@
 import { loadRealAccounts, resolveRealAccount } from './real-accounts.js';
 import { esc } from './utils.js';
 import { renderSkeleton } from '../skeleton.js';
+import { createTask } from './actions.js';
 
 // Cache for lightweight summaries
 const summaryCache = new Map();
@@ -119,8 +120,8 @@ function generateNewsBulletin(summary, account) {
   if (aiCount >= 10 || /bny|mellon/i.test(name)) {
     return {
       avatarClass: 'avatar-ai',
-      iconClass: 'bi-cpu-fill',
-      domainTag: '<span class="hs-domain-tag tag-ai"><i class="bi bi-cpu-fill"></i> AI &amp; ML Pivot</span>',
+      iconClass: 'fa-solid fa-microchip',
+      domainTag: '<span class="hs-domain-tag tag-ai"><i class="fa-solid fa-microchip"></i> AI &amp; ML Pivot</span>',
       headline: `Aggressively pivoting towards AI Hub &amp; Machine Learning initiatives with <strong>${leadership}</strong> leadership roles and <strong>${contract > 0 ? `${contract} active contractor openings` : 'heavy direct-hire demand'}</strong>${hubText}.`,
     };
   }
@@ -128,8 +129,8 @@ function generateNewsBulletin(summary, account) {
   if (/blackrock/i.test(name)) {
     return {
       avatarClass: 'avatar-fintech',
-      iconClass: 'bi-gear-wide-connected',
-      domainTag: '<span class="hs-domain-tag tag-fintech"><i class="bi bi-gear-wide-connected"></i> Aladdin &amp; FinTech</span>',
+      iconClass: 'fa-solid fa-gears',
+      domainTag: '<span class="hs-domain-tag tag-fintech"><i class="fa-solid fa-gears"></i> Aladdin &amp; FinTech</span>',
       headline: `Aladdin Wealth Tech &amp; platform engineering scaling with <strong>${total}</strong> live requisitions and <strong>${leadership} VP/Director-level leaders</strong>${hubText}.`,
     };
   }
@@ -137,8 +138,8 @@ function generateNewsBulletin(summary, account) {
   if (/northern\s*trust/i.test(name)) {
     return {
       avatarClass: 'avatar-core',
-      iconClass: 'bi-building',
-      domainTag: '<span class="hs-domain-tag tag-core"><i class="bi bi-building"></i> Core Banking Tech</span>',
+      iconClass: 'fa-solid fa-building',
+      domainTag: '<span class="hs-domain-tag tag-core"><i class="fa-solid fa-building"></i> Core Banking Tech</span>',
       headline: `Accelerating direct-hire core banking modernization &amp; asset servicing technology with <strong>${total}</strong> engineering openings${hubText}.`,
     };
   }
@@ -146,16 +147,16 @@ function generateNewsBulletin(summary, account) {
   if (/vanguard/i.test(name)) {
     return {
       avatarClass: 'avatar-cloud',
-      iconClass: 'bi-cloud-check-fill',
-      domainTag: '<span class="hs-domain-tag tag-cloud"><i class="bi bi-cloud-check-fill"></i> Cloud &amp; Cyber</span>',
+      iconClass: 'fa-solid fa-cloud',
+      domainTag: '<span class="hs-domain-tag tag-cloud"><i class="fa-solid fa-cloud"></i> Cloud &amp; Cyber</span>',
       headline: `Scaling enterprise cloud infrastructure, quantitative tech &amp; DevSecOps with <strong>${total}</strong> active roles across regional hubs.`,
     };
   }
 
   return {
     avatarClass: 'avatar-ai',
-    iconClass: 'bi-briefcase-fill',
-    domainTag: '<span class="hs-domain-tag"><i class="bi bi-briefcase-fill"></i> Talent Expansion</span>',
+    iconClass: 'fa-solid fa-briefcase',
+    domainTag: '<span class="hs-domain-tag"><i class="fa-solid fa-briefcase"></i> Talent Expansion</span>',
     headline: `Active enterprise talent expansion with <strong>${total}</strong> open requisitions, <strong>${leadership}</strong> leadership hires, and <strong>${summary.top_hubs?.length || 0}</strong> active tech hubs.`,
   };
 }
@@ -208,41 +209,63 @@ export async function renderHiringSignals(days = currentHiringDays) {
       const shortName = getOrgShortName(account);
       const tickerTag = getOrgTickerTag(summary, account);
       const bulletin = generateNewsBulletin(summary, account);
+      const actionStep = generateSalesActionStep(summary, account);
       const totalRoles = summary.total_roles || 0;
       const leadershipCount = summary.leadership_count || 0;
       const contractCount = summary.contract_count || 0;
       const topHubsCount = (summary.top_hubs || []).length;
+      const thirdKpi = contractCount > 0
+        ? { num: contractCount, label: 'Contract', highlight: true }
+        : { num: topHubsCount, label: 'Hubs', highlight: false };
 
       return `
-        <li class="cc-feed-row cc-clickable-row hs-bulletin-row" data-account-id="${account.id}" title="Click to open Hiring Trend Radar for ${esc(shortName)}">
-          <!-- Icon Column -->
-          <div class="hs-bulletin-icon-col">
+        <li class="hs-tile" data-account-id="${account.id}">
+          <div class="hs-tile-head">
             <div class="hs-bulletin-avatar ${bulletin.avatarClass}">
-              <i class="bi ${bulletin.iconClass}"></i>
+              <i class="${bulletin.iconClass}"></i>
+            </div>
+            <div class="hs-tile-head-text">
+              <div class="hs-tile-name">${esc(shortName)}</div>
+              <div class="hs-tile-ticker">${esc(tickerTag)}</div>
+            </div>
+          </div>
+          ${bulletin.domainTag}
+          ${summary.top_category ? `
+            <div class="hs-tile-top-category" title="${summary.top_category.count} of ${totalRoles.toLocaleString()} open roles are ${esc(summary.top_category.name)}">
+              <i class="${summary.top_category.icon}"></i>
+              <span>Mostly hiring: <strong>${esc(summary.top_category.name)}</strong></span>
+              <span class="hs-tile-top-category-count">${summary.top_category.count}</span>
+            </div>
+          ` : ''}
+          <div class="hs-tile-kpis">
+            <div class="hs-tile-kpi">
+              <div class="hs-tile-kpi-num">${totalRoles.toLocaleString()}</div>
+              <div class="hs-tile-kpi-label">Roles</div>
+            </div>
+            <div class="hs-tile-kpi">
+              <div class="hs-tile-kpi-num">${leadershipCount.toLocaleString()}</div>
+              <div class="hs-tile-kpi-label">Leadership</div>
+            </div>
+            <div class="hs-tile-kpi ${thirdKpi.highlight ? 'hs-tile-kpi-highlight' : ''}">
+              <div class="hs-tile-kpi-num">${thirdKpi.num.toLocaleString()}</div>
+              <div class="hs-tile-kpi-label">${thirdKpi.label}</div>
             </div>
           </div>
 
-          <!-- Body Column -->
-          <div class="cc-feed-body">
-            <div class="cc-feed-title-row">
-              <span class="cc-feed-title">${esc(shortName)}</span>
-              <span class="hs-ticker-pill">${esc(tickerTag)}</span>
-              ${bulletin.domainTag}
+          <!-- Action Step Box -->
+          <div class="hs-action-box">
+            <div class="hs-action-head">
+              <span class="hs-action-pill"><i class="fa-solid fa-bolt"></i> NEXT ACTION</span>
+              <span class="hs-action-target" title="Target Role: ${esc(actionStep.targetRole)}"><i class="fa-solid fa-user-check"></i> ${esc(actionStep.targetRole)}</span>
             </div>
-
-            <div class="hs-bulletin-headline">
-              ${bulletin.headline}
-            </div>
-
-            <div class="hs-bulletin-meta-row">
-              <span class="hs-stat-tag"><i class="bi bi-briefcase"></i> <strong>${totalRoles.toLocaleString()}</strong> roles</span>
-              <span class="hs-stat-tag"><i class="bi bi-people"></i> <strong>${leadershipCount.toLocaleString()}</strong> leadership</span>
-              ${contractCount > 0 ? `
-                <span class="hs-stat-tag hs-stat-contract"><i class="bi bi-lightning-fill"></i> <strong>${contractCount}</strong> contract leads</span>
-              ` : `
-                <span class="hs-stat-tag"><i class="bi bi-buildings"></i> <strong>${topHubsCount}</strong> hubs</span>
-              `}
-              <span class="hs-action-link">Open Radar <i class="bi bi-chevron-right"></i></span>
+            <div class="hs-action-text">${esc(actionStep.recommendation)}</div>
+            <div class="hs-action-footer">
+              <button type="button" class="cc-btn cc-btn-primary cc-btn-xs hs-task-btn" data-account-name="${esc(shortName)}" data-task-title="${esc(actionStep.taskTitle)}" data-task-desc="${esc(actionStep.taskDescription)}" title="Create assigned task in My Tasks">
+                <i class="fa-solid fa-plus"></i> Create Action Task
+              </button>
+              <a class="hs-explore-link" href="/?account=${account.id}&tab=jobs" title="View all open requisitions">
+                Requisitions <i class="fa-solid fa-arrow-right"></i>
+              </a>
             </div>
           </div>
         </li>
@@ -326,7 +349,7 @@ export async function renderStrategicInvestmentTracks() {
       <div class="cc-track-card">
         <div class="cc-track-card-header">
           <div class="cc-track-badge track-ai">
-            <i class="bi bi-cpu-fill"></i> AI Hub &amp; Process Automation
+            <i class="fa-solid fa-microchip"></i> AI Hub &amp; Process Automation
           </div>
           <span class="pill pill-brand">${aiRolesCount} active roles</span>
         </div>
@@ -337,7 +360,7 @@ export async function renderStrategicInvestmentTracks() {
 
         <div class="cc-track-persona-box">
           <div class="cc-track-persona-head">
-            <i class="bi bi-person-badge"></i> Target Sponsoring Decision Maker
+            <i class="fa-solid fa-id-badge"></i> Target Sponsoring Decision Maker
           </div>
           <div class="cc-track-persona-info">
             <strong>${esc(aiExecName)}</strong> — <span style="color:var(--text-secondary);">${esc(aiExecTitle)}</span>
@@ -345,7 +368,7 @@ export async function renderStrategicInvestmentTracks() {
         </div>
 
         <div class="cc-track-pitch-box">
-          <i class="bi bi-bullseye"></i>
+          <i class="fa-solid fa-bullseye"></i>
           <div>
             <strong>Recommended Pitch Play:</strong> StradIT Enterprise AI Governance, Agentic Workflow Orchestration, and LLMOps Advisory.
           </div>
@@ -356,7 +379,7 @@ export async function renderStrategicInvestmentTracks() {
       <div class="cc-track-card">
         <div class="cc-track-card-header">
           <div class="cc-track-badge track-cloud">
-            <i class="bi bi-cloud-check-fill"></i> Cloud &amp; Full-Stack Modernization
+            <i class="fa-solid fa-cloud"></i> Cloud &amp; Full-Stack Modernization
           </div>
           <span class="pill pill-brand">${cloudRolesCount} active roles</span>
         </div>
@@ -367,7 +390,7 @@ export async function renderStrategicInvestmentTracks() {
 
         <div class="cc-track-persona-box">
           <div class="cc-track-persona-head">
-            <i class="bi bi-person-badge"></i> Target Sponsoring Decision Maker
+            <i class="fa-solid fa-id-badge"></i> Target Sponsoring Decision Maker
           </div>
           <div class="cc-track-persona-info">
             <strong>${esc(cloudExecName)}</strong> — <span style="color:var(--text-secondary);">${esc(cloudExecTitle)}</span>
@@ -375,7 +398,7 @@ export async function renderStrategicInvestmentTracks() {
         </div>
 
         <div class="cc-track-pitch-box">
-          <i class="bi bi-bullseye"></i>
+          <i class="fa-solid fa-bullseye"></i>
           <div>
             <strong>Recommended Pitch Play:</strong> Hybrid Cloud Modernization, Legacy Decoupling, and SRE Scale.
           </div>
@@ -383,4 +406,13 @@ export async function renderStrategicInvestmentTracks() {
       </div>
     </div>
   `;
+
+  // Click handler to open account view
+  container.querySelectorAll('.cc-track-card').forEach(card => {
+    card.style.cursor = 'pointer';
+    card.title = 'Click to view Strategic Personas and Account Details';
+    card.addEventListener('click', () => {
+      window.location.href = `/?account=${accountId}&tab=personas`;
+    });
+  });
 }

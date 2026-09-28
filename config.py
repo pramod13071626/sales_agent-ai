@@ -4,7 +4,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent
-load_dotenv(BASE_DIR / ".env")
+load_dotenv(BASE_DIR / ".env", override=True)
 
 
 # PostgreSQL Database Configuration
@@ -24,6 +24,35 @@ MONID_BASE_URL = os.getenv("MONID_BASE_URL", "https://api.monid.ai/v1")
 
 # Apify
 APIFY_TOKEN = os.getenv("APIFY_TOKEN", "")
+APIFY_BACKUP_TOKENS = [
+    t.strip() for t in os.getenv("APIFY_BACKUP_TOKENS", "").split(",") if t.strip()
+]
+
+
+def get_apify_tokens():
+    """Returns list of available Apify tokens starting with primary then backups."""
+    tokens = []
+    if APIFY_TOKEN:
+        tokens.append(APIFY_TOKEN)
+    for b in APIFY_BACKUP_TOKENS:
+        if b and b not in tokens:
+            tokens.append(b)
+    return tokens
+
+
+def rotate_apify_token(exhausted_token: str):
+    """Automatically promotes the next backup token to primary when active token hits quota limit."""
+    global APIFY_TOKEN, APIFY_BACKUP_TOKENS
+    tokens = get_apify_tokens()
+    if exhausted_token in tokens:
+        tokens.remove(exhausted_token)
+    if tokens:
+        APIFY_TOKEN = tokens[0]
+        APIFY_BACKUP_TOKENS = tokens[1:]
+        print(f"[+] [Apify Pool] Successfully rotated active token to: {APIFY_TOKEN[:15]}...")
+        return APIFY_TOKEN
+    print("[!] [Apify Pool] All Apify tokens exhausted.")
+    return None
 
 # AI Enrichment APIs
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")

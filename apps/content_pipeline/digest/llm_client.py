@@ -127,6 +127,9 @@ class LLMClient:
                 payload = json.load(resp)
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", "replace")[:400]
+            # One machine-readable line per request: the main app's profile endpoint
+            # parses these to charge the shared OpenRouter quota (sales_copilot llm_usage).
+            print(f"[llm-usage] status={e.code} in=0 out=0", flush=True)
             raise LLMError(f"{self.provider} returned HTTP {e.code}: {detail}") from e
         except urllib.error.URLError as e:
             raise LLMError(f"Could not reach {self.provider}: {e.reason}") from e
@@ -149,6 +152,9 @@ class LLMClient:
             msg = err.get("message") if isinstance(err, dict) else str(err)
             raise LLMError(f"{self.provider} returned an error: {msg}")
 
+        usage = payload.get("usage") or {}
+        print(f"[llm-usage] status=200 in={usage.get('prompt_tokens') or usage.get('input_tokens') or 0} "
+              f"out={usage.get('completion_tokens') or usage.get('output_tokens') or 0}", flush=True)
         return self._extract_text(payload)
 
     def complete_json(self, system: str, user: str) -> Dict[str, Any]:

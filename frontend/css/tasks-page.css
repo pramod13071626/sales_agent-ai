@@ -1,5 +1,5 @@
 /* ── My Tasks page ───────────────────────────────────────────── */
-.tp-header { margin-bottom: 16px; }
+.tp-header { margin-bottom: 16px; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
 .tp-breadcrumb { margin-bottom: 6px; }
 .tp-breadcrumb a {
   font-size: .74rem; color: var(--text-muted); text-decoration: none;

@@ -1,4 +1,4 @@
-// Per-account render module — the tab-based "on-demand" detail view (only the active
+﻿// Per-account render module ΓÇö the tab-based "on-demand" detail view (only the active
 // tab's content is computed; this already satisfies on-demand loading for this view,
 // distinct from the digest's new IntersectionObserver-based lazy render).
 import { state } from './state.js';
@@ -22,8 +22,8 @@ import { renderNavTree } from './nav-tree.js';
 export function renderScoreRing(account) {
   const score = account.heat_score;
   if (score == null) {
-    return `<div class="score-ring" title="No opportunity score yet — heat_score wasn't populated for this account during ingestion">
-      <div class="score-ring-value">—<br><span style="font-size:.55rem;font-weight:600;">SCORE</span></div>
+    return `<div class="score-ring" title="No opportunity score yet ΓÇö heat_score wasn't populated for this account during ingestion">
+      <div class="score-ring-value">ΓÇö<br><span style="font-size:.55rem;font-weight:600;">SCORE</span></div>
     </div>`;
   }
   const pct = Math.max(0, Math.min(100, score));
@@ -41,7 +41,7 @@ export function renderTrendPill(account) {
   return `<div style="margin-top:10px;"><span class="pill ${up ? 'pill-success' : 'pill-danger'}"><i class="bi ${up ? 'bi-graph-up-arrow' : 'bi-graph-down-arrow'}"></i> 90-Day Trend: ${up ? '+' : ''}${t}</span></div>`;
 }
 
-// Account-only Sales Alerts wrapper — shares its engine with the digest's
+// Account-only Sales Alerts wrapper ΓÇö shares its engine with the digest's
 // renderGlobalSalesAlerts (alerts.js).
 export function renderSalesAlerts(account) {
   const entries = getAccountContentEntries(account);
@@ -59,7 +59,7 @@ export function renderAccountJobsTab(account) {
   return renderHiringTrendRadar(account, jobs);
 }
 
-// ── Quick Outreach Arsenal Copy Helpers ────────────────────────
+// ΓöÇΓöÇ Quick Outreach Arsenal Copy Helpers ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 function getTopIcebreakerText(account) {
   const personas = dedupePersonas(account.personas || []);
   const p = personas.find(p => p.personalized_icebreaker);
@@ -83,10 +83,10 @@ function getAccountCheatSheetText(account, lob) {
     `Headcount: ${account.employee_count_range || 'N/A'} | Ticker: ${account.ticker || 'Private'}\n\n` +
     `Top Tech: ${tech.slice(0, 8).join(', ') || 'N/A'}\n\n` +
     `Key Buying Committee:\n` +
-    personas.slice(0, 6).map(p => `• ${p.name} — ${p.title || 'Executive'} [${p.tier || 'Leader'}]${p.email ? ` (${p.email})` : ''}`).join('\n');
+    personas.slice(0, 6).map(p => `ΓÇó ${p.name} ΓÇö ${p.title || 'Executive'} [${p.tier || 'Leader'}]${p.email ? ` (${p.email})` : ''}`).join('\n');
 }
 
-// ── Render Tab 1: Executive Briefing ──────────────────────────
+// ΓöÇΓöÇ Render Tab 1: Executive Briefing ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 function renderExecutiveBriefingTab(account, lob, signals, matches) {
   const industries = (account.industries || []).slice(0, 6);
   const tech = getTechFor(account, lob);
@@ -172,7 +172,7 @@ function renderExecutiveBriefingTab(account, lob, signals, matches) {
   `;
 }
 
-// ── Render Tab 2: Buying Committee & Org Chart ─────────────────
+// ΓöÇΓöÇ Render Tab 2: Buying Committee & Org Chart ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 function renderBuyingCommitteeTab(account, lob) {
   return `
     <div class="info-banner">
@@ -194,7 +194,7 @@ function renderBuyingCommitteeTab(account, lob) {
   `;
 }
 
-// ── Render Tab 3: Sales Alerts & Battlecards ───────────────────
+// ΓöÇΓöÇ Render Tab 3: Sales Alerts & Battlecards ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 function renderSalesAlertsTab(account, lob, matches) {
   return `
     <!-- Panel 1: Direct Service Line Matches -->
@@ -213,7 +213,7 @@ function renderSalesAlertsTab(account, lob, matches) {
         <span><i class="bi bi-compass"></i> Unserved Content Themes &amp; Growth Whitespace</span>
         <span class="context-badge pending"><i class="bi bi-signpost-split"></i> Whitespace</span>
       </div>
-      <p class="section-desc">Recurring themes in this account's discourse that don't match existing service lines, with a suggested build for each — potential areas for custom solution engineering. Themes seen before persist here as history even if they stop recurring.</p>
+      <p class="section-desc">Recurring themes in this account's discourse that don't match existing service lines, with a suggested build for each ΓÇö potential areas for custom solution engineering. Themes seen before persist here as history even if they stop recurring.</p>
       <div id="growthOpportunitiesBody">${renderGrowthOpportunities(account, (state.opportunityHistory[account.id] || {}).growth_theme)}</div>
     </div>
 
@@ -229,7 +229,7 @@ function renderSalesAlertsTab(account, lob, matches) {
   `;
 }
 
-// ── Render Tab 4: Financials & SEC Intelligence ────────────────
+// ΓöÇΓöÇ Render Tab 4: Financials & SEC Intelligence ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 function renderFinancialsTab(account, lob) {
   return `
     ${lob ? `
@@ -276,15 +276,15 @@ function renderFinancialsTab(account, lob) {
       <p class="section-desc">Historical funding rounds, total capital raised, lead investors, and IPO listing milestone records.</p>
       <div class="metrics-grid">
         <div class="metric-tile">
-          <div class="metric-value font-semibold">${account.total_funding_amount_usd ? `$${Number(account.total_funding_amount_usd).toLocaleString()}` : '—'}</div>
+          <div class="metric-value font-semibold">${account.total_funding_amount_usd ? `$${Number(account.total_funding_amount_usd).toLocaleString()}` : 'ΓÇö'}</div>
           <div class="metric-label">Total Capital Raised</div>
         </div>
         <div class="metric-tile">
-          <div class="metric-value">${esc(account.last_funding_type || '—')}</div>
+          <div class="metric-value">${esc(account.last_funding_type || 'ΓÇö')}</div>
           <div class="metric-label">Last Round Type</div>
         </div>
         <div class="metric-tile">
-          <div class="metric-value">${esc(account.num_funding_rounds ?? '—')}</div>
+          <div class="metric-value">${esc(account.num_funding_rounds ?? 'ΓÇö')}</div>
           <div class="metric-label">Total Rounds</div>
         </div>
         <div class="metric-tile">
@@ -296,7 +296,7 @@ function renderFinancialsTab(account, lob) {
   `;
 }
 
-// ── Render Tab 5: Live Social & Content Listening ──────────────
+// ΓöÇΓöÇ Render Tab 5: Live Social & Content Listening ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 function renderSocialTab(account, lob) {
   return `
     <div class="panel">
@@ -344,10 +344,10 @@ export function renderCenter(account, lob) {
       <div class="acct-header">
         <div class="acct-avatar-lg">${esc(initials(account.name))}</div>
         <div class="acct-header-body">
-          <h2 class="acct-name">${esc(account.name)}${lob ? ' · ' + esc(lob.name) : ''}</h2>
+          <h2 class="acct-name">${esc(account.name)}${lob ? ' ┬╖ ' + esc(lob.name) : ''}</h2>
           <div class="acct-pills">
             <span class="pill pill-brand" title="Public / Private stock ticker classification"><i class="bi bi-tag"></i> ${esc(account.ticker || 'Private')}</span>
-            <span class="pill" title="Annual reported revenue"><i class="bi bi-currency-dollar"></i> ${esc(account.revenue || 'Revenue N/A')}</span>
+            <span class="pill" title="Annual reported revenue"><i class="bi bi-currency-dollar"></i> ${esc((account.revenue || 'Revenue N/A').replace(/^\$/, ''))}</span>
             <span class="pill pill-success" title="Corporate headquarters location"><i class="bi bi-geo-alt"></i> ${esc(account.location || 'Location N/A')}</span>
             ${account.operating_status ? `<span class="pill" title="Current operational status"><i class="bi bi-activity"></i> ${esc(account.operating_status)}</span>` : ''}
           </div>
@@ -493,7 +493,7 @@ signalModalBody.addEventListener('click', async function (e) {
   const resultEl = el('secFetchResult');
   if (!cik) { resultEl.innerHTML = `<div class="content-provenance"><i class="bi bi-exclamation-triangle"></i> No SEC CIK on file for this account.</div>`; return; }
   btn.disabled = true;
-  btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Fetching…';
+  btn.innerHTML = '<i class="bi bi-hourglass-split"></i> FetchingΓÇª';
   try {
     const res = await fetch('/api/account/sec-10k-chunks', {
       method: 'POST',
@@ -508,11 +508,11 @@ signalModalBody.addEventListener('click', async function (e) {
     const bySection = {};
     (data.chunks || []).forEach(c => { (bySection[c.section] = bySection[c.section] || []).push(c); });
     resultEl.innerHTML = `
-      <div class="content-provenance" style="margin:10px 0;"><i class="bi bi-check-circle"></i> ${data.filing_type} filed ${esc(data.filing_date || '')} — <a href="${esc(data.primary_document_url)}" target="_blank">open original filing <i class="bi bi-box-arrow-up-right"></i></a></div>
+      <div class="content-provenance" style="margin:10px 0;"><i class="bi bi-check-circle"></i> ${data.filing_type} filed ${esc(data.filing_date || '')} ΓÇö <a href="${esc(data.primary_document_url)}" target="_blank">open original filing <i class="bi bi-box-arrow-up-right"></i></a></div>
       ${Object.entries(bySection).map(([section, chunks]) => `
         <details class="content-observed">
           <summary>${esc(section)} (${chunks.length} chunk${chunks.length !== 1 ? 's' : ''})</summary>
-          ${chunks.slice(0, 3).map(c => `<p class="content-summary" style="margin-top:8px;">${esc(c.text.slice(0, 500))}${c.text.length > 500 ? '…' : ''}</p>`).join('')}
+          ${chunks.slice(0, 3).map(c => `<p class="content-summary" style="margin-top:8px;">${esc(c.text.slice(0, 500))}${c.text.length > 500 ? 'ΓÇª' : ''}</p>`).join('')}
         </details>
       `).join('')}
     `;

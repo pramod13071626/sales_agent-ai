@@ -6,75 +6,75 @@
 export const WIDGET_GUIDES = {
   matrix: {
     title: 'Account Priority Matrix',
-    icon: 'bi-grid-1x2-fill',
+    icon: 'fa-solid fa-table-cells',
     badge: 'Prioritization & Strategy',
     summary: 'Plots monitored enterprise accounts across buying urgency (signal velocity) and deal potential (strategic value). Bubble size reflects estimated contract value.',
     actionTip: 'Focus daily prospecting on top-right quadrant accounts with high urgency and high value. Click any bubble to open the account dossier.',
-    signals: 'Hiring volume, leadership hires, SEC filings, executive transitions',
+    signals: 'SEC 10-K Disclosures, Multi-Source Intent Signals & Form 8-K Filings',
   },
   priority_feed: {
     title: 'Priority Signal Feed',
-    icon: 'bi-lightning-charge-fill',
+    icon: 'fa-solid fa-bolt',
     badge: 'Real-Time Intent Feed',
     summary: 'Real-time stream of high-impact buying intent triggers—such as hiring surges, executive appointments, earnings calls, and tech migrations—scored from 1 to 100.',
     actionTip: 'Filter by signal category or account, then click "Draft outreach" to generate an AI-tailored pitch referencing that exact trigger.',
-    signals: 'Verified LinkedIn posts, SEC 10-K/10-Q, PR Newswire, Executive hires',
+    signals: 'SEC Filings (EDGAR 10-K/10-Q), Verified LinkedIn Posts (Apify), PR Newswire & Tech Scrapers',
   },
   playbook: {
     title: "This Week's Playbook",
-    icon: 'bi-journal-bookmark-fill',
+    icon: 'fa-solid fa-bookmark',
     badge: 'Weekly Action Plan',
     summary: 'AI-synthesized, prescriptive weekly game plan highlighting the highest-leverage outreach plays across your target accounts.',
     actionTip: 'Treat this as your weekly checklist. It specifies which accounts have active buying windows and the exact pitch angle to lead with.',
-    signals: 'Synthesized weekly signals, buying committee triggers, pipeline status',
+    signals: 'AI Account Strategy Engine & Buying Triggers',
   },
   timeline: {
     title: 'Executive Movements',
-    icon: 'bi-clock-history',
+    icon: 'fa-solid fa-clock-rotate-left',
     badge: 'Leadership Shifts',
     summary: 'Chronological timeline of leadership appointments, promotions, and departures across key buying committee personas over the last 30 days.',
     actionTip: 'Engage newly appointed executives during their first 90 days when they are evaluating new vendors and establishing modernization budgets.',
-    signals: 'Executive appointments, C-suite & VP title changes, LinkedIn updates',
+    signals: 'CXO Leadership Tracker & Verified LinkedIn Updates',
   },
   due_soon: {
     title: 'Due Soon & Follow-ups',
-    icon: 'bi-check2-circle',
+    icon: 'fa-solid fa-circle-check',
     badge: 'Task Management',
     summary: 'Centralized list of scheduled outreach tasks, prospect follow-ups, and CRM action items due within the next 7 days.',
     actionTip: 'Review daily to maintain deal momentum and ensure no client commitments or follow-ups slip through the cracks. Click "View all" for full task queue.',
-    signals: 'Scheduled touches, CRM follow-ups, cadence reminders',
+    signals: 'Internal Task Console & CRM Sync',
   },
   hiring: {
-    title: 'Hiring Signals & Requisitions',
-    icon: 'bi-briefcase-fill',
+    title: 'Hiring Signals',
+    icon: 'fa-solid fa-briefcase',
     badge: 'Talent & Capacity Demand',
     summary: 'Tracks open requisitions, leadership hiring, contractor demand, and active tech hubs queried directly from PostgreSQL.',
     actionTip: 'Surges in technical roles or contract flags indicate funded initiatives. Expand the "Live Requisitions Browser" to view live postings.',
-    signals: 'Live LinkedIn job requisitions, staff-aug keywords, location hubs',
+    signals: 'Greenhouse, Lever & LinkedIn Job Scrapers',
   },
   strategic_tracks: {
     title: 'Strategic Investment Tracks',
-    icon: 'bi-diagram-3-fill',
+    icon: 'fa-solid fa-sitemap',
     badge: 'Enterprise Alignment',
     summary: 'Translates technical hiring clusters into major enterprise investment tracks (AI Hub, Cloud Modernization) mapped directly to sponsoring C-Suite & VP leaders.',
     actionTip: 'Align your sales pitch with the target sponsor and recommended pitch play to address their specific department budget priorities.',
-    signals: 'Hiring cluster patterns, 320 executive personas in DB, department alignment',
+    signals: 'SEC 10-K Disclosures & Executive Spends',
   },
   capital: {
     title: 'Capital Events',
-    icon: 'bi-cash-coin',
+    icon: 'fa-solid fa-coins',
     badge: 'Liquidity & Budget Triggers',
     summary: 'Monitors funding rounds, acquisitions, IPO announcements, and corporate restructuring across target accounts over the last 12 months.',
     actionTip: 'Capital events unlock fresh IT budget and create post-merger integration needs—prime windows for enterprise digital transformation pitches.',
-    signals: 'SEC filings, Crunchbase, financial press, M&A announcements',
+    signals: 'SEC EDGAR, Finnhub & Crunchbase',
   },
   coverage: {
     title: 'Org Coverage Gaps',
-    icon: 'bi-person-x-fill',
+    icon: 'fa-solid fa-user-xmark',
     badge: 'Relationship Risk',
     summary: 'Audits relationship health across departments to highlight single-threaded accounts and unmapped decision makers.',
     actionTip: 'Multi-thread into accounts by identifying and prospecting missing committee roles before single-point-of-contact deals stall.',
-    signals: 'Internal buying committee mapping, persona database coverage',
+    signals: 'Diffbot Knowledge Graph & Persona Mapping',
   },
   pain_points: {
     title: 'Operational Pain Points',
@@ -102,11 +102,11 @@ export const WIDGET_GUIDES = {
   },
   news: {
     title: 'Google News',
-    icon: 'bi-newspaper',
+    icon: 'fa-solid fa-newspaper',
     badge: 'Public Coverage',
     summary: 'Recent Google News coverage already captured in the database for your accounts — earnings, leadership, market moves, and general press.',
     actionTip: 'Reference a specific, recent headline in outreach — it signals you\'re paying attention to their business, not sending a generic template.',
-    signals: 'Google News RSS, captured per-account during the intelligence pipeline run',
+    signals: 'Google News RSS & Public Press Wire',
   },
 };
 
@@ -129,7 +129,7 @@ export function initWidgetGuides() {
     if (!guide || !modal) return;
 
     if (titleEl) titleEl.textContent = guide.title;
-    if (iconEl) iconEl.className = `bi ${guide.icon || 'bi-info-circle-fill'}`;
+    if (iconEl) iconEl.className = `${guide.icon || 'fa-solid fa-circle-info'}`;
     if (badgeEl) badgeEl.textContent = guide.badge || 'Sales Intelligence';
     if (summaryEl) summaryEl.textContent = guide.summary;
     if (actionEl) actionEl.textContent = guide.actionTip;

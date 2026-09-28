@@ -7,6 +7,9 @@ import { state } from './state.js';
 import { el } from './dom.js';
 import { renderFullProfile } from './full-profile.js';
 import { wireProfilePdfDownload } from './contact-pdf.js';
+import { wireProfileGeneration } from './profile-generate.js';
+import { wireCallPrepGeneration } from './callprep-generate.js';
+import { loadProfileReadiness } from './profile-readiness.js';
 import { renderPostCard } from './profile-render.js';
 import { resolvePersonaTargetKey } from './utils.js';
 import { initThemeToggle } from './theme.js';
@@ -71,11 +74,11 @@ function setupSignalsPagination(container, posts) {
       <div class="profile-pagination-info">Showing ${startIdx + 1}–${endIdx} of ${totalItems} captured signals (Page ${currentPage} of ${totalPages})</div>
       <div class="profile-pagination-controls">
         <button type="button" class="profile-page-nav-btn" data-page="prev" ${currentPage === 1 ? 'disabled' : ''}>
-          <i class="bi bi-chevron-left"></i> Prev
+          <i class="fa-solid fa-chevron-left"></i> Prev
         </button>
         ${pageBtns}
         <button type="button" class="profile-page-nav-btn" data-page="next" ${currentPage === totalPages ? 'disabled' : ''}>
-          Next <i class="bi bi-chevron-right"></i>
+          Next <i class="fa-solid fa-chevron-right"></i>
         </button>
       </div>
     `;
@@ -182,7 +185,7 @@ async function init() {
       fetch(`/api/accounts/${accountId}/content`).catch(() => null)
     ]);
     if (acctRes.status === 401) {
-      window.location.href = `/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+      window.location.replace(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`);
       return;
     }
     if (acctRes.status === 403) {
@@ -214,6 +217,9 @@ async function init() {
     main.innerHTML = renderFullProfile(persona);
     wireInteractiveWidgets(main, persona);
     wireProfilePdfDownload(main, persona);
+    wireProfileGeneration(main, persona);
+    wireCallPrepGeneration(main, persona);
+    loadProfileReadiness(main, persona);
   } catch (err) {
     console.error('Failed to load contact profile', err);
     main.innerHTML = `<div class="profile-page-error">Could not load this profile — ${err.message}. Try reopening it from the dashboard.</div>`;

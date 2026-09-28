@@ -46,7 +46,7 @@
 .nav-account-avatar {
   width: 26px;
   height: 26px;
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
   background: var(--brand);
   color: #fff;
   font-size: .66rem;
@@ -54,6 +54,8 @@
   display: grid;
   place-items: center;
   flex-shrink: 0;
+  border: 1.5px solid var(--panel-bg);
+  box-shadow: var(--shadow);
 }
 .nav-account-name {
   font-size: .84rem;
@@ -273,7 +275,7 @@
   border-color: var(--brand);
   color: var(--brand);
 }
-.digest-customize-btn i.bi-sliders { color: var(--brand); }
+.digest-customize-btn i.fa-sliders { color: var(--brand); }
 .customize-badge {
   background: var(--badge-bg);
   border: 1px solid var(--border-color);
@@ -479,10 +481,10 @@
 
 /* Panels */
 .panel {
+  /* Flat, bordered, no shadow — matches Dastone's own .card. */
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow);
+  border-radius: var(--radius-lg);
   padding: 18px 20px;
   margin-bottom: 16px;
   width: 100%;

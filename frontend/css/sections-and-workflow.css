@@ -194,3 +194,6 @@
   transform: translateY(0);
 }
 
+
+.context-badge.export-btn { cursor: pointer; border: 1px solid var(--border-mid); background: var(--panel-bg); color: var(--brand); font: inherit; font-size: .7rem; font-weight: 600; }
+.context-badge.export-btn:hover { border-color: var(--brand); background: var(--brand-muted); }

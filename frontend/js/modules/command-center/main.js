@@ -3,7 +3,7 @@ import { initThemeToggle } from '../theme.js';
 import { initTopbarAuth } from '../topbar-auth.js';
 import { showToast } from '../toast.js';
 import { ccState } from './state.js';
-import { renderKpiStrip } from './kpi.js';
+import { renderKpiStrip, bindKpiListeners } from './kpi.js';
 import { renderMatrix } from './matrix.js';
 import { renderFeed } from './feed.js';
 import { renderPlaybook } from './playbook.js';
@@ -16,6 +16,8 @@ import { renderCapitalEvents, renderCoverageGaps } from './account-signals.js';
 import { renderObjections } from './objections.js';
 import { renderNewsFeed } from './news.js';
 import { initWidgetGuides } from './widget-guide.js';
+import { initAccountFilter } from './account-filter.js';
+import { initWidgetCustomizer } from './widget-customizer.js';
 import { kpiBase } from './data.js';
 
 function weekRangeLabel() {
@@ -30,14 +32,24 @@ function weekRangeLabel() {
 
 function renderSubtitle() {
   const el = document.getElementById('ccSubtitle');
-  if (el) el.textContent = `${weekRangeLabel()} · ${kpiBase.playsInMotion} open plays`;
+  if (!el) return;
+  if (ccState.selectedAccountName) {
+    el.innerHTML = `<span class="cc-filtered-subtitle"><i class="fa-solid fa-filter"></i> Showing intelligence filtered for <strong>${esc(ccState.selectedAccountName)}</strong></span>`;
+  } else {
+    el.textContent = `${weekRangeLabel()} · ${kpiBase.playsInMotion} open plays`;
+  }
 }
 
 async function renderKpi() {
-  document.getElementById('ccKpiStrip').innerHTML = await renderKpiStrip(ccState.activeRole);
+  const container = document.getElementById('ccKpiStrip');
+  if (!container) return;
+  const { html, data } = await renderKpiStrip();
+  container.innerHTML = html;
+  bindKpiListeners(container, data);
 }
 
 function renderAll() {
+  renderSubtitle();
   renderKpi();
   renderFeed();
   renderPlaybook();
@@ -60,12 +72,16 @@ function checkDashboardAccessNotice() {
   history.replaceState(null, '', window.location.pathname + (rest ? `?${rest}` : ''));
 }
 
-function init() {
+async function init() {
   initThemeToggle();
   checkDashboardAccessNotice();
-  renderSubtitle();
   initDrawer();
   initAccountsNav();
+  initWidgetCustomizer();
+  await initAccountFilter((accountId, accountObj) => {
+    renderAll();
+    renderMatrix();
+  });
   renderAll();
   renderMatrix();
   initWidgetGuides();
@@ -76,7 +92,8 @@ function init() {
 
 initTopbarAuth().then((user) => {
   if (!user) {
-    window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
+    document.body.style.display = 'none';
+    window.location.replace(`/login?next=${encodeURIComponent(window.location.pathname)}`);
     return;
   }
   if (user.role !== 'super_admin' && user.has_command_center_access === false) {
@@ -91,7 +108,7 @@ initTopbarAuth().then((user) => {
       const container = document.querySelector('.cc-container') || document.body;
       container.innerHTML = `
         <div class="empty-block" style="margin:80px auto; max-width:460px; text-align:center; padding:40px; background:var(--card-bg); border-radius:12px; border:1px solid var(--border-color);">
-          <div class="empty-block-icon" style="font-size:2.5rem; color:var(--text-muted); margin-bottom:16px;"><i class="bi bi-shield-lock"></i></div>
+          <div class="empty-block-icon" style="font-size:2.5rem; color:var(--text-muted); margin-bottom:16px;"><i class="fa-solid fa-shield-halved"></i></div>
           <div style="font-size:1.15rem; font-weight:700; color:var(--text-primary); margin-bottom:8px;">Command Center Access Restricted</div>
           <div style="font-size:0.85rem; color:var(--text-secondary); line-height:1.5;">You do not have access to the Sales Command Center. Please ask a Super Administrator to grant you permissions.</div>
         </div>`;

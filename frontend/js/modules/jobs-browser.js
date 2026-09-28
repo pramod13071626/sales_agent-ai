@@ -61,7 +61,7 @@ export async function fetchAllJobs(opts) {
 export function renderAllJobsPage() {
   if (state.activeJobDetailId) return renderJobDetailPage();
   if (!state.allJobsCache) {
-    return `<div class="panel"><div class="empty-block"><div class="empty-block-icon"><i class="bi bi-hourglass-split"></i></div><div class="empty-block-text">Loading job postings…</div></div></div>`;
+    return `<div class="panel"><div class="empty-block"><div class="empty-block-icon"><i class="fa-solid fa-hourglass-half"></i></div><div class="empty-block-text">Loading job postings…</div></div></div>`;
   }
   const jobs = state.allJobsCache.jobs || [];
   const total = state.allJobsCache.total || 0;
@@ -77,17 +77,17 @@ export function renderAllJobsPage() {
   const workplaceOptions = (state.allJobsCache.workplace_types || []).map(t => `<option value="${esc(t)}" ${state.activeJobWorkplaceType === t ? 'selected' : ''}>${esc(t)}</option>`).join('');
 
   return `
-    <button type="button" class="job-detail-back" id="jobsPageBackBtn"><i class="bi bi-arrow-left"></i> Back to Dashboard</button>
+    <button type="button" class="job-detail-back" id="jobsPageBackBtn"><i class="fa-solid fa-arrow-left"></i> Back to Dashboard</button>
     <div class="panel" style="margin-bottom:12px;">
       <div class="digest-header">
-        <h2 class="digest-title"><i class="bi bi-linkedin"></i> All LinkedIn Job Postings</h2>
+        <h2 class="digest-title"><i class="fa-brands fa-linkedin"></i> All LinkedIn Job Postings</h2>
         <p class="digest-sub">${total} job posting${total !== 1 ? 's' : ''} match your filters, scraped across every tracked account. Search, filter, or click any role for full details.</p>
       </div>
     </div>
     <div class="panel">
       <div class="job-browser-toolbar">
         <div class="job-search-wrap">
-          <i class="bi bi-search"></i>
+          <i class="fa-solid fa-magnifying-glass"></i>
           <input type="text" id="jobSearchInput" placeholder="Search title, company, or location..." value="${esc(state.activeJobSearch)}" autocomplete="off">
         </div>
         <select id="jobEmploymentTypeFilter" class="job-filter-select" title="Filter by employment type">
@@ -106,14 +106,14 @@ export function renderAllJobsPage() {
       </div>
       <div class="job-browser-filters">${chips}</div>
       <div class="job-page-grid">
-        ${state.jobsLoading ? `<div class="empty-block"><div class="empty-block-icon"><i class="bi bi-hourglass-split"></i></div><div class="empty-block-text">Loading…</div></div>`
-          : (jobs.length ? jobs.map(j => renderJobBrowserCard(j)).join('') : `<div class="empty-block"><div class="empty-block-icon"><i class="bi bi-linkedin"></i></div><div class="empty-block-text">No job postings match your filters.</div></div>`)}
+        ${state.jobsLoading ? `<div class="empty-block"><div class="empty-block-icon"><i class="fa-solid fa-hourglass-half"></i></div><div class="empty-block-text">Loading…</div></div>`
+          : (jobs.length ? jobs.map(j => renderJobBrowserCard(j)).join('') : `<div class="empty-block"><div class="empty-block-icon"><i class="fa-brands fa-linkedin"></i></div><div class="empty-block-text">No job postings match your filters.</div></div>`)}
       </div>
       ${totalPages > 1 ? `
         <div class="job-pagination">
-          <button type="button" class="job-page-btn" id="jobPrevPageBtn" ${state.activeJobPage <= 1 ? 'disabled' : ''}><i class="bi bi-chevron-left"></i> Prev</button>
+          <button type="button" class="job-page-btn" id="jobPrevPageBtn" ${state.activeJobPage <= 1 ? 'disabled' : ''}><i class="fa-solid fa-chevron-left"></i> Prev</button>
           <span class="job-page-status">Page ${state.allJobsCache.page} of ${totalPages}</span>
-          <button type="button" class="job-page-btn" id="jobNextPageBtn" ${state.activeJobPage >= totalPages ? 'disabled' : ''}>Next <i class="bi bi-chevron-right"></i></button>
+          <button type="button" class="job-page-btn" id="jobNextPageBtn" ${state.activeJobPage >= totalPages ? 'disabled' : ''}>Next <i class="fa-solid fa-chevron-right"></i></button>
         </div>` : ''}
     </div>
   `;
@@ -122,9 +122,9 @@ export function renderAllJobsPage() {
 export function renderJobDetailPage() {
   const cached = state.jobDetailCache[state.activeJobDetailId];
   return `
-    <button type="button" class="job-detail-back" id="jobDetailBackBtn"><i class="bi bi-arrow-left"></i> Back to all job postings</button>
+    <button type="button" class="job-detail-back" id="jobDetailBackBtn"><i class="fa-solid fa-arrow-left"></i> Back to all job postings</button>
     <div class="panel">
-      ${cached ? buildJobDetailHtml(cached) : `<div class="empty-block"><div class="empty-block-icon"><i class="bi bi-hourglass-split"></i></div><div class="empty-block-text">Loading job details…</div></div>`}
+      ${cached ? buildJobDetailHtml(cached) : `<div class="empty-block"><div class="empty-block-icon"><i class="fa-solid fa-hourglass-half"></i></div><div class="empty-block-text">Loading job details…</div></div>`}
     </div>
   `;
 }
@@ -143,10 +143,10 @@ export async function openJobDetail(jobId) {
 export function renderJobBrowserCard(job) {
   return `
     <button type="button" class="job-browser-card" data-job-id="${job.id}">
-      <div class="job-browser-account"><i class="bi bi-building"></i> ${esc(job.account_name || job.company_name || 'Unknown account')}</div>
+      <div class="job-browser-account"><i class="fa-solid fa-building"></i> ${esc(job.account_name || job.company_name || 'Unknown account')}</div>
       <div class="job-browser-title">${esc(job.title || 'Untitled role')}</div>
       <div class="job-browser-meta">
-        ${job.location ? `<span><i class="bi bi-geo-alt"></i> ${esc(job.location)}</span>` : ''}
+        ${job.location ? `<span><i class="fa-solid fa-location-dot"></i> ${esc(job.location)}</span>` : ''}
         ${job.category ? `<span class="pill pill-brand">${esc(job.category)}</span>` : ''}
         ${job.new_in_last_run ? '<span class="pill pill-success">New</span>' : ''}
       </div>

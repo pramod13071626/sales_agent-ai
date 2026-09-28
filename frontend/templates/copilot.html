@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sales Copilot | Sales Intelligence</title>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="css/tokens.css?v=3.0">
+  <link rel="stylesheet" href="css/base.css?v=3.0">
+  <link rel="stylesheet" href="css/shell.css?v=3.0">
+  <link rel="stylesheet" href="css/copilot.css?v=2.2">
+</head>
+<body>
+
+<div class="dash-shell">
+
+{% include "partials/topbar.html" %}
+
+  <div class="dash-body cp-body">
+
+    <!-- Left: chats + notes -->
+    <aside class="cp-sidebar" id="cpSidebar" aria-label="Chats and notes">
+      <div class="cp-sidebar-top">
+        <a href="/" class="cp-back"><i class="fa-solid fa-arrow-left"></i> Accounts</a>
+        <button type="button" class="cp-btn cp-btn-primary cp-new" id="cpNewChat" title="New chat (Ctrl+Shift+O)"><i class="fa-solid fa-plus"></i> New chat</button>
+      </div>
+      <div class="cp-tabs" role="tablist">
+        <button type="button" class="cp-tab active" data-tab="chats" role="tab" aria-selected="true"><i class="fa-regular fa-comments"></i> Chats</button>
+        <button type="button" class="cp-tab" data-tab="notes" role="tab" aria-selected="false"><i class="fa-solid fa-thumbtack"></i> My notes</button>
+      </div>
+      <div class="cp-tab-pane active" id="cpPaneChats" role="tabpanel">
+        <div class="cp-search"><i class="fa-solid fa-magnifying-glass"></i><input id="cpSessionSearch" type="search" placeholder="Search chats" aria-label="Search chats"></div>
+        <div class="cp-session-list" id="cpSessionList"><div class="cp-muted cp-small cp-pad">Loading…</div></div>
+      </div>
+      <div class="cp-tab-pane" id="cpPaneNotes" role="tabpanel">
+        <div class="cp-notes-head">
+          <label class="cp-switch"><input type="checkbox" id="cpMemoryToggle" checked> <span>Memory on</span></label>
+          <select id="cpAnswerStyle" class="cp-select" title="Answer length" aria-label="Answer length">
+            <option value="brief">Brief answers</option>
+            <option value="balanced" selected>Balanced answers</option>
+            <option value="detailed">Detailed answers</option>
+          </select>
+        </div>
+        <p class="cp-muted cp-small cp-notes-intro">Private to you. Say <em>“remember that …”</em> in a chat, or use <i class="fa-solid fa-thumbtack"></i> on an answer.</p>
+        <div class="cp-notes-tools">
+          <button type="button" class="cp-link-btn" id="cpNotesExport"><i class="fa-regular fa-file-excel"></i> Export to Excel</button>
+          <button type="button" class="cp-link-btn cp-danger" id="cpNotesClear"><i class="fa-regular fa-trash-can"></i> Clear all</button>
+        </div>
+        <div class="cp-clear-confirm" id="cpClearConfirm" hidden>
+          <div class="cp-small">This deletes all your notes. Type <strong>CLEAR</strong> to confirm.</div>
+          <div class="cp-clear-row"><input id="cpClearInput" class="cp-rename" aria-label="Type CLEAR to confirm">
+            <button type="button" class="cp-btn cp-btn-danger" id="cpClearGo">Delete</button>
+            <button type="button" class="cp-btn" id="cpClearCancel">Cancel</button></div>
+        </div>
+        <div id="cpNoteList"></div>
+      </div>
+    </aside>
+
+    <!-- Center: conversation -->
+    <main class="cp-main" aria-label="Conversation">
+      <header class="cp-header">
+        <button type="button" class="cp-icon-btn cp-menu-btn" id="cpMenuBtn" aria-label="Show chats"><i class="fa-solid fa-bars"></i></button>
+        <div class="cp-title-wrap">
+          <div class="cp-title"><i class="fa-solid fa-wand-magic-sparkles"></i> <span id="cpTitle">Sales Copilot</span></div>
+          <div class="cp-scope" id="cpScope"></div>
+        </div>
+        <div class="cp-header-right">
+          <div class="cp-quota" id="cpQuota" title="Free AI quota — resets daily"></div>
+          <span class="cp-chat-actions" id="cpChatActions" hidden>
+            <span class="cp-menu-wrap">
+              <button type="button" class="cp-icon-btn" onclick="this.parentNode.classList.toggle('open')" title="Download this chat" aria-haspopup="true" aria-label="Download this chat"><i class="fa-solid fa-download"></i></button>
+              <span class="cp-menu cp-menu-right" role="menu">
+                <button type="button" role="menuitem" data-chat-dl="pdf"><i class="fa-regular fa-file-pdf"></i> Chat as PDF</button>
+                <button type="button" role="menuitem" data-chat-dl="xlsx"><i class="fa-regular fa-file-excel"></i> Chat + sources as Excel</button>
+                <button type="button" role="menuitem" data-chat-dl="md"><i class="fa-brands fa-markdown"></i> Chat as Markdown</button>
+              </span>
+            </span>
+          </span>
+          <button type="button" class="cp-icon-btn" id="cpHelpBtn" title="What can I ask?" aria-label="What can I ask?"><i class="fa-regular fa-circle-question"></i></button>
+        </div>
+      </header>
+
+      <div class="cp-help" id="cpHelp" hidden>
+        <div class="cp-help-grid">
+          <div><strong><i class="fa-solid fa-user"></i> People</strong><span>“Prep me for a call with Robin Vince” · “What objections will she raise?” · “What has he posted recently?”</span></div>
+          <div><strong><i class="fa-solid fa-building"></i> Accounts</strong><span>“What's new at BNY?” · “What is BlackRock hiring for?” · “Who are the decision-makers at DTCC?”</span></div>
+          <div><strong><i class="fa-solid fa-table-list"></i> Lists (instant)</strong><span>“Which BNY VPs work in technology?” · “List the C-suite at BlackRock”</span></div>
+          <div><strong><i class="fa-solid fa-clock-rotate-left"></i> Changes (instant)</strong><span>“What changed for Robin Vince in the last 30 days?”</span></div>
+          <div><strong><i class="fa-solid fa-thumbtack"></i> Memory</strong><span>“Remember that Robin prefers morning calls” — private to you, used in later answers</span></div>
+          <div><strong><i class="fa-solid fa-keyboard"></i> Shortcuts</strong><span><kbd>@</kbd> mention · <kbd>/prep</kbd> <kbd>/email</kbd> <kbd>/changes</kbd> <kbd>/news</kbd> · <kbd>↑</kbd> edit last · <kbd>Esc</kbd> stop · <kbd>Ctrl</kbd>+<kbd>K</kbd> focus</span></div>
+        </div>
+      </div>
+
+      <div class="cp-messages-wrap">
+        <div class="cp-messages" id="cpMessages" aria-live="polite" aria-relevant="additions text"></div>
+        <button type="button" class="cp-jump" id="cpJump" hidden aria-label="Jump to latest"><i class="fa-solid fa-arrow-down"></i> Latest</button>
+      </div>
+
+      <form class="cp-composer" id="cpComposer" autocomplete="off">
+        <div class="cp-mention" id="cpMention" role="listbox" hidden></div>
+        <textarea id="cpInput" rows="1" placeholder="Ask about an account or person… (@ to mention, / for commands)" aria-label="Your question"></textarea>
+        <button type="submit" class="cp-send" id="cpSend" title="Send (Enter)" aria-label="Send"><i class="fa-solid fa-paper-plane"></i></button>
+      </form>
+      <div class="cp-hint">Answers cite your data. Contact details come from the database, never from the AI. Free AI quota is shared by the team.</div>
+    </main>
+
+    <!-- Right: context + sources -->
+    <aside class="cp-context" id="cpContext" aria-label="Sources and context">
+      <section>
+        <h3 class="cp-h3">In focus</h3>
+        <div id="cpFocus" class="cp-muted cp-small">Nothing yet — mention a person or account.</div>
+      </section>
+      <section>
+        <h3 class="cp-h3">Sources in this chat</h3>
+        <div id="cpSources" class="cp-muted cp-small">Sources cited in answers appear here.</div>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module" src="js/modules/copilot/main.js?v=2.2"></script>
+</body>
+</html>

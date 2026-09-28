@@ -3,7 +3,7 @@
 // count + Logout when logged in. Not enforced anywhere yet (AUTH_ENFORCED=false
 // server-side, see AUTH_JWT_IMPLEMENTATION_PLAN.md §9) — this just makes the
 // feature discoverable and usable while that's the case.
-import { esc } from './utils.js';
+import { esc, initials } from './utils.js';
 import { getCurrentUser, logout, refreshAccessToken } from './auth-client.js';
 import { renderMyTasksPanel } from './action-items.js';
 import { myTasksDrawer, myTasksDrawerBackdrop, myTasksDrawerBody } from './dom.js';
@@ -50,7 +50,7 @@ function render() {
   const user = getCurrentUser();
 
   if (!user) {
-    el.innerHTML = `<a href="/login" class="topbar-link"><i class="bi bi-box-arrow-in-right"></i> Sign In</a>`;
+    el.innerHTML = `<a href="/login" class="topbar-link"><i class="fa-solid fa-right-to-bracket"></i> Sign In</a>`;
     return;
   }
 
@@ -167,6 +167,19 @@ async function refreshMyTasksBadge() {
     console.error('Failed to load My Tasks count', err);
   }
 }
+
+// Ensure pages restored via browser Back/Forward (bfcache) revalidate session
+window.addEventListener('pageshow', async (event) => {
+  if (event.persisted) {
+    const user = await refreshAccessToken();
+    if (!user) {
+      document.body.style.display = 'none';
+      window.location.replace(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+    } else {
+      render();
+    }
+  }
+});
 
 export async function initTopbarAuth() {
   await refreshAccessToken(); // silent — restores a session from the refresh cookie on page load

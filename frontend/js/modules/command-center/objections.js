@@ -4,8 +4,11 @@
 
 import { esc } from './utils.js';
 import { renderSkeleton } from '../skeleton.js';
+import { ccState } from './state.js';
 
 let objectionsPromise = null;
+let painChart = null;
+let objectionChart = null;
 
 function loadObjectionsData() {
   if (!objectionsPromise) {

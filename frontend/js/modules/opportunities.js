@@ -44,8 +44,8 @@ export function suggestGrowthProductIdea(theme) {
 // Shared history badge + card chrome for both opportunity panels.
 export function renderHistoryBadge(historyEntry) {
   if (!historyEntry) return '';
-  if (historyEntry.is_new) return '<span class="pill pill-success"><i class="bi bi-stars"></i> New</span>';
-  if (historyEntry.status === 'inactive') return '<span class="pill pill-muted"><i class="bi bi-clock-history"></i> No longer trending</span>';
+  if (historyEntry.is_new) return '<span class="pill pill-success"><i class="fa-solid fa-star"></i> New</span>';
+  if (historyEntry.status === 'inactive') return '<span class="pill pill-muted"><i class="fa-solid fa-clock-rotate-left"></i> No longer trending</span>';
   return '';
 }
 
@@ -66,14 +66,14 @@ export function renderGrowthOpportunities(account, historySignals) {
 
   if (!combined.length) {
     return `<div class="empty-block">
-      <div class="empty-block-icon"><i class="bi bi-compass"></i></div>
+      <div class="empty-block-icon"><i class="fa-solid fa-compass"></i></div>
       <div class="empty-block-text">No recurring unserved themes detected yet for this account.</div>
     </div>`;
   }
   return combined.map(o => `
     <div class="opportunity-card">
       <div class="opportunity-header">
-        <i class="bi bi-compass"></i>
+        <i class="fa-solid fa-compass"></i>
         <span class="opportunity-title">${esc(o.theme)}</span>
         ${o.count ? `<span class="pill pill-warning">${o.count} mention${o.count !== 1 ? 's' : ''}</span>` : ''}
         ${renderHistoryBadge(historyByKey.get(o.signalKey))}
@@ -81,8 +81,8 @@ export function renderGrowthOpportunities(account, historySignals) {
       <div class="opportunity-note">
         Not covered by any current StradIT service line${o.channels && o.channels.size ? ` — recurring in ${[...o.channels].map(c => esc(CHANNEL_LABEL[c] || c)).join(', ')}` : ''}${o.person ? ` (via ${esc(o.person)})` : ''}.
       </div>
-      <div class="opportunity-idea"><i class="bi bi-lightbulb"></i> ${esc(suggestGrowthProductIdea(o.theme))}</div>
-      ${o.summary ? `<div class="opportunity-evidence"><i class="bi bi-quote"></i> ${esc(o.summary.length > 160 ? o.summary.slice(0, 160) + '…' : o.summary)}</div>` : ''}
+      <div class="opportunity-idea"><i class="fa-solid fa-lightbulb"></i> ${esc(suggestGrowthProductIdea(o.theme))}</div>
+      ${o.summary ? `<div class="opportunity-evidence"><i class="fa-solid fa-quote-left"></i> ${esc(o.summary.length > 160 ? o.summary.slice(0, 160) + '…' : o.summary)}</div>` : ''}
     </div>`).join('');
 }
 
@@ -101,7 +101,7 @@ export function computeDomainExpansionOpportunities(account) {
       id: 'tokenization',
       title: 'Institutional Tokenization & Digital Asset Custody Engine',
       domain: 'Digital Assets & Web3 Integration',
-      icon: 'bi-currency-bitcoin',
+      icon: 'fa-brands fa-bitcoin',
       status: 'High Demand in Enterprise',
       statusClass: 'pill-brand',
       demandSignal: 'Active market shift towards tokenized institutional collateral, digital custody, and real-time ledger settlement rails.',
@@ -120,7 +120,7 @@ export function computeDomainExpansionOpportunities(account) {
       id: 'pqc',
       title: 'Post-Quantum Cryptography (PQC) & NIST Migration Readiness',
       domain: 'Next-Gen Cyber & Zero-Trust',
-      icon: 'bi-shield-check',
+      icon: 'fa-solid fa-shield-halved',
       status: 'Emerging Regulatory Mandate',
       statusClass: 'pill-success',
       demandSignal: 'Upcoming federal and regulatory directives requiring financial institutions to inventory cryptographic assets for quantum resistance.',
@@ -138,7 +138,7 @@ export function computeDomainExpansionOpportunities(account) {
       id: 'core_modernization',
       title: 'Intelligent Event-Driven Microservices & Legacy Core De-Coupling',
       domain: 'Cloud Architecture & Modernization',
-      icon: 'bi-diagram-3-fill',
+      icon: 'fa-solid fa-sitemap',
       status: 'Active Multi-LOB Modernization',
       statusClass: 'pill-warning',
       demandSignal: 'Managing disparate operating divisions requiring decoupled real-time event streaming and zero-downtime message orchestration.',
@@ -163,22 +163,22 @@ export function renderDomainExpansionOpportunities(account, historySignals) {
 
   if (!combined.length) {
     return `<div class="empty-block">
-      <div class="empty-block-icon"><i class="bi bi-layers"></i></div>
+      <div class="empty-block-icon"><i class="fa-solid fa-layer-group"></i></div>
       <div class="empty-block-text">No custom capability expansion domains defined yet for this account.</div>
     </div>`;
   }
   return combined.map(o => `
     <div class="opportunity-card opportunity-card-brand">
       <div class="opportunity-header">
-        <i class="bi ${esc(o.icon || 'bi-layers')}"></i>
+        <i class="${esc(o.icon || 'fa-solid fa-layer-group')}"></i>
         <span class="opportunity-title">${esc(o.title)}</span>
         ${o.status ? `<span class="pill ${esc(o.statusClass || 'pill-brand')}">${esc(o.status)}</span>` : ''}
         ${renderHistoryBadge(historyByKey.get(o.id))}
       </div>
       ${o.domain ? `<div class="opportunity-note"><strong>${esc(o.domain)}</strong>${o.demandSignal ? ` — ${esc(o.demandSignal)}` : ''}</div>` : ''}
-      ${o.proposedScope ? `<div class="opportunity-idea"><i class="bi bi-lightbulb"></i> <strong>Suggested build:</strong> ${esc(o.proposedScope)}</div>` : ''}
-      ${o.synergyAngle ? `<div class="opportunity-evidence"><i class="bi bi-quote"></i> ${esc(o.synergyAngle)}</div>` : ''}
-      ${o.sponsorName ? `<div class="opportunity-sponsor"><i class="bi bi-person-badge"></i> Likely sponsor: ${esc(o.sponsorName)}${o.sponsorTitle ? ` — ${esc(o.sponsorTitle)}` : ''}</div>` : ''}
+      ${o.proposedScope ? `<div class="opportunity-idea"><i class="fa-solid fa-lightbulb"></i> <strong>Suggested build:</strong> ${esc(o.proposedScope)}</div>` : ''}
+      ${o.synergyAngle ? `<div class="opportunity-evidence"><i class="fa-solid fa-quote-left"></i> ${esc(o.synergyAngle)}</div>` : ''}
+      ${o.sponsorName ? `<div class="opportunity-sponsor"><i class="fa-solid fa-id-badge"></i> Likely sponsor: ${esc(o.sponsorName)}${o.sponsorTitle ? ` — ${esc(o.sponsorTitle)}` : ''}</div>` : ''}
     </div>`).join('');
 }
 

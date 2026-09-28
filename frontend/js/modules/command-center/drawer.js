@@ -39,7 +39,7 @@ export async function openDossier(account) {
       <div id="ccDrawerExecMovements">${renderSkeleton('lines')}</div>
     </div>
     <div class="cc-drawer-section">
-      <a class="cc-btn cc-btn-ghost" href="/?account_key=${encodeURIComponent(account.key || account.ticker || account.name)}">Open full account view <i class="bi bi-arrow-right"></i></a>
+      <a class="cc-btn cc-btn-ghost" href="/?account_key=${encodeURIComponent(account.key || account.ticker || account.name)}">Open full account view <i class="fa-solid fa-arrow-right"></i></a>
     </div>
     <div class="cc-drawer-footer-actions">
       <button type="button" class="cc-btn cc-btn-ghost" id="ccDrawerLogTouch">Log touch</button>
