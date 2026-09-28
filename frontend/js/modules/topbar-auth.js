@@ -44,6 +44,8 @@ function getUserInitials(user) {
   return 'U';
 }
 
+let currentOptions = {};
+
 function render() {
   const el = document.getElementById('topbarAuthWidget');
   if (!el) return;
@@ -55,7 +57,7 @@ function render() {
   }
 
   const isOnAdminPage = window.location.pathname.startsWith('/admin');
-  const showTasks = !isOnAdminPage && (user.role === 'super_admin' || user.has_tasks_access !== false);
+  const showTasks = currentOptions.showTasks !== false && !isOnAdminPage && (user.role === 'super_admin' || user.has_tasks_access !== false);
   const displayName = user.full_name || (user.email ? user.email.split('@')[0] : 'User');
   const initials = getUserInitials(user);
   const isSuperAdmin = user.role === 'super_admin';
@@ -181,7 +183,8 @@ window.addEventListener('pageshow', async (event) => {
   }
 });
 
-export async function initTopbarAuth() {
+export async function initTopbarAuth(options = {}) {
+  currentOptions = options;
   await refreshAccessToken(); // silent — restores a session from the refresh cookie on page load
   render();
   return getCurrentUser();
