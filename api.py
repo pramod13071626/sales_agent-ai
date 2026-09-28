@@ -4235,6 +4235,10 @@ if FASTAPI_AVAILABLE:
     from apps.sales_deals.api import install as install_deals
     install_deals(app)
 
+    # Global search palette (Ctrl+K / Ctrl+F): lexical suggestions + semantic related content
+    from apps.sales_search.api import install as install_search
+    install_search(app)
+
     # ══════════════════════════════════════════════════════
     # SOLID REST API ENDPOINTS
     # ══════════════════════════════════════════════════════

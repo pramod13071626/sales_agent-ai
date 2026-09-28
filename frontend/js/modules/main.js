@@ -10,13 +10,58 @@ import { initThemeToggle } from './theme.js';
 import { renderTopbarTicker } from './topbar.js';
 import { renderNavTree } from './nav-tree.js';
 import { renderDigest } from './digest.js';
-import { jumpToAccount } from './selection.js';
+import { jumpToAccount, renderSelection } from './selection.js';
 import { openAllJobsPage } from './jobs-browser.js';
 import { initTopbarAuth } from './topbar-auth.js';
 import { showToast } from './toast.js';
 import { loadAccountsCached, AccountsAuthError } from './accounts-cache.js';
+import { openContactDrawer } from './contact-drawer.js';
+import { dedupePersonas } from './utils.js';
+import { initSearchPalette } from './search-palette.js';
 
 initThemeToggle();
+
+// Select an account (optionally a LOB / tab) and wait until it has rendered.
+async function selectAccount(accountId, { lobId = null, tab = null } = {}) {
+  if (!state.accounts.some(a => a.id === accountId)) return false;
+  state.expandedAccountIds.add(accountId);
+  state.activeView = null;
+  state.activeAccountId = accountId;
+  state.activeLobId = lobId;
+  if (tab) state.activeSalesTab = tab;
+  renderNavTree();
+  await renderSelection();
+  return true;
+}
+
+async function openPersona(accountId, personaId) {
+  if (!await selectAccount(accountId)) return false;
+  const account = state.accounts.find(a => a.id === accountId);
+  let persona = dedupePersonas(account.personas || []).find(p => p.id === personaId);
+  if (!persona) {
+    const res = await fetch(`/api/personas/${personaId}`);
+    if (!res.ok) return false;
+    persona = await res.json();
+  }
+  openContactDrawer(persona);
+  return true;
+}
+
+// Search palette results that live on this page open in place; the rest navigate.
+async function openSearchResult(item) {
+  switch (item.type) {
+    case 'account': return selectAccount(item.id);
+    case 'lob': return selectAccount(item.account_id, { lobId: item.id });
+    case 'persona': return openPersona(item.account_id, item.id);
+    case 'signal': {
+      if (!await selectAccount(item.account_id, { tab: 'alerts' })) return false;
+      const section = document.getElementById(item.category === 'domain_expansion' ? 'domainExpansionBody' : 'growthOpportunitiesBody');
+      section?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return true;
+    }
+    default: return false;
+  }
+}
 
 async function loadAccounts(user) {
   try {
@@ -26,6 +71,7 @@ async function loadAccounts(user) {
     const deepLinkAccountKey = searchParams.get('account_key');
     const deepLinkTab = searchParams.get('tab');
     const deepLinkLobId = searchParams.get('lob') ? parseInt(searchParams.get('lob'), 10) : null;
+    const deepLinkPersonaId = searchParams.get('persona') ? parseInt(searchParams.get('persona'), 10) : null;
     const wantsCcAccessNotice = searchParams.get('no_command_center_access') === '1';
 
     if (wantsCcAccessNotice) {
@@ -104,7 +150,10 @@ async function loadAccounts(user) {
       }
     } else {
       const normalizedTab = (deepLinkTab === 'personas' || deepLinkTab === 'persona') ? 'committee' : deepLinkTab;
-      if (targetAccount) {
+      if (targetAccount && deepLinkPersonaId) {
+        if (normalizedTab) state.activeSalesTab = normalizedTab;
+        await openPersona(targetAccount.id, deepLinkPersonaId);
+      } else if (targetAccount) {
         if (normalizedTab) state.activeSalesTab = normalizedTab;
         if (deepLinkLobId) state.activeLobId = deepLinkLobId;
         jumpToAccount(targetAccount.id);
@@ -154,5 +203,6 @@ initTopbarAuth().then((user) => {
       if (tasksLink) tasksLink.style.display = 'none';
     }
   }
+  initSearchPalette({ getAccountId: () => state.activeAccountId, open: openSearchResult });
   loadAccounts(user);
 });

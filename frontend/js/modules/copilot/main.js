@@ -350,6 +350,14 @@ async function init() {
   if (sessionParam) {
     try { await view.openSession(sessionParam); } catch (err) { showToast(err.message); }
   }
+  // ?q= (from the search palette's "Ask Copilot"): prefill only — sending stays the
+  // user's choice, since every answer spends the shared LLM quota.
+  const q = new URLSearchParams(location.search).get('q');
+  if (q) {
+    $('cpInput').value = q;
+    $('cpInput').dispatchEvent(new Event('input', { bubbles: true }));   // lets the textarea auto-grow
+    const url = new URL(location.href); url.searchParams.delete('q'); history.replaceState(null, '', url);
+  }
   $('cpInput').focus();
 }
 
