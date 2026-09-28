@@ -101,24 +101,21 @@ $(function () {
 
   async function loadData(isRetry) {
     // Instant load from sessionStorage cache if available (eliminates refresh delay)
+    // Instant load from sessionStorage cache if available (eliminates refresh delay)
     if (!isRetry) {
       try {
         sessionStorage.removeItem("pipeline_accounts_cache");
-        const cached = sessionStorage.getItem("pipeline_accounts_cache_v2");
+        sessionStorage.removeItem("pipeline_accounts_cache_v2");
+        const cached = sessionStorage.getItem("pipeline_accounts_cache_v3");
         if (cached) {
           const parsed = JSON.parse(cached);
-          if (
-            parsed &&
-            Array.isArray(parsed.accounts) &&
-            parsed.accounts.length > 0 &&
-            (parsed.accounts[0].website_url || (parsed.accounts[0].personas && parsed.accounts[0].personas[0] && (parsed.accounts[0].personas[0].google_scholar_url || parsed.accounts[0].personas[0].osint_feed_manifest)))
-          ) {
+          if (parsed && Array.isArray(parsed.accounts) && parsed.accounts.length > 0) {
             MOCK_DATA = parsed;
             updateGlobalTelemetry();
             renderSidebar();
             const savedId = activeAccount ? activeAccount.id : sessionStorage.getItem("pipeline_active_account_id");
             if (savedId && $(`#accountList .account-item[data-id="${savedId}"]`).length) {
-              if (!activeAccount) {
+              if (!activeAccount || !activeAccount._is_full_loaded) {
                 $(`#accountList .account-item[data-id="${savedId}"]`).trigger("click");
               }
             } else if (!activeAccount) {
@@ -135,7 +132,7 @@ $(function () {
       }
     }
     try {
-      const url = `${API_BASE}/api/accounts?full=true`;
+      const url = `${API_BASE}/api/accounts`;
       console.log("[loadData] Fetching:", url);
       const token = sessionStorage.getItem('access_token') || localStorage.getItem('access_token');
       const headers = {};
@@ -189,9 +186,21 @@ $(function () {
       if (!data || !Array.isArray(data.accounts)) {
         throw new Error(`Unexpected response shape — missing accounts array`);
       }
+
+      // Merge previously hydrated full accounts from memory
+      if (MOCK_DATA && Array.isArray(MOCK_DATA.accounts)) {
+        data.accounts = data.accounts.map(freshAcct => {
+          const existing = MOCK_DATA.accounts.find(a => a.id === freshAcct.id);
+          if (existing && existing._is_full_loaded) {
+            return { ...freshAcct, ...existing };
+          }
+          return freshAcct;
+        });
+      }
+
       MOCK_DATA = data;
       try {
-        sessionStorage.setItem("pipeline_accounts_cache_v2", JSON.stringify(data));
+        sessionStorage.setItem("pipeline_accounts_cache_v3", JSON.stringify(data));
       } catch (e) {}
 
       updateGlobalTelemetry();
@@ -199,7 +208,7 @@ $(function () {
       renderSidebar();
       updateBatchTriggerPills(activeAccount);
       if (savedId && $(`#accountList .account-item[data-id="${savedId}"]`).length) {
-        if (!activeAccount) {
+        if (!activeAccount || !activeAccount._is_full_loaded) {
           $(`#accountList .account-item[data-id="${savedId}"]`).trigger("click");
         } else {
           $(`#accountList .account-item[data-id="${savedId}"]`).addClass("active");
@@ -2783,7 +2792,7 @@ $(function () {
     const revenue = formatCompactRevenue(rawRev);
     const opStatus = account.operating_status || "—";
     const industry = (account.industries || [])[0] || "—";
-    const desc = account.desc || account.overview || account.short_description || "—";
+    const desc = account.short_description || (account.desc && account.desc.length < 140 ? account.desc : (account.desc ? account.desc.slice(0, 137) + '...' : '—'));
     const acctKey = `account_${account.id}`;
     const state = getActionState(acctKey);
 
@@ -2812,7 +2821,6 @@ $(function () {
                 <span>${account.is_manually_verified ? `Manually Verified ✓ (${formatTimeAgo(account.manually_verified_at)})` : 'AI Inferred • Verify'}</span>
               </button>
             </div>
-            <p class="header-subtitle-desc">${esc(desc)}</p>
           </div>
         </div>
 
@@ -3097,6 +3105,7 @@ $(function () {
     const opStatus = account.operating_status || "—";
     const founded = account.founded_year || (account.founded_date ? String(account.founded_date).slice(0, 4) : "—");
     const domain = account.domain || account.primary_domain || "—";
+    const fullDesc = account.full_description || account.desc || account.short_description || "—";
 
     const coverage = computeSourceCoverage(account);
     const lobsCount = (account.lobs || []).length;
@@ -3231,6 +3240,22 @@ $(function () {
       <!-- Full Width Enterprise Container -->
       <div class="pipeline-fullwidth-container">
         
+        <!-- Corporate Description & Executive Overview Horizontal Banner -->
+        ${fullDesc !== "—" ? `
+        <div class="pipeline-section-card fade-in" style="margin-bottom:14px;padding:16px 20px;border-left:4px solid #0284c7;">
+          <div class="section-title-row" style="margin-bottom:8px;">
+            <div class="section-title-left">
+              <span class="section-title-dot" style="background:#0284c7;"></span>
+              <span style="font-weight:700;font-size:0.85rem;color:#1e293b;letter-spacing:0.04em;">EXECUTIVE OVERVIEW</span>
+            </div>
+            <span class="section-subtitle-hint">Verified Corporate Synopsis</span>
+          </div>
+          <p style="color:#334155;font-size:0.85rem;line-height:1.65;margin:0;letter-spacing:-0.01em;">
+            ${esc(fullDesc)}
+          </p>
+        </div>
+        ` : ''}
+
         <!-- Card 1: Enterprise Snapshot -->
         <div class="pipeline-section-card fade-in">
           <div class="section-title-row">
@@ -4108,19 +4133,22 @@ $(function () {
     $(this).addClass("active");
     closeSidebar();
 
-    // If activeAccount doesn't have full fields (e.g. from a trimmed cache), fetch full dossier
-    if (!activeAccount.website_url && !activeAccount.short_description) {
+    // If activeAccount dossier is not fully hydrated, fetch full dossier on-demand
+    if (!activeAccount._is_full_loaded) {
       try {
         const token = sessionStorage.getItem('access_token') || localStorage.getItem('access_token');
         const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
         const acctRes = await fetch(`${API_BASE}/api/accounts/${id}`, { headers, credentials: 'include' });
         if (acctRes.ok) {
           const fullAcct = await acctRes.json();
+          fullAcct._is_full_loaded = true;
           const aIdx = MOCK_DATA.accounts.findIndex(a => a.id === id);
           if (aIdx !== -1) MOCK_DATA.accounts[aIdx] = fullAcct;
           activeAccount = fullAcct;
         }
-      } catch (_) {}
+      } catch (err) {
+        console.warn("[AccountClick] Failed to fetch full account on demand:", err);
+      }
     }
 
     // Hide empty state, show dashboard
@@ -4195,9 +4223,13 @@ $(function () {
     }
   }
 
+  let _hubRenderPending = false;
   async function renderEmptyStateHub() {
     const $hub = $("#emptyState");
     if (!$hub.length) return;
+    if (_hubRenderPending) return;
+    _hubRenderPending = true;
+    setTimeout(() => { _hubRenderPending = false; }, 2000);
 
     // 1. Fetch live system health & telemetry
     try {
@@ -4796,9 +4828,13 @@ $(function () {
     }
 
     // Helper: Load Live Recent Pipeline Runs Feed
+    let _recentRunsPending = false;
     async function loadHubRecentRuns() {
       const $container = $("#hubRecentRunsContainer");
       if (!$container.length) return;
+      if (_recentRunsPending) return;
+      _recentRunsPending = true;
+      setTimeout(() => { _recentRunsPending = false; }, 2000);
 
       try {
         const res = await fetch(`${API_BASE}/api/pipeline/runs?limit=5`);
@@ -10602,27 +10638,29 @@ $(function () {
         const timeInfo = formatRunTime(item.updated_at || item.created_at);
         const sources = detectItemSources(item, false);
         const dbCols = calculateDbColumnsFilled(item, "account");
+        const acctHealth = computeAccountHealth(item);
+        const displayPct = (acctHealth && acctHealth.percentage) ? acctHealth.percentage : dbCols.pct;
 
         const chipsHtml = sources.length > 0
           ? `<div class="batch-source-chips">${sources.map(s => `<span class="batch-source-chip ${s.cls}">${esc(s.label)}</span>`).join('')}</div>`
           : `<span class="text-muted" style="font-size:0.68rem;">Pending Sources</span>`;
 
-        const fillBarColor = dbCols.pct >= 70 ? "#10b981" : (dbCols.pct >= 40 ? "#3b82f6" : "#f59e0b");
+        const fillBarColor = displayPct >= 70 ? "#10b981" : (displayPct >= 40 ? "#3b82f6" : "#f59e0b");
         const dbColsHtml = `
-          <div class="batch-db-cols-meter" title="${dbCols.filled} out of ${dbCols.total} database columns populated (${dbCols.pct}%)">
+          <div class="batch-db-cols-meter" title="${dbCols.filled} out of ${dbCols.total} DB columns populated | ${acctHealth?.populatedCount || 0}/${acctHealth?.totalFields || 45} Core Attributes (${displayPct}%)">
             <div class="batch-db-cols-text">
               <span>${dbCols.filled}/${dbCols.total} cols</span>
-              <span style="color:${fillBarColor};">${dbCols.pct}%</span>
+              <span style="color:${fillBarColor};font-weight:600;">${displayPct}%</span>
             </div>
             <div class="batch-db-cols-bar">
-              <div class="batch-db-cols-fill" style="width:${dbCols.pct}%;background:${fillBarColor};"></div>
+              <div class="batch-db-cols-fill" style="width:${displayPct}%;background:${fillBarColor};"></div>
             </div>
           </div>
         `;
 
         let statusBadge = "";
         if (enriched) {
-          statusBadge = `<span class="batch-status-badge batch-status-enriched"><i class="bi bi-check-circle-fill"></i> Enriched (${dbCols.pct}%)</span>`;
+          statusBadge = `<span class="batch-status-badge batch-status-enriched"><i class="bi bi-check-circle-fill"></i> Enriched (${displayPct}%)</span>`;
         } else {
           statusBadge = `<span class="batch-status-badge batch-status-stub"><i class="bi bi-hourglass-split"></i> Pending Stub</span>`;
         }
@@ -10670,7 +10708,6 @@ $(function () {
                   <button type="button" class="batch-row-btn batch-single-run-btn batch-btn-reenrich" data-key="${esc(key)}" title="Additive Re-enrichment: updates corporate intelligence without losing data">
                     <i class="bi bi-arrow-repeat"></i> Re-enrich
                   </button>
-                  ${lCount === 0 ? `
                   <button type="button" class="batch-row-btn batch-discover-lobs-btn"
                     data-account-id="${item.id}"
                     data-account-name="${esc(item.legal_name || item.display_name || item.name || '')}"
@@ -10679,8 +10716,7 @@ $(function () {
                     style="background:rgba(16,185,129,0.1);color:#10b981;border:1px solid rgba(16,185,129,0.3);white-space:nowrap;"
                     title="Discover Operating Subsidiaries & Lines of Business via SEC Exhibit 21, GLEIF, and corporate intelligence sources">
                     <i class="bi bi-diagram-3"></i> Discover LOBs
-                  </button>` : ''}
-                  ${pCount === 0 ? `
+                  </button>
                   <button type="button" class="batch-row-btn batch-discover-people-btn"
                     data-account-id="${item.id}"
                     data-account-name="${esc(item.legal_name || item.display_name || item.name || '')}"
@@ -10689,7 +10725,7 @@ $(function () {
                     style="background:rgba(139,92,246,0.1);color:#8b5cf6;border:1px solid rgba(139,92,246,0.3);white-space:nowrap;"
                     title="Discover Executive Leadership & Contacts via Apollo, Corporate Web, and OSINT (4-tier hierarchy)">
                     <i class="bi bi-people"></i> Discover People
-                  </button>` : ''}
+                  </button>
                 </div>
               ` : `
                 <button type="button" class="batch-row-btn batch-single-run-btn batch-btn-enrich" data-key="${esc(key)}" title="Run 11-source deep account intelligence enrichment">

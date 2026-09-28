@@ -76,7 +76,13 @@ class AccountRepository:
         and automatically persists them into the personas table linked to this account.
         Uses PersonaRepository.upsert with 5-tier deduplication to guarantee zero duplicate records.
         """
-        raw_diffbot = account_data.get("_raw_diffbot") or account_data.get("raw_diffbot") or {}
+        raw_diffbot = (
+            account_data.get("_raw_diffbot")
+            or account_data.get("raw_diffbot")
+            or (account_data.get("raw_data", {}).get("diffbot", {}).get("_raw_diffbot") if isinstance(account_data.get("raw_data"), dict) and isinstance(account_data.get("raw_data", {}).get("diffbot"), dict) else None)
+            or (account_data.get("raw_data", {}).get("diffbot") if isinstance(account_data.get("raw_data"), dict) else None)
+            or {}
+        )
         if not isinstance(raw_diffbot, dict):
             raw_diffbot = {}
 
