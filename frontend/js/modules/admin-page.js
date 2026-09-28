@@ -1,15 +1,11 @@
 // Entry point for the super-admin dashboard (/admin) — Command Center.
 import './fetch-instrumentation.js';
 import { getCurrentUser, logout, refreshAccessToken } from './auth-client.js';
+import { initTopbarAuth } from './topbar-auth.js';
 import { initThemeToggle } from './theme.js';
 import { showToast } from './toast.js';
 
 initThemeToggle();
-
-document.getElementById('adminLogoutBtn').addEventListener('click', async () => {
-  await logout();
-  window.location.replace('/login');
-});
 
 const esc = (s) => {
   const d = document.createElement('div');
@@ -51,16 +47,7 @@ function getInitials(name, email) {
   return (email || 'U').slice(0, 2).toUpperCase();
 }
 
-function renderTopBarUser(user) {
-  const el = document.getElementById('topbarAuthUser');
-  if (!el || !user) return;
-  const displayName = user.full_name || user.email;
-  el.innerHTML = `
-    <i class="fa-solid fa-circle-user" style="font-size:1.05rem; opacity:0.9;"></i>
-    <span style="font-weight:600; color:#fff;" title="${esc(user.email)}">${esc(displayName)}</span>
-    <span style="background:rgba(255,255,255,0.18); color:#fff; font-size:0.64rem; font-weight:700; padding:2px 7px; border-radius:4px; letter-spacing:0.04em; text-transform:uppercase;">Super Admin</span>
-  `;
-}
+
 
 function renderHero() {
   return `
@@ -461,9 +448,6 @@ async function loadAndRender() {
   usersCache = usersData.users || [];
 
   const me = getCurrentUser();
-  if (me) {
-    renderTopBarUser(me);
-  }
 
   main.innerHTML = `
     ${renderHero()}
@@ -1091,8 +1075,15 @@ function initTopbarAccountsDropdown() {
 
   btn.addEventListener('click', async (e) => {
     e.stopPropagation();
+    // Close pipelines dropdown if open
+    const pipeMenu = document.getElementById('pipelinesDropdownMenu');
+    const pipeContainer = document.getElementById('topbarPipelinesDropdown');
+    if (pipeMenu && pipeContainer) {
+      pipeContainer.classList.remove('active');
+      pipeMenu.classList.add('d-none');
+    }
+
     const isOpening = menu.classList.contains('d-none');
-    
     if (isOpening) {
       container.classList.add('active');
       menu.classList.remove('d-none');
@@ -1122,7 +1113,51 @@ function initTopbarAccountsDropdown() {
   });
 }
 
+function initTopbarPipelinesDropdown() {
+  const container = document.getElementById('topbarPipelinesDropdown');
+  const btn = document.getElementById('pipelinesDropdownBtn');
+  const menu = document.getElementById('pipelinesDropdownMenu');
+  if (!container || !btn || !menu) return;
+
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    // Close accounts dropdown if open
+    const acctMenu = document.getElementById('globalAccountsMenu');
+    const acctContainer = document.getElementById('topbarAccountsDropdown');
+    if (acctMenu && acctContainer) {
+      acctContainer.classList.remove('active');
+      acctMenu.classList.add('d-none');
+    }
+
+    const isOpening = menu.classList.contains('d-none');
+    if (isOpening) {
+      container.classList.add('active');
+      menu.classList.remove('d-none');
+    } else {
+      container.classList.remove('active');
+      menu.classList.add('d-none');
+    }
+  });
+
+  // Close when clicking outside
+  document.addEventListener('click', (e) => {
+    if (!container.contains(e.target)) {
+      container.classList.remove('active');
+      menu.classList.add('d-none');
+    }
+  });
+
+  // Close when ESC is pressed
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !menu.classList.contains('d-none')) {
+      container.classList.remove('active');
+      menu.classList.add('d-none');
+    }
+  });
+}
+
 initTopbarAccountsDropdown();
+initTopbarPipelinesDropdown();
 
 async function init() {
   await refreshAccessToken();
@@ -1150,7 +1185,7 @@ async function init() {
     }
     return;
   }
-  renderTopBarUser(user);
+  await initTopbarAuth({ showTasks: false });
   try {
     await loadAndRender();
   } catch (err) {

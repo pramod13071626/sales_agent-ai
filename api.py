@@ -103,7 +103,7 @@ try:
         Depends,
         BackgroundTasks,
     )
-    from fastapi.responses import FileResponse, HTMLResponse
+    from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.staticfiles import StaticFiles
     from fastapi.templating import Jinja2Templates
@@ -5677,6 +5677,14 @@ if FASTAPI_AVAILABLE:
             deliberately deferred v2 (no endpoint for it exists yet)."""
             return templates.TemplateResponse(request, "tasks.html", headers=_NO_CACHE_HEADERS)
 
+        @app.get("/pipeline", include_in_schema=False)
+        async def pipeline_redirect():
+            return RedirectResponse(url="/pipeline/", status_code=307)
+
+        @app.get("/pipline", include_in_schema=False)
+        async def pipline_redirect():
+            return RedirectResponse(url="/pipeline/", status_code=307)
+
         class NoCacheStaticFiles(StaticFiles):
             """Forces browsers to revalidate every CSS/JS fetch against the
             server (via the ETag/Last-Modified this already returns) instead
@@ -5704,6 +5712,7 @@ if FASTAPI_AVAILABLE:
         if js_dir.exists():
             app.mount("/js", NoCacheStaticFiles(directory=str(js_dir)), name="frontend-js")
         if pipline_dir.exists():
+            app.mount("/pipeline", NoCacheStaticFiles(directory=str(pipline_dir), html=True), name="frontend-pipeline")
             app.mount("/pipline", NoCacheStaticFiles(directory=str(pipline_dir), html=True), name="frontend-pipline")
 
 

@@ -38,6 +38,8 @@ function formatUserRole(role) {
   return r.charAt(0).toUpperCase() + r.slice(1);
 }
 
+let currentOptions = {};
+
 function render() {
   const el = document.getElementById('topbarAuthWidget');
   if (!el) return;
@@ -48,7 +50,7 @@ function render() {
     return;
   }
 
-  const showTasks = user.role === 'super_admin' || user.has_tasks_access !== false;
+  const showTasks = currentOptions.showTasks !== false && (user.role === 'super_admin' || user.has_tasks_access !== false);
   const displayName = user.full_name || user.email || 'User';
   const userInitials = initials(displayName);
   const roleName = formatUserRole(user.role);
@@ -81,7 +83,6 @@ function render() {
           <div class="topbar-dropdown-divider"></div>
 
           <div class="topbar-dropdown-actions">
-            ${user.role === 'super_admin' ? '<a href="/admin" class="topbar-dropdown-item"><i class="fa-solid fa-users-gear"></i> Admin Management</a><a href="/copilot-pipeline" class="topbar-dropdown-item"><i class="fa-solid fa-diagram-project"></i> Copilot Pipeline</a>' : ''}
             <button type="button" id="topbarDropdownLogoutBtn" class="topbar-dropdown-item topbar-dropdown-logout">
               <i class="fa-solid fa-right-from-bracket"></i> Logout
             </button>
@@ -180,7 +181,8 @@ window.addEventListener('pageshow', async (event) => {
   }
 });
 
-export async function initTopbarAuth() {
+export async function initTopbarAuth(options = {}) {
+  currentOptions = options;
   await refreshAccessToken(); // silent — restores a session from the refresh cookie on page load
   render();
   return getCurrentUser();
