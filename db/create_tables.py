@@ -13,8 +13,44 @@ from db.connection import engine
 from db.models import Base
 from sqlalchemy import text, inspect
 
+def seed_default_admin_if_missing():
+    try:
+        from db.models import User
+        from db.connection import get_session
+        import auth
+        session = get_session()
+        try:
+            admin = session.query(User).filter(User.role == "super_admin").first()
+            if not admin:
+                user = User(
+                    email="ankita@stradit.com",
+                    hashed_password=auth.hash_password("ankita@123"),
+                    full_name="Ankita",
+                    role="super_admin",
+                    is_active=True,
+                    has_dashboard_access=True,
+                    has_command_center_access=True,
+                    has_tasks_access=True,
+                    has_pipeline_access=True,
+                )
+                session.add(user)
+                session.commit()
+                print("[DB] Default super admin created (ankita@stradit.com).")
+        finally:
+            session.close()
+    except Exception as e:
+        print(f"[DB] Default admin check notice: {e}")
+
+
 def ensure_schema_compatibility():
-    """Ensures all new JSONB, array, and expanded VARCHAR columns exist in PostgreSQL."""
+    """Ensures all tables, JSONB, array, and expanded columns exist in PostgreSQL."""
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception as e:
+        print(f"[DB] Table creation check notice: {e}")
+
+    seed_default_admin_if_missing()
+
     with engine.connect() as conn:
         # 1. Expand personas columns
         alter_statements = [
