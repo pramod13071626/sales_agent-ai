@@ -1777,7 +1777,7 @@ class PersonaService:
         Zero hardcoding, zero fake fallbacks.
         """
         if getattr(config, "GEMINI_API_KEY", None):
-            models_to_try = ["gemini-flash-lite-latest", "gemini-3.6-flash", "gemini-flash-latest"]
+            models_to_try = ["gemini-flash-latest", "gemini-flash-lite-latest", "gemini-3.8-flash", "gemini-3.7-flash"]
             prompt = f"""You are an elite corporate research and executive intelligence analyst.
 Analyze the provided genuine OSINT sources and extract structured real-world profile data for this verified executive at {company_name} ({full_name}, {title}).
 STRICT INSTRUCTIONS:

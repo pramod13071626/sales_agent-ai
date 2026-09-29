@@ -44,7 +44,7 @@ from collectors.account_collector import (
     fetch_fec_political_intel,
     fetch_diffbot_organization_intel,
 )
-from collectors.sublob_collector import scrape_sublobs
+from collectors.sublob_collector import scrape_sublobs, extract_commercial_operating_divisions
 from collectors.lob_enricher import enrich_lob_segments
 from collectors.hierarchy_collector import scrape_hierarchy
 from collectors.persona_enricher import build_persona_dossier
@@ -847,6 +847,7 @@ if FASTAPI_AVAILABLE:
         company_name: Optional[str] = None
         sec_cik: Optional[str] = None
         enrich_csuite_dossiers: bool = True
+        account_id: Optional[int] = None
 
     class HierarchyDumpRequest(BaseModel):
         account_id: int
@@ -2363,12 +2364,41 @@ if FASTAPI_AVAILABLE:
                             for c in tree.get("gleif_children", []):
                                 if c.get("legal_name"):
                                     discovered_names.append(c.get("legal_name"))
+                            for a_sub in tree.get("all_subsidiaries", []):
+                                if a_sub.get("legal_name"):
+                                    discovered_names.append(a_sub.get("legal_name"))
+                            for ind in tree.get("gleif_indirect_sublobs", []):
+                                if ind.get("legal_name"):
+                                    discovered_names.append(ind.get("legal_name"))
+                        if acct.lobs:
+                            for ex_lob in acct.lobs:
+                                if ex_lob.lob_name:
+                                    discovered_names.append(ex_lob.lob_name)
                 except Exception as db_err:
                     print(f"[!] [LobFetch] DB Account lookup notice: {db_err}")
                 finally:
                     session.close()
 
-                # 2. If no names from DB, query SEC Exhibit 21 and GLEIF directly
+                # 2. Extract Diffbot raw subsidiaries if available in output cache
+                try:
+                    comp_clean = slugify(req.company_name or "")
+                    for out_root in [config.OUTPUT_DIR / "raw" / "diffbot", config.OUTPUT_DIR]:
+                        if not out_root.exists():
+                            continue
+                        for df_path in out_root.rglob("*diffbot*.json"):
+                            if comp_clean and comp_clean in df_path.stem.lower():
+                                with open(df_path, "r", encoding="utf-8") as df_f:
+                                    df_data = json.load(df_f)
+                                    df_obj = df_data.get("data", [{}])[0] if isinstance(df_data.get("data"), list) else df_data
+                                    for sub in df_obj.get("subsidiaries", []):
+                                        if isinstance(sub, str) and sub.strip():
+                                            discovered_names.append(sub.strip())
+                                        elif isinstance(sub, dict) and sub.get("name"):
+                                            discovered_names.append(sub.get("name").strip())
+                except Exception as df_err:
+                    print(f"[!] [LobFetch] Diffbot raw lookup notice: {df_err}")
+
+                # 3. If no names from DB/Diffbot, query SEC Exhibit 21 and GLEIF directly
                 if not discovered_names and sec_cik_val:
                     try:
                         ex21 = fetch_sec_exhibit_21_subsidiaries(sec_cik_val)
@@ -2387,7 +2417,7 @@ if FASTAPI_AVAILABLE:
                     except Exception as e:
                         print(f"[!] [LobFetch] GLEIF live notice: {e}")
 
-                # 3. Augment with Crunchbase sub-organizations
+                # 4. Augment with Crunchbase sub-organizations
                 try:
                     cb_subs = scrape_sublobs(req.company_name)
                     for cb in cb_subs:
@@ -2397,11 +2427,34 @@ if FASTAPI_AVAILABLE:
                 except Exception as e:
                     print(f"[!] [LobFetch] Crunchbase sublobs notice: {e}")
 
-                # 4. Deduplicate discovered subsidiary names
+                # 5. Augment with Stream B: Dynamic Commercial Operating Divisions & Business Segments
+                discovered_divisions_meta = {}
+                try:
+                    acct_domain = getattr(acct, "domain", None) or getattr(acct, "primary_domain", None) if acct else None
+                    divs = extract_commercial_operating_divisions(req.company_name, acct_domain)
+                    for d in divs:
+                        d_name = d.get("name") or d.get("lob_name")
+                        if d_name:
+                            discovered_names.append(d_name)
+                            discovered_divisions_meta[d_name.strip().lower()] = d
+                except Exception as div_err:
+                    print(f"[!] [LobFetch] Dynamic commercial divisions notice: {div_err}")
+
+                # 6. Deduplicate discovered subsidiary & division names
                 unique_names = list(dict.fromkeys([n.strip() for n in discovered_names if n and len(n.strip()) > 1]))
 
-                # Build input list for enrichment
-                lobs_to_enrich = [{"name": n, "lob_name": n} for n in unique_names]
+                # Build input list for enrichment preserving any dynamic domain/overview metadata
+                lobs_to_enrich = []
+                for n in unique_names:
+                    d_meta = discovered_divisions_meta.get(n.strip().lower(), {})
+                    item = {"name": n, "lob_name": n}
+                    if d_meta.get("domain"):
+                        item["domain"] = d_meta["domain"]
+                    if d_meta.get("relationship_type"):
+                        item["relationship_type"] = d_meta["relationship_type"]
+                    if d_meta.get("overview"):
+                        item["overview"] = d_meta["overview"]
+                    lobs_to_enrich.append(item)
 
                 # 5. Enrich via enterprise LobService
                 if lobs_to_enrich:
@@ -2459,6 +2512,21 @@ if FASTAPI_AVAILABLE:
                         "discovered_names_count": len(unique_names),
                     },
                 )
+
+                # Auto-commit to DB if account_id is provided
+                if req.account_id and enriched_lobs:
+                    session = get_session()
+                    try:
+                        db_acct = session.query(Account).filter_by(id=req.account_id).first()
+                        if db_acct:
+                            lob_repo = LobRepository(session)
+                            lob_repo.upsert_all(db_acct, enriched_lobs)
+                            session.commit()
+                    except Exception as commit_err:
+                        session.rollback()
+                        print(f"[!] [LobFetch] Auto-commit DB notice: {commit_err}")
+                    finally:
+                        session.close()
 
                 return {
                     "status": "staged",
@@ -3654,6 +3722,21 @@ if FASTAPI_AVAILABLE:
                     "tier_counts": tier_counts,
                 },
             )
+
+            # Auto-commit to DB if account_id is provided
+            if req.account_id and hierarchy:
+                session = get_session()
+                try:
+                    acct = session.query(Account).filter_by(id=req.account_id).first()
+                    if acct:
+                        repo = PersonaRepository(session)
+                        repo.upsert_all(acct, hierarchy)
+                        session.commit()
+                except Exception as commit_err:
+                    session.rollback()
+                    print(f"[!] [HierarchyFetch] Auto-commit DB notice: {commit_err}")
+                finally:
+                    session.close()
 
             return {
                 "status": "staged",

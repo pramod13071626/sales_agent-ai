@@ -16,11 +16,10 @@ class PersonaRepository:
 
     def upsert_all(self, account: Account, hierarchy: Dict[str, List[dict]],
                    tree_root: Optional[dict] = None):
-        """Replaces all personas for an account from the 4-tier hierarchy."""
-        # Clear existing personas
-        self.session.query(Persona).filter_by(account_id=account.id).delete()
-        self.session.flush()
-
+        """
+        Non-destructively upserts personas for an account from the 4-tier hierarchy.
+        Preserves existing personas, merges incoming data into matches, and inserts new ones.
+        """
         # Build tree lookup for hierarchy metadata
         tree_lookup = {}
         if tree_root:
@@ -33,18 +32,33 @@ class PersonaRepository:
 
                 # Validate through schema
                 schema = PersonaSchema.from_enriched_json(person_data, tree_info)
+                p_dict = schema.model_dump()
 
-                # Create ORM object
-                persona = Persona(account_id=account.id, lob_id=None)
-                data = schema.model_dump()
-                for field, value in data.items():
-                    if field in ("id", "account_id", "lob_id", "account", "lob") and value is None:
-                        continue
-                    if hasattr(persona, field):
-                        setattr(persona, field, value)
-                persona.account_id = account.id
+                # Deduplicate: check if persona already exists in DB for this account
+                existing = self.resolve_existing_persona(
+                    account_id=account.id,
+                    external_id=p_dict.get("external_id"),
+                    key=p_dict.get("key"),
+                    email=p_dict.get("email"),
+                    full_name=p_dict.get("full_name") or person_data.get("name"),
+                    first_name=p_dict.get("first_name"),
+                    last_name=p_dict.get("last_name"),
+                    title=p_dict.get("title"),
+                    linkedin_url=p_dict.get("linkedin_url"),
+                )
 
-                self.session.add(persona)
+                if existing:
+                    self.coalesce_into_master(existing, p_dict)
+                else:
+                    persona = Persona(account_id=account.id, lob_id=None)
+                    for field, value in p_dict.items():
+                        if field in ("id", "account_id", "lob_id", "account", "lob") and value is None:
+                            continue
+                        if hasattr(persona, field):
+                            setattr(persona, field, value)
+                    persona.account_id = account.id
+                    self.session.add(persona)
+
                 count += 1
 
         self.session.flush()

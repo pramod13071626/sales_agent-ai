@@ -1849,7 +1849,7 @@ $(function () {
                 <span class="snapshot-field-label">REGISTERED SUBSIDIARIES</span>
               </div>
               <div class="snapshot-field-value">
-                ${(account.organisational_hierarchy_tree.gleif_children || []).length + (account.organisational_hierarchy_tree.sec_exhibit21_subsidiaries || []).length || 143} Global Entities Tracked
+                ${(account.organisational_hierarchy_tree.all_subsidiaries || []).length || ((account.organisational_hierarchy_tree.gleif_children || []).length + (account.organisational_hierarchy_tree.sec_exhibit21_subsidiaries || []).length) || (account.lobs || []).length} Global Entities Tracked
               </div>
             </div>
 
@@ -8071,12 +8071,8 @@ $(function () {
     setGlobalPipelineStatus(true, `L2: LOB ${action.toUpperCase()}`);
     const lobs = activeAccount.lobs || [];
 
-    // ── Initial Discovery Case: When 0 LOBs exist yet for this account ──
-    if (lobs.length === 0) {
-      if (action !== "pull") {
-        setGlobalPipelineStatus(false, "L2: LOB");
-        return;
-      }
+    // ── Initial Discovery Case: When 0 LOBs exist yet OR explicit "discover" action ──
+    if (action === "discover" || (lobs.length === 0 && action === "pull")) {
       lobBatchState.running = true;
       $("#lobBatchProgress").removeClass("d-none");
       const $fill = $("#lobProgressFill");
@@ -8102,21 +8098,32 @@ $(function () {
         if (res.ok) {
           const data = await res.json();
           const discovered = data.lobs || [];
-          activeAccount.lobs = discovered.map((l, idx) => ({
-            id: l.id || idx + 1,
-            name: l.lob_name || l.name,
-            overview: l.overview,
-            revenue: l.audited_segment_revenue,
-            domain: l.domain,
-            ...l,
-          }));
-          lobBatchState.stagedData = discovered;
 
-          // Render newly discovered LOB cards (Top 10 with Expandable Toggle)
+          // Non-destructive merge: preserve existing LOBs and append newly discovered unique ones
+          const existingNames = new Set((activeAccount.lobs || []).map((l) => (l.lob_name || l.name || "").toLowerCase().trim()));
+          const brandNew = [];
+          discovered.forEach((l, idx) => {
+            const n = (l.lob_name || l.name || "").toLowerCase().trim();
+            if (n && !existingNames.has(n)) {
+              existingNames.add(n);
+              brandNew.push({
+                id: l.id || (activeAccount.lobs ? activeAccount.lobs.length + brandNew.length + 1 : idx + 1),
+                name: l.lob_name || l.name,
+                overview: l.overview,
+                revenue: l.audited_segment_revenue,
+                domain: l.domain,
+                ...l,
+              });
+            }
+          });
+          activeAccount.lobs = [...(activeAccount.lobs || []), ...brandNew];
+          lobBatchState.stagedData = activeAccount.lobs;
+
+          // Render updated LOB cards
           renderLobCardsList($("#lobCardsContainer"), activeAccount.lobs || []);
 
           $fill.css("width", "100%");
-          $status.html(`<strong>✔ Complete:</strong> Discovered <span class="batch-success">${discovered.length} Lines of Business & Subsidiaries</span>`);
+          $status.html(`<strong>✔ Complete:</strong> Discovered <span class="batch-success">${brandNew.length} New Lines of Business (${activeAccount.lobs.length} Total)</span>`);
           $pullBtn.removeClass("running").addClass("done").html('<i class="bi bi-cloud-arrow-down"></i> Pulled ✔');
           lobBatchState.pulled = true;
           $validateBtn.prop("disabled", false);
@@ -8288,12 +8295,8 @@ $(function () {
         ]
       : activeAccount.personas || [];
 
-    // ── Initial Discovery Case: When 0 Personas exist yet ──
-    if (personas.length === 0) {
-      if (action !== "pull") {
-        setGlobalPipelineStatus(false, "L3: Personas");
-        return;
-      }
+    // ── Initial Discovery Case: When 0 Personas exist yet OR explicit "discover" action ──
+    if (action === "discover" || (personas.length === 0 && action === "pull")) {
       personaBatchState.running = true;
       $("#personaBatchProgress, #allPersonasBatchProgress").removeClass("d-none");
       const $fill = $("#personaProgressFill, #allPersonasProgressFill");
@@ -8312,7 +8315,8 @@ $(function () {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            company_domain: activeAccount.domain || activeAccount.primary_domain || "dtcc.com",
+            account_id: activeAccount.id,
+            company_domain: activeAccount.domain || activeAccount.primary_domain || "vanguard.com",
             company_name: activeAccount.name,
             sec_cik: activeAccount.sec_cik || null,
           }),
@@ -8327,12 +8331,27 @@ $(function () {
             ...(hierarchy.manager_level || []),
           ];
 
-          activeAccount.personas = flatList;
-          personaBatchState.stagedData = flatList;
+          // Non-destructive merge: preserve existing personas and append newly discovered unique ones
+          const existingKeys = new Set((activeAccount.personas || []).map((p) => (p.full_name || p.name || p.key || "").toLowerCase().trim()));
+          const brandNew = [];
+          flatList.forEach((p, idx) => {
+            const k = (p.full_name || p.name || p.key || "").toLowerCase().trim();
+            if (k && !existingKeys.has(k)) {
+              existingKeys.add(k);
+              brandNew.push({
+                ...p,
+                key: p.key || (p.full_name || p.name || `person_${idx}`).toLowerCase().replace(/\s+/g, "_"),
+                account_id: activeAccount.id,
+              });
+            }
+          });
+
+          activeAccount.personas = [...(activeAccount.personas || []), ...brandNew];
+          personaBatchState.stagedData = activeAccount.personas;
           renderAllPersonasDirectory(activeAccount);
 
           $fill.css("width", "100%");
-          $status.html(`<strong>✔ Complete:</strong> Discovered <span class="batch-success">${flatList.length} Contacts & Executives</span>`);
+          $status.html(`<strong>✔ Complete:</strong> Discovered <span class="batch-success">${brandNew.length} New Contacts (${activeAccount.personas.length} Total)</span>`);
           $pullBtn.removeClass("running").addClass("done").html('<i class="bi bi-cloud-arrow-down"></i> Pulled ✔');
           personaBatchState.pulled = true;
           $validateBtn.prop("disabled", false);
@@ -11484,9 +11503,12 @@ $(function () {
     const acctName = $btn.data("account-name");
     const acctDomain = $btn.data("account-domain");
 
-    // Build a minimal account context so runBatchLobPipeline works correctly
-    const prevAccount = activeAccount;
-    if (!activeAccount || activeAccount.id != acctId) {
+    // Set target account context safely
+    const acctsList = (typeof MOCK_DATA !== "undefined" && Array.isArray(MOCK_DATA.accounts)) ? MOCK_DATA.accounts : [];
+    const targetAcct = acctsList.find((a) => a.id == acctId) || activeAccount;
+    if (targetAcct && targetAcct.id == acctId) {
+      activeAccount = targetAcct;
+    } else if (!activeAccount || activeAccount.id != acctId) {
       activeAccount = {
         id: acctId,
         name: acctName,
@@ -11494,7 +11516,7 @@ $(function () {
         primary_domain: acctDomain,
         sec_cik: $btn.data("account-cik") || null,
         lobs: [],
-        personas: prevAccount && prevAccount.id == acctId ? (prevAccount.personas || []) : [],
+        personas: [],
       };
     }
 
@@ -11505,8 +11527,8 @@ $(function () {
     // Close Batch Console so the LOB progress bar in the main view is visible
     closeBatchConsole();
 
-    // Trigger the existing LOB batch pull pipeline (0-LOBs path → discovery mode)
-    await runBatchLobPipeline("pull");
+    // Trigger explicit LOB discovery mode
+    await runBatchLobPipeline("discover");
 
     // Refresh so the row now shows LOB count and hides the Discover LOBs button
     refreshBatchConsole();
@@ -11521,8 +11543,12 @@ $(function () {
     const acctName = $btn.data("account-name");
     const acctDomain = $btn.data("account-domain");
 
-    const prevAccount = activeAccount;
-    if (!activeAccount || activeAccount.id != acctId) {
+    // Set target account context safely
+    const acctsList = (typeof MOCK_DATA !== "undefined" && Array.isArray(MOCK_DATA.accounts)) ? MOCK_DATA.accounts : [];
+    const targetAcct = acctsList.find((a) => a.id == acctId) || activeAccount;
+    if (targetAcct && targetAcct.id == acctId) {
+      activeAccount = targetAcct;
+    } else if (!activeAccount || activeAccount.id != acctId) {
       activeAccount = {
         id: acctId,
         name: acctName,
@@ -11530,7 +11556,7 @@ $(function () {
         primary_domain: acctDomain,
         sec_cik: $btn.data("account-cik") || null,
         personas: [],
-        lobs: prevAccount && prevAccount.id == acctId ? (prevAccount.lobs || []) : [],
+        lobs: [],
       };
     }
 
@@ -11541,8 +11567,8 @@ $(function () {
     // Close Batch Console so the Persona discovery progress bar is visible
     closeBatchConsole();
 
-    // Trigger the existing persona hierarchy discovery pipeline (0-personas path)
-    await runBatchPersonaPipeline("pull");
+    // Trigger explicit persona hierarchy discovery mode
+    await runBatchPersonaPipeline("discover");
 
     // Refresh so the row now shows People count and hides the Discover People button
     refreshBatchConsole();
