@@ -1162,6 +1162,83 @@ def resolve_single_contact_waterfall(
         except Exception:
             pass
 
+    # Level 4.5: Serper Precision Unmask — C-suite only, activates after TinyFish fails
+    # Only runs when: (a) contact is C-suite tier, (b) name has obfuscation pattern, (c) SERPER_API_KEY set
+    contact_tier = (contact.get("tier") or contact.get("seniority_raw") or "").lower()
+    is_csuite = contact_tier in ("c_suite", "csuite", "tier1_csuite_and_officers", "owner", "founder")
+    if is_csuite and is_obf and config.SERPER_API_KEY and first_name and last_raw:
+        try:
+            # Build a pattern-aware query: first_name + obfuscation constraints
+            # obf_prefix / obf_suffix are already extracted from raw_obfuscated_name above
+            # e.g. raw_obf = "Em***y" → obf_prefix="em", obf_suffix="y"
+            # Build wildcard-aware last name hint for the query
+            obf_raw_stripped = last_raw.replace("*", "").strip()  # e.g. "Em...y" stripped of asterisks
+            obf_hint = obf_raw_stripped[:3] if obf_raw_stripped else ""  # use up to first 3 visible chars
+
+            # Build the most specific possible query without hardcoding company identities
+            legal_suffixes_pat = (
+                r"\b(corporation|corp|incorporated|inc|company|co|llc|plc|limited|ltd|group|holdings|bank|the)\b"
+            )
+            clean_comp = re.sub(legal_suffixes_pat, "", company_name, flags=re.IGNORECASE).strip()
+
+            unmask_queries = []
+            if obf_hint:
+                unmask_queries.append(
+                    f'site:linkedin.com/in "{first_name} {obf_hint}" "{clean_comp}"'
+                )
+                unmask_queries.append(
+                    f'"{first_name}" "{obf_hint}" "{title[:30]}" "{clean_comp}" site:linkedin.com'
+                )
+            unmask_queries.append(
+                f'"{first_name}" "{title[:30]}" "{clean_comp}" site:linkedin.com/in'
+            )
+            if clean_dom:
+                unmask_queries.append(
+                    f'"{first_name}" "{title[:30]}" site:{clean_dom}'
+                )
+
+            headers = {"X-API-KEY": config.SERPER_API_KEY, "Content-Type": "application/json"}
+            for uq in unmask_queries[:3]:
+                try:
+                    r45 = requests.post(
+                        "https://google.serper.dev/search",
+                        json={"q": uq, "num": 5},
+                        headers=headers,
+                        timeout=6,
+                    )
+                    if r45.status_code == 200:
+                        for result in r45.json().get("organic", []):
+                            r_title = result.get("title", "")
+                            r_snip = result.get("snippet", "")
+                            r_link = result.get("link", "")
+                            combined = f"{r_title} | {r_snip}"
+
+                            # Extract candidates matching first_name + non-obfuscated last name
+                            candidates = re.findall(
+                                rf"\b({re.escape(first_name)}\s+(?:[A-Z]\.?\s+)?[A-Z][a-z]{{2,}})\b",
+                                combined,
+                            )
+                            for candidate_name in candidates:
+                                c_last = candidate_name.split()[-1].lower()
+                                # Validate against obfuscation constraints
+                                prefix_ok = (not obf_prefix) or c_last.startswith(obf_prefix)
+                                suffix_ok = (not obf_suffix) or c_last.endswith(obf_suffix)
+                                if prefix_ok and suffix_ok:
+                                    _WATERFALL_NAME_CACHE[cache_key] = (
+                                        candidate_name,
+                                        r_link or None,
+                                        "serper_csuite_unmask",
+                                    )
+                                    print(
+                                        f"[+] [Waterfall L4.5] C-suite unmask resolved "
+                                        f"'{first_name} {last_raw}' → '{candidate_name}'"
+                                    )
+                                    return _apply_resolved(contact, candidate_name, r_link or None)
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
     # Level 5: Safe Professional Initial Fallback
     _WATERFALL_NAME_CACHE[cache_key] = (None, None, "fallback")
     contact["serper_fetched_name"] = None

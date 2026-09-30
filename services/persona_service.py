@@ -92,6 +92,124 @@ class PersonaRawDataLakeWriter:
             return None
 
 
+
+class PersonaLOBRouter:
+    """
+    Dynamically routes a persona's title to the most relevant child LOB ID
+    for the given account, using pure keyword-presence scoring against live
+    LOB names fetched from the database at import time.
+
+    Design principles:
+    - Zero hardcoding: all LOB names and keywords are sourced live from the DB.
+    - Per-account batch cache: LOBs are queried once per account_id per batch run.
+    - Fail-safe: returns None (not an error) if no confident match is found.
+    - Threshold-guarded: requires at least 1 meaningful token match to assign a LOB.
+    """
+
+    # In-process cache: maps account_id → list of (lob_id, token_set) tuples
+    # Cleared between separate importer runs; harmless to persist within a batch.
+    _lob_token_cache: Dict[int, List[tuple]] = {}
+
+    # Tokens too generic to be useful for LOB discrimination
+    _STOP_TOKENS: set = {
+        "the", "of", "and", "for", "to", "in", "a", "an", "at", "by",
+        "with", "from", "or", "on", "is", "it", "as", "its", "into",
+        "llc", "plc", "inc", "ltd", "co", "corp", "limited", "group",
+        "global", "international", "services", "solutions", "management",
+        "operations", "technology", "technologies", "systems", "holding",
+        "holdings", "company", "division", "department", "business",
+    }
+
+    @classmethod
+    def _get_lob_tokens(cls, account_id: int, session) -> List[tuple]:
+        """
+        Returns a cached list of (lob_id, token_set) for the account.
+        Each token_set contains lowercase, stop-word-filtered word tokens
+        extracted from the LOB's lob_name (and domain, if available).
+        """
+        if account_id in cls._lob_token_cache:
+            return cls._lob_token_cache[account_id]
+
+        try:
+            from db.models.lob import Lob
+            lobs = session.query(Lob).filter(Lob.account_id == account_id).all()
+        except Exception as e:
+            print(f"[!] [PersonaLOBRouter] DB query for LOBs failed (account {account_id}): {e}")
+            cls._lob_token_cache[account_id] = []
+            return []
+
+        result = []
+        for lob in lobs:
+            raw_text = " ".join(filter(None, [
+                lob.lob_name or "",
+                lob.domain or "",
+                lob.key or "",
+            ]))
+            tokens = set(
+                t for t in re.findall(r"[a-z]+", raw_text.lower())
+                if len(t) >= 3 and t not in cls._STOP_TOKENS
+            )
+            if tokens:
+                result.append((lob.id, tokens))
+
+        cls._lob_token_cache[account_id] = result
+        return result
+
+    @classmethod
+    def route(cls, title: str, account_id: int, session) -> Optional[int]:
+        """
+        Scores the persona's title against each LOB's token set.
+        Returns the lob_id of the highest-scoring LOB if at least one
+        meaningful token matches; otherwise returns None.
+
+        Args:
+            title:      The persona's job title string (e.g. "Head of Global Clearing").
+            account_id: The account's DB primary key — used to scope the LOB query.
+            session:    Active SQLAlchemy Session for live LOB lookup.
+
+        Returns:
+            int lob_id of best match, or None if no confident routing found.
+        """
+        if not title or not account_id:
+            return None
+
+        lob_candidates = cls._get_lob_tokens(account_id, session)
+        if not lob_candidates:
+            return None
+
+        # Tokenize the title the same way we tokenize LOB names
+        title_tokens = set(
+            t for t in re.findall(r"[a-z]+", title.lower())
+            if len(t) >= 3 and t not in cls._STOP_TOKENS
+        )
+        if not title_tokens:
+            return None
+
+        best_lob_id: Optional[int] = None
+        best_score: int = 0
+
+        for lob_id, lob_tokens in lob_candidates:
+            overlap = title_tokens & lob_tokens
+            score = len(overlap)
+            if score > best_score:
+                best_score = score
+                best_lob_id = lob_id
+
+        # Require at least 1 token match to assign — avoids false positive assignments
+        return best_lob_id if best_score >= 1 else None
+
+    @classmethod
+    def clear_cache(cls, account_id: Optional[int] = None) -> None:
+        """
+        Clears the in-process LOB token cache.
+        Called with account_id to clear a specific account, or no args to clear all.
+        """
+        if account_id is not None:
+            cls._lob_token_cache.pop(account_id, None)
+        else:
+            cls._lob_token_cache.clear()
+
+
 def clean_person_name_for_osint(name: str) -> str:
     cleaned = re.sub(r"\s*\([^)]*\)", "", name or "").strip()
     # Remove credentials like CFA, CPA, MBA, PhD, MD, MSF, Esq, JD, CRISC, CISA

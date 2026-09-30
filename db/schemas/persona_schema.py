@@ -213,6 +213,9 @@ class PersonaSchema(BaseModel):
     direct_mobile_phone: Optional[str] = None
     osint_feed_manifest: Optional[Any] = None
     extended_profile: Optional[Any] = None
+    # Verification fields — set None/False on auto-import; flagged True after manual review
+    is_manually_verified: Optional[bool] = False
+    manually_verified_at: Optional[datetime.datetime] = None
 
     @classmethod
     def from_enriched_json(cls, person: Dict[str, Any], tree_info: Optional[Dict[str, Any]] = None) -> "PersonaSchema":
@@ -585,5 +588,8 @@ class PersonaSchema(BaseModel):
                 "phone",
             ]),
             osint_feed_manifest=osint_manifest,
-            extended_profile=person.get("extended_profile") or raw.get("extended_profile")
+            extended_profile=person.get("extended_profile") or raw.get("extended_profile"),
+            # Verification fields: auto-import always sets safe defaults; set manually post-review
+            is_manually_verified=False,
+            manually_verified_at=None,
         )
