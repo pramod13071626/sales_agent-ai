@@ -41,22 +41,19 @@ class AccountRepository:
             acct = Account(key=schema.key)
             self.session.add(acct)
 
-        # Map all schema fields → ORM model fields
+        # Map all schema fields → ORM model fields using Enterprise CoalescenceEngine
         data = schema.model_dump(exclude={"extracted_at"})
-        for field, value in data.items():
-            if field == "id" and value is None:
-                continue
-            if field in ("lobs", "personas", "action_items", "user_access", "signals"):
-                continue
-            if hasattr(acct, field):
-                if existing:
-                    existing_val = getattr(acct, field, None)
-                    # Prevent partial/empty runs from wiping out existing rich data
-                    if (value is None or value == "" or value == [] or value == {}) and (
-                        existing_val is not None and existing_val != "" and existing_val != [] and existing_val != {}
-                    ):
-                        continue
-                setattr(acct, field, value)
+        if existing:
+            from services.coalescence_engine import CoalescenceEngine
+            acct = CoalescenceEngine.coalesce_account(acct, data)
+        else:
+            for field, value in data.items():
+                if field == "id" and value is None:
+                    continue
+                if field in ("lobs", "personas", "action_items", "user_access", "signals"):
+                    continue
+                if hasattr(acct, field):
+                    setattr(acct, field, value)
 
         acct.extracted_at = datetime.now(timezone.utc)
         acct.updated_at = datetime.now(timezone.utc)

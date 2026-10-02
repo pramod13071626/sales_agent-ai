@@ -414,158 +414,25 @@ class PersonaRepository:
         Lossless Non-Destructive Merger:
         Enriches the master persona with any non-null, non-empty data from the incoming record.
         Never overwrites valid existing values with nulls, empty values, or masked placeholders.
+        Powered by Enterprise CoalescenceEngine for recursive deep dict merges, set-union arrays,
+        and high-entropy scalar upgrades.
         """
-        for field, val in incoming_data.items():
-            if field in ("id", "account_id", "account", "lob"):
-                continue
-            if val is None or val == "" or val == [] or val == {}:
-                continue
+        from services.coalescence_engine import CoalescenceEngine
 
-            current_val = getattr(master, field, None)
-            
-            # If master is missing this field, populate it
-            if current_val is None or current_val == "" or current_val == [] or current_val == {}:
-                if hasattr(master, field):
-                    setattr(master, field, val)
-                    if field in ("osint_feed_manifest", "extended_profile", "raw_data", "employment_history", "education_history", "target_kpis", "operational_pain_points", "key_objections", "skills", "past_companies", "previous_titles"):
-                        from sqlalchemy.orm.attributes import flag_modified
-                        flag_modified(master, field)
-                continue
+        master = CoalescenceEngine.coalesce_persona(master, incoming_data, lob_id=lob_id)
 
-            # Special field rules
-            if field == "is_manually_verified":
-                if val is True:
-                    master.is_manually_verified = True
-                continue
-
-            if field == "full_name":
-                # Prefer unmasked full names over initials/asterisks
-                if "***" in str(current_val) and "***" not in str(val):
-                    master.full_name = val
-                elif len(str(val)) > len(str(current_val)) and not str(val).endswith("."):
-                    master.full_name = val
-                continue
-
-            if field == "last_name":
-                # Upgrade initial (e.g. 'P.' or 'P') to full last name (e.g. 'Patrick')
-                clean_curr = str(current_val).strip().replace(".", "")
-                clean_val = str(val).strip().replace(".", "")
-                if len(clean_curr) <= 2 and len(clean_val) > len(clean_curr):
-                    master.last_name = val
-                continue
-
-            if field == "display_name":
-                # Prefer display name with full name over initial
-                if len(str(val)) > len(str(current_val)):
-                    master.display_name = val
-                continue
-
-            if field == "email":
-                # Prefer verified or full name email over initial/synthesized email
-                incoming_status = incoming_data.get("email_status")
-                master_status = getattr(master, "email_status", None)
-                if incoming_status == "verified" and master_status != "verified":
-                    master.email = val
-                    master.email_status = "verified"
-                elif (master_status in ("synthesized", "unverified", None) or "@" not in str(current_val)) and ("@" in str(val)):
-                    master.email = val
-                    if incoming_status:
-                        master.email_status = incoming_status
-                continue
-
-            if field == "linkedin_url":
-                # Prefer direct personal profiles (/in/) over generic search URLs
-                if "/in/" in str(val) and "/in/" not in str(current_val):
-                    master.linkedin_url = val
-                continue
-
-            if field == "title":
-                # Prefer more detailed title if current is very short
-                if len(str(val)) > len(str(current_val)) and "associate" not in str(val).lower():
-                    master.title = val
-                continue
-
-            if field == "osint_feed_manifest":
-                if val and isinstance(val, dict) and val.get("feeds"):
-                    master.osint_feed_manifest = val
-                    from sqlalchemy.orm.attributes import flag_modified
-                    flag_modified(master, "osint_feed_manifest")
-                continue
-
-            if field == "extended_profile":
-                if val and isinstance(val, dict):
-                    master.extended_profile = val
-                    from sqlalchemy.orm.attributes import flag_modified
-                    flag_modified(master, "extended_profile")
-                continue
-
-            if field == "raw_data":
-                if val and isinstance(val, dict):
-                    master.raw_data = val
-                    from sqlalchemy.orm.attributes import flag_modified
-                    flag_modified(master, "raw_data")
-                continue
-
-            if field in (
-                "degree", "institution", "headline", "value_proposition", "personalized_icebreaker",
-                "tier", "seniority_raw", "city", "state", "country", "phone", "direct_mobile_phone",
-                "personal_email", "sec_cik", "crunchbase_permalink", "crunchbase_url", "youtube_channel_id",
-                "reddit_query", "news_query", "patents_query", "career_trajectory_score", "current_role_tenure_months",
-                "prior_company"
-            ):
-                if val and (current_val is None or current_val == "" or len(str(val)) > len(str(current_val))):
-                    setattr(master, field, val)
-                continue
-
-            if field in (
-                "skills", "past_companies", "previous_titles", "target_kpis",
-                "operational_pain_points", "key_objections"
-            ):
-                if val:
-                    if isinstance(current_val, list) and isinstance(val, list):
-                        # Additive non-destructive merge: preserve existing, append newly discovered unique items
-                        merged_list = list(current_val)
-                        for item in val:
-                            if item and item not in merged_list:
-                                merged_list.append(item)
-                        setattr(master, field, merged_list)
-                    else:
-                        setattr(master, field, val or current_val)
-                    from sqlalchemy.orm.attributes import flag_modified
-                    flag_modified(master, field)
-                continue
-
-            if field in ("employment_history", "education_history"):
-                if val:
-                    if isinstance(current_val, list) and isinstance(val, list):
-                        # Non-destructive merge of career records by company/institution/role
-                        merged_records = list(current_val)
-                        existing_keys = {
-                            (str(r.get("company") or r.get("institution") or r.get("school") or r.get("title") or "")).strip().lower()
-                            for r in current_val if isinstance(r, dict)
-                        }
-                        for r in val:
-                            if isinstance(r, dict):
-                                r_key = (str(r.get("company") or r.get("institution") or r.get("school") or r.get("title") or "")).strip().lower()
-                                if r_key and r_key not in existing_keys:
-                                    merged_records.append(r)
-                                    existing_keys.add(r_key)
-                            elif r not in merged_records:
-                                merged_records.append(r)
-                        setattr(master, field, merged_records)
-                    else:
-                        setattr(master, field, val or current_val)
-                    from sqlalchemy.orm.attributes import flag_modified
-                    flag_modified(master, field)
-                continue
-
-            if field.endswith("_url"):
-                if val and (current_val is None or current_val == "" or "/search" in str(current_val) or "query=" in str(current_val) or len(str(val)) > len(str(current_val))):
-                    setattr(master, field, val)
-                continue
-
-        if lob_id and not master.lob_id:
-            master.lob_id = lob_id
+        if not master.lob_id and master.title:
+            try:
+                from services.persona_service import PersonaLOBRouter
+                routed = PersonaLOBRouter.route(
+                    title=master.title,
+                    account_id=master.account_id,
+                    session=self.session,
+                )
+                if routed is not None:
+                    master.lob_id = routed
+            except Exception:
+                pass
 
         return master
 

@@ -1420,6 +1420,22 @@ if FASTAPI_AVAILABLE:
 
     def _serialize_persona_full(p: Persona, last_run_at: Optional[str] = None) -> Dict[str, Any]:
         p_raw = p.raw_data if isinstance(p.raw_data, dict) else {}
+        p_ext = p.extended_profile if isinstance(p.extended_profile, dict) else {}
+        photo_url = (
+            getattr(p, "photo_url", None)
+            or p_raw.get("photo_url")
+            or p_ext.get("photo_url")
+            or (p_raw.get("apify_linkedin", {}).get("photo") if isinstance(p_raw.get("apify_linkedin"), dict) else None)
+            or ((p_raw.get("apify_linkedin", {}).get("profilePicture") or {}).get("url") if isinstance(p_raw.get("apify_linkedin"), dict) and isinstance(p_raw.get("apify_linkedin", {}).get("profilePicture"), dict) else None)
+            or (p_raw.get("diffbot", {}).get("image_url") if isinstance(p_raw.get("diffbot"), dict) else None)
+            or (p_raw.get("diffbot", {}).get("image") if isinstance(p_raw.get("diffbot"), dict) else None)
+            or (p_raw.get("apollo", {}).get("photo_url") if isinstance(p_raw.get("apollo"), dict) else None)
+            or (p_raw.get("social_profiles", {}).get("photo") if isinstance(p_raw.get("social_profiles"), dict) else None)
+            or (p_raw.get("persona_dossier", {}).get("photo") if isinstance(p_raw.get("persona_dossier"), dict) else None)
+        )
+        if photo_url and any(g in str(photo_url).lower() for g in ["ghost_person", "ghost-person", "logo", "spacer"]):
+            photo_url = None
+
         loc_str = (
             (p.city + (f", {p.state}" if p.state else (f", {p.country}" if p.country else "")))
             if p.city
@@ -1444,6 +1460,7 @@ if FASTAPI_AVAILABLE:
             "email_status": p.email_status or ("Verified" if p.email else None),
             "phone": contact_privacy.safe_phone(p.phone, p.direct_mobile_phone),
             "linkedin_url": p.linkedin_url,
+            "photo_url": photo_url,
             "crunchbase_permalink": p.crunchbase_permalink,
             "city": p.city,
             "state": p.state,

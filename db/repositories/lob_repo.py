@@ -54,13 +54,17 @@ class LobRepository:
                 self.session.add(lob)
 
             data = schema.model_dump()
-            for field, value in data.items():
-                if field == "id" and value is None:
-                    continue
-                if field in ("sub_lobs", "personas", "account", "account_id"):
-                    continue
-                if hasattr(lob, field):
-                    setattr(lob, field, value)
+            if existing:
+                from services.coalescence_engine import CoalescenceEngine
+                lob = CoalescenceEngine.coalesce_lob(lob, data)
+            else:
+                for field, value in data.items():
+                    if field == "id" and value is None:
+                        continue
+                    if field in ("sub_lobs", "personas", "account", "account_id"):
+                        continue
+                    if hasattr(lob, field):
+                        setattr(lob, field, value)
 
             lob.account_id = account.id
             self.session.flush()
@@ -130,13 +134,17 @@ class LobRepository:
 
         schema = LobSchema.from_enriched_json(lob_data)
         data = schema.model_dump()
-        for field, value in data.items():
-            if field == "id" and value is None:
-                continue
-            if field in ("sub_lobs", "personas", "account", "account_id"):
-                continue
-            if hasattr(lob, field):
-                setattr(lob, field, value)
+        if existing:
+            from services.coalescence_engine import CoalescenceEngine
+            lob = CoalescenceEngine.coalesce_lob(lob, data)
+        else:
+            for field, value in data.items():
+                if field == "id" and value is None:
+                    continue
+                if field in ("sub_lobs", "personas", "account", "account_id"):
+                    continue
+                if hasattr(lob, field):
+                    setattr(lob, field, value)
 
         lob.account_id = account_id
         self.session.flush()

@@ -934,6 +934,31 @@ class PersonaCoalesceEngine:
             "wikidata_person":    wikidata,
         }
 
+        # Extract authentic headshot photo URL from Apify LinkedIn, Diffbot, or Apollo
+        resolved_photo_url = (
+            (li.get("photo") if isinstance(li, dict) else None)
+            or ((li.get("profilePicture") or {}).get("url") if isinstance(li, dict) and isinstance(li.get("profilePicture"), dict) else None)
+            or (diffbot.get("image_url") or diffbot.get("image") if isinstance(diffbot, dict) else None)
+            or (ap.get("photo_url") if isinstance(ap, dict) else None)
+        )
+        if resolved_photo_url and any(g in str(resolved_photo_url).lower() for g in ["ghost_person", "ghost-person", "logo", "spacer"]):
+            resolved_photo_url = None
+
+        # Fallback to zero-Apify Serper Headshot Engine if no profile photo found
+        if not resolved_photo_url and display_name and company_name:
+            try:
+                from services.headshot_resolver_service import HeadshotResolverService
+                resolved_photo_url = HeadshotResolverService.resolve_headshot(
+                    full_name=display_name,
+                    company_name=company_name,
+                    title=clean_title
+                )
+            except Exception:
+                pass
+
+        if resolved_photo_url:
+            raw_payload["photo_url"] = resolved_photo_url
+
         # Normalize skills into clean string list
         clean_skills = []
         seen_skill = set()
@@ -947,6 +972,7 @@ class PersonaCoalesceEngine:
             "key": slug_key,
             "account_id": account_id,
             "lob_id": lob_id,
+            "photo_url": resolved_photo_url,
             "name": display_name,
             "full_name": display_name,
             "display_name": display_name,
@@ -1010,6 +1036,7 @@ class PersonaCoalesceEngine:
                 "wikidata_alma_mater":       wikidata.get("alma_mater"),
                 "wikidata_honors":           wikidata.get("honors", []),
                 "wikidata_boards_served":    wikidata.get("boards_served", []),
+                "photo_url":                 resolved_photo_url,
             },
             "raw_data": raw_payload,
         }

@@ -98,9 +98,172 @@ $(function () {
       persona: activePersona,
     };
   };
+  // ══════════════════════════════════════════════════════════════════
+  // ENTERPRISE VIEW ROUTING & HARD-REFRESH STATE PERSISTENCE ENGINE
+  // ══════════════════════════════════════════════════════════════════
+  const PipelineRouter = {
+    isRestoring: false,
+
+    parseRoute: function () {
+      let hash = window.location.hash || "";
+      if (hash.startsWith("#")) hash = hash.substring(1);
+
+      if (hash) {
+        if (hash.startsWith("batch-console")) {
+          const qIdx = hash.indexOf("?");
+          const params = new URLSearchParams(qIdx !== -1 ? hash.substring(qIdx + 1) : "");
+          return {
+            view: "batch_console",
+            entityType: params.get("entity") || "persona",
+            accountId: params.get("account") || null,
+            screen: params.get("screen") || "directory",
+          };
+        }
+
+        if (hash.startsWith("account/")) {
+          const parts = hash.split("/");
+          const acctId = parts[1];
+          const subTab = parts[2] || "overview";
+          return {
+            view: "account",
+            accountId: acctId,
+            subTab: subTab,
+          };
+        }
+
+        if (hash === "home" || hash === "hub") {
+          return { view: "home" };
+        }
+      }
+
+      // Fallback: check session storage for last active view
+      try {
+        const stored = sessionStorage.getItem("pipeline_active_view_state");
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed && parsed.view) return parsed;
+        }
+      } catch (_) {}
+
+      try {
+        const savedId = sessionStorage.getItem("pipeline_active_account_id");
+        if (savedId) {
+          return { view: "account", accountId: savedId, subTab: "overview" };
+        }
+      } catch (_) {}
+
+      return { view: "home" };
+    },
+
+    syncState: function (state) {
+      if (this.isRestoring) return;
+      try {
+        sessionStorage.setItem("pipeline_active_view_state", JSON.stringify(state));
+      } catch (_) {}
+
+      let newHash = "";
+      if (state.view === "batch_console") {
+        const params = new URLSearchParams();
+        if (state.entityType) params.set("entity", state.entityType);
+        if (state.accountId) params.set("account", state.accountId);
+        if (state.screen && state.screen !== "directory") params.set("screen", state.screen);
+        const qs = params.toString();
+        newHash = "#batch-console" + (qs ? "?" + qs : "");
+      } else if (state.view === "account" && state.accountId) {
+        newHash = `#account/${state.accountId}` + (state.subTab && state.subTab !== "overview" ? `/${state.subTab}` : "");
+      } else if (state.view === "home") {
+        newHash = "#home";
+      }
+
+      if (newHash && window.location.hash !== newHash) {
+        try {
+          history.replaceState(null, "", window.location.pathname + window.location.search + newHash);
+        } catch (_) {
+          window.location.hash = newHash;
+        }
+      }
+    },
+
+    restoreActiveScreen: function () {
+      const route = this.parseRoute();
+      const acctsList = (typeof MOCK_DATA !== "undefined" && Array.isArray(MOCK_DATA.accounts))
+        ? MOCK_DATA.accounts
+        : [];
+
+      this.isRestoring = true;
+
+      if (route.view === "batch_console") {
+        const isModalOpen = !$("#batchEnrichmentModal").hasClass("d-none");
+        if (isModalOpen && batchConsoleState.entityType === route.entityType) {
+          this.isRestoring = false;
+          return;
+        }
+
+        let target = null;
+        if (route.accountId && route.accountId !== "all") {
+          target = acctsList.find((a) => String(a.id) === String(route.accountId));
+        }
+        if (!target && activeAccount) target = activeAccount;
+        if (!target && acctsList.length > 0) target = acctsList[0];
+
+        if (target) {
+          activeAccount = target;
+          $(`#accountList .account-item[data-id="${target.id}"]`).addClass("active");
+        }
+
+        if (typeof openBatchConsole === "function") {
+          openBatchConsole(route.entityType || "persona", target);
+          if (route.entityType === "account") {
+            if (route.accountId && route.accountId !== "all") {
+              $("#batchCompanySelector").val(String(route.accountId));
+              refreshBatchConsole();
+            } else if (route.accountId === "all") {
+              $("#batchCompanySelector").val("all");
+              refreshBatchConsole();
+            }
+          }
+          if (route.screen === "history") {
+            setTimeout(() => {
+              $("#batchTabHistoryBtn").trigger("click");
+            }, 60);
+          }
+        }
+      } else if (route.view === "account" && route.accountId) {
+        if (activeAccount && String(activeAccount.id) === String(route.accountId) && !$("#dashboardContainer").hasClass("d-none")) {
+          this.isRestoring = false;
+          return;
+        }
+        const target = acctsList.find((a) => String(a.id) === String(route.accountId));
+        if (target) {
+          const $item = $(`#accountList .account-item[data-id="${target.id}"]`);
+          if ($item.length) {
+            $item.trigger("click");
+            if (route.subTab && route.subTab !== "overview") {
+              setTimeout(() => {
+                $(`.tab-pill-btn[data-nav-tab="${route.subTab}"]`).trigger("click");
+              }, 150);
+            }
+          } else {
+            renderEmptyStateHub();
+          }
+        } else {
+          renderEmptyStateHub();
+        }
+      } else {
+        renderEmptyStateHub();
+      }
+
+      this.isRestoring = false;
+      this.syncState(route);
+    }
+  };
+
+  window.addEventListener("hashchange", function () {
+    if (PipelineRouter.isRestoring) return;
+    PipelineRouter.restoreActiveScreen();
+  });
 
   async function loadData(isRetry) {
-    // Instant load from sessionStorage cache if available (eliminates refresh delay)
     // Instant load from sessionStorage cache if available (eliminates refresh delay)
     if (!isRetry) {
       try {
@@ -113,14 +276,8 @@ $(function () {
             MOCK_DATA = parsed;
             updateGlobalTelemetry();
             renderSidebar();
-            const savedId = activeAccount ? activeAccount.id : sessionStorage.getItem("pipeline_active_account_id");
-            if (savedId && $(`#accountList .account-item[data-id="${savedId}"]`).length) {
-              if (!activeAccount || !activeAccount._is_full_loaded) {
-                $(`#accountList .account-item[data-id="${savedId}"]`).trigger("click");
-              }
-            } else if (!activeAccount) {
-              renderEmptyStateHub();
-            }
+            updateBatchTriggerPills(activeAccount);
+            PipelineRouter.restoreActiveScreen();
           }
         }
       } catch (e) {}
@@ -204,18 +361,9 @@ $(function () {
       } catch (e) {}
 
       updateGlobalTelemetry();
-      const savedId = activeAccount ? activeAccount.id : sessionStorage.getItem("pipeline_active_account_id");
       renderSidebar();
       updateBatchTriggerPills(activeAccount);
-      if (savedId && $(`#accountList .account-item[data-id="${savedId}"]`).length) {
-        if (!activeAccount || !activeAccount._is_full_loaded) {
-          $(`#accountList .account-item[data-id="${savedId}"]`).trigger("click");
-        } else {
-          $(`#accountList .account-item[data-id="${savedId}"]`).addClass("active");
-        }
-      } else if (!activeAccount) {
-        renderEmptyStateHub();
-      }
+      PipelineRouter.restoreActiveScreen();
     } catch (err) {
       console.error("[loadData] Error:", err);
       $("#accountList").html(
@@ -321,6 +469,71 @@ $(function () {
       .replace(/^-+|-+$/g, "");
   }
 
+  // ─── Universal Persona Profile Headshot & Avatar Engine ─────────────────
+  function extractPersonaPhotoUrl(p) {
+    if (!p) return null;
+    let url = p.photo_url || p.photo || p.image_url || p.profile_picture || null;
+    if (!url && p.raw_data && typeof p.raw_data === "object") {
+      url = p.raw_data.photo_url || p.raw_data.photo || p.raw_data.image_url;
+      if (!url && p.raw_data.apify_linkedin && typeof p.raw_data.apify_linkedin === "object") {
+        url = p.raw_data.apify_linkedin.photo || (p.raw_data.apify_linkedin.profilePicture && p.raw_data.apify_linkedin.profilePicture.url);
+      }
+      if (!url && p.raw_data.diffbot && typeof p.raw_data.diffbot === "object") {
+        url = p.raw_data.diffbot.image_url || p.raw_data.diffbot.image;
+      }
+      if (!url && p.raw_data.apollo && typeof p.raw_data.apollo === "object") {
+        url = p.raw_data.apollo.photo_url;
+      }
+    }
+    if (!url && p.extended_profile && typeof p.extended_profile === "object") {
+      url = p.extended_profile.photo_url;
+    }
+    if (typeof url === "string" && url.startsWith("http")) {
+      const lower = url.toLowerCase();
+      if (!lower.includes("ghost") && !lower.includes("placeholder") && !lower.includes("spacer") && !lower.includes("logo")) {
+        return url;
+      }
+    }
+    return null;
+  }
+
+  function renderPersonaAvatar(p, extraClass = "", customStyle = "") {
+    const pName = p ? (p.name || p.full_name || p.display_name || "EX") : "EX";
+    const initials = esc(getInitials(pName));
+    const tierCat = typeof getPersonaTierCategory === "function" ? getPersonaTierCategory(p) : "";
+    const tierAvatarClass = tierCat === "c_suite" ? "avatar-csuite" : (tierCat === "vp_head" ? "avatar-vp" : "");
+    const baseClass = extraClass.includes("compact-card-avatar") || extraClass.includes("header-avatar-box") || extraClass.includes("drawer-avatar")
+      ? extraClass
+      : `compact-card-avatar ${extraClass}`;
+    const combinedClass = [baseClass, tierAvatarClass].filter(Boolean).join(" ");
+    const photoUrl = extractPersonaPhotoUrl(p);
+
+    if (photoUrl) {
+      return `
+        <div class="${combinedClass} avatar-has-photo" style="position:relative;overflow:hidden;${customStyle}">
+          <img src="${esc(photoUrl)}"
+               alt="${esc(pName)}"
+               class="avatar-photo-img"
+               referrerpolicy="no-referrer"
+               loading="lazy"
+               onload="this.style.opacity='1';"
+               onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';"
+               style="width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block;opacity:0;transition:opacity 0.2s ease-in-out;" />
+          <div class="avatar-photo-fallback" style="display:flex;width:100%;height:100%;align-items:center;justify-content:center;position:absolute;top:0;left:0;border-radius:inherit;">
+            ${initials}
+          </div>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="${combinedClass}" style="${customStyle}">
+        ${initials}
+      </div>
+    `;
+  }
+
+
   // ─── Global Topbar Database Telemetry ────────────────────────────────────
   function updateGlobalTelemetry() {
     const accounts = Array.isArray(MOCK_DATA.accounts) ? MOCK_DATA.accounts : [];
@@ -329,10 +542,14 @@ $(function () {
     let totalLobs = 0;
 
     accounts.forEach((a) => {
-      const pCount = (a.personas && Array.isArray(a.personas)) ? a.personas.length : (a.total_contacts_captured || 0);
+      const pCount = (a.personas && Array.isArray(a.personas) && a.personas.length > 0)
+        ? a.personas.length
+        : (a.total_contacts_captured || a.num_contacts || a.personas_count || 0);
       totalPersonas += (typeof pCount === "number" && !isNaN(pCount)) ? pCount : 0;
 
-      const lCount = (a.lobs && Array.isArray(a.lobs)) ? a.lobs.length : (a.lobs_count || 0);
+      const lCount = (a.lobs && Array.isArray(a.lobs) && a.lobs.length > 0)
+        ? a.lobs.length
+        : (a.lobs_count || a.total_lobs || 0);
       totalLobs += (typeof lCount === "number" && !isNaN(lCount)) ? lCount : 0;
     });
 
@@ -3517,7 +3734,7 @@ $(function () {
                      data-key="${pKey}"
                      data-raw="${pRaw}"
                      title="Inspect Executive Dossier for ${esc(p.name)}">
-                  <div class="compact-card-avatar avatar-purple" style="color:#fff;">${esc(getInitials(p.name))}</div>
+                  ${renderPersonaAvatar(p, "avatar-purple")}
                   <div class="compact-card-body">
                     <div class="compact-card-title">${esc(p.name)}</div>
                     <div class="compact-card-subtitle">${esc(p.title || "Executive")}</div>
@@ -3905,9 +4122,7 @@ $(function () {
             <button type="button" class="btn btn-sm btn-outline-secondary" id="btnBackFromPersonaDetail" style="margin-right:8px;width:34px;height:34px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;padding:0;cursor:pointer;border-color:#e2e8f0;background:#fff;color:#475569;flex-shrink:0;" title="Back to Directory">
               <i class="bi bi-arrow-left" style="font-size:1.1rem;line-height:1;"></i>
             </button>
-            <div class="header-avatar-box avatar-purple">
-              ${esc(initialsStr)}
-            </div>
+            ${renderPersonaAvatar(p, "header-avatar-box avatar-purple", "width:54px;height:54px;min-width:54px;border-radius:12px;font-size:1.1rem;")}
             <div>
               <h1 class="header-entity-name">${esc(p.name || p.full_name)}</h1>
               <div style="font-size:0.84rem;font-weight:600;color:#475569;margin-bottom:6px;">
@@ -4124,6 +4339,13 @@ $(function () {
     try {
       sessionStorage.setItem("pipeline_active_account_id", String(id));
     } catch (e) {}
+
+    const currentSubTab = $(".tab-pill-btn.active").data("nav-tab") || "overview";
+    PipelineRouter.syncState({
+      view: "account",
+      accountId: String(id),
+      subTab: currentSubTab,
+    });
 
     activeLob = null;
     activePersona = null;
@@ -4968,6 +5190,7 @@ $(function () {
     renderModernBreadcrumbs();
     renderEmptyStateHub();
     $("#emptyState").removeClass("d-none");
+    PipelineRouter.syncState({ view: "home" });
   });
 
   // ══════════════════════════════════════════════════════════════════
@@ -5151,7 +5374,24 @@ $(function () {
     const score = comp.score || 85;
 
     const initials = getInitials(p.name || "EX");
-    $("#drawerAvatar").attr("class", `drawer-avatar ${avatarClass}`).text(initials);
+    const drawerPhotoUrl = extractPersonaPhotoUrl(p);
+    if (drawerPhotoUrl) {
+      $("#drawerAvatar").attr("class", `drawer-avatar avatar-has-photo ${avatarClass}`).html(`
+        <img src="${esc(drawerPhotoUrl)}"
+             alt="${esc(p.name || 'Executive')}"
+             class="avatar-photo-img"
+             referrerpolicy="no-referrer"
+             loading="lazy"
+             onload="this.style.opacity='1';"
+             onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';"
+             style="width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block;opacity:0;transition:opacity 0.2s ease-in-out;" />
+        <div class="avatar-photo-fallback" style="display:none;width:100%;height:100%;align-items:center;justify-content:center;position:absolute;top:0;left:0;border-radius:inherit;">
+          ${esc(initials)}
+        </div>
+      `);
+    } else {
+      $("#drawerAvatar").attr("class", `drawer-avatar ${avatarClass}`).text(initials);
+    }
     $("#drawerName").text(p.name || "Executive");
     $("#drawerTierBadge").attr("class", `drawer-tier-badge ${tierCat}`).text(tierLabel);
     $("#drawerHealthBadge").text(`${score}% Confidence`);
@@ -5523,6 +5763,14 @@ $(function () {
     const tab = $(this).data("nav-tab");
     $(".tab-pill-btn").removeClass("active");
     $(this).addClass("active");
+
+    if (activeAccount) {
+      PipelineRouter.syncState({
+        view: "account",
+        accountId: String(activeAccount.id),
+        subTab: tab,
+      });
+    }
 
     if (tab === "overview") {
       $("#accountOverviewContainer").removeClass("d-none");
@@ -6662,7 +6910,7 @@ $(function () {
              data-key="${pKey}"
              data-raw="${pRaw}"
              title="Inspect Executive Dossier for ${esc(p.name)}">
-          <div class="compact-card-avatar ${avatarClass}">${esc(getInitials(p.name))}</div>
+          ${renderPersonaAvatar(p)}
           <div class="compact-card-body">
             <div class="compact-card-title-row">
               <div class="compact-card-title">${esc(p.name)}</div>
@@ -10058,6 +10306,8 @@ $(function () {
     isRunning: false,
     abortRequested: false,
     filteredItems: [],
+    currentProcessingKey: null,
+    queuedKeys: new Set(),
   };
 
   // Helper: check if a persona is truly deeply enriched (has Gemini AI dossier, extended profile, education, or past companies)
@@ -10242,6 +10492,15 @@ $(function () {
     // Show modal and backdrop explicitly with display styles
     $("#batchEnrichmentBackdrop").removeClass("d-none").css("display", "block");
     $("#batchEnrichmentModal").removeClass("d-none").css("display", "flex");
+
+    PipelineRouter.syncState({
+      view: "batch_console",
+      entityType: batchConsoleState.entityType || "persona",
+      accountId: (batchConsoleState.entityType === "account" && $("#batchCompanySelector").val() === "all")
+        ? "all"
+        : (batchConsoleState.targetAccount ? String(batchConsoleState.targetAccount.id) : null),
+      screen: $("#batchScreenHistory").hasClass("d-none") ? "directory" : "history",
+    });
   }
 
   // Switch Entity Type inside the modal without closing it!
@@ -10320,6 +10579,15 @@ $(function () {
     $("#batchMasterCheckbox").prop("checked", false);
 
     refreshBatchConsole();
+
+    PipelineRouter.syncState({
+      view: "batch_console",
+      entityType: newEntityType,
+      accountId: (newEntityType === "account" && $("#batchCompanySelector").val() === "all")
+        ? "all"
+        : (batchConsoleState.targetAccount ? String(batchConsoleState.targetAccount.id) : null),
+      screen: $("#batchScreenHistory").hasClass("d-none") ? "directory" : "history",
+    });
   }
 
   // Close Batch Console Modal
@@ -10332,6 +10600,17 @@ $(function () {
     }
     $("#batchEnrichmentBackdrop, #batchEnrichmentModal").addClass("d-none").css("display", "none");
     $("#batchLiveProgressWrap").addClass("d-none");
+
+    if (activeAccount) {
+      const activeTab = $(".tab-pill-btn.active").data("nav-tab") || "overview";
+      PipelineRouter.syncState({
+        view: "account",
+        accountId: String(activeAccount.id),
+        subTab: activeTab,
+      });
+    } else {
+      PipelineRouter.syncState({ view: "home" });
+    }
   }
 
   // Account Enrichment Verification Check
@@ -10624,6 +10903,67 @@ $(function () {
     }
   }
 
+  // Dynamic Action Button Generator (Running, Queued & Ready states)
+  function getBatchRowActionBtnHtml(key, enriched, isAccount, item) {
+    if (batchConsoleState.isRunning) {
+      if (batchConsoleState.currentProcessingKey === key) {
+        return `<button type="button" class="batch-row-btn batch-btn-running" disabled title="Enrichment currently in progress">
+          <span class="spinner-border spinner-border-sm" style="width:0.75rem;height:0.75rem;"></span> In Progress
+        </button>`;
+      }
+      if (batchConsoleState.queuedKeys && batchConsoleState.queuedKeys.has(key)) {
+        return `<button type="button" class="batch-row-btn batch-btn-queued" disabled title="Queued for sequential enrichment">
+          <i class="bi bi-clock-history"></i> Queued
+        </button>`;
+      }
+      return `<button type="button" class="batch-row-btn batch-single-run-btn ${enriched ? 'batch-btn-reenrich' : 'batch-btn-enrich'}" data-key="${esc(key)}" disabled title="Disabled while another enrichment is running">
+        <i class="bi ${enriched ? 'bi-arrow-repeat' : 'bi-lightning-charge-fill'}"></i> ${enriched ? 'Re-enrich' : 'Enrich'}
+      </button>`;
+    }
+
+    if (isAccount && enriched) {
+      return `
+        <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end;">
+          <button type="button" class="batch-row-btn batch-single-run-btn batch-btn-reenrich" data-key="${esc(key)}" title="Additive Re-enrichment: updates corporate intelligence without losing data">
+            <i class="bi bi-arrow-repeat"></i> Re-enrich
+          </button>
+          <button type="button" class="batch-row-btn batch-discover-lobs-btn"
+            data-account-id="${item.id}"
+            data-account-name="${esc(item.legal_name || item.display_name || item.name || '')}"
+            data-account-domain="${esc(item.primary_domain || item.domain || '')}"
+            data-account-cik="${esc(item.sec_cik || '')}"
+            style="background:rgba(16,185,129,0.1);color:#10b981;border:1px solid rgba(16,185,129,0.3);white-space:nowrap;"
+            title="Discover Operating Subsidiaries & Lines of Business via SEC Exhibit 21, GLEIF, and corporate intelligence sources">
+            <i class="bi bi-diagram-3"></i> Discover LOBs
+          </button>
+          <button type="button" class="batch-row-btn batch-discover-people-btn"
+            data-account-id="${item.id}"
+            data-account-name="${esc(item.legal_name || item.display_name || item.name || '')}"
+            data-account-domain="${esc(item.primary_domain || item.domain || '')}"
+            data-account-cik="${esc(item.sec_cik || '')}"
+            style="background:rgba(139,92,246,0.1);color:#8b5cf6;border:1px solid rgba(139,92,246,0.3);white-space:nowrap;"
+            title="Discover Executive Leadership & Contacts via Apollo, Corporate Web, and OSINT (4-tier hierarchy)">
+            <i class="bi bi-people"></i> Discover People
+          </button>
+        </div>
+      `;
+    }
+
+    if (enriched) {
+      return `
+        <button type="button" class="batch-row-btn batch-single-run-btn batch-btn-reenrich" data-key="${esc(key)}" title="Additive Re-enrichment: updates profile with new intelligence without duplicates or losing data">
+          <i class="bi bi-arrow-repeat"></i> Re-enrich
+        </button>
+      `;
+    }
+
+    return `
+      <button type="button" class="batch-row-btn batch-single-run-btn batch-btn-enrich" data-key="${esc(key)}" title="Run multi-source deep enrichment">
+        <i class="bi bi-lightning-charge-fill"></i> Enrich
+      </button>
+    `;
+  }
+
   // Render Table Rows (Screen 1 Directory)
   function renderBatchTable(items) {
     const $tbody = $("#batchTableBody");
@@ -10722,35 +11062,7 @@ $(function () {
               ${statusBadge}
             </td>
             <td style="text-align: right;">
-              ${enriched ? `
-                <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end;">
-                  <button type="button" class="batch-row-btn batch-single-run-btn batch-btn-reenrich" data-key="${esc(key)}" title="Additive Re-enrichment: updates corporate intelligence without losing data">
-                    <i class="bi bi-arrow-repeat"></i> Re-enrich
-                  </button>
-                  <button type="button" class="batch-row-btn batch-discover-lobs-btn"
-                    data-account-id="${item.id}"
-                    data-account-name="${esc(item.legal_name || item.display_name || item.name || '')}"
-                    data-account-domain="${esc(item.primary_domain || item.domain || '')}"
-                    data-account-cik="${esc(item.sec_cik || '')}"
-                    style="background:rgba(16,185,129,0.1);color:#10b981;border:1px solid rgba(16,185,129,0.3);white-space:nowrap;"
-                    title="Discover Operating Subsidiaries & Lines of Business via SEC Exhibit 21, GLEIF, and corporate intelligence sources">
-                    <i class="bi bi-diagram-3"></i> Discover LOBs
-                  </button>
-                  <button type="button" class="batch-row-btn batch-discover-people-btn"
-                    data-account-id="${item.id}"
-                    data-account-name="${esc(item.legal_name || item.display_name || item.name || '')}"
-                    data-account-domain="${esc(item.primary_domain || item.domain || '')}"
-                    data-account-cik="${esc(item.sec_cik || '')}"
-                    style="background:rgba(139,92,246,0.1);color:#8b5cf6;border:1px solid rgba(139,92,246,0.3);white-space:nowrap;"
-                    title="Discover Executive Leadership & Contacts via Apollo, Corporate Web, and OSINT (4-tier hierarchy)">
-                    <i class="bi bi-people"></i> Discover People
-                  </button>
-                </div>
-              ` : `
-                <button type="button" class="batch-row-btn batch-single-run-btn batch-btn-enrich" data-key="${esc(key)}" title="Run 11-source deep account intelligence enrichment">
-                  <i class="bi bi-lightning-charge-fill"></i> Enrich
-                </button>
-              `}
+              ${getBatchRowActionBtnHtml(key, enriched, true, item)}
             </td>
           </tr>
         `;
@@ -10842,15 +11154,7 @@ $(function () {
             ${statusBadge}
           </td>
           <td style="text-align: right;">
-            ${enriched ? `
-              <button type="button" class="batch-row-btn batch-single-run-btn batch-btn-reenrich" data-key="${esc(key)}" title="Additive Re-enrichment: updates profile with new intelligence without duplicates or losing data">
-                <i class="bi bi-arrow-repeat"></i> Re-enrich
-              </button>
-            ` : `
-              <button type="button" class="batch-row-btn batch-single-run-btn batch-btn-enrich" data-key="${esc(key)}" title="Run multi-source deep enrichment">
-                <i class="bi bi-lightning-charge-fill"></i> Enrich
-              </button>
-            `}
+            ${getBatchRowActionBtnHtml(key, enriched, false, item)}
           </td>
         </tr>
       `;
@@ -10948,16 +11252,32 @@ $(function () {
 
     if (queue.length === 0) return;
 
-    // Set Running State
+    // Set Running State & Initialize Queued Tracking
     batchConsoleState.isRunning = true;
     batchConsoleState.abortRequested = false;
+    batchConsoleState.queuedKeys = new Set(queue.map((it) => it.key || it.id));
+    batchConsoleState.currentProcessingKey = null;
 
     // UI Updates for Running State
-    $("#batchRunEnrichmentBtn").prop("disabled", true);
-    $("#batchStopBtn").removeClass("d-none");
+    $("#batchRunEnrichmentBtn")
+      .prop("disabled", true)
+      .html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Enriching Queue...');
+    $("#batchStopBtn").removeClass("d-none").prop("disabled", false).html('<i class="bi bi-stop-circle-fill"></i> Stop Queue');
     $("#batchLiveProgressWrap").removeClass("d-none");
     $("#batchProgressBarFill").css("width", "0%");
     $("#batchCompanySelector, #batchSearchInput, #batchStatusFilter, #batchTierFilter").prop("disabled", true);
+    $(".batch-row-checkbox, #batchMasterCheckbox").prop("disabled", true);
+    $("#batchSelectPendingBtn, #batchSelectEnrichedBtn, #batchSelectCountBtn, .btn-batch-preset-n, #batchClearSelectionBtn, #batchRefreshTableBtn").prop("disabled", true);
+
+    // Immediately reflect queued state on all queued rows, and disable any other table buttons
+    queue.forEach((it) => {
+      const k = it.key || it.id;
+      const $qRow = $(`#batchTableBody tr[data-key="${k}"]`);
+      if ($qRow.length) {
+        $qRow.find("td:last-child").html(getBatchRowActionBtnHtml(k, false, isAccount, it));
+      }
+    });
+    $("#batchTableBody .batch-single-run-btn, #batchTableBody .batch-discover-lobs-btn, #batchTableBody .batch-discover-people-btn").prop("disabled", true);
 
     let successCount = 0;
     let failCount = 0;
@@ -10970,6 +11290,9 @@ $(function () {
 
       const item = queue[i];
       const key = item.key || item.id;
+      batchConsoleState.currentProcessingKey = key;
+      batchConsoleState.queuedKeys.delete(key);
+
       const itemName = item.name || item.display_name || item.full_name || item.legal_name || "Target";
       const itemTitle = item.title || (isAccount ? "Enterprise Account" : (isPersona ? "Executive" : "Operating Segment"));
 
@@ -10981,14 +11304,20 @@ $(function () {
         $row.find(".batch-status-badge").replaceWith(
           '<span class="batch-status-badge batch-status-running"><span class="spinner-border spinner-border-sm" style="width:0.75rem;height:0.75rem;"></span> Enriching...</span>'
         );
+        $row.find("td:last-child").html(getBatchRowActionBtnHtml(key, false, isAccount, item));
       }
 
       // Update Live Progress Bar & Ticker
       const progressPct = Math.round((i / queue.length) * 100);
       $("#batchProgressBarFill").css("width", `${progressPct}%`);
       $("#batchProgressMetrics").text(`${i} / ${queue.length} completed (${progressPct}%)`);
+      const sourceLabel = isAccount
+        ? "[SEC EDGAR + GLEIF + Patents + News + Gemini]"
+        : (isPersona
+            ? "[LinkedIn + Diffbot + SEC Form 4 + Headshot + Sales AI]"
+            : "[SEC Filings + Segment OSINT + Gemini]");
       $("#batchLiveStatusText").html(
-        `Running <strong>${i + 1} of ${queue.length}</strong> &mdash; ${esc(itemName)} (${esc(itemTitle)})... <span class="text-muted">[SEC EDGAR + GLEIF + Patents + FullEnrich + Gemini]</span>`
+        `Running <strong>${i + 1} of ${queue.length}</strong> &mdash; ${esc(itemName)} (${esc(itemTitle)})... <span class="text-muted">${sourceLabel}</span>`
       );
 
       try {
@@ -11043,8 +11372,10 @@ $(function () {
             $row.find(".batch-status-badge").replaceWith(
               `<span class="batch-status-badge batch-status-enriched"><i class="bi bi-check-circle-fill"></i> Enriched (${score}%)</span>`
             );
-            $row.find(".batch-single-run-btn").replaceWith(
-              `<button type="button" class="batch-row-btn batch-single-run-btn batch-btn-reenrich" data-key="${esc(key)}" title="Additive Re-enrichment"><i class="bi bi-arrow-repeat"></i> Re-enrich</button>`
+            $row.find("td:last-child").html(
+              (i < queue.length - 1 && !batchConsoleState.abortRequested)
+                ? `<button type="button" class="batch-row-btn batch-single-run-btn batch-btn-reenrich" data-key="${esc(key)}" disabled title="Enriched (Queue running)"><i class="bi bi-check2"></i> Enriched</button>`
+                : getBatchRowActionBtnHtml(key, true, true, item)
             );
             const timeInfo = formatRunTime(item.last_run_at);
             $row.find(".batch-time-cell").html(
@@ -11129,8 +11460,10 @@ $(function () {
             $row.find(".batch-status-badge").replaceWith(
               `<span class="batch-status-badge batch-status-enriched"><i class="bi bi-check-circle-fill"></i> Enriched (${updatedCols.pct}%)</span>`
             );
-            $row.find(".batch-single-run-btn").replaceWith(
-              `<button type="button" class="batch-row-btn batch-single-run-btn batch-btn-reenrich" data-key="${esc(key)}" title="Additive Re-enrichment: updates profile with new intelligence without duplicates or losing data"><i class="bi bi-arrow-repeat"></i> Re-enrich</button>`
+            $row.find("td:last-child").html(
+              (i < queue.length - 1 && !batchConsoleState.abortRequested)
+                ? `<button type="button" class="batch-row-btn batch-single-run-btn batch-btn-reenrich" data-key="${esc(key)}" disabled title="Enriched (Queue running)"><i class="bi bi-check2"></i> Enriched</button>`
+                : getBatchRowActionBtnHtml(key, true, false, item)
             );
             const timeInfo = formatRunTime(item.last_run_at);
             $row.find(".batch-time-cell").html(
@@ -11196,8 +11529,10 @@ $(function () {
             $row.find(".batch-status-badge").replaceWith(
               `<span class="batch-status-badge batch-status-enriched"><i class="bi bi-check-circle-fill"></i> Enriched (${updatedCols.pct}%)</span>`
             );
-            $row.find(".batch-single-run-btn").replaceWith(
-              `<button type="button" class="batch-row-btn batch-single-run-btn batch-btn-reenrich" data-key="${esc(key)}" title="Additive Re-enrichment: updates division intelligence without duplicates"><i class="bi bi-arrow-repeat"></i> Re-enrich</button>`
+            $row.find("td:last-child").html(
+              (i < queue.length - 1 && !batchConsoleState.abortRequested)
+                ? `<button type="button" class="batch-row-btn batch-single-run-btn batch-btn-reenrich" data-key="${esc(key)}" disabled title="Enriched (Queue running)"><i class="bi bi-check2"></i> Enriched</button>`
+                : getBatchRowActionBtnHtml(key, true, false, item)
             );
             const timeInfo = formatRunTime(item.last_run_at);
             $row.find(".batch-time-cell").html(
@@ -11244,11 +11579,20 @@ $(function () {
         ` out of ${queue.length} records processed sequentially.`
     );
 
-    // Reset Controls
+    // Reset Controls & Execution Tracking
     batchConsoleState.isRunning = false;
+    batchConsoleState.currentProcessingKey = null;
+    batchConsoleState.queuedKeys.clear();
+
     $("#batchStopBtn").addClass("d-none");
     $("#batchRunEnrichmentBtn").prop("disabled", false);
     $("#batchCompanySelector, #batchSearchInput, #batchStatusFilter, #batchTierFilter").prop("disabled", false);
+    $(".batch-row-checkbox, #batchMasterCheckbox").prop("disabled", false);
+    $("#batchSelectPendingBtn, #batchSelectEnrichedBtn, #batchSelectCountBtn, .btn-batch-preset-n, #batchClearSelectionBtn, #batchRefreshTableBtn").prop("disabled", false);
+
+    // Re-render table and badges to restore interactive buttons
+    renderBatchTable(batchConsoleState.filteredItems);
+    updateSelectionBadges();
 
     // Refresh Underlying Account Views
     updateBatchTriggerPills(activeAccount);
@@ -11327,6 +11671,12 @@ $(function () {
     if (selectedVal === "all") {
       batchConsoleState.selectedKeys.clear();
       refreshBatchConsole();
+      PipelineRouter.syncState({
+        view: "batch_console",
+        entityType: batchConsoleState.entityType,
+        accountId: "all",
+        screen: $("#batchScreenHistory").hasClass("d-none") ? "directory" : "history",
+      });
       return;
     }
     const selectedId = parseInt(selectedVal, 10);
@@ -11336,6 +11686,12 @@ $(function () {
       activeAccount = found;
       batchConsoleState.selectedKeys.clear();
       refreshBatchConsole();
+      PipelineRouter.syncState({
+        view: "batch_console",
+        entityType: batchConsoleState.entityType,
+        accountId: String(found.id),
+        screen: $("#batchScreenHistory").hasClass("d-none") ? "directory" : "history",
+      });
     }
   });
 
@@ -11487,9 +11843,14 @@ $(function () {
   // Single row Enrich button inside table
   $(document).on("click", ".batch-single-run-btn", function (e) {
     e.preventDefault();
+    if (batchConsoleState.isRunning) {
+      showToast("Enrichment is currently in progress. Please wait for the queue to complete or click Stop.", "warning");
+      return;
+    }
     const key = $(this).data("key");
     batchConsoleState.selectedKeys.clear();
     batchConsoleState.selectedKeys.add(key);
+    $(`#batchTableBody tr[data-key="${key}"] .batch-row-checkbox`).prop("checked", true);
     updateSelectionBadges();
     runBatchEnrichment();
   });
@@ -11583,6 +11944,15 @@ $(function () {
     $(this).addClass("active");
     $("#batchScreenHistory").addClass("d-none");
     $("#batchScreenDirectory").removeClass("d-none");
+
+    PipelineRouter.syncState({
+      view: "batch_console",
+      entityType: batchConsoleState.entityType,
+      accountId: (batchConsoleState.entityType === "account" && $("#batchCompanySelector").val() === "all")
+        ? "all"
+        : (batchConsoleState.targetAccount ? String(batchConsoleState.targetAccount.id) : null),
+      screen: "directory",
+    });
   });
 
   $(document).on("click", "#batchTabHistoryBtn", function (e) {
@@ -11592,6 +11962,15 @@ $(function () {
     $("#batchScreenDirectory").addClass("d-none");
     $("#batchScreenHistory").removeClass("d-none");
     loadBatchRunHistory();
+
+    PipelineRouter.syncState({
+      view: "batch_console",
+      entityType: batchConsoleState.entityType,
+      accountId: (batchConsoleState.entityType === "account" && $("#batchCompanySelector").val() === "all")
+        ? "all"
+        : (batchConsoleState.targetAccount ? String(batchConsoleState.targetAccount.id) : null),
+      screen: "history",
+    });
   });
 
   // ── Fullscreen Toggle ──
