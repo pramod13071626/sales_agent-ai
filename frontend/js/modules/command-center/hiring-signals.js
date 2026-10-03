@@ -161,6 +161,48 @@ function generateNewsBulletin(summary, account) {
   };
 }
 
+function generateSalesActionStep(summary, account) {
+  const shortName = getOrgShortName(account);
+  const total = summary?.total_roles || 0;
+  const contract = summary?.contract_count || 0;
+  const leadership = summary?.leadership_count || 0;
+  const topCat = summary?.top_category?.name || 'Engineering';
+
+  if (contract > 0) {
+    return {
+      targetRole: 'VP Vendor Management & Talent',
+      recommendation: `Target ${shortName}'s ${contract} open contractor roles with specialized contingent staffing & rate-card optimization.`,
+      taskTitle: `Pitch Staff-Aug Solution for ${contract} Contract Roles @ ${shortName}`,
+      taskDescription: `Reach out to Vendor Management & Talent Acquisition at ${shortName} regarding specialized staffing for ${contract} active contract positions.`,
+    };
+  }
+
+  if (leadership > 0) {
+    return {
+      targetRole: 'Executive Search & CHRO Office',
+      recommendation: `Engage leadership with specialized executive search and delivery for ${leadership} VP/Director-level mandates.`,
+      taskTitle: `Executive Search Outreach: ${leadership} Leadership Roles @ ${shortName}`,
+      taskDescription: `Coordinate executive outreach on ${leadership} senior leadership roles across ${shortName}'s key technology hubs.`,
+    };
+  }
+
+  if (summary?.top_category) {
+    return {
+      targetRole: `Head of ${topCat} Delivery`,
+      recommendation: `Align specialized ${topCat} engineering capacity and dedicated pods for ${summary.top_category.count} open ${topCat} requisitions.`,
+      taskTitle: `Align ${topCat} Talent Pods for ${shortName}`,
+      taskDescription: `Propose dedicated engineering capacity for ${shortName}'s ${summary.top_category.count} open ${topCat} positions.`,
+    };
+  }
+
+  return {
+    targetRole: 'Head of Talent Acquisition & Staffing',
+    recommendation: `Initiate proactive vendor outreach to support high-velocity talent ramp across ${total} open positions.`,
+    taskTitle: `Strategic Talent Solutions Proposal @ ${shortName}`,
+    taskDescription: `Submit tailored talent delivery capabilities to support ${total} open positions across ${shortName}.`,
+  };
+}
+
 export async function renderHiringSignals(days = currentHiringDays) {
   initHiringFilter();
   const list = document.getElementById('ccHiringList');
@@ -272,9 +314,30 @@ export async function renderHiringSignals(days = currentHiringDays) {
       `;
     }).join('');
 
-    // 4. Click handler: Direct drill-down to Account Level Hiring Trend Radar tab
-    list.querySelectorAll('.hs-bulletin-row').forEach(row => {
-      row.addEventListener('click', () => {
+    // 4. Click handlers for Action Task buttons
+    list.querySelectorAll('.hs-task-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const accountName = btn.dataset.accountName;
+        const title = btn.dataset.taskTitle;
+        const description = btn.dataset.taskDesc;
+        const origHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Creating...';
+        try {
+          await createTask(accountName, title, { description, score: 85 });
+          btn.innerHTML = '<i class="fa-solid fa-check"></i> Added';
+        } catch {
+          btn.innerHTML = origHtml;
+          btn.disabled = false;
+        }
+      });
+    });
+
+    // 5. Click handler: Direct drill-down to Account Level Hiring Trend Radar tab
+    list.querySelectorAll('.hs-tile').forEach(row => {
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('.hs-task-btn') || e.target.closest('.hs-explore-link')) return;
         const accountId = row.dataset.accountId;
         if (accountId) {
           const daysQuery = days ? `&days=${days}` : '';
