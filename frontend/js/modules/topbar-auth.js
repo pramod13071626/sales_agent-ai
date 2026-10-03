@@ -7,6 +7,7 @@ import { esc, initials } from './utils.js';
 import { getCurrentUser, logout, refreshAccessToken } from './auth-client.js';
 import { renderMyTasksPanel } from './action-items.js';
 import { myTasksDrawer, myTasksDrawerBackdrop, myTasksDrawerBody } from './dom.js';
+import { initSearchPalette } from './search-palette.js';
 
 function openMyTasksDrawer() {
   const drawer = document.getElementById('myTasksDrawer');
@@ -187,5 +188,7 @@ export async function initTopbarAuth(options = {}) {
   currentOptions = options;
   await refreshAccessToken(); // silent — restores a session from the refresh cookie on page load
   render();
-  return getCurrentUser();
+  const user = getCurrentUser();
+  if (user) initSearchPalette();
+  return user;
 }

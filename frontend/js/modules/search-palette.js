@@ -1,7 +1,11 @@
-// Global search palette — Ctrl/Cmd+K (or Ctrl/Cmd+F; a second Ctrl+F falls through
-// to the browser's own find). Type-ahead comes from GET /api/search/suggest (plain
+// Global search palette — Ctrl/Cmd+F (a second Ctrl+F falls through to the browser's
+// own find; Ctrl+K stays with the copilot dock). Started on every page by
+// topbar-auth.js once someone is signed in; a page can call initSearchPalette(opts)
+// again to open results in place (the account page does). Type-ahead comes from GET /api/search/suggest (plain
 // Postgres, fast, typo-tolerant); phrase-like queries also get "Related content" from
 // GET /api/search/semantic (copilot's vector + full-text retrieval, no LLM call).
+// Each palette session (open → pick or close) sends one POST /api/search/log so
+// /api/search/misses can show what people looked for and didn't find.
 // See apps/sales_search/api.py.
 
 const RECENT_KEY = 'searchPalette.recent';
@@ -25,6 +29,8 @@ const DOC_TYPE_LABELS = {
   persona_card: 'Profile', callprep: 'Call prep', personality_profile: 'Personality',
   digest_channel: 'Digest', news: 'News', blog: 'Blog', post: 'Post', job: 'Job',
 };
+
+const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -67,14 +73,27 @@ function navigateTo(item) {
   else window.location.href = url;
 }
 
+const STYLESHEET = '/css/search-palette.css?v=1.1';
+const config = { getAccountId: () => null, open: null };
+
 /**
+ * Creates the palette once; later calls only update the options.
  * @param {object}   opts
  * @param {function} [opts.getAccountId]  current account id (boosts its results; scopes "Ask Copilot")
  * @param {function} [opts.open]          async (item) => boolean; return true if handled in-page
  */
 export function initSearchPalette(opts = {}) {
+  Object.assign(config, opts);
   if (document.getElementById('searchPalette')) return;
-  const getAccountId = opts.getAccountId || (() => null);
+  const getAccountId = () => config.getAccountId();
+
+  if (!document.querySelector('link[data-search-palette]')) {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = STYLESHEET;
+    link.dataset.searchPalette = '';
+    document.head.appendChild(link);
+  }
 
   const root = document.createElement('div');
   root.id = 'searchPalette';
@@ -93,7 +112,7 @@ export function initSearchPalette(opts = {}) {
       <div class="sp-footer">
         <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
         <span><kbd>Enter</kbd> open</span>
-        <span><kbd>Ctrl</kbd><kbd>F</kbd> again for browser find</span>
+        <span><kbd>${MOD}</kbd><kbd>F</kbd> again for browser find</span>
       </div>
     </div>`;
   document.body.appendChild(root);
@@ -111,6 +130,25 @@ export function initSearchPalette(opts = {}) {
   let lastSuggest = { q: '', groups: [] };
   let semanticState = { q: '', status: 'idle', items: [] };   // idle | loading | done | error
   const cache = new Map();
+  let logged = true;       // false while a session has something worth reporting
+
+  // One row per session, sent on pick or close; keepalive survives the navigation a pick causes.
+  function logSession(chosenType = null) {
+    if (logged) return;
+    logged = true;
+    const q = input.value.trim();
+    if (q.length < 2 || lastSuggest.q !== q) return;
+    const nResults = lastSuggest.groups.reduce((n, g) => n + g.items.length, 0);
+    fetch('/api/search/log', {
+      method: 'POST',
+      keepalive: true,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        q, n_results: nResults, chosen_type: chosenType,
+        account_id: getAccountId() || null, semantic: semanticState.q === q && semanticState.status === 'done',
+      }),
+    }).catch(() => { /* analytics only */ });
+  }
 
   const isOpen = () => !root.classList.contains('d-none');
 
@@ -124,6 +162,7 @@ export function initSearchPalette(opts = {}) {
   }
 
   function close() {
+    logSession();
     root.classList.add('d-none');
     document.body.classList.remove('sp-open');
     suggestCtl?.abort();
@@ -134,9 +173,10 @@ export function initSearchPalette(opts = {}) {
     if (!item) return;
     if (item.type === 'semantic') { runSemantic(item.q, true); return; }
     saveRecent(item);
+    logSession(item.type);
     close();
     try {
-      if (opts.open && await opts.open(item)) return;
+      if (config.open && await config.open(item)) return;
     } catch (err) { console.error('search open failed', err); }
     navigateTo(item);
   }
@@ -298,6 +338,7 @@ export function initSearchPalette(opts = {}) {
   // ── Events ─────────────────────────────────────────────────
   input.addEventListener('input', () => {
     const q = input.value.trim();
+    logged = false;
     clearTimeout(suggestTimer);
     clearTimeout(semanticTimer);
     semanticCtl?.abort();
@@ -332,16 +373,11 @@ export function initSearchPalette(opts = {}) {
   document.addEventListener('keydown', (e) => {
     const mod = e.ctrlKey || e.metaKey;
     if (!mod || e.altKey || e.shiftKey) return;
-    const k = e.key.toLowerCase();
-    if (k === 'k') {
-      e.preventDefault();
-      isOpen() ? input.focus() : open();
-    } else if (k === 'f') {
-      // First Ctrl+F opens the palette; a second one closes it and lets the browser's find run.
-      if (isOpen()) { close(); return; }
-      e.preventDefault();
-      open();
-    }
+    // First Ctrl+F opens the palette; a second one closes it and lets the browser's find run.
+    if (e.key.toLowerCase() !== 'f') return;
+    if (isOpen()) { close(); return; }
+    e.preventDefault();
+    open();
   });
 
   // Topbar trigger — discoverable entry point for people who don't know the shortcut.
@@ -351,9 +387,8 @@ export function initSearchPalette(opts = {}) {
     btn.type = 'button';
     btn.id = 'spTrigger';
     btn.className = 'topbar-link topbar-link-btn sp-trigger';
-    btn.title = 'Search (Ctrl+K)';
-    const mac = /Mac|iPhone|iPad/.test(navigator.platform);
-    btn.innerHTML = `<i class="fa-solid fa-magnifying-glass"></i><span class="sp-trigger-label">Search</span><kbd class="sp-trigger-kbd">${mac ? '⌘' : 'Ctrl'} K</kbd>`;
+    btn.title = `Search (${MOD}+F)`;
+    btn.innerHTML = `<i class="fa-solid fa-magnifying-glass"></i><span class="sp-trigger-label">Search</span><kbd class="sp-trigger-kbd">${MOD} F</kbd>`;
     btn.addEventListener('click', open);
     actions.insertBefore(btn, actions.firstChild);
   }
