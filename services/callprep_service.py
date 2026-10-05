@@ -17,7 +17,8 @@ Token strategy (see generate_account):
   * Person evidence capped: last 3 roles, 5 posts x 400 chars, digest summary only.
   * Unchanged inputs (same input_hash) are skipped unless force=True.
 
-LLM: OpenRouter chat-completions. Key from OPENROUTER_API_KEY and model from
+LLM: any OpenAI-compatible chat-completions provider — LLM_API_BASE / LLM_API_KEY, shared
+with the copilot (apps/sales_copilot/settings.py; OpenRouter when unset). Model from
 CALLPREP_LLM_MODEL, else the digest pipeline's LLM_MODEL — all in the repo-root .env.
 """
 
@@ -41,8 +42,11 @@ from db.models.persona import Persona
 
 PROMPT_VERSION = "callprep-v2"
 
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+from apps.sales_copilot import settings as llm_settings  # noqa: E402 — provider config shared with the copilot
+
+LLM_CHAT_URL = llm_settings.LLM_CHAT_URL
+LLM_API_KEY = llm_settings.LLM_API_KEY
+IS_OPENROUTER = llm_settings.IS_OPENROUTER
 CALLPREP_MODEL = (
     os.getenv("CALLPREP_LLM_MODEL")
     or os.getenv("LLM_MODEL")
@@ -189,27 +193,25 @@ def _parse_json(raw: str) -> Dict[str, Any]:
 
 
 def call_llm(system: str, user: str, max_tokens: int) -> Tuple[Dict[str, Any], Dict[str, int]]:
-    """OpenRouter chat call with 429/5xx backoff. Returns (parsed_json, usage)."""
-    if not OPENROUTER_API_KEY:
-        raise LLMError("OPENROUTER_API_KEY not set in .env")
+    """Chat-completions call with 429/5xx backoff. Returns (parsed_json, usage)."""
+    if not LLM_API_KEY:
+        raise LLMError("LLM_API_KEY not set in .env")
     body = {
         "model": CALLPREP_MODEL,
         "max_tokens": max_tokens,
         "temperature": 0.3,
-        # Reasoning off: on nemotron it cost 3-6x the answer's tokens for no gain on this
-        # extraction task, and it can leak into the reply instead of JSON.
-        "reasoning": {"enabled": False},
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
     }
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "HTTP-Referer": "http://localhost",
-        "X-Title": "sales-agent-ai call-prep",
-    }
+    headers = {"Authorization": f"Bearer {LLM_API_KEY}"}
+    if IS_OPENROUTER:
+        # Reasoning off: on nemotron it cost 3-6x the answer's tokens for no gain on this
+        # extraction task, and it can leak into the reply instead of JSON.
+        body["reasoning"] = {"enabled": False}
+        headers.update({"HTTP-Referer": "http://localhost", "X-Title": "sales-agent-ai call-prep"})
     last_err = ""
     for attempt in range(6):
         try:
-            res = requests.post(OPENROUTER_URL, headers=headers, json=body, timeout=180)
+            res = requests.post(LLM_CHAT_URL, headers=headers, json=body, timeout=180)
         except requests.RequestException as e:
             last_err = str(e)
             time.sleep(10 * (attempt + 1))
@@ -575,7 +577,12 @@ def generate_account(
         personas = [p for p in personas if p.key in only_keys]
     lob_names = dict(session.execute(text("select id, lob_name from lobs where account_id=:i"), {"i": account.id}).fetchall())
 
-    brief_info = get_account_brief(session, account, force=force, dry_run=dry_run, allow_daytime=allow_daytime)
+    try:
+        brief_info = get_account_brief(session, account, force=force, dry_run=dry_run, allow_daytime=allow_daytime)
+    except QuotaExceeded as e:
+        # Same clean stop as a quota hit mid-run (see _stop below): nothing generated, rerun later.
+        log(f"[callprep] stopped before the first call: {e}")
+        return {"account": account.display_name, "personas": len(personas), "llm_calls": 0, "stopped": str(e)[:200]}
     brief_block = _brief_block(brief_info["brief"])
     log(f"[callprep] account brief: {'cached' if brief_info.get('cached') else 'generated'} "
         f"(~{len(brief_block) // 4} tokens reused per call)")

@@ -32,7 +32,8 @@ def main() -> None:
     args = parser.parse_args()
 
     print(f"[callprep] model={callprep_service.CALLPREP_MODEL} "
-          f"key={'set' if callprep_service.OPENROUTER_API_KEY else 'MISSING'}")
+          f"provider={callprep_service.LLM_CHAT_URL.split('/')[2]} "
+          f"key={'set' if callprep_service.LLM_API_KEY else 'MISSING'}")
     session = get_session()
     try:
         stats = callprep_service.generate_account(
