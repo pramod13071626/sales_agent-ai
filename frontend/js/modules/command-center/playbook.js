@@ -10,19 +10,21 @@ function matchesAccount(play) {
 
 function itemHtml(item) {
   return `
-    <li class="cc-playbook-item ${item.tasked ? 'cc-playbook-item-done' : ''}" data-rank="${item.rank}">
+    <li class="cc-playbook-item cc-compact-playbook-item ${item.tasked ? 'cc-playbook-item-done' : ''}" data-rank="${item.rank}">
       <div class="cc-playbook-rank">${item.rank}</div>
       <div class="cc-playbook-body">
         <div class="cc-playbook-title-row">
-          <span class="cc-playbook-title">${esc(item.title)}</span>
-          <span class="cc-chip ${item.impact === 'high' ? 'cc-chip-danger' : 'cc-chip-warning'}">${esc(item.impact)} impact</span>
+          <span class="cc-playbook-title" title="${esc(item.title)}">${esc(item.title)}</span>
+          <span class="cc-chip cc-chip-xs ${item.impact === 'high' ? 'cc-chip-danger' : 'cc-chip-warning'}">${esc(item.impact)}</span>
         </div>
-        <div class="cc-playbook-rationale">Why: ${esc(item.rationale)}</div>
-        <div class="cc-playbook-account">${esc(item.account_name)}</div>
+        <div class="cc-playbook-rationale" title="${esc(item.rationale)}">Why: ${esc(item.rationale)}</div>
+        <div class="cc-playbook-account" title="${esc(item.account_name)}"><i class="fa-regular fa-building" style="font-size:0.65rem; margin-right:3px;"></i>${esc(item.account_name)}</div>
       </div>
-      <button type="button" class="cc-btn ${item.tasked ? 'cc-btn-done' : 'cc-btn-primary'} cc-btn-sm" data-rank="${item.rank}" ${item.tasked ? 'disabled' : ''}>
-        ${item.tasked ? '<i class="fa-solid fa-check"></i> In motion' : 'Start play'}
-      </button>
+      <div class="cc-playbook-action">
+        <button type="button" class="cc-btn ${item.tasked ? 'cc-btn-done' : 'cc-btn-primary'} cc-btn-xs" data-rank="${item.rank}" ${item.tasked ? 'disabled' : ''}>
+          ${item.tasked ? '<i class="fa-solid fa-check"></i> In motion' : 'Start play'}
+        </button>
+      </div>
     </li>`;
 }
 
@@ -51,8 +53,6 @@ export function renderPlaybook() {
       const item = playbook.find(p => p.rank === Number(btn.dataset.rank));
       if (!item || item.tasked) return;
       btn.disabled = true;
-      // "Start play" creates a real, self-assigned task tagged source=playbook;
-      // those open tasks are what the "Open plays in motion" KPI counts.
       const ok = await createTask(item.account_name, item.title, {
         accountId: item.account_id, description: item.rationale, priority: item.impact, source: 'playbook',
       });

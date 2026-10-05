@@ -1,20 +1,16 @@
-// Operational Pain Points & Common Objections widgets
-// - Operational Pain Points: Severity Tiered Grouping (Linear / Stripe Style Matrix)
-// - Common Objections: Category Tag List (Simplest & Cleanest)
-
+// Operational Pain Points & Common Objections Widgets (Complete Visibility & Professional Card Layout)
+// Real data from /api/objections
 import { esc } from './utils.js';
 import { renderSkeleton } from '../skeleton.js';
-import { ccState } from './state.js';
 
 let objectionsPromise = null;
-let painChart = null;
-let objectionChart = null;
 
-function loadObjectionsData() {
+export function loadObjectionsData() {
   if (!objectionsPromise) {
-    objectionsPromise = fetch('/api/objections?limit=8')
+    objectionsPromise = fetch('/api/objections')
+      .then(res => res.ok ? res : fetch('/api/command-center/objections'))
       .then(res => {
-        if (!res.ok) throw new Error(`Failed to load objections (${res.status})`);
+        if (!res.ok) throw new Error(`Failed to load objections: ${res.status}`);
         return res.json();
       });
   }
@@ -46,7 +42,6 @@ function getAccountList(item) {
     }
   });
 
-  // Fallback for accounts in item.accounts not in personas list
   (item.accounts || []).forEach(name => {
     if (!accountMap.has(name)) {
       accountMap.set(name, {
@@ -62,115 +57,45 @@ function getAccountList(item) {
   return Array.from(accountMap.values());
 }
 
-function groupPainPointsBySeverity(items) {
-  const high = [];
-  const moderate = [];
-  const emerging = [];
-
-  const maxCount = Math.max(...items.map(i => i.count || 1), 1);
-
-  items.forEach((item, idx) => {
-    const count = item.count || 1;
-    if (count >= 3 || (maxCount < 3 && idx === 0)) {
-      high.push({ ...item, globalRank: idx + 1 });
-    } else if (count === 2 || (maxCount >= 3 && count >= 2) || (maxCount < 3 && idx < 3)) {
-      moderate.push({ ...item, globalRank: idx + 1 });
-    } else {
-      emerging.push({ ...item, globalRank: idx + 1 });
-    }
-  });
-
-  return [
-    {
-      id: 'high',
-      title: 'High Impact',
-      subtitle: 'Critical blockers across accounts',
-      dotClass: 'tier-dot-high',
-      badgeClass: 'tier-badge-high',
-      items: high
-    },
-    {
-      id: 'moderate',
-      title: 'Moderate Friction',
-      subtitle: 'Shared operational challenges',
-      dotClass: 'tier-dot-med',
-      badgeClass: 'tier-badge-med',
-      items: moderate
-    },
-    {
-      id: 'emerging',
-      title: 'Emerging Signals',
-      subtitle: 'Early detected account signals',
-      dotClass: 'tier-dot-low',
-      badgeClass: 'tier-badge-low',
-      items: emerging
-    }
-  ].filter(group => group.items.length > 0);
-}
-
 function renderSeverityMatrix(items, emptyText) {
   if (!items || !items.length) {
     return `<div class="cc-drawer-empty">${esc(emptyText)}</div>`;
   }
 
-  const groups = groupPainPointsBySeverity(items);
-
   return `
-    <div class="cc-severity-matrix">
-      ${groups.map(group => `
-        <div class="cc-severity-group cc-group-${group.id}">
-          
-          <!-- Group Header -->
-          <div class="cc-severity-group-header">
-            <div class="cc-severity-group-title-wrap">
-              <span class="cc-severity-dot ${group.dotClass}"></span>
-              <span class="cc-severity-group-title">${esc(group.title)}</span>
-              <span class="cc-severity-group-subtitle">${esc(group.subtitle)}</span>
-            </div>
-            <span class="cc-severity-group-count ${group.badgeClass}">
-              ${group.items.length} ${group.items.length === 1 ? 'issue' : 'issues'}
-            </span>
-          </div>
+    <div class="cc-compact-scroll-wrap">
+      <ul class="cc-compact-list">
+        ${items.slice(0, 10).map((item, idx) => {
+          const accountList = getAccountList(item);
+          const count = item.count || 1;
+          const severity = count >= 300 ? 'high' : count >= 50 ? 'med' : 'low';
+          const severityLabel = severity === 'high' ? 'High Impact' : severity === 'med' ? 'Medium Impact' : 'Active Signal';
 
-          <!-- Group Rows -->
-          <ul class="cc-severity-list">
-            ${group.items.map(item => {
-              const accountList = getAccountList(item);
-
-              return `
-                <li class="cc-severity-row">
-                  <div class="cc-severity-row-main">
-                    <span class="cc-severity-rank">#${item.globalRank}</span>
-                    <span class="cc-severity-text" title="${esc(item.text)}">${esc(item.text)}</span>
-                  </div>
-
-                  <div class="cc-severity-row-meta">
-                    ${accountList.length <= 1 ? `
-                      <div class="cc-severity-accounts">
-                        <span class="cc-chip cc-chip-plain">${esc(accountList[0] ? accountList[0].name : '')}</span>
-                      </div>
-                      ${accountList[0] ? `
-                        <a href="${accountList[0].url}" class="cc-view-btn" title="View Executive Profile Dossier at ${esc(accountList[0].name)}">
-                          View <i class="bi bi-arrow-up-right"></i>
-                        </a>
-                      ` : ''}
-                    ` : `
-                      <div class="cc-severity-accounts">
-                        ${accountList.slice(0, 3).map(acc => `
-                          <a href="${acc.url}" class="cc-view-btn cc-view-btn-chip" title="View Executive Profile Dossier at ${esc(acc.name)}">
-                            ${esc(acc.name)} <i class="bi bi-arrow-up-right"></i>
-                          </a>
-                        `).join('')}
-                      </div>
-                    `}
-                  </div>
-                </li>
-              `;
-            }).join('')}
-          </ul>
-
-        </div>
-      `).join('')}
+          return `
+            <li class="cc-objection-card">
+              <div class="cc-card-header-row">
+                <div class="cc-card-title-group">
+                  <span class="cc-severity-dot tier-dot-${severity}" title="${severityLabel} (${count} mentions)"></span>
+                  <span class="cc-compact-rank">#${idx + 1}</span>
+                  <span class="cc-card-full-text">${esc(item.text)}</span>
+                </div>
+                <span class="cc-chip cc-chip-xs ${severity === 'high' ? 'cc-chip-danger' : severity === 'med' ? 'cc-chip-warning' : 'cc-chip-plain'}">${count} mentions</span>
+              </div>
+              <div class="cc-card-accounts-row">
+                <span class="cc-accounts-lead"><i class="fa-regular fa-building"></i> Target Accounts:</span>
+                <div class="cc-accounts-pill-list">
+                  ${accountList.map(acc => `
+                    <a href="${acc.url}" class="cc-account-view-pill" title="View Executive Profile Dossier at ${esc(acc.name)}">
+                      <span class="cc-acc-name">${esc(acc.name)}</span>
+                      <span class="cc-acc-view-btn">View <i class="fa-solid fa-arrow-up-right-from-square"></i></span>
+                    </a>
+                  `).join('')}
+                </div>
+              </div>
+            </li>
+          `;
+        }).join('')}
+      </ul>
     </div>
   `;
 }
@@ -179,42 +104,40 @@ function renderCleanObjections(items, emptyText) {
   if (!items || !items.length) {
     return `<div class="cc-drawer-empty">${esc(emptyText)}</div>`;
   }
+
   return `
-    <ul class="cc-obj-category-list">
-      ${items.map(item => {
-        const accountList = getAccountList(item);
+    <div class="cc-compact-scroll-wrap">
+      <ul class="cc-compact-list">
+        ${items.slice(0, 10).map((item, idx) => {
+          const accountList = getAccountList(item);
+          const count = item.count || 1;
 
-        return `
-          <li class="cc-obj-category-row">
-            <div class="cc-obj-row-left">
-              <span class="cc-obj-quote-icon"><i class="bi bi-chat-quote-fill"></i></span>
-              <span class="cc-obj-quote-text" title="${esc(item.text)}">${esc(item.text)}</span>
-            </div>
-
-            <div class="cc-obj-row-right">
-              ${accountList.length <= 1 ? `
-                <div class="cc-obj-accounts">
-                  <span class="cc-chip cc-chip-plain">${esc(accountList[0] ? accountList[0].name : '')}</span>
+          return `
+            <li class="cc-objection-card">
+              <div class="cc-card-header-row">
+                <div class="cc-card-title-group">
+                  <span class="cc-compact-quote-icon"><i class="fa-solid fa-quote-left"></i></span>
+                  <span class="cc-compact-rank">#${idx + 1}</span>
+                  <span class="cc-card-full-text">${esc(item.text)}</span>
                 </div>
-                ${accountList[0] ? `
-                  <a href="${accountList[0].url}" class="cc-view-btn" title="View Executive Profile Dossier at ${esc(accountList[0].name)}">
-                    View <i class="bi bi-arrow-up-right"></i>
-                  </a>
-                ` : ''}
-              ` : `
-                <div class="cc-obj-accounts">
-                  ${accountList.slice(0, 3).map(acc => `
-                    <a href="${acc.url}" class="cc-view-btn cc-view-btn-chip" title="View Executive Profile Dossier at ${esc(acc.name)}">
-                      ${esc(acc.name)} <i class="bi bi-arrow-up-right"></i>
+                ${count > 1 ? `<span class="cc-chip cc-chip-xs cc-chip-plain">${count} mentions</span>` : ''}
+              </div>
+              <div class="cc-card-accounts-row">
+                <span class="cc-accounts-lead"><i class="fa-regular fa-building"></i> Target Accounts:</span>
+                <div class="cc-accounts-pill-list">
+                  ${accountList.map(acc => `
+                    <a href="${acc.url}" class="cc-account-view-pill" title="View Executive Profile Dossier at ${esc(acc.name)}">
+                      <span class="cc-acc-name">${esc(acc.name)}</span>
+                      <span class="cc-acc-view-btn">View <i class="fa-solid fa-arrow-up-right-from-square"></i></span>
                     </a>
                   `).join('')}
                 </div>
-              `}
-            </div>
-          </li>
-        `;
-      }).join('')}
-    </ul>
+              </div>
+            </li>
+          `;
+        }).join('')}
+      </ul>
+    </div>
   `;
 }
 
@@ -242,7 +165,3 @@ export async function renderObjections() {
     objectionsBody.innerHTML = renderCleanObjections(data.objections || [], 'No objections captured yet for your accounts.');
   }
 }
-
-
-
-

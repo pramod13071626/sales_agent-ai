@@ -4427,6 +4427,7 @@ if FASTAPI_AVAILABLE:
             session.close()
 
     @app.get("/api/objections", tags=["3. Personas & Buying Committee"])
+    @app.get("/api/command-center/objections", tags=["9. Command Center"])
     def get_common_objections_and_pain_points(
         response: Response,
         user: User = Depends(auth.get_current_user),
@@ -6509,6 +6510,17 @@ if FASTAPI_AVAILABLE:
                     .filter_by(user_id=user.id)
                     .order_by(CommandCenterSnapshot.generated_at.desc())
                     .first())
+            if not snap or not snap.signals:
+                # Auto-generate snapshot on-demand if user has no snapshot yet
+                result = command_center_service.generate(session, _command_center_scope(session, user))
+                snap = CommandCenterSnapshot(
+                    user_id=user.id, generated_at=datetime.now(timezone.utc),
+                    signals=result["signals"], playbook=result["playbook"],
+                    velocity=result["velocity"], source_counts=result["source_counts"],
+                )
+                session.add(snap)
+                session.commit()
+                session.refresh(snap)
             return _command_center_payload(session, user, snap)
         finally:
             session.close()

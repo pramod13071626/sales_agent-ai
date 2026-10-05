@@ -27,17 +27,11 @@ export function highlightAndScrollTo(selector) {
   if (!el) return;
   el.scrollIntoView({ behavior: 'smooth', block: 'center' });
   el.classList.remove('cc-panel-highlight');
-  // force reflow to restart animation if clicked repeatedly
   void el.offsetWidth;
   el.classList.add('cc-panel-highlight');
   setTimeout(() => el.classList.remove('cc-panel-highlight'), 2200);
 }
 
-// Account-level data (composite score, deal potential) and exec-change data
-// are both real (see real-accounts.js / exec-movements.js). Signal velocity
-// and "plays in motion" come from the generated snapshot (generator.js):
-// velocity = signals detected this week vs. last, plays = open tasks that
-// were started from the playbook.
 async function computeKpi() {
   const [accounts, execChangesAll] = await Promise.all([
     loadMatrixAccounts(),
@@ -56,6 +50,15 @@ async function computeKpi() {
   const promoted = execChangesAll.filter(e => e.type === 'promoted').length;
   const other = execChangesAll.length - joined - promoted;
 
+  const playbookList = cc.playbook || [];
+  const activeAcctId = ccState.activeAccountId;
+  const matchingPlays = activeAcctId
+    ? playbookList.filter(p => String(p.account_id) === String(activeAcctId))
+    : playbookList;
+
+  const inMotionCount = matchingPlays.filter(p => p.tasked).length || (cc.plays && cc.plays.in_motion) || 0;
+  const stalledCount = (cc.plays && cc.plays.stalled) || 0;
+
   return {
     accounts,
     topAccount,
@@ -68,8 +71,9 @@ async function computeKpi() {
     execJoined: joined,
     execPromoted: promoted,
     execOther: other,
-    playsInMotion: cc.plays.in_motion,
-    playsStalled: cc.plays.stalled,
+    playbookTotal: matchingPlays.length,
+    playsInMotion: inMotionCount,
+    playsStalled: stalledCount,
   };
 }
 
@@ -110,12 +114,16 @@ export async function renderKpiStrip() {
   const card4 = `
     <div class="cc-kpi-card cc-kpi-clickable" data-kpi-action="jump-playbook" title="Click to view This Week's Playbook" tabindex="0" role="button">
       <div class="cc-kpi-label-row">
-        <span class="cc-kpi-label">Open plays in motion</span>
+        <span class="cc-kpi-label">This week's playbook</span>
         <i class="fa-solid fa-arrow-up-right-from-square cc-kpi-icon"></i>
       </div>
-      <div class="cc-kpi-value">${k.playsInMotion}</div>
+      <div class="cc-kpi-value">${k.generated ? k.playbookTotal : (k.playbookTotal || 0)} <span class="cc-kpi-unit" style="font-size:0.85rem; font-weight:500; color:var(--text-secondary);">plays</span></div>
       <div class="cc-kpi-foot ${k.playsStalled > 0 ? 'cc-warning-text' : ''}">
-        ${k.playsStalled > 0 ? `${k.playsStalled} stalled 14d` : (k.playsInMotion ? 'no stalled plays' : 'start a play from the playbook')} &middot; <span class="cc-kpi-action-text">View Playbook &rarr;</span>
+        ${k.playsInMotion > 0 ? `<strong>${k.playsInMotion}</strong> in motion` : 'Ready to start'} &middot; <span class="cc-kpi-action-text">View Playbook &rarr;</span>
+      </div>
+      <div class="cc-chip-row">
+        <span class="cc-chip cc-chip-plain">${k.playbookTotal} available</span>
+        ${k.playsInMotion > 0 ? `<span class="cc-chip cc-chip-brand">${k.playsInMotion} in motion</span>` : ''}
       </div>
     </div>`;
 
@@ -129,7 +137,6 @@ export function bindKpiListeners(container, kpiData) {
     const action = card.dataset.kpiAction;
 
     const executeAction = (e) => {
-      // Don't trigger card action if a chip inside the card was clicked
       if (e.target.closest('[data-timeline-filter]')) return;
 
       if (action === 'jump-feed') {

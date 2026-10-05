@@ -12,7 +12,7 @@ function visibleSignals() {
   return getCommandCenter().signals
     .filter(s => ccState.activeDomainFilters.size === 0 || ccState.activeDomainFilters.has(s.category))
     .filter(matchesAccount)
-    .sort((a, b) => b.score - a.score); // composite score desc, never raw signal count
+    .sort((a, b) => b.score - a.score);
 }
 
 function renderFilterChips() {
@@ -71,11 +71,18 @@ function rowHtml(sig) {
           ${title}
           ${newBadge}
         </div>
-        <div class="cc-feed-meta">${esc(sig.account_name)} &middot; <span class="${isNew ? 'cc-time-new' : ''}">${esc(relativeTime(sig.detectedAt))}</span> &middot; <span class="cc-domain-tag">${esc(sig.category)}</span> &middot; score ${esc(sig.score)}</div>
+        <div class="cc-feed-meta">
+          <strong class="cc-feed-acct">${esc(sig.account_name)}</strong> &middot; 
+          <span class="${isNew ? 'cc-time-new' : ''}">${esc(relativeTime(sig.detectedAt))}</span> &middot; 
+          <span class="cc-domain-tag">${esc(sig.category)}</span> &middot; 
+          <span class="cc-score-tag">score ${esc(sig.score)}</span>
+        </div>
         <div class="cc-feed-summary">${esc(sig.summary)}</div>
       </div>
       <div class="cc-feed-actions">
-        <button type="button" class="cc-btn cc-btn-primary cc-btn-sm" data-act="task">Create task</button>
+        <button type="button" class="cc-btn cc-btn-primary cc-btn-sm cc-feed-task-btn" data-act="task" title="Create task for this signal">
+          <i class="fa-solid fa-plus"></i> Create task
+        </button>
       </div>
     </li>`;
 }
@@ -106,10 +113,15 @@ export function renderFeed() {
       e.stopPropagation();
       const btn = e.currentTarget;
       btn.disabled = true;
-      await createTask(sig.account_name, sig.title, {
-        accountId: sig.account_id, description: sig.summary, score: sig.score, source: 'signal_feed',
-      });
-      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Creating...';
+      try {
+        await createTask(sig.account_name, sig.title, {
+          accountId: sig.account_id, description: sig.summary, score: sig.score, source: 'signal_feed',
+        });
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-check"></i> Tasked';
+      }
     });
   });
 }

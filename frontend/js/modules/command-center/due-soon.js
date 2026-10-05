@@ -1,7 +1,4 @@
-// Due-soon tasks widget — real data, GET /api/me/action-items (same
-// endpoint the /tasks page uses), filtered to open/in-progress items due
-// within 7 days (including overdue). Lets a rep see what's urgent without
-// leaving Command Center for the full Tasks page.
+// Due-soon tasks widget — real data, GET /api/me/action-items
 import { esc } from './utils.js';
 import { showToast } from '../toast.js';
 import { renderSkeleton } from '../skeleton.js';
@@ -23,23 +20,27 @@ async function loadDueSoon() {
   return (data.action_items || [])
     .filter(i => (i.status === 'open' || i.status === 'in_progress') && i.due_date && new Date(i.due_date).getTime() <= cutoff)
     .sort((a, b) => new Date(a.due_date) - new Date(b.due_date))
-    .slice(0, 8);
+    .slice(0, 10);
 }
 
 function rowHtml(item) {
   const due = dueLabel(item.due_date);
   return `
-    <li class="cc-feed-row" data-item-id="${item.id}">
+    <li class="cc-feed-row cc-compact-due-row" data-item-id="${item.id}">
       <div class="cc-feed-body">
         <div class="cc-feed-title-row">
-          <span class="cc-feed-title">${esc(item.title)}</span>
-          <span class="cc-chip ${item.priority === 'high' ? 'cc-chip-danger' : 'cc-chip-plain'}">${esc(item.priority)}</span>
+          <span class="cc-feed-title" title="${esc(item.title)}">${esc(item.title)}</span>
+          <span class="cc-chip cc-chip-xs ${item.priority === 'high' ? 'cc-chip-danger' : 'cc-chip-plain'}">${esc(item.priority)}</span>
         </div>
-        <div class="cc-feed-meta">${esc(item.account_name || '')} &middot; <span class="${due.warn ? 'cc-warning-text' : ''}">${esc(due.text)}</span></div>
+        <div class="cc-feed-meta">
+          <span class="cc-due-acct-text" title="${esc(item.account_name || '')}">${esc(item.account_name || 'General')}</span>
+          <span class="cc-meta-sep">&middot;</span>
+          <span class="${due.warn ? 'cc-warning-text cc-font-medium' : 'cc-due-date-subtle'}">${esc(due.text)}</span>
+        </div>
       </div>
-      <div class="cc-feed-actions">
-        <button type="button" class="cc-btn cc-btn-ghost cc-btn-sm" data-action="remind">Send reminder</button>
-        <button type="button" class="cc-btn cc-btn-primary cc-btn-sm" data-action="complete">Done</button>
+      <div class="cc-feed-actions cc-compact-due-actions">
+        <button type="button" class="cc-btn cc-btn-ghost cc-btn-xs" data-action="remind" title="Send email reminder to assignee">Send reminder</button>
+        <button type="button" class="cc-btn cc-btn-primary cc-btn-xs" data-action="complete" title="Mark this task done"><i class="fa-solid fa-check"></i> Done</button>
       </div>
     </li>`;
 }
