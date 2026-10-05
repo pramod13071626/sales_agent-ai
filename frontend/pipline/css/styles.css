@@ -203,7 +203,7 @@ body {
   background: linear-gradient(135deg, #4f46e5, #7c3aed);
   color: #fff;
   border: 1px solid rgba(255, 255, 255, 0.15);
-  margin-top: 4px;
+  margin-top: 10px;
   box-shadow: 0 2px 6px rgba(79, 70, 229, 0.25);
 }
 .run-pipeline-nav.batch-console-nav-btn:hover {
@@ -8022,6 +8022,33 @@ body {
   color: #ffffff;
 }
 
+.batch-row-btn:disabled,
+.batch-row-btn[disabled],
+.batch-row-btn.disabled {
+  opacity: 0.65;
+  cursor: not-allowed !important;
+  pointer-events: none;
+  box-shadow: none !important;
+}
+
+.batch-btn-running,
+.batch-row-btn.batch-btn-running {
+  background: rgba(14, 165, 233, 0.12) !important;
+  color: #0284c7 !important;
+  border-color: rgba(14, 165, 233, 0.35) !important;
+  cursor: not-allowed !important;
+  pointer-events: none;
+}
+
+.batch-btn-queued,
+.batch-row-btn.batch-btn-queued {
+  background: rgba(245, 158, 11, 0.1) !important;
+  color: #d97706 !important;
+  border-color: rgba(245, 158, 11, 0.3) !important;
+  cursor: not-allowed !important;
+  pointer-events: none;
+}
+
 .batch-table-empty {
   text-align: center;
   padding: 48px 24px;
@@ -8428,4 +8455,38 @@ body {
   background: rgba(255, 255, 255, 0.02);
   border-color: #374151;
 }
+
+/* ── Universal Persona Avatar Headshot Styles ── */
+.compact-card-avatar.avatar-has-photo,
+.header-avatar-box.avatar-has-photo,
+.drawer-avatar.avatar-has-photo {
+  padding: 0 !important;
+  overflow: hidden !important;
+  position: relative !important;
+}
+
+.avatar-photo-img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  border-radius: inherit !important;
+  display: block !important;
+  position: relative;
+  z-index: 2;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+.avatar-photo-fallback {
+  position: absolute !important;
+  top: 0;
+  left: 0;
+  width: 100% !important;
+  height: 100% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: inherit !important;
+  z-index: 1;
+}
+
 

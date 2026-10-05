@@ -44,7 +44,7 @@ from collectors.account_collector import (
     fetch_fec_political_intel,
     fetch_diffbot_organization_intel,
 )
-from collectors.sublob_collector import scrape_sublobs
+from collectors.sublob_collector import scrape_sublobs, extract_commercial_operating_divisions
 from collectors.lob_enricher import enrich_lob_segments
 from collectors.hierarchy_collector import scrape_hierarchy
 from collectors.persona_enricher import build_persona_dossier
@@ -865,6 +865,7 @@ if FASTAPI_AVAILABLE:
         company_name: Optional[str] = None
         sec_cik: Optional[str] = None
         enrich_csuite_dossiers: bool = True
+        account_id: Optional[int] = None
 
     class HierarchyDumpRequest(BaseModel):
         account_id: int
@@ -1449,6 +1450,22 @@ if FASTAPI_AVAILABLE:
 
     def _serialize_persona_full(p: Persona, last_run_at: Optional[str] = None) -> Dict[str, Any]:
         p_raw = p.raw_data if isinstance(p.raw_data, dict) else {}
+        p_ext = p.extended_profile if isinstance(p.extended_profile, dict) else {}
+        photo_url = (
+            getattr(p, "photo_url", None)
+            or p_raw.get("photo_url")
+            or p_ext.get("photo_url")
+            or (p_raw.get("apify_linkedin", {}).get("photo") if isinstance(p_raw.get("apify_linkedin"), dict) else None)
+            or ((p_raw.get("apify_linkedin", {}).get("profilePicture") or {}).get("url") if isinstance(p_raw.get("apify_linkedin"), dict) and isinstance(p_raw.get("apify_linkedin", {}).get("profilePicture"), dict) else None)
+            or (p_raw.get("diffbot", {}).get("image_url") if isinstance(p_raw.get("diffbot"), dict) else None)
+            or (p_raw.get("diffbot", {}).get("image") if isinstance(p_raw.get("diffbot"), dict) else None)
+            or (p_raw.get("apollo", {}).get("photo_url") if isinstance(p_raw.get("apollo"), dict) else None)
+            or (p_raw.get("social_profiles", {}).get("photo") if isinstance(p_raw.get("social_profiles"), dict) else None)
+            or (p_raw.get("persona_dossier", {}).get("photo") if isinstance(p_raw.get("persona_dossier"), dict) else None)
+        )
+        if photo_url and any(g in str(photo_url).lower() for g in ["ghost_person", "ghost-person", "logo", "spacer"]):
+            photo_url = None
+
         loc_str = (
             (p.city + (f", {p.state}" if p.state else (f", {p.country}" if p.country else "")))
             if p.city
@@ -1473,6 +1490,7 @@ if FASTAPI_AVAILABLE:
             "email_status": p.email_status or ("Verified" if p.email else None),
             "phone": contact_privacy.safe_phone(p.phone, p.direct_mobile_phone),
             "linkedin_url": p.linkedin_url,
+            "photo_url": photo_url,
             "crunchbase_permalink": p.crunchbase_permalink,
             "city": p.city,
             "state": p.state,
@@ -1815,10 +1833,11 @@ if FASTAPI_AVAILABLE:
             "is_manually_verified": bool(getattr(acct, "is_manually_verified", False)),
             "manually_verified_at": acct.manually_verified_at.isoformat() if getattr(acct, "manually_verified_at", None) else None,
             "osint_feed_manifest": getattr(acct, "osint_feed_manifest", None) or {},
+            "_is_full_loaded": True,
         }
 
     def _compute_signals_count(
-        acct: Account, lobs_list: List[Dict[str, Any]], personas_list: List[Dict[str, Any]]
+        acct: Account, lobs_list: List[Any], personas_list: List[Any]
     ) -> int:
         """Server-side count mirroring signals.js's computeSignals(account, null).
         The nav tree / topbar ticker only ever display the COUNT of signals per
@@ -1856,34 +1875,51 @@ if FASTAPI_AVAILABLE:
             count += 1
         if acct.industries:
             count += 1
-        if any(lob_item.get("competitors") for lob_item in lobs_list):
+        if any(
+            (lob_item.get("competitors") if isinstance(lob_item, dict) else getattr(lob_item, "competitors", None))
+            for lob_item in lobs_list
+        ):
             count += 1
         return count
 
     def _serialize_account_summary(acct: Account, latest_lob_runs: Optional[Dict] = None, latest_persona_runs: Optional[Dict] = None) -> Dict[str, Any]:
-        latest_lob_runs = latest_lob_runs or {}
-        latest_persona_runs = latest_persona_runs or {}
-        # Full serialization for Account, LOBs, and Personas ensures the UI receives 100% of data attributes
-        personas_list = [
-            _serialize_persona_full(
-                p,
-                last_run_at=latest_persona_runs.get(p.id) or latest_persona_runs.get((p.full_name or p.display_name or "").strip().lower())
-            )
-            for p in (acct.personas or [])
-        ]
+        """
+        Lightweight enterprise summary dossier for the initial master list.
+        Delivers all 97 account columns, telemetry, and contact/LOB counts instantly (<30 KB total),
+        avoiding serialization of thousands of LOB and Persona dossiers until an account is opened.
+        """
+        raw_personas = acct.personas or []
         raw_lobs = acct.lobs or []
-        lobs_list = [
-            _serialize_lob_full(
-                lob_item,
-                assigned,
-                last_run_at=latest_lob_runs.get(lob_item.id) or latest_lob_runs.get((lob_item.lob_name or "").strip().lower())
-            )
-            for lob_item, assigned in _distribute_personas_across_lobs(raw_lobs, personas_list)
-        ]
 
         acct_name = acct.legal_name or acct.display_name or acct.key
         acct_loc = acct.headquarters_location or (f"{acct.city}, {acct.country}" if acct.city else None)
         acct_desc = acct.short_description or acct.full_description
+
+        # Compute tier rollups directly without hydrating full persona records
+        c_suite_cnt = acct.c_suite_count or sum(
+            1 for p in raw_personas
+            if (getattr(p, "tier", None) or "").lower() in ["c-suite", "c_suite", "c"]
+            or any(w in (getattr(p, "title", None) or getattr(p, "job_title", None) or "").lower() for w in ["chief", "president", "ceo", "chairman", "board"])
+        )
+        vp_cnt = acct.vp_count or sum(
+            1 for p in raw_personas
+            if "vp" in (getattr(p, "tier", None) or "").lower()
+            or "vice president" in (getattr(p, "title", None) or getattr(p, "job_title", None) or "").lower()
+        )
+        dir_cnt = acct.director_count or sum(
+            1 for p in raw_personas
+            if "director" in (getattr(p, "tier", None) or "").lower()
+            or "director" in (getattr(p, "title", None) or getattr(p, "job_title", None) or "").lower()
+        )
+        mgr_cnt = acct.manager_count or sum(
+            1 for p in raw_personas
+            if "manager" in (getattr(p, "tier", None) or "").lower()
+            or "manager" in (getattr(p, "title", None) or getattr(p, "job_title", None) or "").lower()
+        )
+
+        # Build lightweight connector map so client-side computeAccountHealth calculates exact health score without multi-megabyte payloads
+        msi_summary = {k: True for k in (acct.multi_source_intelligence or {}).keys()}
+        oht_summary = {"gleif_lei": (acct.organisational_hierarchy_tree or {}).get("gleif_lei")}
 
         return {
             "id": acct.id,
@@ -1914,10 +1950,12 @@ if FASTAPI_AVAILABLE:
             "contact_email": acct.contact_email,
             "company_type": acct.company_type,
             "founded_year": acct.founded_year,
+            "founded_date": acct.founded_date.isoformat() if getattr(acct, "founded_date", None) else None,
             "employee_count_range": acct.employee_count_range,
             "linkedin_url": acct.linkedin_url,
             "twitter_url": acct.twitter_url,
             "twitter_handle": acct.twitter_handle,
+            "facebook_url": getattr(acct, "facebook_url", None),
             "stock_exchange": acct.stock_exchange,
             "sec_cik": acct.sec_cik,
             "sec_edgar_url": acct.sec_edgar_url,
@@ -1936,18 +1974,35 @@ if FASTAPI_AVAILABLE:
             "github_url": acct.github_url,
             "glassdoor_url": acct.glassdoor_url,
             "blog_url": acct.blog_url,
+            "youtube_channel_id": getattr(acct, "youtube_channel_id", None),
             "industries": acct.industries or [],
+            "industry_groups": getattr(acct, "industry_groups", None) or [],
+            "aliases": getattr(acct, "aliases", None) or [],
+            "founders": getattr(acct, "founders", None) or [],
+            "num_founders": getattr(acct, "num_founders", None) or (len(acct.founders) if getattr(acct, "founders", None) else 0),
+            "headquarters_regions": getattr(acct, "headquarters_regions", None) or [],
+            "raw_data": {},
+            "osint_feed_manifest": getattr(acct, "osint_feed_manifest", None) or {},
+            "is_manually_verified": bool(getattr(acct, "is_manually_verified", False)),
+            "manually_verified_at": acct.manually_verified_at.isoformat() if getattr(acct, "manually_verified_at", None) else None,
+            "total_funding_amount": getattr(acct, "total_funding_amount", None),
+            "sec_name": getattr(acct, "sec_name", None),
+            "num_contacts": getattr(acct, "num_contacts", None),
+            "schema_version": getattr(acct, "schema_version", None),
+            "total_apps": getattr(acct, "total_apps", None),
+            "total_downloads": getattr(acct, "total_downloads", None),
             "keywords": acct.keywords or [],
-            "lobs_count": len(lobs_list),
-            "total_contacts_captured": len(personas_list),
-            "lobs": lobs_list,
-            "personas": personas_list,
-            "multi_source_intelligence": acct.multi_source_intelligence,
-            "organisational_hierarchy_tree": acct.organisational_hierarchy_tree,
+            "lobs_count": len(raw_lobs),
+            "total_contacts_captured": len(raw_personas),
+            "lobs": [],
+            "personas": [],
+            "_is_full_loaded": False,
+            "multi_source_intelligence": msi_summary,
+            "organisational_hierarchy_tree": oht_summary,
             "extracted_at": acct.extracted_at.isoformat() if acct.extracted_at else None,
             "heat_score": acct.heat_score,
             "trend_score_90d": acct.trend_score_90d,
-            "signals_count": _compute_signals_count(acct, lobs_list, personas_list),
+            "signals_count": _compute_signals_count(acct, raw_lobs, raw_personas),
             "active_tech_count": acct.active_tech_count,
             "it_spend": acct.it_spend,
             "patents_granted": acct.patents_granted,
@@ -1967,48 +2022,12 @@ if FASTAPI_AVAILABLE:
             "bounce_rate": acct.bounce_rate,
             "visit_duration": acct.visit_duration,
             "page_views_per_visit": acct.page_views_per_visit,
-            "c_suite_count": acct.c_suite_count
-            or len(
-                [
-                    p
-                    for p in personas_list
-                    if (p.get("tier") or "").lower() in ["c-suite", "c_suite", "c"]
-                    or any(
-                        w in (p.get("title") or "").lower()
-                        for w in ["chief", "president", "ceo", "chairman", "board"]
-                    )
-                ]
-            ),
-            "vp_count": acct.vp_count
-            or len(
-                [
-                    p
-                    for p in personas_list
-                    if "vp" in (p.get("tier") or "").lower()
-                    or "vice president" in (p.get("title") or "").lower()
-                ]
-            ),
-            "director_count": acct.director_count
-            or len(
-                [
-                    p
-                    for p in personas_list
-                    if "director" in (p.get("tier") or "").lower()
-                    or "director" in (p.get("title") or "").lower()
-                ]
-            ),
-            "manager_count": acct.manager_count
-            or len(
-                [
-                    p
-                    for p in personas_list
-                    if "manager" in (p.get("tier") or "").lower()
-                    or "manager" in (p.get("title") or "").lower()
-                ]
-            ),
+            "c_suite_count": c_suite_cnt,
+            "vp_count": vp_cnt,
+            "director_count": dir_cnt,
+            "manager_count": mgr_cnt,
             "created_at": acct.created_at.isoformat() if getattr(acct, "created_at", None) else None,
             "updated_at": acct.updated_at.isoformat() if getattr(acct, "updated_at", None) else None,
-            "is_manually_verified": bool(getattr(acct, "is_manually_verified", False)),
             "manually_verified_at": acct.manually_verified_at.isoformat() if getattr(acct, "manually_verified_at", None) else None,
         }
 
@@ -2392,12 +2411,41 @@ if FASTAPI_AVAILABLE:
                             for c in tree.get("gleif_children", []):
                                 if c.get("legal_name"):
                                     discovered_names.append(c.get("legal_name"))
+                            for a_sub in tree.get("all_subsidiaries", []):
+                                if a_sub.get("legal_name"):
+                                    discovered_names.append(a_sub.get("legal_name"))
+                            for ind in tree.get("gleif_indirect_sublobs", []):
+                                if ind.get("legal_name"):
+                                    discovered_names.append(ind.get("legal_name"))
+                        if acct.lobs:
+                            for ex_lob in acct.lobs:
+                                if ex_lob.lob_name:
+                                    discovered_names.append(ex_lob.lob_name)
                 except Exception as db_err:
                     print(f"[!] [LobFetch] DB Account lookup notice: {db_err}")
                 finally:
                     session.close()
 
-                # 2. If no names from DB, query SEC Exhibit 21 and GLEIF directly
+                # 2. Extract Diffbot raw subsidiaries if available in output cache
+                try:
+                    comp_clean = slugify(req.company_name or "")
+                    for out_root in [config.OUTPUT_DIR / "raw" / "diffbot", config.OUTPUT_DIR]:
+                        if not out_root.exists():
+                            continue
+                        for df_path in out_root.rglob("*diffbot*.json"):
+                            if comp_clean and comp_clean in df_path.stem.lower():
+                                with open(df_path, "r", encoding="utf-8") as df_f:
+                                    df_data = json.load(df_f)
+                                    df_obj = df_data.get("data", [{}])[0] if isinstance(df_data.get("data"), list) else df_data
+                                    for sub in df_obj.get("subsidiaries", []):
+                                        if isinstance(sub, str) and sub.strip():
+                                            discovered_names.append(sub.strip())
+                                        elif isinstance(sub, dict) and sub.get("name"):
+                                            discovered_names.append(sub.get("name").strip())
+                except Exception as df_err:
+                    print(f"[!] [LobFetch] Diffbot raw lookup notice: {df_err}")
+
+                # 3. If no names from DB/Diffbot, query SEC Exhibit 21 and GLEIF directly
                 if not discovered_names and sec_cik_val:
                     try:
                         ex21 = fetch_sec_exhibit_21_subsidiaries(sec_cik_val)
@@ -2416,7 +2464,7 @@ if FASTAPI_AVAILABLE:
                     except Exception as e:
                         print(f"[!] [LobFetch] GLEIF live notice: {e}")
 
-                # 3. Augment with Crunchbase sub-organizations
+                # 4. Augment with Crunchbase sub-organizations
                 try:
                     cb_subs = scrape_sublobs(req.company_name)
                     for cb in cb_subs:
@@ -2426,11 +2474,34 @@ if FASTAPI_AVAILABLE:
                 except Exception as e:
                     print(f"[!] [LobFetch] Crunchbase sublobs notice: {e}")
 
-                # 4. Deduplicate discovered subsidiary names
+                # 5. Augment with Stream B: Dynamic Commercial Operating Divisions & Business Segments
+                discovered_divisions_meta = {}
+                try:
+                    acct_domain = getattr(acct, "domain", None) or getattr(acct, "primary_domain", None) if acct else None
+                    divs = extract_commercial_operating_divisions(req.company_name, acct_domain)
+                    for d in divs:
+                        d_name = d.get("name") or d.get("lob_name")
+                        if d_name:
+                            discovered_names.append(d_name)
+                            discovered_divisions_meta[d_name.strip().lower()] = d
+                except Exception as div_err:
+                    print(f"[!] [LobFetch] Dynamic commercial divisions notice: {div_err}")
+
+                # 6. Deduplicate discovered subsidiary & division names
                 unique_names = list(dict.fromkeys([n.strip() for n in discovered_names if n and len(n.strip()) > 1]))
 
-                # Build input list for enrichment
-                lobs_to_enrich = [{"name": n, "lob_name": n} for n in unique_names]
+                # Build input list for enrichment preserving any dynamic domain/overview metadata
+                lobs_to_enrich = []
+                for n in unique_names:
+                    d_meta = discovered_divisions_meta.get(n.strip().lower(), {})
+                    item = {"name": n, "lob_name": n}
+                    if d_meta.get("domain"):
+                        item["domain"] = d_meta["domain"]
+                    if d_meta.get("relationship_type"):
+                        item["relationship_type"] = d_meta["relationship_type"]
+                    if d_meta.get("overview"):
+                        item["overview"] = d_meta["overview"]
+                    lobs_to_enrich.append(item)
 
                 # 5. Enrich via enterprise LobService
                 if lobs_to_enrich:
@@ -2488,6 +2559,21 @@ if FASTAPI_AVAILABLE:
                         "discovered_names_count": len(unique_names),
                     },
                 )
+
+                # Auto-commit to DB if account_id is provided
+                if req.account_id and enriched_lobs:
+                    session = get_session()
+                    try:
+                        db_acct = session.query(Account).filter_by(id=req.account_id).first()
+                        if db_acct:
+                            lob_repo = LobRepository(session)
+                            lob_repo.upsert_all(db_acct, enriched_lobs)
+                            session.commit()
+                    except Exception as commit_err:
+                        session.rollback()
+                        print(f"[!] [LobFetch] Auto-commit DB notice: {commit_err}")
+                    finally:
+                        session.close()
 
                 return {
                     "status": "staged",
@@ -3684,6 +3770,21 @@ if FASTAPI_AVAILABLE:
                 },
             )
 
+            # Auto-commit to DB if account_id is provided
+            if req.account_id and hierarchy:
+                session = get_session()
+                try:
+                    acct = session.query(Account).filter_by(id=req.account_id).first()
+                    if acct:
+                        repo = PersonaRepository(session)
+                        repo.upsert_all(acct, hierarchy)
+                        session.commit()
+                except Exception as commit_err:
+                    session.rollback()
+                    print(f"[!] [HierarchyFetch] Auto-commit DB notice: {commit_err}")
+                finally:
+                    session.close()
+
             return {
                 "status": "staged",
                 "total_contacts": total,
@@ -4825,17 +4926,16 @@ if FASTAPI_AVAILABLE:
     def get_system_health():
         """Returns live system telemetry, credit usage stats, database status, and API connectors health."""
         from db.models import PipelineRun, Account, Lob, Persona
-        from config import (
-            POSTGRES_DB,
-            GEMINI_API_KEY,
-            LLM_MODEL,
-            EXA_API_KEY,
-            TAVILY_API_KEY,
-            DIFFBOT_TOKEN,
-            APIFY_TOKEN,
-            SERPER_API_KEY,
-            FINNHUB_API_KEY,
-        )
+        import config
+        POSTGRES_DB = getattr(config, "POSTGRES_DB", os.getenv("POSTGRES_DB", "sales_ai"))
+        GEMINI_API_KEY = getattr(config, "GEMINI_API_KEY", os.getenv("GEMINI_API_KEY", ""))
+        LLM_MODEL = getattr(config, "LLM_MODEL", os.getenv("LLM_DEFAULT_MODEL", "gemini-3.6-flash"))
+        EXA_API_KEY = getattr(config, "EXA_API_KEY", os.getenv("EXA_API_KEY", ""))
+        TAVILY_API_KEY = getattr(config, "TAVILY_API_KEY", os.getenv("TAVILY_API_KEY", ""))
+        DIFFBOT_TOKEN = getattr(config, "DIFFBOT_TOKEN", os.getenv("DIFFBOT_TOKEN", ""))
+        APIFY_TOKEN = getattr(config, "APIFY_TOKEN", os.getenv("APIFY_TOKEN", ""))
+        SERPER_API_KEY = getattr(config, "SERPER_API_KEY", os.getenv("SERPER_API_KEY", ""))
+        FINNHUB_API_KEY = getattr(config, "FINNHUB_API_KEY", os.getenv("FINNHUB_API_KEY", ""))
         session = get_session()
         try:
             total_accts = session.query(Account).count()

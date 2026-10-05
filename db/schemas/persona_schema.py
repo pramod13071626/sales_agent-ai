@@ -213,6 +213,9 @@ class PersonaSchema(BaseModel):
     direct_mobile_phone: Optional[str] = None
     osint_feed_manifest: Optional[Any] = None
     extended_profile: Optional[Any] = None
+    # Verification fields — set None/False on auto-import; flagged True after manual review
+    is_manually_verified: Optional[bool] = False
+    manually_verified_at: Optional[datetime.datetime] = None
 
     @classmethod
     def from_enriched_json(cls, person: Dict[str, Any], tree_info: Optional[Dict[str, Any]] = None) -> "PersonaSchema":
@@ -307,7 +310,7 @@ class PersonaSchema(BaseModel):
         qname = urllib.parse.quote_plus(fullname)
 
         osint_manifest = person.get("osint_feed_manifest")
-        if not osint_manifest or not isinstance(osint_manifest, dict):
+        if not osint_manifest or not isinstance(osint_manifest, dict) or not osint_manifest.get("feeds"):
             now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
             osint_manifest = {
                 "key": person.get("key"),
@@ -462,7 +465,11 @@ class PersonaSchema(BaseModel):
             zoominfo_url=person.get("zoominfo_url") or rpd.get("zoominfo_url"),
             rss_url=person.get("rss_url") or rpd.get("rss_url"),
             theorg_url=person.get("theorg_url") or rpd.get("theorg_url"),
-            wayback_url=person.get("wayback_url") or rpd.get("wayback_url"),
+            wayback_url=(
+                person.get("wayback_url")
+                or rpd.get("wayback_url")
+                or (f"https://web.archive.org/web/*/{person.get('linkedin_url') or rpd.get('linkedin_url') or person.get('corporate_bio_url') or rpd.get('corporate_bio_url')}" if (person.get('linkedin_url') or rpd.get('linkedin_url') or person.get('corporate_bio_url') or rpd.get('corporate_bio_url')) else None)
+            ),
             openinsider_url=person.get("openinsider_url") or rpd.get("openinsider_url"),
             secform4_url=person.get("secform4_url") or rpd.get("secform4_url"),
             seeking_alpha_url=person.get("seeking_alpha_url") or rpd.get("seeking_alpha_url"),
@@ -491,14 +498,24 @@ class PersonaSchema(BaseModel):
                 "raw_data.fullenrich.education_history[0].degree",
                 "raw_data.apollo.education[0].degree",
             ]) or l1.get("degree") or raw.get("degree"),
-            institution=resolve_field(person, [
-                "institution",
-                "level_1_intelligence.institution",
-                "raw_data.apify_linkedin.education[0].schoolName",
-                "raw_data.fullenrich.education_history[0].school",
-                "raw_data.apollo.education[0].school",
-            ]) or l1.get("institution") or raw.get("institution"),
-            prior_company=person.get("prior_company") or l1.get("prior_company"),
+            institution=(
+                resolve_field(person, [
+                    "institution",
+                    "level_1_intelligence.institution",
+                    "raw_data.apify_linkedin.education[0].schoolName",
+                    "raw_data.fullenrich.education_history[0].school",
+                    "raw_data.apollo.education[0].school",
+                ])
+                or l1.get("institution")
+                or raw.get("institution")
+                or (edu_hist[0].get("institution") or edu_hist[0].get("school") or edu_hist[0].get("schoolName") if edu_hist and isinstance(edu_hist, list) and isinstance(edu_hist[0], dict) else None)
+            ),
+            prior_company=(
+                person.get("prior_company")
+                or l1.get("prior_company")
+                or next((str(c.get("company") if isinstance(c, dict) else c).strip() for c in (past_comps or []) if c and (c.get("company") if isinstance(c, dict) else str(c)).strip() and "blackrock" not in str(c).lower()), None)
+                or (str(past_comps[0]).strip() if past_comps else None)
+            ),
             communication_style=person.get("communication_style") or l3.get("communication_style"),
             engagement_rate=(
                 str(person.get("engagement_rate"))
@@ -512,7 +529,14 @@ class PersonaSchema(BaseModel):
                 or (dossier.get("conversation_icebreakers") or [None])[0]
             ),
             social_platform=person.get("social_platform") or l3.get("social_platform"),
-            social_profile_url=person.get("social_profile_url") or l3.get("social_profile_url"),
+            social_profile_url=(
+                person.get("social_profile_url")
+                or l3.get("social_profile_url")
+                or person.get("linkedin_url")
+                or rpd.get("linkedin_url")
+                or person.get("corporate_bio_url")
+                or rpd.get("corporate_bio_url")
+            ),
             social_presence_level=person.get("social_presence_level") or l3.get("social_presence_level"),
             skills=[
                 (s.get("name") if isinstance(s, dict) else str(s)).strip()
@@ -585,5 +609,8 @@ class PersonaSchema(BaseModel):
                 "phone",
             ]),
             osint_feed_manifest=osint_manifest,
-            extended_profile=person.get("extended_profile") or raw.get("extended_profile")
+            extended_profile=person.get("extended_profile") or raw.get("extended_profile"),
+            # Verification fields: auto-import always sets safe defaults; set manually post-review
+            is_manually_verified=False,
+            manually_verified_at=None,
         )

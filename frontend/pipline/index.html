@@ -3,11 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Sales Intelligence ΓÇö Account Explorer</title>
+  <title>Sales Intelligence &mdash; Account Explorer</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="css/styles.css?v=3.39.1">
+  <link rel="stylesheet" href="css/styles.css?v=3.39.4">
 </head>
 <body>
 
@@ -16,7 +16,7 @@
 
 <div class="app-shell">
 
-  <!-- ΓöÇΓöÇ Sidebar ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ -->
+  <!-- --- Sidebar --- -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-brand">
       <div class="brand-icon"><i class="bi bi-diagram-3-fill"></i></div>
@@ -33,22 +33,20 @@
              autocomplete="off" name="presentation" data-lpignore="true">
     </div>
 
-    <button type="button" class="run-pipeline-nav" id="runPipelineNav" title="Run Pipeline">
-      <i class="bi bi-play-fill"></i>&nbsp;<span>Run Pipeline</span>
-    </button>
-    <button type="button" class="run-pipeline-nav api-docs-nav" id="apiDocsNav" title="API Docs">
-      <i class="bi bi-file-text"></i>&nbsp;<span>API Docs</span>
-    </button>
-    <!-- Add New Account button -->
-    <button type="button" class="run-pipeline-nav" id="addNewAccountBtn"
-            style="background:linear-gradient(135deg,#0ea5e9,#6366f1);margin-top:2px;"
-            title="Add New Account">
-      <i class="bi bi-plus-circle"></i>&nbsp;<span>Add New Account</span>
-    </button>
-    <!-- Batch Console button -->
+    <!-- Batch Console button (Primary Orchestration Action) -->
     <button type="button" class="run-pipeline-nav batch-console-nav-btn" id="sidebarBatchConsoleBtn"
             title="Launch Batch Multi-Tier Intelligence Console">
       <i class="bi bi-stack"></i>&nbsp;<span>Batch Console</span>
+    </button>
+    <!-- Add New Account button -->
+    <button type="button" class="run-pipeline-nav" id="addNewAccountBtn"
+            style="background:linear-gradient(135deg,#0ea5e9,#6366f1);margin-top:6px;"
+            title="Add New Account">
+      <i class="bi bi-plus-circle"></i>&nbsp;<span>Add New Account</span>
+    </button>
+    <!-- API Docs button -->
+    <button type="button" class="run-pipeline-nav api-docs-nav" id="apiDocsNav" title="API Docs">
+      <i class="bi bi-file-text"></i>&nbsp;<span>API Docs</span>
     </button>
 
     <div class="sidebar-label-row">
@@ -60,11 +58,9 @@
       <!-- Accounts will be injected here via JS -->
       <div class="spinner-wrap"><div class="spinner"></div></div>
     </div>
-
-    <div class="sidebar-footer"><span>Connected to PostgreSQL (sales_ai_universal)</span></div>
   </aside>
 
-  <!-- ΓöÇΓöÇ Main Content ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ -->
+  <!-- --- Main Content --- -->
   <div class="content">
 
     <div class="main-pad">
@@ -99,11 +95,6 @@
             <span>Search anything...</span>
             <kbd>Ctrl K</kbd>
           </button>
-
-          <!-- Active Pipeline Status Pill -->
-          <span class="pipeline-status-badge ready" id="pipelineStatusBadge">
-            <i class="bi bi-circle-fill"></i> Pipeline: Ready
-          </span>
         </div>
       </div>
 
@@ -143,7 +134,7 @@
             </div>
             <div class="hub-kpi-card">
               <div class="hub-kpi-label"><i class="bi bi-arrow-repeat text-info"></i> Last Synced</div>
-              <div class="hub-kpi-val" id="hubLastSync">ΓÇö</div>
+              <div class="hub-kpi-val" id="hubLastSync">&mdash;</div>
               <div class="hub-kpi-sub" id="hubFreshnessLabel">System freshness status</div>
             </div>
           </div>
@@ -221,9 +212,9 @@
         <!-- Dynamic Breadcrumb Bar -->
         <div class="modern-breadcrumb" id="breadcrumbsBar"></div>
 
-        <!-- ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+        <!-- ========================================================
              VIEW 1: ACCOUNT INTELLIGENCE VIEW (IMAGE 1)
-             ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ -->
+             ======================================================== -->
         <div id="accountViewWrapper">
           <!-- Account Hero Header -->
           <div id="accountHeroContainer" class="modern-view-card fade-in"></div>
@@ -248,7 +239,7 @@
             <span><i class="bi bi-folder2-open"></i>&nbsp; Lines of Business (LOB)</span>
             <div class="batch-pipeline-actions" id="lobBatchActions">
               <button type="button" class="batch-btn batch-btn-pull" id="lobBatchPull"
-                      title="Open Batch Console ΓÇö discover and enrich Lines of Business">
+                      title="Open Batch Console &mdash; discover and enrich Lines of Business">
                 <i class="bi bi-grid-3x3-gap-fill"></i> Batch Console
               </button>
             </div>
@@ -265,10 +256,10 @@
           <div class="compact-card-grid" id="lobCardsContainer"></div>
         </div>
 
-        <!-- ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+        <!-- ========================================================
              VIEW 2: LOB DETAIL VIEW (IMAGE 2)
              Appears directly below LOB cards when an LOB is selected
-             ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ -->
+             ======================================================== -->
         <div id="lobDetailViewContainer" class="d-none fade-in"></div>
 
         <!-- Section 2: Personas / Hierarchy Cards (Visible after LOB click) -->
@@ -371,9 +362,9 @@
           </div>
         </div>
 
-        <!-- ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+        <!-- ========================================================
              VIEW 3: PERSONA DETAIL VIEW (IMAGE 3)
-             ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ -->
+             ======================================================== -->
         <div id="personaDetailViewContainer" class="d-none fade-in"></div>
 
         <!-- Fallback Legacy Detail Panel Container -->
@@ -385,7 +376,7 @@
   </div><!-- /content -->
 </div><!-- /app-shell -->
 
-<!-- ΓöÇΓöÇ Floating Chatbot ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ -->
+<!-- --- Floating Chatbot --- -->
 <button type="button" class="chatbot-fab" id="chatbotFab" title="Ask the Sales Assistant">
   <i class="bi bi-robot"></i>
   <span class="chatbot-fab-dot"></span>
@@ -435,7 +426,7 @@
   </form>
 </div>
 
-<!-- ΓöÇΓöÇ Intelligence Feed Summary Modal ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ -->
+<!-- --- Intelligence Feed Summary Modal --- -->
 <div class="feed-modal-backdrop d-none" id="feedModalBackdrop">
   <div class="feed-modal-card fade-in" id="feedModalCard">
     <div class="feed-modal-header">
@@ -470,10 +461,10 @@
 
 <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/app.js?v=3.39.1"></script>
+<script src="js/app.js?v=3.39.4"></script>
 <script src="js/chatbot.js?v=2.3.6"></script>
 
-<!-- ΓöÇΓöÇ Enhanced Add New Account Modal ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ -->
+<!-- --- Enhanced Add New Account Modal --- -->
 <div class="modal fade" id="addAccountModal" tabindex="-1"
      aria-labelledby="addAccountModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered add-account-dialog">
@@ -557,7 +548,7 @@
   </div>
 </div>
 
-<!-- ΓöÇΓöÇ Enterprise Data Management & Granular Purge Console Modal ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ -->
+<!-- --- Enterprise Data Management & Granular Purge Console Modal --- -->
 <div class="modal fade" id="dataManageModal" tabindex="-1"
      aria-labelledby="dataManageModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-lg">
@@ -748,9 +739,9 @@
   </div>
 </div>
 
-<!-- ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+<!-- ========================================================
      RUN CREDITS USAGE BREAKDOWN MODAL (EXACT SPECIFICATION)
-     ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ -->
+     ======================================================== -->
 <div class="modal fade" id="creditUsageModal" tabindex="-1" aria-labelledby="creditUsageModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered credit-usage-dialog">
     <div class="modal-content" style="border-radius:16px;overflow:hidden;border:none;">
@@ -763,10 +754,10 @@
           </div>
           <div>
             <h5 class="modal-title" id="creditUsageModalTitle" style="margin:0;font-size:1.05rem;font-weight:800;color:#0f172a;">
-              Run #10 ΓÇö Credits Usage Breakdown
+              Run #10 &mdash; Credits Usage Breakdown
             </h5>
             <p id="creditUsageModalSubtitle" style="margin:2px 0 0;font-size:0.75rem;color:#64748b;">
-              Pipeline Activity ΓÇó Started Sep 18, 2026 - 18:04 IST ΓÇó Status: Completed
+              Pipeline Activity &bull; Started Sep 18, 2026 - 18:04 IST &bull; Status: Completed
             </p>
           </div>
         </div>
@@ -792,7 +783,7 @@
           <div class="credit-kpi-card kpi-green">
             <div class="credit-kpi-label">RUN DURATION</div>
             <div class="credit-kpi-value" id="kpiRunDuration">4m 32s</div>
-            <div class="credit-kpi-sub" id="kpiRunStages">12 stages ΓÇó 9 sources</div>
+            <div class="credit-kpi-sub" id="kpiRunStages">12 stages &bull; 9 sources</div>
           </div>
           <div class="credit-kpi-card kpi-amber">
             <div class="credit-kpi-label">EST. COST / CREDIT</div>
@@ -808,7 +799,7 @@
               <span class="credit-letter-badge badge-a">A</span>
               <div>
                 <span style="font-size:0.84rem;font-weight:800;color:#1e293b;letter-spacing:0.3px;">ACCOUNT</span>
-                <span style="font-size:0.72rem;color:#64748b;margin-left:6px;" id="accountSectionSubtitle">Source 1 ΓÇó 4 resources ΓÇó masked API keys</span>
+                <span style="font-size:0.72rem;color:#64748b;margin-left:6px;" id="accountSectionSubtitle">Source 1 &bull; 4 resources &bull; masked API keys</span>
               </div>
             </div>
             <span style="font-size:0.8rem;font-weight:800;color:#4f46e5;" id="accountSubtotalHeader">Subtotal: 2,250 cr</span>
@@ -834,7 +825,7 @@
               <span class="credit-letter-badge badge-l">L</span>
               <div>
                 <span style="font-size:0.84rem;font-weight:800;color:#1e293b;letter-spacing:0.3px;">LOB (LINE OF BUSINESS)</span>
-                <span style="font-size:0.72rem;color:#64748b;margin-left:6px;" id="lobSectionSubtitle">Source 2 ΓÇó 3 resources ΓÇó masked API keys</span>
+                <span style="font-size:0.72rem;color:#64748b;margin-left:6px;" id="lobSectionSubtitle">Source 2 &bull; 3 resources &bull; masked API keys</span>
               </div>
             </div>
             <span style="font-size:0.8rem;font-weight:800;color:#059669;" id="lobSubtotalHeader">Subtotal: 572 cr</span>
@@ -860,7 +851,7 @@
               <span class="credit-letter-badge badge-p">P</span>
               <div>
                 <span style="font-size:0.84rem;font-weight:800;color:#1e293b;letter-spacing:0.3px;">PERSONA</span>
-                <span style="font-size:0.72rem;color:#64748b;margin-left:6px;" id="personaSectionSubtitle">Source 3 ΓÇó 2 resources ΓÇó masked API keys</span>
+                <span style="font-size:0.72rem;color:#64748b;margin-left:6px;" id="personaSectionSubtitle">Source 3 &bull; 2 resources &bull; masked API keys</span>
               </div>
             </div>
             <span style="font-size:0.8rem;font-weight:800;color:#9333ea;" id="personaSubtotalHeader">Subtotal: 225 cr</span>
@@ -1541,7 +1532,7 @@
   </div>
 </div>
 
-<!-- ΓöÇΓöÇ Telemetry Run Audit Details Modal ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ -->
+<!-- --- Telemetry Run Audit Details Modal --- -->
 <div id="batchRunDetailsBackdrop" class="batch-details-backdrop d-none">
   <div id="batchRunDetailsModal" class="batch-details-modal" role="dialog" aria-modal="true" aria-labelledby="batchRunDetailsTitle">
     <!-- Header -->

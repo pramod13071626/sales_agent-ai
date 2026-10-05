@@ -41,22 +41,19 @@ class AccountRepository:
             acct = Account(key=schema.key)
             self.session.add(acct)
 
-        # Map all schema fields → ORM model fields
+        # Map all schema fields → ORM model fields using Enterprise CoalescenceEngine
         data = schema.model_dump(exclude={"extracted_at"})
-        for field, value in data.items():
-            if field == "id" and value is None:
-                continue
-            if field in ("lobs", "personas", "action_items", "user_access", "signals"):
-                continue
-            if hasattr(acct, field):
-                if existing:
-                    existing_val = getattr(acct, field, None)
-                    # Prevent partial/empty runs from wiping out existing rich data
-                    if (value is None or value == "" or value == [] or value == {}) and (
-                        existing_val is not None and existing_val != "" and existing_val != [] and existing_val != {}
-                    ):
-                        continue
-                setattr(acct, field, value)
+        if existing:
+            from services.coalescence_engine import CoalescenceEngine
+            acct = CoalescenceEngine.coalesce_account(acct, data)
+        else:
+            for field, value in data.items():
+                if field == "id" and value is None:
+                    continue
+                if field in ("lobs", "personas", "action_items", "user_access", "signals"):
+                    continue
+                if hasattr(acct, field):
+                    setattr(acct, field, value)
 
         acct.extracted_at = datetime.now(timezone.utc)
         acct.updated_at = datetime.now(timezone.utc)
@@ -76,7 +73,13 @@ class AccountRepository:
         and automatically persists them into the personas table linked to this account.
         Uses PersonaRepository.upsert with 5-tier deduplication to guarantee zero duplicate records.
         """
-        raw_diffbot = account_data.get("_raw_diffbot") or account_data.get("raw_diffbot") or {}
+        raw_diffbot = (
+            account_data.get("_raw_diffbot")
+            or account_data.get("raw_diffbot")
+            or (account_data.get("raw_data", {}).get("diffbot", {}).get("_raw_diffbot") if isinstance(account_data.get("raw_data"), dict) and isinstance(account_data.get("raw_data", {}).get("diffbot"), dict) else None)
+            or (account_data.get("raw_data", {}).get("diffbot") if isinstance(account_data.get("raw_data"), dict) else None)
+            or {}
+        )
         if not isinstance(raw_diffbot, dict):
             raw_diffbot = {}
 

@@ -62,12 +62,13 @@ SERPER_API_KEY = os.getenv("SERPER_API_KEY", "")
 DATA_GOV_API_KEY = os.getenv("DATA_GOV_API_KEY", "")
 DIFFBOT_TOKEN = os.getenv("DIFFBOT_TOKEN", "")
 FULLENRICH_API_KEY = os.getenv("FULLENRICH_API_KEY", "")
+FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 # LLM Gateway (Google Gemini AI Gateway - OpenAI-compatible)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai")
-LLM_MODEL = os.getenv("LLM_DEFAULT_MODEL", "gemini-3.6-flash")
+LLM_MODEL = os.getenv("LLM_DEFAULT_MODEL", "gemini-flash-latest")
 
 # Unified LLM provider selection
 LLM_API_KEY = GEMINI_API_KEY or os.getenv("OPENAI_API_KEY", "")
@@ -75,6 +76,8 @@ LLM_API_KEY = GEMINI_API_KEY or os.getenv("OPENAI_API_KEY", "")
 DEFAULT_HIERARCHY_LIMIT = int(os.getenv("DEFAULT_HIERARCHY_LIMIT", "50"))
 OUTPUT_DIR = BASE_DIR / os.getenv("OUTPUT_DIR", "output")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+RAW_APIFY_DIR = OUTPUT_DIR / "raw" / "apify"
+RAW_APIFY_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def get_run_output_dirs(company_name: str, run_dt: datetime = None):
