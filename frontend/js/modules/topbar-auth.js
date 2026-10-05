@@ -40,7 +40,22 @@ function formatUserRole(role) {
   if (r === 'ae' || r === 'sales rep') return 'Account Executive';
   if (r === 'leader' || r === 'sales leader') return 'Sales Leader';
   return r.charAt(0).toUpperCase() + r.slice(1);
+function getUserInitials(user) {
+  if (!user) return 'U';
+  if (user.full_name) {
+    const parts = user.full_name.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+    return parts[0].substring(0, 2).toUpperCase();
+  }
+  if (user.email) {
+    return user.email.substring(0, 2).toUpperCase();
+  }
+  return 'U';
 }
+
+let currentOptions = {};
 
 function render() {
   const el = document.getElementById('topbarAuthWidget');
@@ -52,93 +67,89 @@ function render() {
     return;
   }
 
-  const showTasks = user.role === 'super_admin' || user.has_tasks_access !== false;
-  const displayName = user.full_name || user.email || 'User';
-  const userInitials = initials(displayName);
-  const roleName = formatUserRole(user.role);
+  const isOnAdminPage = window.location.pathname.startsWith('/admin');
+  const showTasks = currentOptions.showTasks !== false && !isOnAdminPage && (user.role === 'super_admin' || user.has_tasks_access !== false);
+  const displayName = user.full_name || (user.email ? user.email.split('@')[0] : 'User');
+  const initials = getUserInitials(user);
+  const isSuperAdmin = user.role === 'super_admin';
 
   el.innerHTML = `
-    <div class="topbar-user-menu-wrapper">
-      ${showTasks ? '<button type="button" id="topbarMyTasksBtn" class="topbar-link topbar-link-btn" title="My Action Items"><i class="fa-solid fa-list-check"></i> My Tasks <span class="tab-badge" id="topbarMyTasksBadge">…</span></button>' : ''}
-      
-      <div class="topbar-dropdown-container">
-        <button type="button" id="topbarUserDropdownBtn" class="topbar-user-btn" aria-expanded="false" aria-haspopup="true" title="User profile & options">
-          <span class="topbar-auth-avatar">${esc(userInitials)}</span>
-          <span class="topbar-user-name">${esc(displayName)}</span>
-          <i class="fa-solid fa-chevron-down topbar-user-chevron"></i>
-        </button>
+    ${showTasks ? '<button type="button" id="topbarMyTasksBtn" class="topbar-link topbar-link-btn" title="View assigned action items"><i class="bi bi-list-check"></i> My Tasks <span class="tab-badge" id="topbarMyTasksBadge">…</span></button>' : ''}
+    
+    <div class="topbar-profile-container" id="topbarProfileContainer">
+      <button type="button" class="topbar-profile-btn" id="topbarProfileBtn" aria-expanded="false" aria-haspopup="true" title="User profile for ${esc(displayName)}">
+        <div class="topbar-profile-avatar">${esc(initials)}</div>
+        <span class="topbar-profile-label">${esc(displayName)}</span>
+        <i class="bi bi-chevron-down topbar-profile-arrow"></i>
+      </button>
 
-        <div class="topbar-user-dropdown" id="topbarUserDropdown" role="menu" aria-hidden="true">
-          <div class="topbar-user-dropdown-header">
-            <div class="topbar-dropdown-avatar">${esc(userInitials)}</div>
-            <div class="topbar-dropdown-info">
-              <div class="topbar-dropdown-name">${esc(displayName)}</div>
-              <div class="topbar-dropdown-email" title="${esc(user.email)}">${esc(user.email)}</div>
-            </div>
-          </div>
-
-          <div class="topbar-dropdown-role-box">
-            <span class="topbar-role-label">User Role</span>
-            <span class="topbar-role-badge"><i class="fa-solid fa-user-shield"></i> ${esc(roleName)}</span>
-          </div>
-
-          <div class="topbar-dropdown-divider"></div>
-
-          <div class="topbar-dropdown-actions">
-            ${user.role === 'super_admin' ? '<a href="/admin" class="topbar-dropdown-item"><i class="fa-solid fa-users-gear"></i> Admin Management</a>' : ''}
-            <button type="button" id="topbarDropdownLogoutBtn" class="topbar-dropdown-item topbar-dropdown-logout">
-              <i class="fa-solid fa-right-from-bracket"></i> Logout
-            </button>
+      <div class="topbar-profile-dropdown" id="topbarProfileDropdown" role="menu">
+        <div class="profile-dropdown-header">
+          <div class="profile-dropdown-avatar">${esc(initials)}</div>
+          <div class="profile-dropdown-info">
+            <div class="profile-dropdown-name" title="${esc(displayName)}">${esc(displayName)}</div>
+            <div class="profile-dropdown-email" title="${esc(user.email || '')}">${esc(user.email || '')}</div>
           </div>
         </div>
+
+        <div class="profile-dropdown-role-row">
+          <span class="profile-role-tag ${isSuperAdmin ? 'role-super-admin' : 'role-user'}">
+            <i class="bi ${isSuperAdmin ? 'bi-shield-check' : 'bi-person-badge'}"></i>
+            ${isSuperAdmin ? 'Super Admin' : 'User'}
+          </span>
+        </div>
+
+        <div class="profile-dropdown-divider"></div>
+
+        <button type="button" class="profile-dropdown-item profile-dropdown-logout" id="topbarLogoutBtn" role="menuitem">
+          <i class="bi bi-box-arrow-right"></i>
+          <span>Logout</span>
+        </button>
       </div>
     </div>
   `;
 
-  const dropdownBtn = document.getElementById('topbarUserDropdownBtn');
-  const dropdownMenu = document.getElementById('topbarUserDropdown');
-  const logoutBtn = document.getElementById('topbarDropdownLogoutBtn');
+  const profileBtn = document.getElementById('topbarProfileBtn');
+  const profileDropdown = document.getElementById('topbarProfileDropdown');
+  const profileContainer = document.getElementById('topbarProfileContainer');
 
-  if (dropdownBtn && dropdownMenu) {
-    const toggleMenu = (e) => {
+  if (profileBtn && profileDropdown) {
+    profileBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      const isOpen = dropdownMenu.classList.contains('open');
+      const isOpen = profileDropdown.classList.contains('show');
       if (isOpen) {
-        dropdownMenu.classList.remove('open');
-        dropdownBtn.classList.remove('open');
-        dropdownBtn.setAttribute('aria-expanded', 'false');
+        profileDropdown.classList.remove('show');
+        profileBtn.classList.remove('active');
+        profileBtn.setAttribute('aria-expanded', 'false');
       } else {
-        dropdownMenu.classList.add('open');
-        dropdownBtn.classList.add('open');
-        dropdownBtn.setAttribute('aria-expanded', 'true');
-      }
-    };
-
-    dropdownBtn.addEventListener('click', toggleMenu);
-
-    // Close when clicking outside
-    document.addEventListener('click', (e) => {
-      if (!dropdownMenu.contains(e.target) && !dropdownBtn.contains(e.target)) {
-        dropdownMenu.classList.remove('open');
-        dropdownBtn.classList.remove('open');
-        dropdownBtn.setAttribute('aria-expanded', 'false');
+        profileDropdown.classList.add('show');
+        profileBtn.classList.add('active');
+        profileBtn.setAttribute('aria-expanded', 'true');
       }
     });
 
-    // Close on Escape key
+    document.addEventListener('click', (e) => {
+      if (profileContainer && !profileContainer.contains(e.target)) {
+        profileDropdown.classList.remove('show');
+        profileBtn.classList.remove('active');
+        profileBtn.setAttribute('aria-expanded', 'false');
+      }
+    });
+
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && dropdownMenu.classList.contains('open')) {
-        dropdownMenu.classList.remove('open');
-        dropdownBtn.classList.remove('open');
-        dropdownBtn.setAttribute('aria-expanded', 'false');
+      if (e.key === 'Escape') {
+        profileDropdown.classList.remove('show');
+        profileBtn.classList.remove('active');
+        profileBtn.setAttribute('aria-expanded', 'false');
       }
     });
   }
 
+  const logoutBtn = document.getElementById('topbarLogoutBtn');
   if (logoutBtn) {
     logoutBtn.addEventListener('click', async () => {
       await logout();
-      window.location.replace('/login');
+      window.location.href = '/login';
     });
   }
 
@@ -184,7 +195,8 @@ window.addEventListener('pageshow', async (event) => {
   }
 });
 
-export async function initTopbarAuth() {
+export async function initTopbarAuth(options = {}) {
+  currentOptions = options;
   await refreshAccessToken(); // silent — restores a session from the refresh cookie on page load
   const user = getCurrentUser();
   // Partners only ever see the partner portal (the API refuses everything else anyway).
@@ -196,11 +208,7 @@ export async function initTopbarAuth() {
   // Viewers: CSS hides edit controls app-wide (shell.css `.role-viewer`), pages can check the class.
   document.body.classList.toggle('role-viewer', !!(user && user.role === 'viewer'));
   render();
-  if (user && user.role === 'viewer') {
-    const w = document.getElementById('topbarAuthWidget');
-    if (w && !w.querySelector('.topbar-readonly')) {
-      w.insertAdjacentHTML('afterbegin', '<span class="topbar-readonly" title="Your role can view but not change data"><i class="fa-solid fa-eye"></i> Read-only</span>');
-    }
-  }
+  const user = getCurrentUser();
+  if (user) initSearchPalette();
   return user;
 }

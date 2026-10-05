@@ -3,6 +3,7 @@
 // text is escaped first, then a small allow-list of markdown (bold, italic,
 // code, bullets, headings) and citation chips is re-applied.
 import { esc } from '../utils.js';
+import { photoAttr } from '../persona-photo.js';
 
 const MODE_LABEL = {
   llm: ['AI answer', 'fa-wand-magic-sparkles', 'Written by the AI from the sources below'],
@@ -131,7 +132,7 @@ function renderContacts(contacts) {
   return (contacts || []).map(c => {
     const href = profileLink(c);
     return `<div class="cp-contact">
-      <span class="cp-contact-avatar">${esc((c.name || '?').split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase())}</span>
+      <span class="cp-contact-avatar" ${photoAttr(c, c.persona_id)}>${esc((c.name || '?').split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase())}</span>
       <div class="cp-contact-main">
         <strong>${href ? `<a href="${href}" target="_blank" rel="noopener">${esc(c.name)}</a>` : esc(c.name)}</strong>
         <span class="cp-muted" title="${esc(fixText(c.title || ''))}">${esc(shortTitle(c.title || '', 90))}${c.account ? ` · ${esc(c.account)}` : ''}</span>
@@ -170,8 +171,10 @@ export function parseDraft(content) {
 
 const CHECK_ICON = { pass: 'fa-circle-check', fixed: 'fa-wrench', warn: 'fa-triangle-exclamation' };
 
-function renderGuardrails(checks) {
+// quiet = ordinary answers: only shown when a check fixed or flagged something
+function renderGuardrails(checks, quiet = false) {
   if (!checks || !checks.length) return '';
+  if (quiet && !checks.some(c => c.status !== 'pass')) return '';
   const fixed = checks.filter(c => c.status === 'fixed').length;
   const warn = checks.filter(c => c.status === 'warn').length;
   const summary = warn ? `${warn} to review` : (fixed ? `${fixed} auto-fixed` : 'all passed');
@@ -229,6 +232,7 @@ export function renderMessage(msg, opts = {}) {
       ${msg.status && streaming ? `<div class="cp-status"><span class="cp-dot"></span><span class="cp-dot"></span><span class="cp-dot"></span> ${esc(msg.status)}</div>` : ''}
       ${streaming && !msg.content ? '<div class="cp-skel" aria-hidden="true"><span></span><span></span><span></span></div>' : ''}
       ${(!streaming && extras.draft && renderDraft(msg, cites.length)) || `<div class="cp-md">${renderMarkdown(msg.content, cites.length)}${streaming && msg.content ? '<span class="cp-caret" aria-hidden="true"></span>' : ''}</div>`}
+      ${!streaming && !extras.draft ? renderGuardrails(extras.guardrails, true) : ''}
       ${renderTable(extras.table)}
       ${renderContacts(extras.contacts)}
       ${cites.length && !opts.compact ? `<div class="cp-cite-row" aria-label="Sources">${cites.slice(0, 5).map(c =>

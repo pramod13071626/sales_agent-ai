@@ -65,8 +65,13 @@ export function applyWidgetVisibility(prefs) {
   });
 
   // 2. Adjust parent row grids for 2-column rows
-  document.querySelectorAll('.cc-row-2col').forEach(row => {
+  document.querySelectorAll('.cc-row-2col, .cc-row-3col').forEach(row => {
     const panels = Array.from(row.querySelectorAll('.cc-panel[data-widget-id]'));
+    if (panels.length !== 2) {
+      // Multi-card grid: hidden cards just drop out and the rest reflow; hide the row only when empty.
+      row.classList.toggle('cc-row-hidden', panels.every(p => p.classList.contains('cc-widget-hidden')));
+      return;
+    }
     if (panels.length === 2) {
       const p1Visible = !panels[0].classList.contains('cc-widget-hidden');
       const p2Visible = !panels[1].classList.contains('cc-widget-hidden');

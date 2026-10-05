@@ -230,7 +230,7 @@ def build_required_person_data(
         else verified_urls.get("sec_insider_trades_url")
     )
 
-    return {
+    ret = {
         "key": slug_key,
         "display_name": display_name,
         "linkedin_url": resolved_li,
@@ -253,6 +253,24 @@ def build_required_person_data(
         "google_trends_url": verified_urls.get("google_trends_url"),
         "youtube_channel_id": verified_urls.get("youtube_channel_id"),
     }
+
+    try:
+        from services.persona_service import ExecutiveOsintUrlEngine
+        osint_res = ExecutiveOsintUrlEngine.generate_manifest_and_urls(
+            full_name=clean_name,
+            company_name=company_name,
+            title=title,
+            sec_cik=sec_cik,
+            linkedin_url=resolved_li,
+            twitter_handle=resolved_tw,
+            tier=tier,
+            raw_intel=verified_urls,
+        )
+        ret.update(osint_res)
+    except Exception as e:
+        print(f"[!] [build_required_person_data] Osint engine notice: {e}")
+
+    return ret
 
 
 def save_raw_apollo_response(
@@ -445,7 +463,7 @@ def query_tinyfish_search_via_monid(query: str, max_results: int = 5) -> Dict[st
         return {}
 
     try:
-        input_payload = {"query": query, "max_results": max_results}
+        input_payload = {"queryParams": {"query": query}}
         data = run_monid_endpoint("tinyfish", "/search", input_payload)
         output_obj = data.get("output", {})
         results = []
@@ -494,7 +512,7 @@ APOLLO_SEARCH_PASSES = [
             "SEVP",
             "General Counsel",
         ],
-        "max_pages": 3,
+        "max_pages": 5,
         "per_page": 100,
     },
     {
@@ -509,7 +527,7 @@ APOLLO_SEARCH_PASSES = [
             "Division President",
             "Senior Executive",
         ],
-        "max_pages": 4,
+        "max_pages": 5,
         "per_page": 100,
     },
     {
@@ -527,7 +545,7 @@ APOLLO_SEARCH_PASSES = [
             "Head of Data",
             "Head of Cloud",
         ],
-        "max_pages": 3,
+        "max_pages": 5,
         "per_page": 100,
     },
     {
@@ -718,12 +736,12 @@ def fetch_apollo_hierarchy_via_monid(
     company_name: Optional[str] = None,
     sec_cik: Optional[str] = None,
     raw_apollo_dir: Optional[Path] = None,
-    max_total_records: int = 500,
+    max_total_records: int = 1500,
 ) -> List[Dict[str, Any]]:
     """
     Enterprise-Grade 4-Pass Tiered Apollo Ingestion System with Multi-Page Pagination.
     Executes partitioned queries for C-Suite, Global Heads, Technology Leaders, and Management,
-    collecting up to max_total_records (default: 500) without title saturation.
+    collecting up to max_total_records (default: 1500) without title saturation.
     """
     print(
         f"[*] [Hierarchy] Querying Monid.ai for domain: '{company_domain}' "
@@ -1141,6 +1159,83 @@ def resolve_single_contact_waterfall(
             if tf_name:
                 _WATERFALL_NAME_CACHE[cache_key] = (tf_name, tf_link, "tinyfish_matched")
                 return _apply_resolved(contact, tf_name, tf_link)
+        except Exception:
+            pass
+
+    # Level 4.5: Serper Precision Unmask — C-suite only, activates after TinyFish fails
+    # Only runs when: (a) contact is C-suite tier, (b) name has obfuscation pattern, (c) SERPER_API_KEY set
+    contact_tier = (contact.get("tier") or contact.get("seniority_raw") or "").lower()
+    is_csuite = contact_tier in ("c_suite", "csuite", "tier1_csuite_and_officers", "owner", "founder")
+    if is_csuite and is_obf and config.SERPER_API_KEY and first_name and last_raw:
+        try:
+            # Build a pattern-aware query: first_name + obfuscation constraints
+            # obf_prefix / obf_suffix are already extracted from raw_obfuscated_name above
+            # e.g. raw_obf = "Em***y" → obf_prefix="em", obf_suffix="y"
+            # Build wildcard-aware last name hint for the query
+            obf_raw_stripped = last_raw.replace("*", "").strip()  # e.g. "Em...y" stripped of asterisks
+            obf_hint = obf_raw_stripped[:3] if obf_raw_stripped else ""  # use up to first 3 visible chars
+
+            # Build the most specific possible query without hardcoding company identities
+            legal_suffixes_pat = (
+                r"\b(corporation|corp|incorporated|inc|company|co|llc|plc|limited|ltd|group|holdings|bank|the)\b"
+            )
+            clean_comp = re.sub(legal_suffixes_pat, "", company_name, flags=re.IGNORECASE).strip()
+
+            unmask_queries = []
+            if obf_hint:
+                unmask_queries.append(
+                    f'site:linkedin.com/in "{first_name} {obf_hint}" "{clean_comp}"'
+                )
+                unmask_queries.append(
+                    f'"{first_name}" "{obf_hint}" "{title[:30]}" "{clean_comp}" site:linkedin.com'
+                )
+            unmask_queries.append(
+                f'"{first_name}" "{title[:30]}" "{clean_comp}" site:linkedin.com/in'
+            )
+            if clean_dom:
+                unmask_queries.append(
+                    f'"{first_name}" "{title[:30]}" site:{clean_dom}'
+                )
+
+            headers = {"X-API-KEY": config.SERPER_API_KEY, "Content-Type": "application/json"}
+            for uq in unmask_queries[:3]:
+                try:
+                    r45 = requests.post(
+                        "https://google.serper.dev/search",
+                        json={"q": uq, "num": 5},
+                        headers=headers,
+                        timeout=6,
+                    )
+                    if r45.status_code == 200:
+                        for result in r45.json().get("organic", []):
+                            r_title = result.get("title", "")
+                            r_snip = result.get("snippet", "")
+                            r_link = result.get("link", "")
+                            combined = f"{r_title} | {r_snip}"
+
+                            # Extract candidates matching first_name + non-obfuscated last name
+                            candidates = re.findall(
+                                rf"\b({re.escape(first_name)}\s+(?:[A-Z]\.?\s+)?[A-Z][a-z]{{2,}})\b",
+                                combined,
+                            )
+                            for candidate_name in candidates:
+                                c_last = candidate_name.split()[-1].lower()
+                                # Validate against obfuscation constraints
+                                prefix_ok = (not obf_prefix) or c_last.startswith(obf_prefix)
+                                suffix_ok = (not obf_suffix) or c_last.endswith(obf_suffix)
+                                if prefix_ok and suffix_ok:
+                                    _WATERFALL_NAME_CACHE[cache_key] = (
+                                        candidate_name,
+                                        r_link or None,
+                                        "serper_csuite_unmask",
+                                    )
+                                    print(
+                                        f"[+] [Waterfall L4.5] C-suite unmask resolved "
+                                        f"'{first_name} {last_raw}' → '{candidate_name}'"
+                                    )
+                                    return _apply_resolved(contact, candidate_name, r_link or None)
+                except Exception:
+                    continue
         except Exception:
             pass
 

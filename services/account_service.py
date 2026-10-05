@@ -373,6 +373,7 @@ class AccountCoalesceEngine:
         serper_data: Optional[Dict[str, Any]] = None,
         wiki_data: Optional[Dict[str, Any]] = None,
         fec_data: Optional[Dict[str, Any]] = None,
+        firecrawl_data: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Executes field-by-field priority waterfall resolving all 94 columns.
@@ -391,6 +392,7 @@ class AccountCoalesceEngine:
         serp = serper_data or {}
         wiki = wiki_data or {}
         fec = fec_data or {}
+        fc = firecrawl_data or {}
 
         # 1. Identity & Legal
         legal_name = cls.clean_text(
@@ -424,6 +426,10 @@ class AccountCoalesceEngine:
         founded_year = cls.clean_number(
             cb.get("founded_on") or diff.get("founded_year") or wiki.get("founded_year")
         )
+        if not founded_year and diff.get("description"):
+            m = re.search(r"founded(?:\s+on)?(?:\s+[A-Za-z]+\s+\d{1,2},)?\s+(\d{4})", str(diff.get("description")), re.IGNORECASE)
+            if m:
+                founded_year = int(m.group(1))
 
         # 2. Financials & Funding (SEC 10-K is authoritative, FMP/CB fallback)
         revenue = cls.clean_text(
@@ -510,6 +516,11 @@ class AccountCoalesceEngine:
             tw.get("handle")
             or cb.get("twitter_handle")
             or diff.get("twitter_handle")
+        )
+        facebook_url = cls.clean_text(
+            diff.get("facebook_url")
+            or cb.get("facebook_url")
+            or serp.get("facebook_url")
         )
         github_url = cls.clean_text(cb.get("github_url") or diff.get("github_url"))
         glassdoor_url = cls.clean_text(
@@ -611,6 +622,21 @@ class AccountCoalesceEngine:
         kw_diff = diff.get("keywords") or diff.get("descriptors") or []
         keywords_merged = list(dict.fromkeys(kw_cb + kw_diff))
 
+        # Founders extraction
+        founders_raw = (
+            diff.get("founders")
+            or (diff.get("_raw_diffbot", {}) if isinstance(diff.get("_raw_diffbot"), dict) else {}).get("founders")
+            or cb.get("founders")
+            or []
+        )
+        founders_merged = []
+        for f in (founders_raw if isinstance(founders_raw, list) else []):
+            if isinstance(f, str) and f.strip():
+                founders_merged.append(f.strip())
+            elif isinstance(f, dict) and f.get("name"):
+                founders_merged.append(f["name"].strip())
+        founders_merged = list(dict.fromkeys(founders_merged))
+
         # Dynamic suborganizations count from authentic child entities / subsidiaries
         num_suborgs = (
             diff.get("num_suborganizations")
@@ -675,12 +701,15 @@ class AccountCoalesceEngine:
             "linkedin_url": linkedin_url,
             "twitter_url": twitter_url,
             "twitter_handle": twitter_handle,
+            "facebook_url": facebook_url,
             "github_url": github_url,
             "glassdoor_url": glassdoor_url,
             "blog_url": blog_url,
             "operating_status": operating_status,
             "company_type": company_type,
             "founded_year": int(founded_year) if founded_year else None,
+            "founders": founders_merged,
+            "num_founders": len(founders_merged),
             "employee_count_range": cls.clean_text(
                 cb.get("employee_count_range") or diff.get("employee_count_range")
             ),
@@ -746,6 +775,14 @@ class AccountCoalesceEngine:
             "keywords": keywords_merged,
             "overview_description": cls.clean_text(
                 diff.get("description") or cb.get("short_description") or wiki.get("summary")
+            ),
+            "short_description": cls.clean_text(
+                cb.get("short_description")
+                or (wiki.get("summary", "").split(". ")[0] + "." if wiki.get("summary") else None)
+                or (diff.get("description", "").split(". ")[0] + "." if diff.get("description") else None)
+            ),
+            "full_description": cls.clean_text(
+                wiki.get("summary") or diff.get("description") or cb.get("short_description")
             ),
             "culture_score": culture_score,
             "ceo_approval_rate": ceo_approval_rate,
@@ -955,6 +992,16 @@ class AccountService:
         )
         RawDataLakeWriter.save_raw(fec_data, "openfec", effective_name, run_raw_dir)
 
+        # Tier-1 Corporate Web Scraper (Firecrawl v1)
+        firecrawl_data = (
+            mock_connectors.get("firecrawl")
+            if mock_connectors
+            else _timed_fetch(
+                "firecrawl", lambda: cls._fetch_firecrawl_account(effective_domain, effective_name)
+            )
+        )
+        RawDataLakeWriter.save_raw(firecrawl_data, "firecrawl", effective_name, run_raw_dir)
+
         # 2. Field-Level Coalesce Waterfall
         account_dossier = AccountCoalesceEngine.coalesce(
             company_name=effective_name,
@@ -970,6 +1017,7 @@ class AccountService:
             diffbot_data=diffbot_data,
             serper_data=serper_data,
             fec_data=fec_data,
+            firecrawl_data=firecrawl_data,
         )
 
         # 3. Deep Intelligence Connectors (SEC 10-K, Patents, Exhibit 21, GLEIF Ownership Tree)
@@ -993,6 +1041,8 @@ class AccountService:
             try:
                 patents_data = extract_full_patents(company_name)
                 RawDataLakeWriter.save_raw(patents_data, "patents", company_name, run_raw_dir)
+                if patents_data and isinstance(patents_data, dict) and patents_data.get("total_patents_found") is not None:
+                    account_dossier["patents_granted"] = int(patents_data["total_patents_found"])
                 print(f"[+] [AccountService] Patents extracted for '{company_name}'")
             except Exception as e:
                 print(f"[!] [AccountService] Patents notice: {e}")
@@ -1068,6 +1118,15 @@ class AccountService:
         telemetry["total_latency_ms"] = round((time.time() - start_ts) * 1000, 2)
         telemetry["validation_score"] = audit.get("score")
         telemetry["validation_grade"] = audit.get("grade")
+
+        try:
+            from services.credit_accounting_engine import CreditAccountingEngine
+            account_credit_tally = CreditAccountingEngine.tally_account_telemetry(telemetry.get("sources", {}))
+            telemetry["credit_accounting"] = account_credit_tally
+            account_dossier["_credit_accounting"] = account_credit_tally
+        except Exception as tally_err:
+            print(f"[!] [AccountService] Credit tally notice: {tally_err}")
+
         account_dossier["_telemetry"] = telemetry
 
         RawDataLakeWriter.save_raw(telemetry, "telemetry", effective_name, run_raw_dir)
@@ -1104,10 +1163,14 @@ class AccountService:
                 c_words = set(re.findall(r"\b[a-z0-9]{3,}\b", c_norm))
                 if not q_words or not c_words:
                     return False
-                if q_words.issubset(c_words) or c_words.issubset(q_words):
+                if q_norm == c_norm or q_words == c_words:
                     return True
+                if len(q_words) == 1 and len(c_words) > 1:
+                    return False
+                if len(c_words) == 1 and len(q_words) > 1:
+                    return False
                 overlap = len(q_words.intersection(c_words))
-                return overlap >= max(2, int(len(q_words) * 0.65))
+                return overlap >= max(2, int(len(q_words) * 0.75))
 
             # ── Tier 1: SEC Official Registrants & Tickers Index (Dynamic Matching) ──
             if not target_cik:
@@ -1286,21 +1349,65 @@ class AccountService:
 
     @staticmethod
     def _fetch_finnhub(ticker: Optional[str]) -> Dict[str, Any]:
-        """Finnhub Market Sentiment & News API."""
+        """Finnhub Real-Time Market Data, Valuation & Company Profile API."""
         if not ticker:
             return {}
         api_key = os.getenv("FINNHUB_API_KEY")
         if not api_key:
             return {}
         session = AccountServiceHTTPClient.get_session()
+        result: Dict[str, Any] = {"symbol": ticker.upper()}
         try:
-            url = f"https://finnhub.io/api/v1/news-sentiment?symbol={ticker}&token={api_key}"
-            res = session.get(url, timeout=10)
-            if res.ok:
-                return res.json()
+            # 1. Company Profile 2 (Market Cap, Shares, Exchange, IPO, Logo, Industry) - 100% Free
+            p_res = session.get(
+                f"https://finnhub.io/api/v1/stock/profile2?symbol={ticker}&token={api_key}",
+                timeout=10,
+            )
+            if p_res.ok and p_res.json():
+                p_data = p_res.json()
+                result["profile"] = p_data
+                result["exchange"] = p_data.get("exchange")
+                result["market_capitalization"] = p_data.get("marketCapitalization")
+                result["share_outstanding"] = p_data.get("shareOutstanding")
+                result["ipo"] = p_data.get("ipo")
+                result["logo"] = p_data.get("logo")
+                result["finnhub_industry"] = p_data.get("finnhubIndustry")
+
+            # 2. Real-Time Stock Quote (Current Price, Day Change %, High, Low) - 100% Free
+            q_res = session.get(
+                f"https://finnhub.io/api/v1/quote?symbol={ticker}&token={api_key}",
+                timeout=10,
+            )
+            if q_res.ok and q_res.json():
+                q_data = q_res.json()
+                result["quote"] = q_data
+                result["current_price"] = q_data.get("c")
+                result["day_change"] = q_data.get("d")
+                result["day_change_percent"] = q_data.get("dp")
+
+            # 3. Industry Peers / Competitors - 100% Free
+            peers_res = session.get(
+                f"https://finnhub.io/api/v1/stock/peers?symbol={ticker}&token={api_key}",
+                timeout=10,
+            )
+            if peers_res.ok and peers_res.json():
+                result["peers"] = peers_res.json()
+
+            # 4. News Sentiment (optional premium endpoint - gracefully fallback if 403)
+            try:
+                s_res = session.get(
+                    f"https://finnhub.io/api/v1/news-sentiment?symbol={ticker}&token={api_key}",
+                    timeout=5,
+                )
+                if s_res.ok and s_res.json():
+                    result["sentiment"] = s_res.json()
+            except Exception:
+                pass
+
+            return result if len(result) > 1 else {}
         except Exception as e:
             print(f"[!] Finnhub connector warning: {e}")
-        return {}
+            return result if len(result) > 1 else {}
 
     @staticmethod
     def _fetch_fmp(ticker: Optional[str]) -> Dict[str, Any]:
@@ -1526,10 +1633,16 @@ class AccountService:
         """Free Wikipedia REST API."""
         session = AccountServiceHTTPClient.get_session()
         try:
-            url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{urllib.parse.quote_plus(company_name)}"
+            clean_q = re.sub(r"[\s,]+(Inc|LLC|Ltd|Corp|Corporation|Co)\.?$", "", company_name, flags=re.IGNORECASE).strip()
+            wiki_slug = urllib.parse.quote(clean_q.replace(" ", "_"))
+            url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{wiki_slug}"
             res = session.get(
                 url, headers={"User-Agent": "SalesAIAgentResearch admin@salesai.com"}, timeout=8
             )
+            if not res.ok and clean_q != company_name:
+                orig_slug = urllib.parse.quote(company_name.replace(" ", "_"))
+                url_orig = f"https://en.wikipedia.org/api/rest_v1/page/summary/{orig_slug}"
+                res = session.get(url_orig, headers={"User-Agent": "SalesAIAgentResearch admin@salesai.com"}, timeout=8)
             if res.ok:
                 data = res.json()
                 return {
@@ -1572,3 +1685,16 @@ class AccountService:
         except Exception as e:
             print(f"[!] OpenFEC connector warning: {e}")
         return {}
+
+    @staticmethod
+    def _fetch_firecrawl_account(domain: Optional[str], company_name: str) -> Dict[str, Any]:
+        """Tier-1 Web Scraper (Firecrawl v1) for corporate overview, metadata, and leadership links."""
+        if not getattr(config, "FIRECRAWL_API_KEY", None):
+            return {}
+        try:
+            from services.firecrawl_service import FirecrawlService
+            return FirecrawlService.scrape_account_overview(domain=domain, company_name=company_name)
+        except Exception as e:
+            print(f"[!] Firecrawl account connector warning: {e}")
+            return {}
+

@@ -10,6 +10,7 @@ import {
   renderTabbedSignalsWidget
 } from './profile-render.js';
 import { renderCallPrepButton } from './callprep-generate.js';
+import { photoAttr } from './persona-photo.js';
 
 function renderHeroCard(p) {
   const isCSuite = (p.tier === 'c_suite') || (p.hierarchy_level === 1);
@@ -19,7 +20,7 @@ function renderHeroCard(p) {
   return `
     <div class="profile-hero-card">
       <div class="profile-hero-identity">
-        <div class="profile-avatar-xl">${esc(initials(p.name))}</div>
+        <div class="profile-avatar-xl" ${photoAttr(p)}>${esc(initials(p.name))}</div>
         <div class="profile-hero-info">
           <div class="profile-hero-name">
             ${esc(p.name || 'Executive Contact')}

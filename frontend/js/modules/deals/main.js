@@ -9,6 +9,7 @@ import { esc } from '../utils.js';
 import { downloadFile } from '../download.js';
 import { renderToolkit, copilotHref } from './toolkit.js';
 import { mountTimeline } from '../activity-timeline.js';
+import { photoAttr } from '../persona-photo.js';
 
 const $ = (id) => document.getElementById(id);
 const OPEN_STAGES = ['intro', 'discovery', 'proposal', 'pilot', 'contract'];
@@ -229,7 +230,7 @@ function renderRoom() {
       <div class="dl-pane${st.tab === 'committee' ? ' active' : ''}" role="tabpanel">
         ${committeeGaps ? `<div class="dl-gap-note"><i class="fa-solid fa-triangle-exclamation"></i> Missing: ${esc(committeeGaps)}</div>` : ''}
         ${d.stakeholders.map(p => `<div class="dl-person">
-            <span class="dl-avatar">${esc(initials(p.name))}</span>
+            <span class="dl-avatar" ${photoAttr(p, p.persona_id)}>${esc(initials(p.name))}</span>
             <div><div class="dl-person-name"><a href="/profile?account=${p.account_id}&persona_id=${p.persona_id}" target="_blank" rel="noopener">${esc(p.name)}</a></div>
               <div class="dl-person-title">${esc(p.title || '')}</div>
               ${p.recent_move ? '<div class="dl-person-flag"><i class="fa-solid fa-user-clock"></i> Recent leadership change</div>' : ''}</div>
@@ -252,7 +253,6 @@ function renderRoom() {
           <button type="submit" class="dl-btn dl-btn-primary">Add</button></form>
         <ul class="dl-timeline">${d.activity.map(a => `<li><i class="fa-solid ${ACTIVITY_ICON[a.kind] || 'fa-circle'}"></i>
           <div>${esc(a.text)}<div class="dl-when">${esc(a.by || 'System')} · ${esc(ago(a.created_at))}</div></div></li>`).join('')}</ul>
-        </details>
       </div>
 
       <div class="dl-pane${st.tab === 'tasks' ? ' active' : ''}" role="tabpanel">
@@ -269,7 +269,7 @@ function renderRoom() {
       </div>
     </div>
     <div class="dl-room-foot">
-      <a class="dl-btn" href="${esc(copilotHref(d, ''))}" title="Ask the Sales Copilot about this deal"><i class="fa-solid fa-wand-magic-sparkles"></i> Ask Copilot</a>
+      <a class="dl-btn" href="/copilot?account_id=${d.account_id}" title="Ask the Sales Copilot about this account"><i class="fa-solid fa-wand-magic-sparkles"></i> Ask Copilot</a>
       <button type="button" class="dl-btn" data-export><i class="fa-regular fa-file-excel"></i> Export</button>
       <button type="button" class="dl-btn dl-btn-danger" data-delete style="margin-left:auto"><i class="fa-regular fa-trash-can"></i> Delete</button>
     </div>`;
@@ -381,30 +381,6 @@ function wireRoom() {
     }
     const tab = t.closest('[data-tab]');
     if (tab) { st.tab = tab.dataset.tab; renderRoom(); return; }
-    const tkStage = t.closest('[data-tk-stage]');
-    if (tkStage) { loadToolkit(tkStage.dataset.tkStage); return; }
-    const tkAdd = t.closest('[data-tk-add]');
-    if (tkAdd) {
-      try {
-        st.deal = await api(`/${st.deal.id}/stakeholders`, { method: 'POST', body: { persona_id: Number(tkAdd.dataset.tkAdd), role: 'influencer' } });
-        showToast('Added as influencer — set the role in Buying committee'); renderRoom(); loadDeals();
-      } catch (err) { showToast(err.message); }
-      return;
-    }
-    const tkCheck = t.closest('[data-tk-check]');
-    if (tkCheck) {
-      const [stage, key] = tkCheck.dataset.tkCheck.split('|');
-      try { st.deal = await api(`/${st.deal.id}/checklist/${stage}/${key}`, { method: 'PATCH', body: { done: true } }); showToast('Exit criterion ticked'); renderRoom(); loadDeals(); }
-      catch (err) { showToast(err.message); }
-      return;
-    }
-    const medUse = t.closest('[data-med-use]');
-    if (medUse) {
-      const box = $('dlToolkit').querySelector(`[data-med="${medUse.dataset.medUse}"]`);
-      box.value = medUse.dataset.medText; medUse.remove();
-      saveQualification(medUse.dataset.medUse, box.value);
-      return;
-    }
     const rm = t.closest('[data-remove-person]');
     if (rm) {
       try { st.deal = await api(`/${st.deal.id}/stakeholders/${rm.dataset.removePerson}`, { method: 'DELETE' }); renderRoom(); loadDeals(); }
@@ -428,10 +404,8 @@ function wireRoom() {
   });
   room.addEventListener('change', async (e) => {
     const t = e.target;
-    if (t.dataset.med) { saveQualification(t.dataset.med, t.value.trim()); return; }
     if (t.dataset.field) {
-      const v = (t.type === 'number' || t.dataset.field === 'business_line_id') ? (t.value === '' ? null : Number(t.value)) : (t.value || null);
-      if (t.dataset.field === 'forecast_category' && !v) return;
+      const v = t.type === 'number' ? (t.value === '' ? null : Number(t.value)) : (t.value || null);
       if (t.dataset.field === 'name' && !v) { t.value = st.deal.name; return; }
       patchDeal({ [t.dataset.field]: v });
     } else if (t.dataset.check) {
@@ -567,8 +541,6 @@ async function openNewDeal() {
   $('dlNewOfferings').innerHTML = st.meta.offerings.map(o => `<button type="button" class="dl-chip" data-new-offering="${o.key}" aria-pressed="false">${esc(o.label)}</button>`).join('');
   $('dlNewStage').innerHTML = st.meta.stages.filter(s => OPEN_STAGES.includes(s.key)).map(s => `<option value="${s.key}">${esc(s.label)}</option>`).join('');
   $('dlNewForm').reset();
-  $('dlNewBusinessLine').innerHTML = '<option value="">— Not set —</option>'
-    + (st.meta.business_lines || []).map(b => `<option value="${b.id}"${String(b.id) === $('dlBusinessLine').value ? ' selected' : ''}>${esc(b.name)}</option>`).join('');
   $('dlModal').hidden = false;
   $('dlNewName').focus();
 }
@@ -587,7 +559,6 @@ function wireNewDeal() {
       value_amount: $('dlNewValue').value ? Number($('dlNewValue').value) : null, currency: $('dlNewCurrency').value,
       expected_close: $('dlNewClose').value || null, next_step: $('dlNewNext').value.trim() || null,
       next_step_due: $('dlNewNextDue').value || null, stage: $('dlNewStage').value,
-      business_line_id: $('dlNewBusinessLine').value ? Number($('dlNewBusinessLine').value) : null,
       offerings: [...$('dlNewOfferings').querySelectorAll('.dl-chip.on')].map(c => c.dataset.newOffering),
     };
     try {
@@ -612,15 +583,7 @@ async function init() {
   let t = null;
   $('dlSearch').addEventListener('input', () => { clearTimeout(t); t = setTimeout(loadDeals, 250); });
   $('dlAccount').addEventListener('change', loadDeals);
-  $('dlBusinessLine').innerHTML = '<option value="">All business lines</option>'
-    + ((st.meta && st.meta.business_lines) || []).map(b => `<option value="${b.id}">${esc(b.name)}</option>`).join('');
-  if (params.get('business_line_id')) $('dlBusinessLine').value = params.get('business_line_id');
-  $('dlBusinessLine').addEventListener('change', loadDeals);
   $('dlMine').addEventListener('change', loadDeals);
-  $('dlDigest').addEventListener('click', (e) => {
-    const b = e.target.closest('[data-deal-open]');
-    if (b) openDeal(Number(b.dataset.dealOpen));
-  });
   wireBoard();
   wireRoom();
   wireNewDeal();

@@ -1,6 +1,7 @@
 // Entry point for the super-admin dashboard (/admin) — Command Center.
 import './fetch-instrumentation.js';
 import { getCurrentUser, logout, refreshAccessToken } from './auth-client.js';
+import { initTopbarAuth } from './topbar-auth.js';
 import { initThemeToggle } from './theme.js';
 import { showToast } from './toast.js';
 import { mountCrmSettings } from './admin-crm-settings.js';
@@ -23,6 +24,9 @@ let usersCache = [];
 let statsCache = null;
 let currentFilter = 'all';
 let searchQuery = '';
+let activeAdminTab = 'users';
+let apiConfigsCache = [];
+let dirtyConfigs = {};
 
 // CRM roles + team (apps/sales_crm/README.md §5). 'user' is the Sales Rep role.
 const ROLE_OPTIONS = [['user', 'Sales Rep'], ['sales_manager', 'Sales Manager'], ['viewer', 'Viewer (read-only)'],
@@ -61,16 +65,7 @@ function getInitials(name, email) {
   return (email || 'U').slice(0, 2).toUpperCase();
 }
 
-function renderTopBarUser(user) {
-  const el = document.getElementById('topbarAuthUser');
-  if (!el || !user) return;
-  const displayName = user.full_name || user.email;
-  el.innerHTML = `
-    <i class="fa-solid fa-circle-user" style="font-size:1.05rem; opacity:0.9;"></i>
-    <span style="font-weight:600; color:#fff;" title="${esc(user.email)}">${esc(displayName)}</span>
-    <span style="background:rgba(255,255,255,0.18); color:#fff; font-size:0.64rem; font-weight:700; padding:2px 7px; border-radius:4px; letter-spacing:0.04em; text-transform:uppercase;">Super Admin</span>
-  `;
-}
+
 
 function renderHero() {
   return `
@@ -141,7 +136,10 @@ function renderCreateForm() {
           </div>
           <div class="admin-form-group">
             <label>Assigned Role</label>
-            <select name="role">${roleOptions('user')}</select>
+            <select name="role">
+              <option value="user" selected>Standard User</option>
+              <option value="super_admin">Super Admin</option>
+            </select>
           </div>
           <div class="admin-form-group btn-group">
             <button type="submit" class="admin-submit-btn" id="createUserSubmit">
@@ -421,7 +419,10 @@ function renderModalShell() {
             <div class="admin-form-row" style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
               <div class="admin-form-group">
                 <label class="admin-form-label" for="editUserRole"><i class="fa-solid fa-shield-halved"></i> System Role</label>
-                <select class="admin-form-select" id="editUserRole" name="role">${roleOptions('user')}</select>
+                <select class="admin-form-select" id="editUserRole" name="role">
+                  <option value="user">User</option>
+                  <option value="super_admin">Super Admin</option>
+                </select>
               </div>
               <div class="admin-form-group">
                 <label class="admin-form-label" for="editUserStatus"><i class="fa-solid fa-heart-pulse"></i> Account Status</label>
@@ -430,14 +431,6 @@ function renderModalShell() {
                   <option value="false">Inactive</option>
                 </select>
               </div>
-            </div>
-            <div class="admin-form-group">
-              <label class="admin-form-label" for="editUserManager"><i class="fa-solid fa-sitemap"></i> Reports to <span style="font-weight:400; font-size:0.7rem; color:var(--text-muted);">(managers see their team's accounts)</span></label>
-              <select class="admin-form-select" id="editUserManager" name="manager_id"></select>
-            </div>
-            <div class="admin-form-group">
-              <span class="admin-form-label"><i class="fa-solid fa-layer-group"></i> Business lines</span>
-              <div id="editUserBusinessLines" style="display:flex; flex-wrap:wrap; gap:6px 14px; font-size:0.8rem;"></div>
             </div>
             <div class="admin-form-group">
               <label class="admin-form-label" for="editUserPassword">
@@ -479,6 +472,580 @@ function teamLine(userId) {
   return bits.length ? `<div style="font-size:0.68rem; color:var(--text-muted); margin-top:3px;">${bits.join(' · ')}</div>` : '';
 }
 
+function renderAdminTabsNav() {
+  return `
+    <div class="admin-tabs-nav">
+      <button type="button" class="admin-tab-btn ${activeAdminTab === 'users' ? 'active' : ''}" data-admin-tab="users">
+        <i class="bi bi-people-fill"></i> User Directory & Access Control
+        <span class="admin-tab-badge">${usersCache.length}</span>
+      </button>
+      <button type="button" class="admin-tab-btn ${activeAdminTab === 'api-config' ? 'active' : ''}" data-admin-tab="api-config">
+        <i class="bi bi-sliders"></i> API & Model Configuration
+      </button>
+      <button type="button" class="admin-tab-btn ${activeAdminTab === 'audit' ? 'active' : ''}" data-admin-tab="audit">
+        <i class="bi bi-shield-check"></i> Security & Audit Trail
+      </button>
+    </div>
+  `;
+}
+
+function findConfig(key) {
+  return apiConfigsCache.find(c => c.config_key === key) || { config_key: key, value: '', is_configured: false, is_secret: false };
+}
+
+function renderFieldInput(c) {
+  const meta = c.extra_metadata || {};
+  const currentVal = dirtyConfigs[c.config_key] !== undefined ? dirtyConfigs[c.config_key] : (c.is_secret ? '' : (c.value || ''));
+
+  if (meta.options && Array.isArray(meta.options)) {
+    return `
+      <select class="api-input" data-config-key="${c.config_key}">
+        ${meta.options.map(opt => `<option value="${esc(opt)}" ${currentVal === opt ? 'selected' : ''}>${esc(opt)}</option>`).join('')}
+      </select>
+    `;
+  }
+
+  if (c.is_secret) {
+    let cleanPlaceholder = meta.placeholder || (c.is_configured ? 'Key configured — paste new key to replace...' : 'Enter API key...');
+    cleanPlaceholder = cleanPlaceholder.replace(/[•*]+/g, '').trim() || 'Enter API key...';
+
+    // If dirty show user typed text, else if configured show masked dots
+    let displayVal = '';
+    if (dirtyConfigs[c.config_key] !== undefined) {
+      displayVal = dirtyConfigs[c.config_key];
+    } else if (c.is_configured) {
+      displayVal = '••••••••••••••••••••••••';
+    }
+
+    const maskedSnippet = c.masked_value || (c.is_configured ? '••••••••••••••••' : '');
+
+    return `
+      <div class="api-input-wrap">
+        <input type="password" class="api-input api-secret-input" data-config-key="${c.config_key}" data-masked-val="${esc(maskedSnippet)}" data-is-configured="${c.is_configured ? 'true' : 'false'}" value="${esc(displayVal)}" placeholder="${esc(cleanPlaceholder)}" autocomplete="off" onfocus="if(this.value.includes('••••')) this.select();">
+        <button type="button" class="api-input-toggle-btn" title="Toggle visibility" onclick="
+          const input = this.previousElementSibling;
+          const masked = input.dataset.maskedVal || '';
+          if (input.type === 'password') {
+            input.type = 'text';
+            if (input.value.includes('••••') && masked) { input.value = masked; }
+            this.innerHTML = '<i class=\\'bi bi-eye-slash\\'></i>';
+          } else {
+            input.type = 'password';
+            if (input.value === masked) { input.value = '••••••••••••••••••••••••'; }
+            this.innerHTML = '<i class=\\'bi bi-eye\\'></i>';
+          }
+        "><i class="bi bi-eye"></i></button>
+      </div>
+    `;
+  }
+
+  return `
+    <input type="${meta.type === 'number' ? 'number' : 'text'}" class="api-input" data-config-key="${c.config_key}" value="${esc(currentVal)}" placeholder="${esc(meta.placeholder || '')}">
+  `;
+}
+
+function renderApiConfigPanel() {
+  const llmProvider = findConfig('PRIMARY_LLM_PROVIDER');
+  const openaiKey = findConfig('OPENAI_API_KEY');
+  const openaiModel = findConfig('OPENAI_MODEL');
+  const geminiKey = findConfig('GEMINI_API_KEY');
+  const monidKey = findConfig('MONID_API_KEY');
+  const monidUrl = findConfig('MONID_BASE_URL');
+
+  const tavily = findConfig('TAVILY_API_KEY');
+  const apify = findConfig('APIFY_TOKEN');
+  const serper = findConfig('SERPER_API_KEY');
+  const exa = findConfig('EXA_API_KEY');
+  const firecrawl = findConfig('FIRECRAWL_API_KEY');
+  const diffbot = findConfig('DIFFBOT_TOKEN');
+  const fullenrich = findConfig('FULLENRICH_API_KEY');
+  const dataGov = findConfig('DATA_GOV_API_KEY');
+  const finnhub = findConfig('FINNHUB_API_KEY');
+
+  const smtpHost = findConfig('SMTP_HOST');
+  const smtpPort = findConfig('SMTP_PORT');
+  const smtpUser = findConfig('SMTP_USERNAME');
+  const smtpPass = findConfig('SMTP_PASSWORD');
+  const smtpFrom = findConfig('SMTP_FROM');
+
+  const jwtSecret = findConfig('JWT_SECRET_KEY');
+  const timeoutSec = findConfig('HTTP_TIMEOUT_SECONDS');
+  const retries = findConfig('MAX_API_RETRIES');
+
+  const dirtyCount = Object.keys(dirtyConfigs).length;
+
+  return `
+    <div class="api-config-container">
+      
+      <!-- 1. AI & LLM Models -->
+      <div class="api-config-section">
+        <div class="api-config-section-header">
+          <div class="api-config-section-title">
+            <i class="bi bi-cpu-fill" style="color:var(--brand);"></i> AI &amp; LLM Intelligence Engines
+          </div>
+        </div>
+        <div class="api-config-grid">
+          
+          <!-- OpenAI Direct / Primary LLM Card -->
+          <div class="api-config-card">
+            <div class="api-config-card-header">
+              <div class="api-config-card-title-wrap">
+                <div class="api-config-card-icon purple"><i class="bi bi-stars"></i></div>
+                <div>
+                  <div class="api-config-card-title">OpenAI LLM Engine</div>
+                  <div class="api-config-card-desc">Direct OpenAI API integration for standalone completions and intelligence pipelines.</div>
+                </div>
+              </div>
+              <span class="api-status-badge ${openaiKey.is_configured ? 'configured' : 'not-configured'}">
+                <i class="bi bi-circle-fill" style="font-size:0.45rem;"></i> ${openaiKey.is_configured ? 'Active' : 'Unset'}
+              </span>
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">OpenAI API Key</label>
+              ${renderFieldInput(openaiKey)}
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">OpenAI Model</label>
+              ${renderFieldInput(openaiModel)}
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">Active Engine Routing</label>
+              ${renderFieldInput(llmProvider)}
+            </div>
+            <div class="api-card-actions">
+              <span style="font-size:0.72rem; color:var(--text-muted);"><i class="bi bi-info-circle"></i> Direct connection to api.openai.com</span>
+              <button type="button" class="api-test-btn" data-test-provider="openai">
+                <i class="bi bi-lightning-charge"></i> Test OpenAI
+              </button>
+            </div>
+            <div class="api-test-result d-none" id="testResult-openai"></div>
+          </div>
+
+          <!-- Google Gemini AI Card -->
+          <div class="api-config-card">
+            <div class="api-config-card-header">
+              <div class="api-config-card-title-wrap">
+                <div class="api-config-card-icon cyan"><i class="bi bi-gem"></i></div>
+                <div>
+                  <div class="api-config-card-title">Google Gemini AI</div>
+                  <div class="api-config-card-desc">Google AI Studio API key for Gemini 1.5 Pro and Flash extraction.</div>
+                </div>
+              </div>
+              <span class="api-status-badge ${geminiKey.is_configured ? 'configured' : 'not-configured'}">
+                <i class="bi bi-circle-fill" style="font-size:0.45rem;"></i> ${geminiKey.is_configured ? 'Active' : 'Unset'}
+              </span>
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">Gemini API Key</label>
+              ${renderFieldInput(geminiKey)}
+            </div>
+            <div class="api-card-actions">
+              <span style="font-size:0.72rem; color:var(--text-muted);">aistudio.google.com</span>
+              <button type="button" class="api-test-btn" data-test-provider="gemini">
+                <i class="bi bi-lightning-charge"></i> Test Gemini
+              </button>
+            </div>
+            <div class="api-test-result d-none" id="testResult-gemini"></div>
+          </div>
+
+          <!-- Monid.ai Gateway Card -->
+          <div class="api-config-card">
+            <div class="api-config-card-header">
+              <div class="api-config-card-title-wrap">
+                <div class="api-config-card-icon green"><i class="bi bi-hdd-network"></i></div>
+                <div>
+                  <div class="api-config-card-title">Monid.ai Gateway</div>
+                  <div class="api-config-card-desc">Monid enterprise data &amp; telemetry gateway.</div>
+                </div>
+              </div>
+              <span class="api-status-badge ${monidKey.is_configured ? 'configured' : 'not-configured'}">
+                <i class="bi bi-circle-fill" style="font-size:0.45rem;"></i> ${monidKey.is_configured ? 'Active' : 'Unset'}
+              </span>
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">Monid API Key</label>
+              ${renderFieldInput(monidKey)}
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">Monid Base URL</label>
+              ${renderFieldInput(monidUrl)}
+            </div>
+            <div class="api-card-actions">
+              <span style="font-size:0.72rem; color:var(--text-muted);">api.monid.ai</span>
+              <button type="button" class="api-test-btn" data-test-provider="monid">
+                <i class="bi bi-lightning-charge"></i> Ping Monid
+              </button>
+            </div>
+            <div class="api-test-result d-none" id="testResult-monid"></div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- 2. Web Search, Scraping & Entity Intelligence -->
+      <div class="api-config-section">
+        <div class="api-config-section-header">
+          <div class="api-config-section-title">
+            <i class="bi bi-search" style="color:#10b981;"></i> Web Search, Scraping &amp; Entity Intelligence
+          </div>
+        </div>
+        <div class="api-config-grid">
+
+          <!-- Tavily Search Card -->
+          <div class="api-config-card">
+            <div class="api-config-card-header">
+              <div class="api-config-card-title-wrap">
+                <div class="api-config-card-icon green"><i class="bi bi-globe"></i></div>
+                <div>
+                  <div class="api-config-card-title">Tavily Search API</div>
+                  <div class="api-config-card-desc">AI web research &amp; contextual signal discovery.</div>
+                </div>
+              </div>
+              <span class="api-status-badge ${tavily.is_configured ? 'configured' : 'not-configured'}">
+                <i class="bi bi-circle-fill" style="font-size:0.45rem;"></i> ${tavily.is_configured ? 'Active' : 'Unset'}
+              </span>
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">API Key</label>
+              ${renderFieldInput(tavily)}
+            </div>
+            <div class="api-card-actions">
+              <span style="font-size:0.72rem; color:var(--text-muted);">tavily.com</span>
+              <button type="button" class="api-test-btn" data-test-provider="tavily">
+                <i class="bi bi-lightning-charge"></i> Ping Search
+              </button>
+            </div>
+            <div class="api-test-result d-none" id="testResult-tavily"></div>
+          </div>
+
+          <!-- Apify Scraping Card -->
+          <div class="api-config-card">
+            <div class="api-config-card-header">
+              <div class="api-config-card-title-wrap">
+                <div class="api-config-card-icon amber"><i class="bi bi-robot"></i></div>
+                <div>
+                  <div class="api-config-card-title">Apify Web Scraping</div>
+                  <div class="api-config-card-desc">Cloud actors for LinkedIn &amp; corporate portal extraction.</div>
+                </div>
+              </div>
+              <span class="api-status-badge ${apify.is_configured ? 'configured' : 'not-configured'}">
+                <i class="bi bi-circle-fill" style="font-size:0.45rem;"></i> ${apify.is_configured ? 'Active' : 'Unset'}
+              </span>
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">API Token</label>
+              ${renderFieldInput(apify)}
+            </div>
+            <div class="api-card-actions">
+              <span style="font-size:0.72rem; color:var(--text-muted);">apify.com</span>
+              <button type="button" class="api-test-btn" data-test-provider="apify">
+                <i class="bi bi-lightning-charge"></i> Test Token
+              </button>
+            </div>
+            <div class="api-test-result d-none" id="testResult-apify"></div>
+          </div>
+
+          <!-- Serper Google Search Card -->
+          <div class="api-config-card">
+            <div class="api-config-card-header">
+              <div class="api-config-card-title-wrap">
+                <div class="api-config-card-icon cyan"><i class="bi bi-google"></i></div>
+                <div>
+                  <div class="api-config-card-title">Serper Google Search</div>
+                  <div class="api-config-card-desc">Google News and organic search indexing for CXO moves.</div>
+                </div>
+              </div>
+              <span class="api-status-badge ${serper.is_configured ? 'configured' : 'not-configured'}">
+                <i class="bi bi-circle-fill" style="font-size:0.45rem;"></i> ${serper.is_configured ? 'Active' : 'Unset'}
+              </span>
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">API Key</label>
+              ${renderFieldInput(serper)}
+            </div>
+            <div class="api-card-actions">
+              <span style="font-size:0.72rem; color:var(--text-muted);">serper.dev</span>
+              <button type="button" class="api-test-btn" data-test-provider="serper">
+                <i class="bi bi-lightning-charge"></i> Test Serper
+              </button>
+            </div>
+            <div class="api-test-result d-none" id="testResult-serper"></div>
+          </div>
+
+          <!-- Firecrawl Card -->
+          <div class="api-config-card">
+            <div class="api-config-card-header">
+              <div class="api-config-card-title-wrap">
+                <div class="api-config-card-icon purple"><i class="bi bi-fire"></i></div>
+                <div>
+                  <div class="api-config-card-title">Firecrawl Web Extraction</div>
+                  <div class="api-config-card-desc">Deep web markdown extraction &amp; dynamic JS rendering.</div>
+                </div>
+              </div>
+              <span class="api-status-badge ${firecrawl.is_configured ? 'configured' : 'not-configured'}">
+                <i class="bi bi-circle-fill" style="font-size:0.45rem;"></i> ${firecrawl.is_configured ? 'Active' : 'Unset'}
+              </span>
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">Firecrawl API Key</label>
+              ${renderFieldInput(firecrawl)}
+            </div>
+            <div class="api-card-actions">
+              <span style="font-size:0.72rem; color:var(--text-muted);">firecrawl.dev</span>
+              <button type="button" class="api-test-btn" data-test-provider="firecrawl">
+                <i class="bi bi-lightning-charge"></i> Test Firecrawl
+              </button>
+            </div>
+            <div class="api-test-result d-none" id="testResult-firecrawl"></div>
+          </div>
+
+          <!-- Exa Neural Search Card -->
+          <div class="api-config-card">
+            <div class="api-config-card-header">
+              <div class="api-config-card-title-wrap">
+                <div class="api-config-card-icon cyan"><i class="bi bi-compass"></i></div>
+                <div>
+                  <div class="api-config-card-title">Exa Neural Search</div>
+                  <div class="api-config-card-desc">Embeddings-based semantic search &amp; company research.</div>
+                </div>
+              </div>
+              <span class="api-status-badge ${exa.is_configured ? 'configured' : 'not-configured'}">
+                <i class="bi bi-circle-fill" style="font-size:0.45rem;"></i> ${exa.is_configured ? 'Active' : 'Unset'}
+              </span>
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">Exa Search API Key</label>
+              ${renderFieldInput(exa)}
+            </div>
+            <div class="api-card-actions">
+              <span style="font-size:0.72rem; color:var(--text-muted);">exa.ai</span>
+              <button type="button" class="api-test-btn" data-test-provider="exa">
+                <i class="bi bi-lightning-charge"></i> Test Exa
+              </button>
+            </div>
+            <div class="api-test-result d-none" id="testResult-exa"></div>
+          </div>
+
+          <!-- FullEnrich Card -->
+          <div class="api-config-card">
+            <div class="api-config-card-header">
+              <div class="api-config-card-title-wrap">
+                <div class="api-config-card-icon purple"><i class="bi bi-person-badge-fill"></i></div>
+                <div>
+                  <div class="api-config-card-title">FullEnrich Persona Enrichment</div>
+                  <div class="api-config-card-desc">Waterfall email &amp; phone enrichment for executive contacts.</div>
+                </div>
+              </div>
+              <span class="api-status-badge ${fullenrich.is_configured ? 'configured' : 'not-configured'}">
+                <i class="bi bi-circle-fill" style="font-size:0.45rem;"></i> ${fullenrich.is_configured ? 'Active' : 'Unset'}
+              </span>
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">FullEnrich API Key</label>
+              ${renderFieldInput(fullenrich)}
+            </div>
+            <div class="api-card-actions">
+              <span style="font-size:0.72rem; color:var(--text-muted);">fullenrich.com</span>
+              <button type="button" class="api-test-btn" data-test-provider="fullenrich">
+                <i class="bi bi-lightning-charge"></i> Test FullEnrich
+              </button>
+            </div>
+            <div class="api-test-result d-none" id="testResult-fullenrich"></div>
+          </div>
+
+          <!-- Diffbot Knowledge Graph Card -->
+          <div class="api-config-card">
+            <div class="api-config-card-header">
+              <div class="api-config-card-title-wrap">
+                <div class="api-config-card-icon blue"><i class="bi bi-diagram-3-fill"></i></div>
+                <div>
+                  <div class="api-config-card-title">Diffbot Knowledge Graph</div>
+                  <div class="api-config-card-desc">Autonomous AI entity extraction &amp; corporate org structure mapping.</div>
+                </div>
+              </div>
+              <span class="api-status-badge ${diffbot.is_configured ? 'configured' : 'not-configured'}">
+                <i class="bi bi-circle-fill" style="font-size:0.45rem;"></i> ${diffbot.is_configured ? 'Active' : 'Unset'}
+              </span>
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">Diffbot Knowledge Graph Token</label>
+              ${renderFieldInput(diffbot)}
+            </div>
+            <div class="api-card-actions">
+              <span style="font-size:0.72rem; color:var(--text-muted);">diffbot.com</span>
+              <button type="button" class="api-test-btn" data-test-provider="diffbot">
+                <i class="bi bi-lightning-charge"></i> Test Diffbot
+              </button>
+            </div>
+            <div class="api-test-result d-none" id="testResult-diffbot"></div>
+          </div>
+
+          <!-- Data.gov / SEC EDGAR Card -->
+          <div class="api-config-card">
+            <div class="api-config-card-header">
+              <div class="api-config-card-title-wrap">
+                <div class="api-config-card-icon green"><i class="bi bi-bank2"></i></div>
+                <div>
+                  <div class="api-config-card-title">Data.gov &amp; SEC EDGAR</div>
+                  <div class="api-config-card-desc">Federal open data registry &amp; regulatory filings intelligence.</div>
+                </div>
+              </div>
+              <span class="api-status-badge ${dataGov.is_configured ? 'configured' : 'not-configured'}">
+                <i class="bi bi-circle-fill" style="font-size:0.45rem;"></i> ${dataGov.is_configured ? 'Active' : 'Unset'}
+              </span>
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">Data.gov / SEC EDGAR API Key</label>
+              ${renderFieldInput(dataGov)}
+            </div>
+            <div class="api-card-actions">
+              <span style="font-size:0.72rem; color:var(--text-muted);">data.gov</span>
+              <button type="button" class="api-test-btn" data-test-provider="data_gov">
+                <i class="bi bi-lightning-charge"></i> Test Data.gov
+              </button>
+            </div>
+            <div class="api-test-result d-none" id="testResult-data_gov"></div>
+          </div>
+
+          <!-- Finnhub Financial Market Card -->
+          <div class="api-config-card">
+            <div class="api-config-card-header">
+              <div class="api-config-card-title-wrap">
+                <div class="api-config-card-icon amber"><i class="bi bi-graph-up"></i></div>
+                <div>
+                  <div class="api-config-card-title">Finnhub Market Data</div>
+                  <div class="api-config-card-desc">Real-time stock quotes, institutional sentiment &amp; company news.</div>
+                </div>
+              </div>
+              <span class="api-status-badge ${finnhub.is_configured ? 'configured' : 'not-configured'}">
+                <i class="bi bi-circle-fill" style="font-size:0.45rem;"></i> ${finnhub.is_configured ? 'Active' : 'Unset'}
+              </span>
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">Finnhub API Key</label>
+              ${renderFieldInput(finnhub)}
+            </div>
+            <div class="api-card-actions">
+              <span style="font-size:0.72rem; color:var(--text-muted);">finnhub.io</span>
+              <button type="button" class="api-test-btn" data-test-provider="finnhub">
+                <i class="bi bi-lightning-charge"></i> Test Finnhub
+              </button>
+            </div>
+            <div class="api-test-result d-none" id="testResult-finnhub"></div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- 3. Email & Alert Delivery (SMTP) -->
+      <div class="api-config-section">
+        <div class="api-config-section-header">
+          <div class="api-config-section-title">
+            <i class="bi bi-envelope-check-fill" style="color:#0061ff;"></i> Email &amp; Daily News Digest Delivery
+          </div>
+        </div>
+        <div class="api-config-card">
+          <div class="api-config-card-header">
+            <div class="api-config-card-title-wrap">
+              <div class="api-config-card-icon blue"><i class="bi bi-send-fill"></i></div>
+              <div>
+                <div class="api-config-card-title">SMTP Mailer Configuration</div>
+                <div class="api-config-card-desc">Transactional mailer used for user onboarding, password resets, and automated daily intelligence alerts.</div>
+              </div>
+            </div>
+            <span class="api-status-badge ${smtpHost.is_configured ? 'configured' : 'not-configured'}">
+              <i class="bi bi-circle-fill" style="font-size:0.45rem;"></i> ${smtpHost.is_configured ? 'Configured' : 'Unset'}
+            </span>
+          </div>
+          
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:10px;">
+            <div class="api-field-group">
+              <label class="api-field-label">SMTP Host</label>
+              ${renderFieldInput(smtpHost)}
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">SMTP Port</label>
+              ${renderFieldInput(smtpPort)}
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">SMTP Username</label>
+              ${renderFieldInput(smtpUser)}
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">SMTP Password</label>
+              ${renderFieldInput(smtpPass)}
+            </div>
+            <div class="api-field-group" style="grid-column:1 / -1;">
+              <label class="api-field-label">Sender 'From' Address</label>
+              ${renderFieldInput(smtpFrom)}
+            </div>
+          </div>
+
+          <div class="api-card-actions">
+            <span style="font-size:0.70rem; color:var(--text-muted);"><i class="bi bi-lock-fill"></i> TLS 587 / SSL 465 supported</span>
+            <button type="button" class="api-test-btn" data-test-provider="smtp">
+              <i class="bi bi-send-check"></i> Test SMTP Handshake
+            </button>
+          </div>
+          <div class="api-test-result d-none" id="testResult-smtp"></div>
+        </div>
+      </div>
+
+      <!-- 4. Security & System Parameters -->
+      <div class="api-config-section">
+        <div class="api-config-section-header">
+          <div class="api-config-section-title">
+            <i class="bi bi-shield-lock-fill" style="color:#64748b;"></i> Security &amp; Operational Controls
+          </div>
+        </div>
+        <div class="api-config-card">
+          <div class="api-field-group" style="margin-bottom:8px;">
+            <label class="api-field-label">JWT Master Secret Key <span style="font-weight:normal; color:var(--text-muted);">(Used to cryptographically sign tokens)</span></label>
+            ${renderFieldInput(jwtSecret)}
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:10px;">
+            <div class="api-field-group">
+              <label class="api-field-label">HTTP Timeout Threshold (Seconds)</label>
+              ${renderFieldInput(timeoutSec)}
+            </div>
+            <div class="api-field-group">
+              <label class="api-field-label">Max Network Retries on Failure</label>
+              ${renderFieldInput(retries)}
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Sticky Floating Action Bar -->
+    <div class="api-sticky-save-bar ${dirtyCount > 0 ? 'visible' : ''}" id="apiStickySaveBar">
+      <div class="api-sticky-text">
+        <i class="bi bi-exclamation-circle-fill" style="color:#f59e0b; font-size:1.1rem;"></i>
+        <span id="apiDirtyCountText">${dirtyCount} unsaved configuration change${dirtyCount === 1 ? '' : 's'}</span>
+      </div>
+      <div class="api-sticky-actions">
+        <button type="button" class="api-btn-discard" id="apiDiscardBtn">Discard</button>
+        <button type="button" class="api-btn-save" id="apiSaveBtn">
+          <i class="bi bi-check2-circle"></i> Save All Changes
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+async function loadApiConfigs() {
+  try {
+    const res = await fetch('/api/admin/api-config');
+    if (res.ok) {
+      const data = await res.json();
+      apiConfigsCache = data.configs || [];
+    }
+  } catch (err) {
+    console.error('Failed to load API configs', err);
+  }
+}
+
 async function loadAndRender() {
   const [statsRes, usersRes] = await Promise.all([
     fetch('/api/admin/stats'),
@@ -495,6 +1062,17 @@ async function loadAndRender() {
     renderTopBarUser(me);
   }
 
+  let tabContentHtml = '';
+  if (activeAdminTab === 'users') {
+    tabContentHtml = `
+      ${renderCreateForm()}
+      <div class="admin-grid">
+        <div class="admin-col-main">
+          ${renderUsersTable(me ? me.id : null)}
+        </div>
+        <div class="admin-col-side">
+          ${renderActivity()}
+        </div>
   main.innerHTML = `
     ${authEnforced ? '' : `<div class="admin-form-error" style="display:flex; margin-bottom:14px;">
       <i class="fa-solid fa-triangle-exclamation"></i>&nbsp; AUTH_ENFORCED is off — every request runs as a super admin, so roles
@@ -509,6 +1087,25 @@ async function loadAndRender() {
       <div class="admin-col-side">
         ${renderActivity()}
       </div>
+    `;
+  } else if (activeAdminTab === 'api-config') {
+    tabContentHtml = renderApiConfigPanel();
+  } else if (activeAdminTab === 'audit') {
+    tabContentHtml = `
+      <div class="admin-grid" style="grid-template-columns: 1fr;">
+        <div class="admin-col-main">
+          ${renderActivity()}
+        </div>
+      </div>
+    `;
+  }
+
+  main.innerHTML = `
+    ${renderHero()}
+    ${renderKPIBanner(statsCache)}
+    ${renderAdminTabsNav()}
+    <div id="adminTabContent">
+      ${tabContentHtml}
     </div>
     <div id="crmSettingsMount" style="margin-top:16px;"></div>
     ${renderModalShell()}
@@ -516,11 +1113,140 @@ async function loadAndRender() {
   wireEvents();
   mountCrmSettings(document.getElementById('crmSettingsMount'));
   loadAuditLogs(true);
+  if (activeAdminTab === 'users' || activeAdminTab === 'audit') {
+    loadAuditLogs(true);
+  }
 }
 
 function wireEvents() {
   const me = getCurrentUser();
   const currentUserId = me ? me.id : null;
+
+  // Admin Tabs Navigation
+  main.querySelectorAll('[data-admin-tab]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const targetTab = btn.dataset.adminTab;
+      if (targetTab === activeAdminTab) return;
+
+      if (Object.keys(dirtyConfigs).length > 0) {
+        if (!confirm('You have unsaved API configuration changes. Discard and switch tabs?')) {
+          return;
+        }
+        dirtyConfigs = {};
+      }
+
+      activeAdminTab = targetTab;
+      await loadAndRender();
+    });
+  });
+
+  // API Config inputs & dirty tracking
+  main.querySelectorAll('.api-input').forEach(input => {
+    const handleInput = () => {
+      const key = input.dataset.configKey;
+      if (input.value.includes('••••') && input.dataset.isConfigured === 'true' && (input.value === '••••••••••••••••••••••••' || input.value === input.dataset.maskedVal)) {
+        delete dirtyConfigs[key];
+      } else {
+        dirtyConfigs[key] = input.value;
+      }
+      const bar = document.getElementById('apiStickySaveBar');
+      const text = document.getElementById('apiDirtyCountText');
+      const dirtyCount = Object.keys(dirtyConfigs).length;
+      if (bar) {
+        if (dirtyCount > 0) {
+          bar.classList.add('visible');
+          if (text) text.textContent = `${dirtyCount} unsaved configuration change${dirtyCount === 1 ? '' : 's'}`;
+        } else {
+          bar.classList.remove('visible');
+        }
+      }
+    };
+    input.addEventListener('input', handleInput);
+    input.addEventListener('change', handleInput);
+  });
+
+  // API Config Test Buttons
+  main.querySelectorAll('[data-test-provider]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const provider = btn.dataset.testProvider;
+      const resultEl = document.getElementById(`testResult-${provider}`);
+      btn.disabled = true;
+      const originalText = btn.innerHTML;
+      btn.innerHTML = '<div class="spinner-sm"></div> Testing…';
+      if (resultEl) {
+        resultEl.classList.remove('d-none', 'success', 'error');
+        resultEl.innerHTML = 'Connecting to provider…';
+      }
+
+      try {
+        const credentials = {};
+        main.querySelectorAll('.api-config-card .api-input').forEach(inp => {
+          if (inp.dataset.configKey && !inp.value.includes('••••')) {
+            credentials[inp.dataset.configKey] = inp.value;
+          }
+        });
+
+        const res = await fetch('/api/admin/api-config/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ provider, credentials }),
+        });
+        const data = await res.json();
+        if (resultEl) {
+          if (data.success) {
+            resultEl.className = 'api-test-result success';
+            resultEl.innerHTML = `<i class="bi bi-check-circle-fill"></i> ${esc(data.message)} (${data.latency_ms || 0}ms)`;
+          } else {
+            resultEl.className = 'api-test-result error';
+            resultEl.innerHTML = `<i class="bi bi-exclamation-triangle-fill"></i> ${esc(data.error || 'Connection failed')}`;
+          }
+        }
+      } catch (err) {
+        if (resultEl) {
+          resultEl.className = 'api-test-result error';
+          resultEl.innerHTML = `<i class="bi bi-exclamation-triangle-fill"></i> Network error: ${esc(err.message)}`;
+        }
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+      }
+    });
+  });
+
+  // Discard Changes
+  const discardBtn = document.getElementById('apiDiscardBtn');
+  if (discardBtn) {
+    discardBtn.addEventListener('click', () => {
+      dirtyConfigs = {};
+      loadAndRender();
+    });
+  }
+
+  // Save Changes
+  const saveBtn = document.getElementById('apiSaveBtn');
+  if (saveBtn) {
+    saveBtn.addEventListener('click', async () => {
+      saveBtn.disabled = true;
+      saveBtn.innerHTML = '<div class="spinner-sm"></div> Saving…';
+      try {
+        const res = await fetch('/api/admin/api-config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ configs: dirtyConfigs }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Failed to save configuration');
+        dirtyConfigs = {};
+        showToast(data.message || 'API configurations saved successfully');
+        await loadAndRender();
+      } catch (err) {
+        alert(err.message);
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '<i class="bi bi-check2-circle"></i> Save All Changes';
+      }
+    });
+  }
 
   // Search input
   const searchInput = document.getElementById('adminUserSearch');
@@ -809,19 +1535,6 @@ function openEditUserModal(user, isSelf) {
     statusSelect.title = isSelf ? 'You cannot deactivate your own account' : '';
   }
   if (passInput) passInput.value = '';
-  const team = crmTeam[user.id] || {};
-  const mgr = document.getElementById('editUserManager');
-  if (mgr) {
-    const candidates = usersCache.filter(x => x.id !== user.id && ['sales_manager', 'super_admin'].includes(x.role));
-    mgr.innerHTML = '<option value="">— No manager —</option>' + candidates.map(x =>
-      `<option value="${x.id}" ${x.id === team.manager_id ? 'selected' : ''}>${esc(x.full_name || x.email)} · ${esc(ROLE_LABEL[x.role] || x.role)}</option>`).join('');
-  }
-  const bls = document.getElementById('editUserBusinessLines');
-  if (bls) {
-    bls.innerHTML = crmBusinessLines.filter(b => b.active).map(b => `<label style="display:inline-flex; gap:5px; align-items:center;">
-      <input type="checkbox" value="${b.id}" ${(team.business_line_ids || []).includes(b.id) ? 'checked' : ''}> ${esc(b.name)}</label>`).join('')
-      || '<span style="color:var(--text-muted)">No business lines configured</span>';
-  }
   if (errorEl) {
     errorEl.textContent = '';
     errorEl.style.display = 'none';
@@ -855,8 +1568,10 @@ function updateTableOnly(currentUserId) {
           </div>
         </td>
         <td>
-          <select class="admin-role-select" data-action="role" ${isSelf ? 'disabled title="You cannot change your own role"' : ''}>${roleOptions(u.role)}</select>
-          ${teamLine(u.id)}
+          <select class="admin-role-select" data-action="role" ${isSelf ? 'disabled title="You cannot change your own role"' : ''}>
+            <option value="user" ${u.role === 'user' ? 'selected' : ''}>User</option>
+            <option value="super_admin" ${u.role === 'super_admin' ? 'selected' : ''}>Super Admin</option>
+          </select>
         </td>
         <td>
           <span class="admin-status-pill ${u.is_active ? 'active' : 'inactive'}">

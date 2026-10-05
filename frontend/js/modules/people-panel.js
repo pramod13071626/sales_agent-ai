@@ -1,11 +1,11 @@
 import { state } from './state.js';
 import { el, dashPeople } from './dom.js';
-import { esc, initials, getPersonasFor, getTechFor } from './utils.js';
+import { esc, initials, getPersonasFor } from './utils.js';
 import { showToast } from './toast.js';
 import { hasDossier, openContactDrawer } from './contact-drawer.js';
-import { renderSelection } from './selection.js';
 import { downloadFile } from './download.js';
 import { openContactEditor } from './crm-extras.js';
+import { photoAttr } from './persona-photo.js';
 
 export function renderContactsList(personas) {
   state.currentPersonas = personas;
@@ -16,7 +16,7 @@ export function renderContactsList(personas) {
     return `
       <div class="contact-card">
         <button type="button" class="contact-main" data-contact-idx="${idx}" title="View full contact details">
-          <div class="contact-avatar">${esc(initials(p.name))}</div>
+          <div class="contact-avatar" ${photoAttr(p)}>${esc(initials(p.name))}</div>
           <div class="contact-body">
             <div class="contact-name">${esc(p.name || 'Unnamed')} ${dossierReady ? '<i class="fa-solid fa-star dossier-badge" title="AI call-prep dossier available"></i>' : ''}</div>
             <div class="contact-title">${esc(p.title || 'Title unknown')}</div>
@@ -42,7 +42,6 @@ export function filterContacts(personas, query) {
 export function renderPeople(account, lob) {
   const personas = getPersonasFor(account, lob);
   state.allAccountPersonas = personas;
-  const tech = getTechFor(account, lob);
 
   const socialLinks = [
     account.linkedin_url ? { label: 'LinkedIn', icon: 'fa-brands fa-linkedin', url: account.linkedin_url } : null,
@@ -59,7 +58,6 @@ export function renderPeople(account, lob) {
       <span><i class="fa-solid fa-address-card"></i> Key Contacts</span>
       <span style="display:flex; gap:6px; align-items:center;">
         <span class="context-badge live">${personas.length} mapped</span>
-        <button type="button" class="context-badge export-btn cx-add-btn" data-add-contact="${account.id}" title="Add a contact by hand"><i class="fa-solid fa-user-plus"></i> Add</button>
         ${personas.length ? `<button type="button" class="context-badge export-btn" data-export-people="${account.id}" title="Download these contacts as Excel"><i class="fa-regular fa-file-excel"></i> Excel</button>` : ''}
       </span>
     </div>
@@ -78,23 +76,6 @@ export function renderPeople(account, lob) {
     <p class="section-desc" style="margin-bottom:8px;">Verified corporate web properties and active public discourse channels.</p>
     ${socialLinks.length ? `<div class="social-links">${socialLinks.map(s => `<a class="social-link" href="${esc(s.url)}" target="_blank" title="Open ${esc(s.label)} profile"><i class="${s.icon}"></i> ${esc(s.label)}</a>`).join('')}</div>`
       : '<div class="people-empty">No social/web links on file.</div>'}
-
-    <!-- Detected Tech Stack Section -->
-    <div class="panel-title" style="margin-top:18px;">
-      <span><i class="fa-solid fa-microchip"></i> Detected Tech Stack</span>
-      <span class="context-badge ai">${tech.length} items</span>
-    </div>
-    <p class="section-desc" style="margin-bottom:8px;">Technologies, frameworks, and cloud platforms detected across operating segments.</p>
-    <div class="chip-row" style="margin-bottom:12px;">
-      ${tech.length ? tech.map(t => `<span class="chip" title="Active technology in stack"><i class="fa-solid fa-microchip"></i> ${esc(t)}</span>`).join('') : '<span class="chip">No tech stack detected yet</span>'}
-    </div>
-
-    <!-- Quick Actions Section -->
-    <div class="panel-title" style="margin-top:18px;">
-      <span><i class="fa-solid fa-screwdriver-wrench"></i> Account Actions</span>
-    </div>
-    <p class="section-desc" style="margin-bottom:8px;">Enrich tech telemetry and company attributes.</p>
-    <button type="button" class="action-btn" id="fetchDiffbotBtn" data-acct="${account.id}" title="Run live Diffbot scraping to identify technologies and company attributes"><i class="fa-solid fa-cloud-arrow-down"></i> Enrich with Diffbot Intel</button>
   `;
 }
 
@@ -132,35 +113,6 @@ dashPeople.addEventListener('click', async function (e) {
   if (contactBtn) {
     const p = state.currentPersonas[Number(contactBtn.dataset.contactIdx)];
     if (p) openContactDrawer(p);
-    return;
-  }
-  const diffbotBtn = e.target.closest('#fetchDiffbotBtn');
-  if (diffbotBtn) {
-    const account = state.accounts.find(a => a.id === Number(diffbotBtn.dataset.acct));
-    if (!account) return;
-    diffbotBtn.disabled = true;
-    diffbotBtn.innerHTML = '<i class="fa-solid fa-hourglass-half"></i> Fetching…';
-    try {
-      const res = await fetch('/api/account/diffbot', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ company_name: account.name, target_url: account.website_url || null })
-      });
-      if (!res.ok) throw new Error('Diffbot request failed');
-      const data = await res.json();
-      const techs = (data.technologies || []).filter(Boolean);
-      if (techs.length) {
-        state.extraTech[account.id] = [...new Set([...(state.extraTech[account.id] || []), ...techs])];
-        showToast(`Diffbot found ${techs.length} technolog${techs.length === 1 ? 'y' : 'ies'} for ${account.name}`);
-      } else {
-        showToast(`Diffbot returned no new technology data for ${account.name}`);
-      }
-    } catch (err) {
-      console.error(err);
-      showToast('Diffbot lookup failed. Check the API server logs.');
-    } finally {
-      renderSelection();
-    }
     return;
   }
 });

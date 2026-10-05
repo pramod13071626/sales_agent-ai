@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Copilot Pipeline | Sales Intelligence</title>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="css/tokens.css?v=3.0">
+  <link rel="stylesheet" href="css/base.css?v=3.0">
+  <link rel="stylesheet" href="css/shell.css?v=3.0">
+  <link rel="stylesheet" href="css/copilot-pipeline.css?v=1.0">
+</head>
+<body>
+
+<div class="dash-shell">
+
+{% include "partials/topbar.html" %}
+
+  <div class="dash-body pl-body">
+    <main class="pl-main" aria-label="Copilot pipeline">
+      <header class="pl-header">
+        <div>
+          <a href="/copilot" class="pl-back"><i class="fa-solid fa-arrow-left"></i> Copilot</a>
+          <h1 class="pl-title"><i class="fa-solid fa-diagram-project"></i> Copilot pipeline</h1>
+          <p class="pl-sub" id="plConfig">Loading…</p>
+        </div>
+        <nav class="pl-tabs" role="tablist" aria-label="Pipeline views">
+          <button type="button" role="tab" class="pl-tab active" data-tab="runs" aria-selected="true"><i class="fa-solid fa-play"></i> Runs</button>
+          <button type="button" role="tab" class="pl-tab" data-tab="inspect" aria-selected="false"><i class="fa-solid fa-cubes"></i> Embedding inspector</button>
+          <button type="button" role="tab" class="pl-tab" data-tab="query" aria-selected="false"><i class="fa-solid fa-magnifying-glass-chart"></i> Query trace</button>
+        </nav>
+      </header>
+
+      <div class="pl-denied" id="plDenied" hidden>
+        <i class="fa-solid fa-lock"></i>
+        <p>The pipeline console is for super admins.</p>
+      </div>
+
+      <!-- ── Runs ─────────────────────────────────────────────── -->
+      <section class="pl-view" id="viewRuns" data-view="runs">
+        <div class="pl-kpis" id="plKpis"></div>
+
+        <div class="pl-grid">
+          <section class="pl-card pl-launch" aria-labelledby="plLaunchTitle">
+            <h2 id="plLaunchTitle">Run the pipeline</h2>
+            <div class="pl-seg" role="radiogroup" aria-label="Run mode" id="plMode">
+              <button type="button" role="radio" data-mode="sync" aria-checked="true" class="active"><i class="fa-solid fa-rotate"></i> Incremental sync</button>
+              <button type="button" role="radio" data-mode="reembed" aria-checked="false"><i class="fa-solid fa-arrows-spin"></i> Full re-embed</button>
+              <button type="button" role="radio" data-mode="eval" aria-checked="false"><i class="fa-solid fa-flask"></i> Eval only</button>
+            </div>
+            <p class="pl-hint" id="plModeHint"></p>
+            <div class="pl-checks">
+              <label><input type="checkbox" id="plGuard" checked> Guardrail suite</label>
+              <label><input type="checkbox" id="plEval" checked> Golden-set eval</label>
+            </div>
+            <button type="button" class="pl-btn pl-btn-primary" id="plStart"><i class="fa-solid fa-play"></i> Start run</button>
+          </section>
+
+          <section class="pl-card pl-history" aria-labelledby="plHistTitle">
+            <h2 id="plHistTitle">Recent runs</h2>
+            <div class="pl-table-wrap"><table class="pl-table" id="plHistory"></table></div>
+          </section>
+        </div>
+
+        <section class="pl-card" aria-labelledby="plRunTitle">
+          <div class="pl-run-head">
+            <h2 id="plRunTitle">Run</h2>
+            <div class="pl-run-meta" id="plRunMeta"></div>
+          </div>
+          <ol class="pl-flow" id="plFlow" aria-label="Pipeline stages"></ol>
+          <div class="pl-stages" id="plStages"></div>
+          <details class="pl-logs">
+            <summary>Log</summary>
+            <pre id="plLogs"></pre>
+          </details>
+        </section>
+      </section>
+
+      <!-- ── Embedding inspector ──────────────────────────────── -->
+      <section class="pl-view" id="viewInspect" data-view="inspect" hidden>
+        <div class="pl-split">
+          <aside class="pl-card pl-picker">
+            <div class="pl-search"><i class="fa-solid fa-magnifying-glass"></i><input id="plDocQ" type="search" placeholder="Search document titles" aria-label="Search documents"></div>
+            <select id="plDocType" class="pl-select" aria-label="Document type"><option value="">All types</option></select>
+            <ul class="pl-doclist" id="plDocList" aria-label="Documents"></ul>
+          </aside>
+          <div class="pl-trace" id="plDocTrace">
+            <div class="pl-empty"><i class="fa-solid fa-cubes"></i><p>Pick a document to follow it from source rows to vectors in Chroma.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Query trace ──────────────────────────────────────── -->
+      <section class="pl-view" id="viewQuery" data-view="query" hidden>
+        <form class="pl-card pl-qform" id="plQForm" autocomplete="off">
+          <input id="plQ" class="pl-input" maxlength="500" required placeholder="e.g. Who at BNY owns securities-finance operations?" aria-label="Question">
+          <select id="plQAccount" class="pl-select" aria-label="Account scope"><option value="">All accounts</option></select>
+          <button type="submit" class="pl-btn pl-btn-primary"><i class="fa-solid fa-route"></i> Trace</button>
+        </form>
+        <div class="pl-trace" id="plQTrace">
+          <div class="pl-empty"><i class="fa-solid fa-magnifying-glass-chart"></i><p>Trace a question through embedding, vector search, keyword search, fusion and the evidence budget. No AI request is made.</p></div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script type="module" src="js/modules/copilot-pipeline/main.js?v=1.0"></script>
+</body>
+</html>

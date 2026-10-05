@@ -49,3 +49,15 @@ architecture_flow.md
 *.swp
 *.swo
 .DS_Store
+
+# Temporary scratch test scripts & exports
+scripts/test_*.py
+scripts/inspect_*.py
+scripts/audit_*.py
+scripts/*_pdf.py
+*.pdf
+
+# Merge conflict backup files
+.merge_backup/
+
+.venv/

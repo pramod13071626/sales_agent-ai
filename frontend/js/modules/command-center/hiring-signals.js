@@ -12,6 +12,8 @@ const summaryCache = new Map();
 const personasCache = new Map();
 
 let bnyAccountIdPromise = null;
+let currentHiringDays = null;
+let hiringFilterInitialized = false;
 
 // renderStrategicInvestmentTracks() below is BNY-specific by design (its
 // sponsor personas/pitch copy name actual BNY executives), unlike
@@ -27,18 +29,20 @@ function getBnyAccountId() {
   return bnyAccountIdPromise;
 }
 
-async function loadHiringSummary(accountId) {
-  if (summaryCache.has(accountId)) {
-    return summaryCache.get(accountId);
+async function loadHiringSummary(accountId, days = null) {
+  const cacheKey = `${accountId}_${days || 'all'}`;
+  if (summaryCache.has(cacheKey)) {
+    return summaryCache.get(cacheKey);
   }
   try {
-    const res = await fetch(`/api/accounts/${accountId}/hiring-summary`);
+    const url = days ? `/api/accounts/${accountId}/hiring-summary?days=${days}` : `/api/accounts/${accountId}/hiring-summary`;
+    const res = await fetch(url);
     if (!res.ok) throw new Error(`Failed to load hiring summary (${res.status})`);
     const data = await res.json();
-    summaryCache.set(accountId, data);
+    summaryCache.set(cacheKey, data);
     return data;
   } catch (err) {
-    console.error(`Error fetching hiring summary for account ${accountId}:`, err);
+    console.error(`Error fetching hiring summary for account ${accountId} (days: ${days}):`, err);
     return null;
   }
 }
@@ -57,6 +61,26 @@ async function loadPersonas(accountId) {
   } catch {
     return [];
   }
+}
+
+function initHiringFilter() {
+  if (hiringFilterInitialized) return;
+  const group = document.getElementById('ccHiringFilterGroup');
+  if (!group) return;
+
+  group.querySelectorAll('.cc-filter-pill').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const daysVal = btn.dataset.days;
+      group.querySelectorAll('.cc-filter-pill').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      currentHiringDays = (daysVal === 'all' || !daysVal) ? null : parseInt(daysVal, 10);
+      renderHiringSignals(currentHiringDays);
+    });
+  });
+
+  hiringFilterInitialized = true;
 }
 
 function getOrgShortName(account) {
@@ -138,77 +162,55 @@ function generateNewsBulletin(summary, account) {
 }
 
 function generateSalesActionStep(summary, account) {
-  const name = getOrgShortName(account);
-  const total = summary.total_roles || 0;
-  const leadership = summary.leadership_count || 0;
-  const contract = summary.contract_count || 0;
-  const topCat = summary.top_category?.name || 'Engineering';
-  const aiCount = summary.track_counts?.ai || 0;
-
-  if (aiCount >= 10 || /bny|mellon/i.test(name)) {
-    return {
-      actionTitle: `Pitch AI Platform & LLMOps Staff-Aug`,
-      targetRole: 'VP / Head of Enterprise AI',
-      recommendation: `High AI hiring detected (${leadership} leadership roles). Pitch StradIT AI Governance Advisory & LLMOps squads before headcount closes.`,
-      taskTitle: `Pitch AI Governance & Staff-Augmentation to ${name}`,
-      taskDescription: `Target: VP of AI Engineering & Architecture.\nContext: ${total} open roles (${leadership} leadership in AI/ML).\nAction: Schedule briefing on enterprise AI governance & LLMOps team augmentation.`,
-    };
-  }
-
-  if (/blackrock/i.test(name)) {
-    return {
-      actionTitle: `Position Aladdin Platform Decoupling`,
-      targetRole: 'Director of Aladdin Wealth Tech',
-      recommendation: `Aladdin engineering scaling (${total} live roles). Pitch specialized quantitative squads and legacy platform decoupling services.`,
-      taskTitle: `Aladdin Platform Decoupling Outreach for ${name}`,
-      taskDescription: `Target: Director of Aladdin Wealth Tech.\nContext: ${total} live requisitions in platform engineering.\nAction: Share StradIT quantitative architecture decoupling case study.`,
-    };
-  }
-
-  if (/northern\s*trust/i.test(name)) {
-    return {
-      actionTitle: `Propose Asset Servicing Modernization`,
-      targetRole: 'Head of Core Banking Technology',
-      recommendation: `Core banking tech hiring active. Pitch asset servicing migration advisory & contract engineering squads to bridge hiring lag.`,
-      taskTitle: `Core Banking Modernization Outreach for ${name}`,
-      taskDescription: `Target: Head of Core Banking Tech.\nContext: ${total} open roles in asset servicing & core banking.\nAction: Propose legacy refactoring sprints and squad augmentation.`,
-    };
-  }
-
-  if (/vanguard/i.test(name)) {
-    return {
-      actionTitle: `Pitch DevSecOps & Cloud Acceleration`,
-      targetRole: 'Head of Cloud & DevSecOps',
-      recommendation: `Cloud infrastructure & DevSecOps expanding. Propose automated security pipeline & multi-cloud consolidation services.`,
-      taskTitle: `DevSecOps & Cloud Consolidation Outreach for ${name}`,
-      taskDescription: `Target: Head of Cloud Infrastructure & DevSecOps.\nContext: ${total} active roles across quantitative & cloud engineering.\nAction: Share cloud security & DevSecOps accelerator case studies.`,
-    };
-  }
+  const shortName = getOrgShortName(account);
+  const total = summary?.total_roles || 0;
+  const contract = summary?.contract_count || 0;
+  const leadership = summary?.leadership_count || 0;
+  const topCat = summary?.top_category?.name || 'Engineering';
 
   if (contract > 0) {
     return {
-      actionTitle: `Submit Contingent Squad Proposal`,
-      targetRole: 'VP of Engineering / TAM Lead',
-      recommendation: `${contract} contractor roles open. Submit pre-vetted senior squads for rapid onboarding to unblock deliverable timelines.`,
-      taskTitle: `Contingent Squad Proposal for ${name}`,
-      taskDescription: `Target: VP of Engineering / TAM.\nContext: ${contract} open contractor roles across tech hubs.\nAction: Submit StradIT rate cards & pre-vetted squad profiles for immediate interview.`,
+      targetRole: 'VP Vendor Management & Talent',
+      recommendation: `Target ${shortName}'s ${contract} open contractor roles with specialized contingent staffing & rate-card optimization.`,
+      taskTitle: `Pitch Staff-Aug Solution for ${contract} Contract Roles @ ${shortName}`,
+      taskDescription: `Reach out to Vendor Management & Talent Acquisition at ${shortName} regarding specialized staffing for ${contract} active contract positions.`,
+    };
+  }
+
+  if (leadership > 0) {
+    return {
+      targetRole: 'Executive Search & CHRO Office',
+      recommendation: `Engage leadership with specialized executive search and delivery for ${leadership} VP/Director-level mandates.`,
+      taskTitle: `Executive Search Outreach: ${leadership} Leadership Roles @ ${shortName}`,
+      taskDescription: `Coordinate executive outreach on ${leadership} senior leadership roles across ${shortName}'s key technology hubs.`,
+    };
+  }
+
+  if (summary?.top_category) {
+    return {
+      targetRole: `Head of ${topCat} Delivery`,
+      recommendation: `Align specialized ${topCat} engineering capacity and dedicated pods for ${summary.top_category.count} open ${topCat} requisitions.`,
+      taskTitle: `Align ${topCat} Talent Pods for ${shortName}`,
+      taskDescription: `Propose dedicated engineering capacity for ${shortName}'s ${summary.top_category.count} open ${topCat} positions.`,
     };
   }
 
   return {
-    actionTitle: `Target Incoming Leaders on ${topCat}`,
-    targetRole: `Director / VP of ${topCat}`,
-    recommendation: `${leadership} open leadership roles in ${topCat}. Reach out during onboarding to position advisory consulting and team scaling.`,
-    taskTitle: `Leadership Outreach on ${topCat} for ${name}`,
-    taskDescription: `Target: Director / VP of ${topCat}.\nContext: ${total} open requisitions with active executive hiring in ${topCat}.\nAction: Schedule discovery call on project roadmap and engineering scaling needs.`,
+    targetRole: 'Head of Talent Acquisition & Staffing',
+    recommendation: `Initiate proactive vendor outreach to support high-velocity talent ramp across ${total} open positions.`,
+    taskTitle: `Strategic Talent Solutions Proposal @ ${shortName}`,
+    taskDescription: `Submit tailored talent delivery capabilities to support ${total} open positions across ${shortName}.`,
   };
 }
 
-export async function renderHiringSignals() {
+export async function renderHiringSignals(days = currentHiringDays) {
+  initHiringFilter();
   const list = document.getElementById('ccHiringList');
   if (!list) return;
 
   list.innerHTML = renderSkeleton('feed-rows');
+
+  const timeframeText = days ? ` (Last ${days} days)` : '';
 
   try {
     // 1. Load all real accounts
@@ -218,34 +220,33 @@ export async function renderHiringSignals() {
       return;
     }
 
-    // 2. Concurrently fetch lightweight hiring summaries
+    // 2. Concurrently fetch lightweight hiring summaries for selected time filter
     const summaryPromises = allAccounts.map(async (acc) => {
-      const s = await loadHiringSummary(acc.id);
+      const s = await loadHiringSummary(acc.id, days);
       return { account: acc, summary: s };
     });
 
     const results = await Promise.all(summaryPromises);
 
-    // Filter accounts with monitored roles
+    // Filter accounts with monitored roles in this timeframe
     const activeOrgs = results.filter(r => r.summary && r.summary.total_roles > 0);
 
+    // Update panel note with total aggregated jobs
+    const totalJobsAll = activeOrgs.reduce((sum, a) => sum + (a.summary?.total_roles || 0), 0);
+    const panelNote = document.getElementById('ccHiringPanelNote');
+    if (panelNote) {
+      panelNote.textContent = `Multi-Organization Executive Flash Intel · ${totalJobsAll.toLocaleString()} live roles across ${activeOrgs.length} accounts${timeframeText}`;
+    }
+
     if (!activeOrgs.length) {
-      list.innerHTML = '<li class="cc-drawer-empty">No active hiring signals recorded in the database.</li>';
+      list.innerHTML = `<li class="cc-drawer-empty">No active hiring signals recorded ${days ? `in the last ${days} days` : 'in the database'}.</li>`;
       return;
     }
 
     // Sort by role count (highest hiring volume first)
     activeOrgs.sort((a, b) => (b.summary?.total_roles || 0) - (a.summary?.total_roles || 0));
 
-    // Update panel note with total aggregated jobs
-    const totalJobsAll = activeOrgs.reduce((sum, a) => sum + (a.summary?.total_roles || 0), 0);
-    const panelNote = document.getElementById('ccHiringPanelNote');
-    if (panelNote) {
-      panelNote.textContent = `Multi-Organization Executive Flash Intel · ${totalJobsAll.toLocaleString()} live roles across ${activeOrgs.length} accounts`;
-    }
-
-    // 3. Render as an actionable tile grid with clear next action steps for sales reps
-    list.classList.add('hs-tile-grid');
+    // 3. Render Executive News Bulletin Flash Rows
     list.innerHTML = activeOrgs.map(({ account, summary }) => {
       const shortName = getOrgShortName(account);
       const tickerTag = getOrgTickerTag(summary, account);
@@ -313,23 +314,34 @@ export async function renderHiringSignals() {
       `;
     }).join('');
 
-    // 4. Click handler: Create real task from action step
+    // 4. Click handlers for Action Task buttons
     list.querySelectorAll('.hs-task-btn').forEach(btn => {
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
         const accountName = btn.dataset.accountName;
-        const taskTitle = btn.dataset.taskTitle;
-        const taskDesc = btn.dataset.taskDesc;
+        const title = btn.dataset.taskTitle;
+        const description = btn.dataset.taskDesc;
+        const origHtml = btn.innerHTML;
         btn.disabled = true;
-        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Creating…';
-        const ok = await createTask(accountName, taskTitle, { description: taskDesc, priority: 'high' });
-        if (ok) {
-          btn.classList.remove('cc-btn-primary');
-          btn.classList.add('cc-btn-done');
-          btn.innerHTML = '<i class="fa-solid fa-check"></i> Task Created';
-        } else {
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Creating...';
+        try {
+          await createTask(accountName, title, { description, score: 85 });
+          btn.innerHTML = '<i class="fa-solid fa-check"></i> Added';
+        } catch {
+          btn.innerHTML = origHtml;
           btn.disabled = false;
-          btn.innerHTML = '<i class="fa-solid fa-plus"></i> Create Action Task';
+        }
+      });
+    });
+
+    // 5. Click handler: Direct drill-down to Account Level Hiring Trend Radar tab
+    list.querySelectorAll('.hs-tile').forEach(row => {
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('.hs-task-btn') || e.target.closest('.hs-explore-link')) return;
+        const accountId = row.dataset.accountId;
+        if (accountId) {
+          const daysQuery = days ? `&days=${days}` : '';
+          window.location.href = `/?account=${accountId}&tab=jobs${daysQuery}`;
         }
       });
     });

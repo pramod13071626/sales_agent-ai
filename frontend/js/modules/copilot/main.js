@@ -312,7 +312,6 @@ function wire() {
     view.clearScope(kind);
     const url = new URL(location.href);
     if (kind === 'persona') url.searchParams.delete('persona_id');
-    else if (kind === 'deal') url.searchParams.delete('deal_id');
     else { url.searchParams.delete('account_id'); url.searchParams.delete('account'); }
     history.replaceState(null, '', url);
   });
@@ -370,6 +369,14 @@ async function init() {
   if (prefill && !$('cpInput').value) {
     $('cpInput').value = prefill.slice(0, 2000);
     $('cpInput').dispatchEvent(new Event('input', { bubbles: true }));
+    const url = new URL(location.href); url.searchParams.delete('q'); history.replaceState(null, '', url);
+  }
+  // ?q= (from the search palette's "Ask Copilot"): prefill only — sending stays the
+  // user's choice, since every answer spends the shared LLM quota.
+  const q = new URLSearchParams(location.search).get('q');
+  if (q) {
+    $('cpInput').value = q;
+    $('cpInput').dispatchEvent(new Event('input', { bubbles: true }));   // lets the textarea auto-grow
     const url = new URL(location.href); url.searchParams.delete('q'); history.replaceState(null, '', url);
   }
   $('cpInput').focus();

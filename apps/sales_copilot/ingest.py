@@ -666,17 +666,32 @@ def active_index_version(conn) -> Tuple[int, str]:
     return row[0], name
 
 
-def sync(log=print) -> Dict[str, Any]:
+def _noop_progress(stage: str, status: str, **metrics: Any) -> None:
+    pass
+
+
+def sync(log=print, progress=None, rebuild: bool = False) -> Dict[str, Any]:
+    """progress(stage, status, **metrics) receives structured step events (pipeline UI).
+    rebuild=True re-embeds every chunk into a staging collection and swaps it in."""
+    p = progress or _noop_progress
     t0 = time.time()
+    p("schema", "running")
     ensure_schema()
+    p("schema", "done")
     conn = engine.raw_connection()
     stats: Dict[str, Any] = {}
     try:
         index_id, collection = active_index_version(conn)
+        p("render", "running")
         docs, ref = render_all(conn)
         conn.commit()          # release the read locks taken while rendering before writing anything
         stats["rendered_docs"] = len(docs)
+        by_type: Dict[str, int] = {}
+        for d in docs.values():
+            by_type[d.doc_type] = by_type.get(d.doc_type, 0) + 1
+        p("render", "done", documents=len(docs), by_type=by_type)
         log(f"[copilot] rendered {len(docs)} documents in {time.time() - t0:.1f}s")
+        p("version", "running")
 
         cur = conn.cursor()
         cur.execute("SELECT id, canonical_key, version, content_hash, deleted_at, simhash FROM rag_documents WHERE is_current")
@@ -741,8 +756,10 @@ def sync(log=print) -> Dict[str, Any]:
         stats.update(new_versions=new_versions, unchanged=unchanged, undeleted=undeleted, tombstoned=len(gone),
                      new_chunks_seen=len(chunk_rows))
         log(f"[copilot] documents: {new_versions} new versions, {unchanged} unchanged, {len(gone)} tombstoned")
+        p("version", "done", new_versions=new_versions, unchanged=unchanged, undeleted=undeleted,
+          tombstoned=len(gone), new_chunks_seen=len(chunk_rows), entity_links=len(ent_rows))
 
-        stats.update(index_documents(conn, index_id, collection, log))
+        stats.update(index_documents(conn, index_id, collection, log, progress=p, rebuild=rebuild))
         stats["seconds"] = round(time.time() - t0, 1)
         cur.execute("""INSERT INTO rag_sync_state (source_table, last_reconcile_at, last_reconcile_stats)
                        VALUES ('*', now(), %s) ON CONFLICT (source_table) DO UPDATE
@@ -754,8 +771,12 @@ def sync(log=print) -> Dict[str, Any]:
         conn.close()
 
 
-def index_documents(conn, index_id: int, collection: str, log=print) -> Dict[str, Any]:
-    """Reconcile Chroma with the set of (chunk, account) pairs current documents need (README §5.4)."""
+def index_documents(conn, index_id: int, collection: str, log=print, progress=None,
+                    rebuild: bool = False) -> Dict[str, Any]:
+    """Reconcile Chroma with the set of (chunk, account) pairs current documents need (README §5.4).
+    rebuild=True embeds every pair into "<collection>__rebuild", then swaps it in and rewrites the
+    ledger, so chat keeps searching the old vectors until the new ones are complete."""
+    p = progress or _noop_progress
     cur = conn.cursor()
     cur.execute("""
         SELECT dc.chunk_hash, e.account_id, min(d.doc_type), max(d.published_at),
@@ -768,9 +789,16 @@ def index_documents(conn, index_id: int, collection: str, log=print) -> Dict[str
     desired = {(bytes(r[0]), r[1]): r for r in cur.fetchall()}
     cur.execute("SELECT chunk_hash, account_id FROM rag_index_entries WHERE index_version_id = %s", (index_id,))
     existing = {(bytes(r[0]), r[1]) for r in cur.fetchall()}
-
-    to_add = [k for k in desired if k not in existing]
-    to_remove = [k for k in existing if k not in desired]
+    target = collection
+    if rebuild:
+        target = collection + "__rebuild"
+        store.drop(target)                 # leftover from an interrupted rebuild
+        to_add, to_remove = list(desired), []
+    else:
+        to_add = [k for k in desired if k not in existing]
+        to_remove = [k for k in existing if k not in desired]
+    p("embed", "running", done=0, total=len({h for h, _ in to_add}), model=settings.EMBED_MODEL,
+      dims=settings.EMBED_DIMS)
 
     if to_add:
         hashes = list({h for h, _ in to_add})
@@ -784,7 +812,15 @@ def index_documents(conn, index_id: int, collection: str, log=print) -> Dict[str
             batch = hashes[i:i + step]
             for h, v in zip(batch, embed.embed_documents([texts[h] for h in batch])):
                 vectors[h] = v   # each distinct text embedded once, reused across accounts
-            log(f"[copilot]   {min(i + step, len(hashes))}/{len(hashes)} embedded ({time.time() - t:.0f}s)")
+            done = min(i + step, len(hashes))
+            log(f"[copilot]   {done}/{len(hashes)} embedded ({time.time() - t:.0f}s)")
+            p("embed", "running", done=done, total=len(hashes), seconds=round(time.time() - t, 1))
+        sample = vectors[hashes[0]]
+        p("embed", "done", done=len(hashes), total=len(hashes), seconds=round(time.time() - t, 1),
+          chunks_per_second=round(len(hashes) / max(time.time() - t, 0.001), 1),
+          dims=len(sample), sample_norm=round(sum(x * x for x in sample) ** 0.5, 4),
+          sample_head=[round(x, 4) for x in sample[:24]])
+        p("index", "running", to_add=len(to_add), to_remove=len(to_remove), collection=target)
         ids, embs, docs_, metas = [], [], [], []
         for h, aid in to_add:
             _, _, doc_type, pub, person_scoped = desired[(h, aid)]
@@ -794,10 +830,16 @@ def index_documents(conn, index_id: int, collection: str, log=print) -> Dict[str
             metas.append({"account_id": int(aid), "doc_type": doc_type,
                           "published_ts": int(pub.timestamp()) if pub else 0,
                           "is_person_scoped": bool(person_scoped)})
-        store.upsert(collection, ids, embs, docs_, metas)    # Chroma first, then ledger (README §5.4)
+        store.upsert(target, ids, embs, docs_, metas)    # Chroma first, then ledger (README §5.4)
+        if rebuild:
+            store.swap(target, collection)
+            cur.execute("DELETE FROM rag_index_entries WHERE index_version_id = %s", (index_id,))
         execute_values(cur, "INSERT INTO rag_index_entries (index_version_id, chunk_hash, account_id) VALUES %s ON CONFLICT DO NOTHING",
                        [(index_id, h, a) for h, a in to_add], page_size=2000)
         conn.commit()
+    else:
+        p("embed", "done", done=0, total=0)
+        p("index", "running", to_add=0, to_remove=len(to_remove), collection=target)
     if to_remove:
         store.delete(collection, [store.record_id(h, a) for h, a in to_remove])
         for h, a in to_remove:
@@ -806,5 +848,7 @@ def index_documents(conn, index_id: int, collection: str, log=print) -> Dict[str
         conn.commit()
     total = store.count(collection)
     log(f"[copilot] index: +{len(to_add)} / -{len(to_remove)} entries; Chroma now holds {total}")
+    p("index", "done", added=len(to_add), removed=len(to_remove), chroma_total=total, ledger_total=len(desired),
+      rebuilt=rebuild)
     return {"index_added": len(to_add), "index_removed": len(to_remove), "index_total": total,
             "ledger_total": len(desired)}
