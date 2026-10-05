@@ -1,25 +1,35 @@
 // Google News widget — recent articles already captured in Postgres
-// (Post.channel == 'news', scraped from Google News RSS per-account during
-// the intelligence pipeline run) surfaced as one cross-account feed instead
+// (Post.channel == 'news', scraped from Google News RSS per account and per
+// executive by the content pipeline) surfaced as one cross-account feed instead
 // of requiring a rep to open each account's own Content tab to see it.
+// /api/news ranks by the article's own date and filters by account server-side.
 import { esc } from './utils.js';
 import { renderSkeleton } from '../skeleton.js';
 import { ccState } from './state.js';
 
-let newsPromise = null;
+const STALE_DAYS = 7;
+const newsByAccount = new Map();   // account id ('' = all) -> Promise<{articles, last_scraped}>
 
-function loadNews() {
-  if (!newsPromise) {
-    newsPromise = fetch('/api/news?limit=20')
+function loadNews(accountId) {
+  const key = accountId ? String(accountId) : '';
+  if (!newsByAccount.has(key)) {
+    const params = new URLSearchParams({ limit: '20' });
+    if (accountId) params.set('account_id', accountId);
+    const p = fetch(`/api/news?${params}`)
       .then(res => { if (!res.ok) throw new Error(`Failed to load news (${res.status})`); return res.json(); })
-      .then(data => data.articles || []);
+      .catch(err => { newsByAccount.delete(key); throw err; });   // let the next render retry
+    newsByAccount.set(key, p);
   }
-  return newsPromise;
+  return newsByAccount.get(key);
+}
+
+function daysAgo(iso) {
+  return iso ? Math.floor((Date.now() - new Date(iso).getTime()) / 86400000) : null;
 }
 
 function timeAgo(iso) {
   if (!iso) return '';
-  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+  const days = daysAgo(iso);
   if (days <= 0) return 'today';
   if (days === 1) return '1d ago';
   return `${days}d ago`;
@@ -30,41 +40,36 @@ export async function renderNewsFeed() {
   if (!list) return;
   list.innerHTML = renderSkeleton('feed-rows');
 
-  let articles;
+  const accountId = ccState.activeAccountId;
+  let data;
   try {
-    articles = await loadNews();
+    data = await loadNews(accountId);
   } catch (err) {
     console.error(err);
     list.innerHTML = '<li class="cc-drawer-empty">Could not load news.</li>';
     return;
   }
+  if (ccState.activeAccountId !== accountId) return;   // filter changed while loading
 
-  const activeAcctId = ccState.activeAccountId;
-  const activeAcctName = ccState.selectedAccountName;
-  if (activeAcctId || activeAcctName) {
-    articles = articles.filter(a => {
-      if (activeAcctId && (a.account_id === activeAcctId || String(a.account_id) === String(activeAcctId))) return true;
-      if (activeAcctName && a.account_name) {
-        const c = a.account_name.toLowerCase();
-        const s = activeAcctName.toLowerCase();
-        if (c.includes(s) || s.includes(c)) return true;
-      }
-      return false;
-    });
-  }
-
+  const articles = data.articles || [];
   if (!articles.length) {
     list.innerHTML = '<li class="cc-drawer-empty">No recent news captured yet for the selected account.</li>';
     return;
   }
 
-  list.innerHTML = articles.map(a => `
+  // News only arrives when the content pipeline's scrape runs — say so when it's old.
+  const scrapedDays = daysAgo(data.last_scraped);
+  const staleNote = scrapedDays !== null && scrapedDays >= STALE_DAYS
+    ? `<li class="cc-drawer-empty cc-news-stale"><i class="fa-solid fa-clock-rotate-left"></i> News last fetched ${scrapedDays} days ago — run the content pipeline scrape to refresh.</li>`
+    : '';
+
+  list.innerHTML = staleNote + articles.map(a => `
     <li class="cc-feed-row">
       <div class="cc-feed-body">
         <div class="cc-feed-title-row">
           <a class="cc-feed-title cc-news-link" href="${esc(a.url || '#')}" target="_blank" rel="noopener">${esc(a.title)}</a>
         </div>
-        <div class="cc-feed-meta">${esc(a.account_name || '')}${a.source ? ` &middot; ${esc(a.source)}` : ''} &middot; ${esc(timeAgo(a.first_seen))}</div>
+        <div class="cc-feed-meta">${esc(a.account_name || '')}${a.person_name ? ` &middot; ${esc(a.person_name)}` : ''}${a.source ? ` &middot; ${esc(a.source)}` : ''} &middot; <span title="${esc(a.published_at ? 'Published ' + new Date(a.published_at).toLocaleString() : 'Date unknown — first captured ' + new Date(a.first_seen).toLocaleString())}">${esc(timeAgo(a.published_at || a.first_seen))}</span></div>
       </div>
     </li>`).join('');
 }

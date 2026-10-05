@@ -52,8 +52,8 @@ from collectors.validator import DataQualityValidator
 from serializer import MasterSerializer
 from serializers.account_serializer import slugify
 
-from sqlalchemy import or_, and_, text as sql_text
-from sqlalchemy.orm import selectinload
+from sqlalchemy import or_, and_, func, text as sql_text
+from sqlalchemy.orm import load_only, selectinload
 from db.connection import get_session
 from db.models import (
     Account,
@@ -333,6 +333,22 @@ if FASTAPI_AVAILABLE:
             auth.revoke_all_refresh_tokens_for_user(session, user.id)
             auth.log_audit(session, user.id, "password_reset_completed", target_user_id=user.id)
             return {"message": "Password updated. Please log in again."}
+        finally:
+            session.close()
+
+    # ── User list for task assignment ────────────────────────────
+    @app.get("/api/users", tags=["0. Authentication"])
+    def list_assignable_users(current: User = Depends(auth.get_current_user)):
+        """Returns active sales team members (non-admin users) for task assignment dropdowns."""
+        session = get_session()
+        try:
+            users = (
+                session.query(User)
+                .filter(User.is_active.is_(True), User.role == "user")
+                .order_by(User.full_name.asc())
+                .all()
+            )
+            return {"users": [{"id": u.id, "name": u.full_name or u.email, "email": u.email, "role": u.role} for u in users]}
         finally:
             session.close()
 
@@ -892,6 +908,17 @@ if FASTAPI_AVAILABLE:
         description: Optional[str] = None
         persona_id: Optional[int] = None
         priority: str = "medium"  # high | medium | low
+        status: Optional[str] = "open"  # open | in_progress
+        due_date: Optional[str] = None  # ISO 8601
+        assigned_to_id: Optional[int] = None
+
+    class ActionItemDirectCreateRequest(BaseModel):
+        account_id: int
+        title: str
+        description: Optional[str] = None
+        persona_id: Optional[int] = None
+        priority: str = "medium"  # high | medium | low
+        status: Optional[str] = "open"  # open | in_progress
         due_date: Optional[str] = None  # ISO 8601
         assigned_to_id: Optional[int] = None
         source: str = "manual"  # manual | playbook | signal_feed
@@ -4321,7 +4348,13 @@ if FASTAPI_AVAILABLE:
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         session = get_session()
         try:
-            query = session.query(Persona).join(Account, Persona.account_id == Account.id)
+            # Only the fields tallied below — full persona rows carry large raw_data JSON and
+            # p.account would load each account's multi-MB enrichment row.
+            query = session.query(
+                Persona.id, Persona.full_name, Persona.title, Persona.tier, Persona.account_id,
+                Persona.operational_pain_points, Persona.key_objections,
+                func.coalesce(Account.display_name, Account.legal_name).label("acct_name"),
+            ).join(Account, Persona.account_id == Account.id)
             if user.role != "super_admin":
                 accessible_ids = auth.get_accessible_account_ids(session, user.id)
                 query = query.filter(Account.id.in_(accessible_ids)) if accessible_ids else query.filter(False)
@@ -4330,7 +4363,7 @@ if FASTAPI_AVAILABLE:
             pain_points: Dict[str, Dict[str, Any]] = {}
             objections: Dict[str, Dict[str, Any]] = {}
 
-            def _tally(bucket: Dict[str, Dict[str, Any]], text: Optional[str], acct_name: Optional[str], p: Optional[Persona] = None):
+            def _tally(bucket: Dict[str, Dict[str, Any]], text: Optional[str], acct_name: Optional[str], p=None):
                 text = (text or "").strip()
                 if not text:
                     return
@@ -4349,7 +4382,7 @@ if FASTAPI_AVAILABLE:
                     })
 
             for p in personas:
-                acct_name = (p.account.display_name or p.account.legal_name) if p.account else None
+                acct_name = p.acct_name
                 for text in (p.operational_pain_points or []):
                     _tally(pain_points, text, acct_name, p)
                 for text in (p.key_objections or []):
@@ -5796,21 +5829,50 @@ if FASTAPI_AVAILABLE:
     def _serialize_action_item(item: ActionItem) -> Dict[str, Any]:
         now = datetime.now(timezone.utc)
         due = item.due_date
+        due_utc = (due if due.tzinfo else due.replace(tzinfo=timezone.utc)) if due else None
         is_overdue = bool(
-            due and item.status not in ("done", "cancelled")
-            and (due if due.tzinfo else due.replace(tzinfo=timezone.utc)) < now
+            due_utc and item.status not in ("done", "cancelled")
+            and due_utc < now
         )
+
+        due_relative = None
+        if due_utc:
+            diff = due_utc - now if not is_overdue else now - due_utc
+            total_seconds = int(diff.total_seconds())
+            days = total_seconds // 86400
+            hours = (total_seconds % 86400) // 3600
+            if is_overdue:
+                if days == 0:
+                    due_relative = f"Overdue by {max(1, hours)}h"
+                else:
+                    due_relative = f"Overdue by {days}d"
+            else:
+                if days == 0:
+                    due_relative = f"Due in {max(1, hours)}h"
+                else:
+                    due_relative = f"Due in {days}d"
+
+        account_name = None
+        account_domain = None
+        if item.account:
+            account_name = item.account.display_name or item.account.legal_name
+            account_domain = item.account.domain
+
         return {
             "id": item.id,
             "account_id": item.account_id,
+            "account_name": account_name,
+            "account_domain": account_domain,
             "persona_id": item.persona_id,
-            "persona_name": item.persona.full_name if item.persona else None,
+            "persona_name": (item.persona.full_name or item.persona.display_name) if item.persona else None,
+            "persona_title": item.persona.title if item.persona else None,
             "title": item.title,
             "description": item.description,
             "status": item.status,
             "priority": item.priority,
-            "due_date": item.due_date.isoformat() if item.due_date else None,
+            "due_date": due_utc.isoformat() if due_utc else None,
             "is_overdue": is_overdue,
+            "due_relative": due_relative,
             "assigned_to_id": item.assigned_to_id,
             "assigned_to_name": (item.assigned_to.full_name or item.assigned_to.email) if item.assigned_to else None,
             "created_by_id": item.created_by_id,
@@ -5873,9 +5935,16 @@ if FASTAPI_AVAILABLE:
                 persona = session.query(Persona).filter_by(id=body.persona_id, account_id=account_id).first()
                 if not persona:
                     raise HTTPException(status_code=400, detail="persona_id does not belong to this account")
+            if body.assigned_to_id is not None:
+                assignee = session.query(User).filter_by(id=body.assigned_to_id).first()
+                if not assignee:
+                    raise HTTPException(status_code=400, detail="Assigned user not found")
+                if assignee.role in ("super_admin", "admin"):
+                    raise HTTPException(status_code=400, detail="Administrators cannot be assigned tasks. Please assign to a sales team member.")
             item = ActionItem(
                 account_id=account_id, persona_id=body.persona_id, title=body.title,
                 description=body.description, priority=body.priority,
+                status=body.status if body.status in ("open", "in_progress", "done") else "open",
                 due_date=_parse_due_date(body.due_date), assigned_to_id=body.assigned_to_id,
                 created_by_id=user.id, source=body.source,
             )
@@ -5887,6 +5956,62 @@ if FASTAPI_AVAILABLE:
                              selectinload(ActionItem.created_by))
                     .filter_by(id=item.id).first())
             return _serialize_action_item(item)
+        except HTTPException:
+            raise
+        except Exception as e:
+            session.rollback()
+            raise HTTPException(status_code=500, detail=f"Could not create action item: {e}")
+        finally:
+            session.close()
+
+    @app.post("/api/action-items", tags=["8. Action Items"])
+    def create_direct_action_item(
+        body: ActionItemDirectCreateRequest,
+        user: User = Depends(auth.get_current_user),
+    ):
+        """Direct action item creation from the cross-account Tasks page."""
+        if body.priority not in ("high", "medium", "low"):
+            raise HTTPException(status_code=400, detail="priority must be 'high', 'medium', or 'low'")
+        session = get_session()
+        try:
+            # Check account access for regular users
+            if user.role != "super_admin":
+                accessible_ids = auth.get_accessible_account_ids(session, user.id)
+                if body.account_id not in accessible_ids:
+                    raise HTTPException(status_code=403, detail="You do not have access to this account")
+
+            if body.persona_id is not None:
+                persona = session.query(Persona).filter_by(id=body.persona_id, account_id=body.account_id).first()
+                if not persona:
+                    raise HTTPException(status_code=400, detail="persona_id does not belong to this account")
+
+            assigned_id = body.assigned_to_id
+            if assigned_id is not None:
+                assignee = session.query(User).filter_by(id=assigned_id).first()
+                if not assignee:
+                    raise HTTPException(status_code=400, detail="Assigned user not found")
+                if assignee.role in ("super_admin", "admin"):
+                    raise HTTPException(status_code=400, detail="Administrators cannot be assigned tasks. Please assign to a sales team member.")
+            elif user.role == "user":
+                assigned_id = user.id
+
+            item = ActionItem(
+                account_id=body.account_id, persona_id=body.persona_id, title=body.title,
+                description=body.description, priority=body.priority,
+                status=body.status if body.status in ("open", "in_progress", "done") else "open",
+                due_date=_parse_due_date(body.due_date), assigned_to_id=assigned_id,
+                created_by_id=user.id, source="manual",
+            )
+            session.add(item)
+            session.commit()
+            session.refresh(item)
+            item = (session.query(ActionItem)
+                    .options(selectinload(ActionItem.persona), selectinload(ActionItem.assigned_to),
+                             selectinload(ActionItem.created_by), selectinload(ActionItem.account))
+                    .filter_by(id=item.id).first())
+            d = _serialize_action_item(item)
+            d["account_name"] = item.account.display_name or item.account.legal_name if item.account else None
+            return d
         except HTTPException:
             raise
         except Exception as e:
@@ -5938,6 +6063,13 @@ if FASTAPI_AVAILABLE:
                 if not persona:
                     raise HTTPException(status_code=400, detail="persona_id does not belong to this account")
                 item.persona_id = body.persona_id
+
+            if body.assigned_to_id is not None:
+                assignee = session.query(User).filter_by(id=body.assigned_to_id).first()
+                if not assignee:
+                    raise HTTPException(status_code=400, detail="Assigned user not found")
+                if assignee.role in ("super_admin", "admin"):
+                    raise HTTPException(status_code=400, detail="Administrators cannot be assigned tasks. Please assign to a sales team member.")
 
             reassigned = body.assigned_to_id is not None and body.assigned_to_id != item.assigned_to_id
             if body.assigned_to_id is not None:
@@ -6051,12 +6183,31 @@ if FASTAPI_AVAILABLE:
         try:
             item = (session.query(ActionItem)
                     .options(selectinload(ActionItem.persona), selectinload(ActionItem.assigned_to),
-                             selectinload(ActionItem.created_by))
+                             selectinload(ActionItem.created_by), selectinload(ActionItem.account))
                     .filter_by(id=item_id).first())
             if not item:
                 raise HTTPException(status_code=404, detail="Action item not found")
             item.status = "done"
             item.completed_at = datetime.now(timezone.utc)
+            session.commit()
+            session.refresh(item)
+            return _serialize_action_item(item)
+        finally:
+            session.close()
+
+    @app.post("/api/action-items/{item_id}/reopen", tags=["8. Action Items"])
+    def reopen_action_item(item_id: int, user: User = Depends(auth.require_action_item_account_access)):
+        """Reopens a closed action item, resetting its completed status and restoring due evaluation."""
+        session = get_session()
+        try:
+            item = (session.query(ActionItem)
+                    .options(selectinload(ActionItem.persona), selectinload(ActionItem.assigned_to),
+                             selectinload(ActionItem.created_by), selectinload(ActionItem.account))
+                    .filter_by(id=item_id).first())
+            if not item:
+                raise HTTPException(status_code=404, detail="Action item not found")
+            item.status = "open"
+            item.completed_at = None
             session.commit()
             session.refresh(item)
             return _serialize_action_item(item)
@@ -6137,30 +6288,53 @@ if FASTAPI_AVAILABLE:
             session.close()
 
     @app.get("/api/me/action-items", tags=["8. Action Items"])
-    def list_my_action_items(status: Optional[str] = None, user: User = Depends(auth.get_current_user)):
-        """Cross-account 'My Tasks' — every action item assigned to the
-        caller, restricted to accounts they can actually see (super_admin
-        gets everything; anyone else only what's been granted to them)."""
+    def list_my_action_items(
+        status: Optional[str] = None,
+        priority: Optional[str] = None,
+        account_id: Optional[int] = None,
+        assigned_to_id: Optional[int] = None,
+        search: Optional[str] = None,
+        user: User = Depends(auth.get_current_user),
+    ):
+        """Cross-account 'My Tasks' — for regular sales reps, lists every action
+        item assigned to them on accounts they have access to. For super_admins,
+        lists all company tasks (with optional filter by rep/account/priority)."""
         session = get_session()
         try:
             query = (session.query(ActionItem)
                      .options(selectinload(ActionItem.persona), selectinload(ActionItem.assigned_to),
-                              selectinload(ActionItem.created_by), selectinload(ActionItem.account))
-                     .filter(ActionItem.assigned_to_id == user.id))
+                              selectinload(ActionItem.created_by), selectinload(ActionItem.account)))
             if user.role != "super_admin":
                 accessible_ids = auth.get_accessible_account_ids(session, user.id)
                 if accessible_ids:
                     query = query.filter(ActionItem.account_id.in_(accessible_ids))
                 else:
                     query = query.filter(False)
-            if status:
+                if assigned_to_id is not None:
+                    query = query.filter(ActionItem.assigned_to_id == assigned_to_id)
+            elif assigned_to_id is not None:
+                query = query.filter(ActionItem.assigned_to_id == assigned_to_id)
+
+            if account_id is not None:
+                query = query.filter(ActionItem.account_id == account_id)
+            if priority:
+                query = query.filter(ActionItem.priority == priority)
+            if status and status != "all":
                 query = query.filter(ActionItem.status == status)
+
             items = query.order_by(ActionItem.due_date.asc().nullslast(), ActionItem.created_at.desc()).all()
-            results = []
-            for i in items:
-                d = _serialize_action_item(i)
-                d["account_name"] = i.account.display_name or i.account.legal_name if i.account else None
-                results.append(d)
+            results = [_serialize_action_item(i) for i in items]
+
+            if search:
+                q = search.lower().strip()
+                results = [
+                    r for r in results
+                    if (r.get("title") and q in r["title"].lower())
+                    or (r.get("description") and q in r["description"].lower())
+                    or (r.get("account_name") and q in r["account_name"].lower())
+                    or (r.get("persona_name") and q in r["persona_name"].lower())
+                ]
+
             return {"action_items": results}
         finally:
             session.close()
@@ -6268,11 +6442,7 @@ if FASTAPI_AVAILABLE:
                                priority: Optional[str] = None, user: User = Depends(auth.get_current_user)):
         """My Tasks as Excel — same access rules and filters as the /tasks page."""
         from apps.sales_copilot import exports
-        items = list_my_action_items(status=status, user=user)["action_items"]
-        if account_id:
-            items = [i for i in items if i.get("account_id") == account_id]
-        if priority:
-            items = [i for i in items if i.get("priority") == priority]
+        items = list_my_action_items(status=status, account_id=account_id, priority=priority, user=user)["action_items"]
         headers = ["Title", "Status", "Priority", "Due", "Account", "Contact", "Description", "Created"]
         rows = [[i.get("title"), i.get("status"), i.get("priority"), (i.get("due_date") or "")[:10],
                  i.get("account_name"), (i.get("persona") or {}).get("name") if isinstance(i.get("persona"), dict) else i.get("persona_name"),
@@ -6432,7 +6602,11 @@ if FASTAPI_AVAILABLE:
 
     def _build_target_key_to_account_map(session) -> Dict[str, Account]:
         mapping: Dict[str, Account] = {}
-        for a in session.query(Account).all():
+        # Only the naming columns: full account rows carry MBs of enrichment JSON, and
+        # loading them dominated every feed endpoint that calls this (~0.6s for 5 rows).
+        accounts = session.query(Account).options(load_only(
+            Account.id, Account.key, Account.stock_symbol, Account.display_name, Account.legal_name)).all()
+        for a in accounts:
             for candidate in (
                 a.key,
                 (a.stock_symbol or "").lower() or None,
@@ -6879,52 +7053,95 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
+    def _news_date(published_at: Optional[str], first_seen: Optional[datetime]) -> Optional[datetime]:
+        """Article date from the scraped text (RSS gives RFC 822, e.g. "Wed, 26 Aug 2026
+        23:14:00 GMT"; some sources give ISO). Falls back to when we first saw it."""
+        from email.utils import parsedate_to_datetime
+        if published_at:
+            for parse in (parsedate_to_datetime, datetime.fromisoformat):
+                try:
+                    d = parse(published_at.strip())
+                    return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+                except (TypeError, ValueError, IndexError):
+                    continue
+        return first_seen
+
     @app.get("/api/news", tags=["4. Content Intelligence"])
     def get_cross_account_news(
         response: Response,
         user: User = Depends(auth.get_current_user),
         limit: int = Query(30, ge=1, le=100),
+        account_id: Optional[int] = Query(None),
     ):
-        """Recent Google News articles (Post.channel == "news") captured across
-        every account the caller can see — the cross-account counterpart to
-        /api/accounts/{id}/content's per-account news slice, for a single feed
-        on Command Center instead of one fetch per account."""
+        """Recent Google News articles (Post.channel == "news") across every account
+        the caller can see — both company-level scrapes (target_key = account key)
+        and person-level ones (target_key = persona key, mapped to the persona's
+        account). Newest article first by the article's own date, the same story
+        under several people shown once. account_id narrows to one account."""
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         session = get_session()
         try:
-            target_map = _build_target_key_to_account_map(session)
+            company_map = _build_target_key_to_account_map(session)
             if user.role != "super_admin":
-                accessible_ids = auth.get_accessible_account_ids(session, user.id)
-                target_map = {k: a for k, a in target_map.items() if a.id in accessible_ids}
-            if not target_map:
+                accessible_ids = set(auth.get_accessible_account_ids(session, user.id))
+                company_map = {k: a for k, a in company_map.items() if a.id in accessible_ids}
+            accounts = {a.id: a for a in company_map.values()}
+            if account_id is not None:
+                accounts = {k: v for k, v in accounts.items() if k == account_id}
+                company_map = {k: a for k, a in company_map.items() if a.id == account_id}
+            if not accounts:
                 return {"articles": []}
 
+            # target_key -> (account, person name or None)
+            target_map = {k: (a, None) for k, a in company_map.items()}
+            person_rows = (
+                session.query(Persona.key, Persona.account_id, func.coalesce(Persona.full_name, Persona.display_name))
+                .filter(Persona.account_id.in_(list(accounts)), Persona.key.isnot(None))
+                .all()
+            )
+            for key, acct_id, name in person_rows:
+                target_map.setdefault(key, (accounts[acct_id], name))
+
+            # Candidates by scrape time (indexed), then ranked by the article's own date.
             posts = (
                 session.query(Post)
                 .filter(Post.channel == "news", Post.target_key.in_(list(target_map.keys())))
                 .order_by(Post.first_seen.desc().nullslast())
-                .limit(limit)
+                .limit(max(limit * 25, 500))
                 .all()
             )
-            articles = []
-            for p in posts:
+            ranked = sorted(posts, key=lambda p: _news_date(p.published_at, p.first_seen)
+                            or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+
+            articles, seen = [], set()
+            for p in ranked:
                 raw = p.raw or {}
                 body_stripped = (p.body or "").strip()
                 title = raw.get("title") or (body_stripped.splitlines()[0][:200] if body_stripped else None)
                 if not title:
                     continue
-                acct = target_map.get(p.target_key)
+                dedupe = " ".join(title.lower().split())
+                if dedupe in seen:
+                    continue
+                seen.add(dedupe)
+                acct, person = target_map[p.target_key]
+                published = _news_date(p.published_at, None)
                 articles.append({
                     "id": p.id,
-                    "account_id": acct.id if acct else None,
-                    "account_name": (acct.display_name or acct.legal_name) if acct else p.target_key,
+                    "account_id": acct.id,
+                    "account_name": acct.display_name or acct.legal_name,
+                    "person_name": person,
                     "title": title,
                     "source": p.author or raw.get("source"),
                     "url": p.post_url,
-                    "published_at": p.published_at,
+                    "published_at": published.isoformat() if published else None,
                     "first_seen": p.first_seen.isoformat() if p.first_seen else None,
                 })
-            return {"articles": articles}
+                if len(articles) >= limit:
+                    break
+            last_scraped = session.query(func.max(Post.first_seen)).filter(
+                Post.channel == "news", Post.target_key.in_(list(target_map.keys()))).scalar()
+            return {"articles": articles, "last_scraped": last_scraped.isoformat() if last_scraped else None}
         finally:
             session.close()
 

@@ -20,7 +20,7 @@
   <link rel="stylesheet" href="css/action-items.css?v=1.0">
   <link rel="stylesheet" href="css/profile-page.css?v=3.1">
   <link rel="stylesheet" href="css/responsive.css?v=3.0">
-  <link rel="stylesheet" href="css/command-center.css?v=1.0">
+  <link rel="stylesheet" href="css/command-center.css?v=1.1">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -105,17 +105,20 @@
         </div>
       </section>
 
-      <section class="cc-row cc-row-2col">
-        <div class="cc-panel cc-playbook-panel" data-widget-id="playbook">
+      <section class="cc-row cc-row-3col">
+        <div class="cc-panel" data-widget-id="due_soon">
           <div class="cc-panel-head">
             <div class="cc-panel-head-left">
-              <h2>This week's playbook</h2>
+              <h2>Due soon</h2>
             </div>
-            <button type="button" class="cc-help-btn" data-widget-info="playbook" title="About This Week's Playbook" aria-label="About This Week's Playbook">
-              <i class="fa-solid fa-circle-question"></i>
-            </button>
+            <div class="cc-panel-actions">
+              <a class="cc-panel-link" href="/tasks">View all <i class="fa-solid fa-arrow-right"></i></a>
+              <button type="button" class="cc-help-btn" data-widget-info="due_soon" title="About Due Soon & Tasks" aria-label="About Due Soon & Tasks">
+                <i class="fa-solid fa-circle-question"></i>
+              </button>
+            </div>
           </div>
-          <ol class="cc-playbook-list" id="ccPlaybookList"></ol>
+          <ul class="cc-feed-list" id="ccDueSoonList"></ul>
         </div>
 
         <div class="cc-panel cc-timeline-panel" data-widget-id="timeline">
@@ -132,22 +135,17 @@
           </div>
           <ul class="cc-timeline-list" id="ccTimelineList"></ul>
         </div>
-      </section>
 
-      <section class="cc-row cc-row-2col">
-        <div class="cc-panel" data-widget-id="due_soon">
+        <div class="cc-panel cc-playbook-panel" data-widget-id="playbook">
           <div class="cc-panel-head">
             <div class="cc-panel-head-left">
-              <h2>Due soon</h2>
+              <h2>This week's playbook</h2>
             </div>
-            <div class="cc-panel-actions">
-              <a class="cc-panel-link" href="/tasks">View all <i class="fa-solid fa-arrow-right"></i></a>
-              <button type="button" class="cc-help-btn" data-widget-info="due_soon" title="About Due Soon & Tasks" aria-label="About Due Soon & Tasks">
-                <i class="fa-solid fa-circle-question"></i>
-              </button>
-            </div>
+            <button type="button" class="cc-help-btn" data-widget-info="playbook" title="About This Week's Playbook" aria-label="About This Week's Playbook">
+              <i class="fa-solid fa-circle-question"></i>
+            </button>
           </div>
-          <ul class="cc-feed-list" id="ccDueSoonList"></ul>
+          <ol class="cc-playbook-list" id="ccPlaybookList"></ol>
         </div>
 
         <div class="cc-panel" data-widget-id="hiring">
@@ -169,24 +167,7 @@
           </div>
           <ul class="cc-feed-list" id="ccHiringList"></ul>
         </div>
-      </section>
 
-      <section class="cc-row">
-        <div class="cc-panel" data-widget-id="strategic_tracks">
-          <div class="cc-panel-head">
-            <div class="cc-panel-head-left">
-              <h2>Strategic investment tracks &amp; key sponsoring decision makers</h2>
-              <span class="cc-panel-note">Executive Sponsoring Tracks &middot; Multi-Organization Intelligence</span>
-            </div>
-            <button type="button" class="cc-help-btn" data-widget-info="strategic_tracks" title="About Strategic Investment Tracks" aria-label="About Strategic Investment Tracks">
-              <i class="fa-solid fa-circle-question"></i>
-            </button>
-          </div>
-          <div id="ccTracksList"></div>
-        </div>
-      </section>
-
-      <section class="cc-row cc-row-2col">
         <div class="cc-panel" data-widget-id="capital">
           <div class="cc-panel-head">
             <div class="cc-panel-head-left">
@@ -211,10 +192,8 @@
           </div>
           <ul class="cc-feed-list" id="ccCoverageList"></ul>
         </div>
-      </section>
 
-      <section class="cc-row cc-row-2col">
-        <div class="cc-panel">
+        <div class="cc-panel" data-widget-id="pain_points">
           <div class="cc-panel-head">
             <h2>Operational pain points</h2>
             <button type="button" class="cc-help-btn" data-widget-info="pain_points" title="About Operational Pain Points" aria-label="About Operational Pain Points">
@@ -224,14 +203,29 @@
           <div id="ccPainPointsBody"></div>
         </div>
 
-        <div class="cc-panel">
+        <div class="cc-panel" data-widget-id="objections">
           <div class="cc-panel-head">
             <h2>Common objections</h2>
             <button type="button" class="cc-help-btn" data-widget-info="objections" title="About Common Objections" aria-label="About Common Objections">
               <i class="bi bi-question-circle"></i>
             </button>
           </div>
-          <div id="ccPainBody"></div>
+          <div id="ccObjectionsBody"></div>
+        </div>
+      </section>
+
+      <section class="cc-row">
+        <div class="cc-panel" data-widget-id="strategic_tracks">
+          <div class="cc-panel-head">
+            <div class="cc-panel-head-left">
+              <h2>Strategic investment tracks &amp; key sponsoring decision makers</h2>
+              <span class="cc-panel-note">Executive Sponsoring Tracks &middot; Multi-Organization Intelligence</span>
+            </div>
+            <button type="button" class="cc-help-btn" data-widget-info="strategic_tracks" title="About Strategic Investment Tracks" aria-label="About Strategic Investment Tracks">
+              <i class="fa-solid fa-circle-question"></i>
+            </button>
+          </div>
+          <div id="ccTracksList"></div>
         </div>
       </section>
 
@@ -318,6 +312,6 @@
 
 {% include "partials/drawer.html" %}
 
-<script type="module" src="js/modules/command-center/main.js?v=4.6"></script>
+<script type="module" src="js/modules/command-center/main.js?v=4.7"></script>
 </body>
 </html>

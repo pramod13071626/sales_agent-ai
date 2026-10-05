@@ -54,6 +54,7 @@ architecture_flow.md
 scripts/test_*.py
 scripts/inspect_*.py
 scripts/audit_*.py
+scripts/*_pdf.py
 *.pdf
 
 # Merge conflict backup files

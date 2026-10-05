@@ -240,6 +240,7 @@
 /* ── Rows / panels ───────────────────────────────────────────── */
 .cc-row { display: grid; gap: 16px; margin-bottom: 16px; }
 .cc-row-2col { grid-template-columns: 1fr 1fr; }
+.cc-row-3col { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .cc-row-matrix-feed { grid-template-columns: 55fr 45fr; }
 
 .cc-panel {
@@ -507,10 +508,11 @@
 /* ── Responsive: fully usable down to 1280px, matrix stacks above feed below 1024px ── */
 @media (max-width: 1279px) {
   .dash-main { padding: 16px; }
+  .cc-row-3col { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cc-kpi-strip { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 1023px) {
-  .cc-row-2col, .cc-row-matrix-feed { grid-template-columns: 1fr; }
+  .cc-row-2col, .cc-row-3col, .cc-row-matrix-feed { grid-template-columns: 1fr; }
   .cc-kpi-strip { grid-template-columns: 1fr 1fr; }
 }
 
