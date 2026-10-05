@@ -86,6 +86,7 @@ from services.lob_service import LobService, LobValidator
 from services.persona_service import PersonaService, PersonaValidator
 from services.pipeline_run_logger import PipelineRunLogger
 from services import callprep_service
+from services import persona_photo_service
 from services import command_center_service
 # Contact privacy: work email/phone only — personal email & direct mobile never reach the browser
 from apps.sales_copilot import privacy as contact_privacy
@@ -1448,23 +1449,13 @@ if FASTAPI_AVAILABLE:
         except (ValueError, TypeError):
             return s
 
+    _persona_photo_candidates = persona_photo_service.candidates
+
     def _serialize_persona_full(p: Persona, last_run_at: Optional[str] = None) -> Dict[str, Any]:
         p_raw = p.raw_data if isinstance(p.raw_data, dict) else {}
         p_ext = p.extended_profile if isinstance(p.extended_profile, dict) else {}
-        photo_url = (
-            getattr(p, "photo_url", None)
-            or p_raw.get("photo_url")
-            or p_ext.get("photo_url")
-            or (p_raw.get("apify_linkedin", {}).get("photo") if isinstance(p_raw.get("apify_linkedin"), dict) else None)
-            or ((p_raw.get("apify_linkedin", {}).get("profilePicture") or {}).get("url") if isinstance(p_raw.get("apify_linkedin"), dict) and isinstance(p_raw.get("apify_linkedin", {}).get("profilePicture"), dict) else None)
-            or (p_raw.get("diffbot", {}).get("image_url") if isinstance(p_raw.get("diffbot"), dict) else None)
-            or (p_raw.get("diffbot", {}).get("image") if isinstance(p_raw.get("diffbot"), dict) else None)
-            or (p_raw.get("apollo", {}).get("photo_url") if isinstance(p_raw.get("apollo"), dict) else None)
-            or (p_raw.get("social_profiles", {}).get("photo") if isinstance(p_raw.get("social_profiles"), dict) else None)
-            or (p_raw.get("persona_dossier", {}).get("photo") if isinstance(p_raw.get("persona_dossier"), dict) else None)
-        )
-        if photo_url and any(g in str(photo_url).lower() for g in ["ghost_person", "ghost-person", "logo", "spacer"]):
-            photo_url = None
+        photo_candidates = _persona_photo_candidates(p)
+        photo_url = photo_candidates[0] if photo_candidates else None
 
         loc_str = (
             (p.city + (f", {p.state}" if p.state else (f", {p.country}" if p.country else "")))
@@ -1491,6 +1482,7 @@ if FASTAPI_AVAILABLE:
             "phone": contact_privacy.safe_phone(p.phone, p.direct_mobile_phone),
             "linkedin_url": p.linkedin_url,
             "photo_url": photo_url,
+            "has_photo": bool(photo_candidates),
             "crunchbase_permalink": p.crunchbase_permalink,
             "city": p.city,
             "state": p.state,
@@ -5346,6 +5338,31 @@ if FASTAPI_AVAILABLE:
         }
         target_key = next((c for c in candidates if c in PEOPLE_ALIASES or c in in_db), None)
         return target_key, candidates
+
+    @app.get("/api/personas/{persona_id}/photo", tags=["3. Personas & Buying Committee"])
+    def get_persona_photo(persona_id: int, user: User = Depends(auth.require_persona_account_access)):
+        """The persona's profile photo, fetched once from the best scraped source and cached
+        under output/avatars/ (services/persona_photo_service.py) — so it keeps working after
+        LinkedIn's signed URLs expire, and browsers never call the third-party host.
+        404 when no source has a usable image."""
+        cache_headers = {"Cache-Control": "private, max-age=86400"}
+        hit = persona_photo_service.cached(persona_id)
+        if not hit:
+            if persona_photo_service.recently_missed(persona_id):
+                raise HTTPException(status_code=404, detail="No profile photo.")
+            session = get_session()
+            try:
+                p = session.query(Persona).filter_by(id=persona_id).first()
+                if not p:
+                    raise HTTPException(status_code=404, detail="Persona not found.")
+                urls = persona_photo_service.candidates(p)
+            finally:
+                session.close()
+            hit = persona_photo_service.fetch_and_cache(persona_id, urls)
+            if not hit:
+                raise HTTPException(status_code=404, detail="No profile photo.")
+        path, ctype = hit
+        return FileResponse(path, media_type=ctype, headers=cache_headers)
 
     @app.get("/api/personas/{persona_id}/psychological-profile", tags=["3. Personas & Buying Committee"])
     def get_persona_psychological_profile(persona_id: int, user: User = Depends(auth.require_persona_account_access)):

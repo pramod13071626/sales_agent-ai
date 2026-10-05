@@ -4,6 +4,7 @@ import { esc, initials, getPersonasFor } from './utils.js';
 import { showToast } from './toast.js';
 import { hasDossier, openContactDrawer } from './contact-drawer.js';
 import { downloadFile } from './download.js';
+import { photoAttr } from './persona-photo.js';
 
 export function renderContactsList(personas) {
   state.currentPersonas = personas;
@@ -14,7 +15,7 @@ export function renderContactsList(personas) {
     return `
       <div class="contact-card">
         <button type="button" class="contact-main" data-contact-idx="${idx}" title="View full contact details">
-          <div class="contact-avatar">${esc(initials(p.name))}</div>
+          <div class="contact-avatar" ${photoAttr(p)}>${esc(initials(p.name))}</div>
           <div class="contact-body">
             <div class="contact-name">${esc(p.name || 'Unnamed')} ${dossierReady ? '<i class="fa-solid fa-star dossier-badge" title="AI call-prep dossier available"></i>' : ''}</div>
             <div class="contact-title">${esc(p.title || 'Title unknown')}</div>

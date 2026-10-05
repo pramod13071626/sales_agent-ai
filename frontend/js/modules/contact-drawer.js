@@ -14,6 +14,7 @@ import {
 } from './profile-render.js';
 import { renderPersonaActionItems, ensureAccountActionItems, handleActionItemClick } from './action-items.js';
 import { handleGenerateProfileClick } from './profile-generate.js';
+import { photoAttr } from './persona-photo.js';
 
 export { hasDossier, renderDossier, renderPostCard, renderPersonalityProfile, renderPlaceholderProfile };
 
@@ -49,7 +50,7 @@ export function renderDrawerPinned(p) {
   const dossierReady = hasDossier(p);
   return `
     <div class="drawer-contact-header">
-      <div class="drawer-avatar">${esc(initials(p.name))}</div>
+      <div class="drawer-avatar" ${photoAttr(p)}>${esc(initials(p.name))}</div>
       <div>
         <div class="drawer-contact-name">${esc(p.name || 'Unnamed')} ${dossierReady ? '<i class="fa-solid fa-star" title="AI call-prep dossier available"></i>' : ''}</div>
         <div class="drawer-contact-title">${esc(p.title || 'Title unknown')}</div>

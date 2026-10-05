@@ -3,6 +3,7 @@ import { dashContent, signalModalBody, signalModalBackdrop } from './dom.js';
 import { esc, initials, dedupePersonas } from './utils.js';
 import { showToast } from './toast.js';
 import { openContactDrawer } from './contact-drawer.js';
+import { photoAttr } from './persona-photo.js';
 
 export function renderOrgChart(account, lob) {
   if (lob) {
@@ -17,7 +18,7 @@ export function renderOrgChart(account, lob) {
       const tags = [node.seniority_tier || node.tier, node.decision_authority ? `Decision: ${node.decision_authority}` : null].filter(Boolean);
       return `
         <button type="button" class="orgchart-node ${isRoot ? 'orgchart-root-node' : ''}" data-persona-name="${esc(name)}">
-          <div class="orgchart-avatar">${esc(initials(name))}</div>
+          <div class="orgchart-avatar" ${photoAttr(node)}>${esc(initials(name))}</div>
           <div class="orgchart-name">${esc(name)}</div>
           <div class="orgchart-title">${esc(title)}</div>
           ${tags.length ? `<div class="orgchart-tags">${tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>` : ''}
@@ -181,7 +182,7 @@ export function renderOrgChart(account, lob) {
     const tags = [node.seniority_tier || node.tier, node.decision_authority ? `Decision: ${node.decision_authority}` : null].filter(Boolean);
     return `
       <button type="button" class="orgchart-node ${isRoot ? 'orgchart-root-node' : ''}" data-persona-name="${esc(name)}">
-        <div class="orgchart-avatar">${esc(initials(name))}</div>
+        <div class="orgchart-avatar" ${photoAttr(node)}>${esc(initials(name))}</div>
         <div class="orgchart-name">${esc(name)}</div>
         <div class="orgchart-title">${esc(title)}</div>
         ${tags.length ? `<div class="orgchart-tags">${tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>` : ''}

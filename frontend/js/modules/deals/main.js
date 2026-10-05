@@ -7,6 +7,7 @@ import { initTopbarAuth } from '../topbar-auth.js';
 import { showToast } from '../toast.js';
 import { esc } from '../utils.js';
 import { downloadFile } from '../download.js';
+import { photoAttr } from '../persona-photo.js';
 
 const $ = (id) => document.getElementById(id);
 const OPEN_STAGES = ['intro', 'discovery', 'proposal', 'pilot', 'contract'];
@@ -181,7 +182,7 @@ function renderRoom() {
       <div class="dl-pane${st.tab === 'committee' ? ' active' : ''}" role="tabpanel">
         ${committeeGaps ? `<div class="dl-gap-note"><i class="fa-solid fa-triangle-exclamation"></i> Missing: ${esc(committeeGaps)}</div>` : ''}
         ${d.stakeholders.map(p => `<div class="dl-person">
-            <span class="dl-avatar">${esc(initials(p.name))}</span>
+            <span class="dl-avatar" ${photoAttr(p, p.persona_id)}>${esc(initials(p.name))}</span>
             <div><div class="dl-person-name"><a href="/profile?account=${p.account_id}&persona_id=${p.persona_id}" target="_blank" rel="noopener">${esc(p.name)}</a></div>
               <div class="dl-person-title">${esc(p.title || '')}</div>
               ${p.recent_move ? '<div class="dl-person-flag"><i class="fa-solid fa-user-clock"></i> Recent leadership change</div>' : ''}</div>

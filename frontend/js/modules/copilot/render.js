@@ -3,6 +3,7 @@
 // text is escaped first, then a small allow-list of markdown (bold, italic,
 // code, bullets, headings) and citation chips is re-applied.
 import { esc } from '../utils.js';
+import { photoAttr } from '../persona-photo.js';
 
 const MODE_LABEL = {
   llm: ['AI answer', 'fa-wand-magic-sparkles', 'Written by the AI from the sources below'],
@@ -130,7 +131,7 @@ function renderContacts(contacts) {
   return (contacts || []).map(c => {
     const href = profileLink(c);
     return `<div class="cp-contact">
-      <span class="cp-contact-avatar">${esc((c.name || '?').split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase())}</span>
+      <span class="cp-contact-avatar" ${photoAttr(c, c.persona_id)}>${esc((c.name || '?').split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase())}</span>
       <div class="cp-contact-main">
         <strong>${href ? `<a href="${href}" target="_blank" rel="noopener">${esc(c.name)}</a>` : esc(c.name)}</strong>
         <span class="cp-muted" title="${esc(fixText(c.title || ''))}">${esc(shortTitle(c.title || '', 90))}${c.account ? ` · ${esc(c.account)}` : ''}</span>
