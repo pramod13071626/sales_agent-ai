@@ -25,11 +25,18 @@ async function createRealActionItem({ accountName, accountId, title, description
     showToast(`"${accountName}" isn't in the database (or isn't shared with you yet) — task not created.`);
     return false;
   }
+  const isAdmin = user.role === 'super_admin' || user.role === 'admin';
   try {
     const res = await fetch(`/api/accounts/${account.id}/action-items`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, description, priority, assigned_to_id: user.id, source: source || 'manual' }),
+      body: JSON.stringify({
+        title,
+        description,
+        priority,
+        assigned_to_id: isAdmin ? null : user.id,
+        source: source || 'manual',
+      }),
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
