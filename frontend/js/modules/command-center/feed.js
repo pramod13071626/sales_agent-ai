@@ -61,8 +61,8 @@ function rowHtml(sig) {
     ? `<span class="cc-badge cc-badge-new"><span class="cc-pulse-dot"></span>NEW</span>`
     : '';
   const title = sig.url
-    ? `<a class="cc-feed-title" href="${esc(sig.url)}" target="_blank" rel="noopener">${esc(sig.title)}</a>`
-    : `<span class="cc-feed-title">${esc(sig.title)}</span>`;
+    ? `<a class="cc-feed-title" href="${esc(sig.url)}" target="_blank" rel="noopener" title="${esc(sig.title)}">${esc(sig.title)}</a>`
+    : `<span class="cc-feed-title" title="${esc(sig.title)}">${esc(sig.title)}</span>`;
 
   return `
     <li class="cc-feed-row ${isNew ? 'is-new' : 'is-old'}" data-signal-id="${esc(sig.id)}">
@@ -72,12 +72,12 @@ function rowHtml(sig) {
           ${newBadge}
         </div>
         <div class="cc-feed-meta">
-          <strong class="cc-feed-acct">${esc(sig.account_name)}</strong> &middot; 
-          <span class="${isNew ? 'cc-time-new' : ''}">${esc(relativeTime(sig.detectedAt))}</span> &middot; 
-          <span class="cc-domain-tag">${esc(sig.category)}</span> &middot; 
-          <span class="cc-score-tag">score ${esc(sig.score)}</span>
+          <span class="cc-meta-pill cc-meta-acct" title="${esc(sig.account_name)}"><i class="fa-regular fa-building"></i> ${esc(sig.account_name)}</span>
+          <span class="cc-meta-pill cc-meta-time ${isNew ? 'cc-time-new' : ''}"><i class="fa-regular fa-clock"></i> ${esc(relativeTime(sig.detectedAt))}</span>
+          <span class="cc-meta-pill cc-domain-tag">${esc(sig.category)}</span>
+          <span class="cc-meta-pill cc-score-tag"><i class="fa-solid fa-bolt"></i> ${esc(sig.score)}</span>
         </div>
-        <div class="cc-feed-summary">${esc(sig.summary)}</div>
+        <div class="cc-feed-summary" title="${esc(sig.summary)}">${esc(sig.summary)}</div>
       </div>
       <div class="cc-feed-actions">
         <button type="button" class="cc-btn cc-btn-primary cc-btn-sm cc-feed-task-btn" data-act="task" title="Create task for this signal">

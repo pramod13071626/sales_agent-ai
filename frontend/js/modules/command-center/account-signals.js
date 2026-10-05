@@ -98,13 +98,16 @@ function coverageEntries(accounts) {
 }
 function coverageRowHtml({ account: a, total }) {
   return `
-    <li class="cc-feed-row cc-clickable-row" data-account-id="${a.id}">
+    <li class="cc-feed-row cc-clickable-row cc-coverage-row" data-account-id="${a.id}">
       <div class="cc-feed-body">
-        <div class="cc-feed-title-row">
-          <span class="cc-feed-title">${esc(a.name)}</span>
-          <span class="cc-badge cc-badge-warning">no C-suite mapped</span>
+        <div class="cc-coverage-title-row">
+          <span class="cc-coverage-acct-name" title="${esc(a.name)}">${esc(a.name)}</span>
+          <span class="cc-coverage-badge"><i class="fa-solid fa-triangle-exclamation"></i> No C-suite mapped</span>
         </div>
-        <div class="cc-feed-summary">${total} contact${total !== 1 ? 's' : ''} mapped total</div>
+        <div class="cc-coverage-sub-row">
+          <span class="cc-coverage-count"><i class="fa-regular fa-user"></i> ${total} contact${total !== 1 ? 's' : ''} mapped</span>
+          <span class="cc-coverage-action">Open Org Chart &rarr;</span>
+        </div>
       </div>
     </li>`;
 }
