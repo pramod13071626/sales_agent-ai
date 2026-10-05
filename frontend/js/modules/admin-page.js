@@ -8,11 +8,6 @@ import { mountCrmSettings } from './admin-crm-settings.js';
 
 initThemeToggle();
 
-document.getElementById('adminLogoutBtn').addEventListener('click', async () => {
-  await logout();
-  window.location.replace('/login');
-});
-
 const esc = (s) => {
   const d = document.createElement('div');
   d.textContent = s == null ? '' : String(s);
@@ -136,10 +131,7 @@ function renderCreateForm() {
           </div>
           <div class="admin-form-group">
             <label>Assigned Role</label>
-            <select name="role">
-              <option value="user" selected>Standard User</option>
-              <option value="super_admin">Super Admin</option>
-            </select>
+            <select name="role">${roleOptions('user')}</select>
           </div>
           <div class="admin-form-group btn-group">
             <button type="submit" class="admin-submit-btn" id="createUserSubmit">
@@ -419,10 +411,7 @@ function renderModalShell() {
             <div class="admin-form-row" style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
               <div class="admin-form-group">
                 <label class="admin-form-label" for="editUserRole"><i class="fa-solid fa-shield-halved"></i> System Role</label>
-                <select class="admin-form-select" id="editUserRole" name="role">
-                  <option value="user">User</option>
-                  <option value="super_admin">Super Admin</option>
-                </select>
+                <select class="admin-form-select" id="editUserRole" name="role">${roleOptions('user')}</select>
               </div>
               <div class="admin-form-group">
                 <label class="admin-form-label" for="editUserStatus"><i class="fa-solid fa-heart-pulse"></i> Account Status</label>
@@ -431,6 +420,14 @@ function renderModalShell() {
                   <option value="false">Inactive</option>
                 </select>
               </div>
+            </div>
+            <div class="admin-form-group">
+              <label class="admin-form-label" for="editUserManager"><i class="fa-solid fa-sitemap"></i> Reports to <span style="font-weight:400; font-size:0.7rem; color:var(--text-muted);">(managers see their team's accounts)</span></label>
+              <select class="admin-form-select" id="editUserManager" name="manager_id"></select>
+            </div>
+            <div class="admin-form-group">
+              <span class="admin-form-label"><i class="fa-solid fa-layer-group"></i> Business lines</span>
+              <div id="editUserBusinessLines" style="display:flex; flex-wrap:wrap; gap:6px 14px; font-size:0.8rem;"></div>
             </div>
             <div class="admin-form-group">
               <label class="admin-form-label" for="editUserPassword">
@@ -496,7 +493,7 @@ function findConfig(key) {
 function renderFieldInput(c) {
   const meta = c.extra_metadata || {};
   const currentVal = dirtyConfigs[c.config_key] !== undefined ? dirtyConfigs[c.config_key] : (c.is_secret ? '' : (c.value || ''));
-
+  
   if (meta.options && Array.isArray(meta.options)) {
     return `
       <select class="api-input" data-config-key="${c.config_key}">
@@ -504,7 +501,7 @@ function renderFieldInput(c) {
       </select>
     `;
   }
-
+  
   if (c.is_secret) {
     let cleanPlaceholder = meta.placeholder || (c.is_configured ? 'Key configured — paste new key to replace...' : 'Enter API key...');
     cleanPlaceholder = cleanPlaceholder.replace(/[•*]+/g, '').trim() || 'Enter API key...';
@@ -538,7 +535,7 @@ function renderFieldInput(c) {
       </div>
     `;
   }
-
+  
   return `
     <input type="${meta.type === 'number' ? 'number' : 'text'}" class="api-input" data-config-key="${c.config_key}" value="${esc(currentVal)}" placeholder="${esc(meta.placeholder || '')}">
   `;
@@ -1050,6 +1047,7 @@ async function loadAndRender() {
   const [statsRes, usersRes] = await Promise.all([
     fetch('/api/admin/stats'),
     fetch('/api/admin/users'),
+    loadApiConfigs()
   ]);
   if (!statsRes.ok || !usersRes.ok) throw new Error('Failed to load admin data');
   statsCache = await statsRes.json();
@@ -1058,9 +1056,6 @@ async function loadAndRender() {
   await loadCrmTeam();
 
   const me = getCurrentUser();
-  if (me) {
-    renderTopBarUser(me);
-  }
 
   let tabContentHtml = '';
   if (activeAdminTab === 'users') {
@@ -1073,19 +1068,6 @@ async function loadAndRender() {
         <div class="admin-col-side">
           ${renderActivity()}
         </div>
-  main.innerHTML = `
-    ${authEnforced ? '' : `<div class="admin-form-error" style="display:flex; margin-bottom:14px;">
-      <i class="fa-solid fa-triangle-exclamation"></i>&nbsp; AUTH_ENFORCED is off — every request runs as a super admin, so roles
-      (manager scope, viewer read-only, partner isolation) are not applied. Set AUTH_ENFORCED=true in production.</div>`}
-    ${renderHero()}
-    ${renderKPIBanner(statsCache)}
-    ${renderCreateForm()}
-    <div class="admin-grid">
-      <div class="admin-col-main">
-        ${renderUsersTable(me ? me.id : null)}
-      </div>
-      <div class="admin-col-side">
-        ${renderActivity()}
       </div>
     `;
   } else if (activeAdminTab === 'api-config') {
@@ -1101,6 +1083,9 @@ async function loadAndRender() {
   }
 
   main.innerHTML = `
+    ${authEnforced ? '' : `<div class="admin-form-error" style="display:flex; margin-bottom:14px;">
+      <i class="fa-solid fa-triangle-exclamation"></i>&nbsp; AUTH_ENFORCED is off — every request runs as a super admin, so roles
+      (manager scope, viewer read-only, partner isolation) are not applied. Set AUTH_ENFORCED=true in production.</div>`}
     ${renderHero()}
     ${renderKPIBanner(statsCache)}
     ${renderAdminTabsNav()}
@@ -1112,7 +1097,6 @@ async function loadAndRender() {
   `;
   wireEvents();
   mountCrmSettings(document.getElementById('crmSettingsMount'));
-  loadAuditLogs(true);
   if (activeAdminTab === 'users' || activeAdminTab === 'audit') {
     loadAuditLogs(true);
   }
@@ -1535,6 +1519,19 @@ function openEditUserModal(user, isSelf) {
     statusSelect.title = isSelf ? 'You cannot deactivate your own account' : '';
   }
   if (passInput) passInput.value = '';
+  const team = crmTeam[user.id] || {};
+  const mgr = document.getElementById('editUserManager');
+  if (mgr) {
+    const candidates = usersCache.filter(x => x.id !== user.id && ['sales_manager', 'super_admin'].includes(x.role));
+    mgr.innerHTML = '<option value="">— No manager —</option>' + candidates.map(x =>
+      `<option value="${x.id}" ${x.id === team.manager_id ? 'selected' : ''}>${esc(x.full_name || x.email)} · ${esc(ROLE_LABEL[x.role] || x.role)}</option>`).join('');
+  }
+  const bls = document.getElementById('editUserBusinessLines');
+  if (bls) {
+    bls.innerHTML = crmBusinessLines.filter(b => b.active).map(b => `<label style="display:inline-flex; gap:5px; align-items:center;">
+      <input type="checkbox" value="${b.id}" ${(team.business_line_ids || []).includes(b.id) ? 'checked' : ''}> ${esc(b.name)}</label>`).join('')
+      || '<span style="color:var(--text-muted)">No business lines configured</span>';
+  }
   if (errorEl) {
     errorEl.textContent = '';
     errorEl.style.display = 'none';
@@ -1568,10 +1565,8 @@ function updateTableOnly(currentUserId) {
           </div>
         </td>
         <td>
-          <select class="admin-role-select" data-action="role" ${isSelf ? 'disabled title="You cannot change your own role"' : ''}>
-            <option value="user" ${u.role === 'user' ? 'selected' : ''}>User</option>
-            <option value="super_admin" ${u.role === 'super_admin' ? 'selected' : ''}>Super Admin</option>
-          </select>
+          <select class="admin-role-select" data-action="role" ${isSelf ? 'disabled title="You cannot change your own role"' : ''}>${roleOptions(u.role)}</select>
+          ${teamLine(u.id)}
         </td>
         <td>
           <span class="admin-status-pill ${u.is_active ? 'active' : 'inactive'}">
@@ -1862,8 +1857,15 @@ function initTopbarAccountsDropdown() {
 
   btn.addEventListener('click', async (e) => {
     e.stopPropagation();
+    // Close pipelines dropdown if open
+    const pipeMenu = document.getElementById('pipelinesDropdownMenu');
+    const pipeContainer = document.getElementById('topbarPipelinesDropdown');
+    if (pipeMenu && pipeContainer) {
+      pipeContainer.classList.remove('active');
+      pipeMenu.classList.add('d-none');
+    }
+
     const isOpening = menu.classList.contains('d-none');
-    
     if (isOpening) {
       container.classList.add('active');
       menu.classList.remove('d-none');
@@ -1893,7 +1895,51 @@ function initTopbarAccountsDropdown() {
   });
 }
 
+function initTopbarPipelinesDropdown() {
+  const container = document.getElementById('topbarPipelinesDropdown');
+  const btn = document.getElementById('pipelinesDropdownBtn');
+  const menu = document.getElementById('pipelinesDropdownMenu');
+  if (!container || !btn || !menu) return;
+
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    // Close accounts dropdown if open
+    const acctMenu = document.getElementById('globalAccountsMenu');
+    const acctContainer = document.getElementById('topbarAccountsDropdown');
+    if (acctMenu && acctContainer) {
+      acctContainer.classList.remove('active');
+      acctMenu.classList.add('d-none');
+    }
+
+    const isOpening = menu.classList.contains('d-none');
+    if (isOpening) {
+      container.classList.add('active');
+      menu.classList.remove('d-none');
+    } else {
+      container.classList.remove('active');
+      menu.classList.add('d-none');
+    }
+  });
+
+  // Close when clicking outside
+  document.addEventListener('click', (e) => {
+    if (!container.contains(e.target)) {
+      container.classList.remove('active');
+      menu.classList.add('d-none');
+    }
+  });
+
+  // Close when ESC is pressed
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !menu.classList.contains('d-none')) {
+      container.classList.remove('active');
+      menu.classList.add('d-none');
+    }
+  });
+}
+
 initTopbarAccountsDropdown();
+initTopbarPipelinesDropdown();
 
 async function init() {
   await refreshAccessToken();
@@ -1921,7 +1967,7 @@ async function init() {
     }
     return;
   }
-  renderTopBarUser(user);
+  await initTopbarAuth({ showTasks: false });
   try {
     await loadAndRender();
   } catch (err) {

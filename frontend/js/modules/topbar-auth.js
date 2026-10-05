@@ -7,6 +7,7 @@ import { esc, initials } from './utils.js';
 import { getCurrentUser, logout, refreshAccessToken } from './auth-client.js';
 import { renderMyTasksPanel } from './action-items.js';
 import { myTasksDrawer, myTasksDrawerBackdrop, myTasksDrawerBody } from './dom.js';
+import { initSearchPalette } from './search-palette.js';
 
 function openMyTasksDrawer() {
   const drawer = document.getElementById('myTasksDrawer');
@@ -40,6 +41,8 @@ function formatUserRole(role) {
   if (r === 'ae' || r === 'sales rep') return 'Account Executive';
   if (r === 'leader' || r === 'sales leader') return 'Sales Leader';
   return r.charAt(0).toUpperCase() + r.slice(1);
+}
+
 function getUserInitials(user) {
   if (!user) return 'U';
   if (user.full_name) {
@@ -152,7 +155,6 @@ function render() {
       window.location.href = '/login';
     });
   }
-
   if (showTasks) {
     const tasksBtn = document.getElementById('topbarMyTasksBtn');
     if (tasksBtn) {
@@ -208,6 +210,12 @@ export async function initTopbarAuth(options = {}) {
   // Viewers: CSS hides edit controls app-wide (shell.css `.role-viewer`), pages can check the class.
   document.body.classList.toggle('role-viewer', !!(user && user.role === 'viewer'));
   render();
+  if (user && user.role === 'viewer') {
+    const w = document.getElementById('topbarAuthWidget');
+    if (w && !w.querySelector('.topbar-readonly')) {
+      w.insertAdjacentHTML('afterbegin', '<span class="topbar-readonly" title="Your role can view but not change data"><i class="fa-solid fa-eye"></i> Read-only</span>');
+    }
+  }
   const user = getCurrentUser();
   if (user) initSearchPalette();
   return user;

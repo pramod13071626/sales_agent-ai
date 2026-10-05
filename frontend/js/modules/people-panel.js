@@ -58,6 +58,7 @@ export function renderPeople(account, lob) {
       <span><i class="fa-solid fa-address-card"></i> Key Contacts</span>
       <span style="display:flex; gap:6px; align-items:center;">
         <span class="context-badge live">${personas.length} mapped</span>
+        <button type="button" class="context-badge export-btn cx-add-btn" data-add-contact="${account.id}" title="Add a contact by hand"><i class="fa-solid fa-user-plus"></i> Add</button>
         ${personas.length ? `<button type="button" class="context-badge export-btn" data-export-people="${account.id}" title="Download these contacts as Excel"><i class="fa-regular fa-file-excel"></i> Excel</button>` : ''}
       </span>
     </div>

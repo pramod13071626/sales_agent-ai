@@ -21,6 +21,7 @@ import os
 import re
 import json
 import math
+import threading                      # background pipeline threads
 import subprocess
 import tempfile
 from pathlib import Path
@@ -51,10 +52,8 @@ from collectors.validator import DataQualityValidator
 from serializer import MasterSerializer
 from serializers.account_serializer import slugify
 
-from sqlalchemy import or_, and_, func, text as sql_text
+from sqlalchemy import func as sa_func, or_, and_, func, text as sql_text
 from sqlalchemy.orm import load_only, selectinload
-from sqlalchemy import func as sa_func, or_, text as sql_text
-from sqlalchemy.orm import selectinload
 from db.connection import get_session
 from db.models import (
     Account,
@@ -555,7 +554,7 @@ if FASTAPI_AVAILABLE:
             target = session.query(User).filter_by(id=user_id).first()
             if not target:
                 raise HTTPException(status_code=404, detail="User not found")
-            granted_ids = set(auth.get_accessible_account_ids(session, user_id))
+            granted_ids = set(auth.get_granted_account_ids(session, user_id))
             accounts = session.query(Account).order_by(Account.display_name).all()
             is_sa = target.role == "super_admin"
             return {
@@ -731,12 +730,71 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
+    @app.get("/api/admin/api-config", tags=["0. Authentication"])
+    def get_api_configs(current: User = Depends(auth.require_role("super_admin"))):
+        """Returns all system API credentials and runtime settings with masked secrets."""
+        from services.config_service import get_all_configs_dto
+        session = get_session()
+        try:
+            return {"configs": get_all_configs_dto(session)}
+        finally:
+            session.close()
+
+    @app.post("/api/admin/api-config", tags=["0. Authentication"])
+    def update_api_configs(body: UpdateApiConfigRequest, current: User = Depends(auth.require_role("super_admin"))):
+        """Updates and encrypts API configuration keys and triggers in-memory runtime hot reload."""
+        from services.config_service import update_configs
+        session = get_session()
+        try:
+            success, msg = update_configs(body.configs, current.id, session)
+            return {"ok": success, "message": msg}
+        finally:
+            session.close()
+
+    @app.post("/api/admin/api-config/test", tags=["0. Authentication"])
+    def test_api_connection(body: TestApiConfigRequest, current: User = Depends(auth.require_role("super_admin"))):
+        """Tests live connectivity to a third-party API provider with uncommitted or configured credentials."""
+        from services.config_service import test_provider_connection
+        session = get_session()
+        try:
+            res = test_provider_connection(body.provider, body.credentials, session)
+            return res
+        finally:
+            session.close()
+
     # ══════════════════════════════════════════════════════
     # REQUEST / RESPONSE MODELS
     # ══════════════════════════════════════════════════════
     class AccountCreateRequest(BaseModel):
         company_name: str
         domain: Optional[str] = None
+        stock_symbol: Optional[str] = None
+        sec_cik: Optional[str] = None
+        industry: Optional[str] = None
+        headquarters_location: Optional[str] = None
+        company_type: Optional[str] = None
+
+    class PersonaTierPurgeSelection(BaseModel):
+        all: bool = False
+        c_suite: bool = False
+        vp_head: bool = False
+        director: bool = False
+        manager_other: bool = False
+
+    class SignalPurgeSelection(BaseModel):
+        opportunity_signals: bool = False
+        weekly_digests: bool = False
+        posts_news: bool = False
+        cxo_movements: bool = False
+        jobs: bool = False
+        action_items: bool = False
+
+    class AccountPurgeRequest(BaseModel):
+        delete_account_record: bool = False
+        delete_lobs: bool = False
+        personas: Optional[PersonaTierPurgeSelection] = None
+        signals: Optional[SignalPurgeSelection] = None
+        confirmation_text: Optional[str] = None
 
     class AccountFetchRequest(BaseModel):
         company_name: str
@@ -810,6 +868,7 @@ if FASTAPI_AVAILABLE:
         company_name: Optional[str] = None
         sec_cik: Optional[str] = None
         enrich_csuite_dossiers: bool = True
+        account_id: Optional[int] = None
 
     class HierarchyDumpRequest(BaseModel):
         account_id: int
@@ -931,13 +990,15 @@ if FASTAPI_AVAILABLE:
                     "key": existing.key,
                     "name": existing.display_name,
                     "domain": existing.primary_domain or existing.domain,
+                    "stock_symbol": existing.stock_symbol,
+                    "sec_cik": existing.sec_cik,
                     "message": (
                         f"Account '{existing.display_name}' already registered "
                         f"in database (ID: {existing.id})."
                     ),
                 }
 
-            # Create new minimal account row
+            # Create new account row with rich enterprise attributes
             new_account = Account(
                 key=slug,
                 display_name=clean_name,
@@ -1117,8 +1178,7 @@ if FASTAPI_AVAILABLE:
             )
             raise HTTPException(status_code=500, detail=f"Account fetch failed: {str(e)}")
 
-    @account_router.post("/validate", dependencies=[Depends(auth.require_role("super_admin"))])
-    @account_router.post("/fetch-background")
+    @account_router.post("/fetch-background", dependencies=[Depends(auth.require_role("super_admin"))])
     def fetch_account_background(req: AccountFetchRequest):
         """
         [Background Mode — Tab 1 Fetch]:
@@ -1266,7 +1326,7 @@ if FASTAPI_AVAILABLE:
             "message":  f"Account enrichment started for '{req.company_name}'. Thread runs independently of this connection.",
         }
 
-    @account_router.post("/validate")
+    @account_router.post("/validate", dependencies=[Depends(auth.require_role("super_admin"))])
     def validate_account_data(account_data: Dict[str, Any] = Body(...)):
         """[Tab 1 - Validate Button]: Validates staged account data."""
         t0 = datetime.now(timezone.utc)
@@ -1627,7 +1687,11 @@ if FASTAPI_AVAILABLE:
         ]
         raw_lobs = acct.lobs or []
         lobs_list = [
-            _serialize_lob_full(lob_item, assigned)
+            _serialize_lob_full(
+                lob_item,
+                assigned,
+                last_run_at=latest_lob_runs.get(lob_item.id) or latest_lob_runs.get((lob_item.lob_name or "").strip().lower())
+            )
             for lob_item, assigned in _distribute_personas_across_lobs(raw_lobs, personas_list)
         ]
 
@@ -1643,7 +1707,8 @@ if FASTAPI_AVAILABLE:
             "legal_name": acct.legal_name or acct_name,
             "ticker": acct.stock_symbol,
             "stock_symbol": acct.stock_symbol,
-            "revenue": acct.estimated_revenue_range or "Revenue N/A",
+            "revenue": _format_compact_revenue(acct.estimated_revenue_range),
+            "estimated_revenue_range": _format_compact_revenue(acct.estimated_revenue_range),
             "location": acct_loc,
             "desc": acct_desc,
             "domain": acct.domain,
@@ -1819,10 +1884,6 @@ if FASTAPI_AVAILABLE:
         """
         raw_personas = acct.personas or []
         raw_lobs = acct.lobs or []
-        lobs_list = [
-            _serialize_lob_summary(lob_item, len(assigned))
-            for lob_item, assigned in _distribute_personas_across_lobs(raw_lobs, personas_list)
-        ]
 
         acct_name = acct.legal_name or acct.display_name or acct.key
         acct_loc = acct.headquarters_location or (f"{acct.city}, {acct.country}" if acct.city else None)
@@ -1961,7 +2022,6 @@ if FASTAPI_AVAILABLE:
             "manager_count": mgr_cnt,
             "created_at": acct.created_at.isoformat() if getattr(acct, "created_at", None) else None,
             "updated_at": acct.updated_at.isoformat() if getattr(acct, "updated_at", None) else None,
-            "is_manually_verified": bool(getattr(acct, "is_manually_verified", False)),
             "manually_verified_at": acct.manually_verified_at.isoformat() if getattr(acct, "manually_verified_at", None) else None,
         }
 
@@ -2102,8 +2162,8 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
-    @account_router.patch("/{account_id}")
-    @app.patch("/api/accounts/{account_id}", tags=["1. Account Level"])
+    @account_router.patch("/{account_id}", dependencies=[Depends(auth.require_role("super_admin"))])
+    @app.patch("/api/accounts/{account_id}", tags=["1. Account Level"], dependencies=[Depends(auth.require_account_access), Depends(auth.require_editor)])
     def update_account(account_id: int, payload: Dict[str, Any] = Body(...)):
         """
         [Universal & Inline Edit]: Updates account fields directly in PostgreSQL.
@@ -2263,18 +2323,52 @@ if FASTAPI_AVAILABLE:
                     account_id=req.account_id,
                     lob_domain=req.lob_domain,
                 )
+                from services.credit_accounting_engine import CreditAccountingEngine
+                lob_credit_tally = CreditAccountingEngine.tally_lob_telemetry(1)
+                now_completed = datetime.now(timezone.utc)
+                duration_sec = round((now_completed - t0).total_seconds(), 2)
+
+                audit_score = 75.0
+                if isinstance(single_lob, dict):
+                    if single_lob.get("domain") or single_lob.get("website_url"):
+                        audit_score += 10.0
+                    if single_lob.get("description"):
+                        audit_score += 5.0
+                    if single_lob.get("technologies"):
+                        audit_score += 5.0
+                    if single_lob.get("operating_head"):
+                        audit_score += 5.0
+                audit_grade = "A" if audit_score >= 90 else ("B" if audit_score >= 75 else "C")
+
+                credits_breakdown = CreditAccountingEngine.compile_run_breakdown(
+                    company_name=req.company_name or "Company",
+                    run_id=f"run_{slugify(req.company_name or 'lob')[:20]}_lob_single",
+                    run_number=1,
+                    started_at=t0,
+                    duration_seconds=duration_sec,
+                    status="success",
+                    account_tally={"credits": 0, "resources": []},
+                    lob_tally=lob_credit_tally,
+                    persona_tally={"credits": 0, "resources": []},
+                )
                 PipelineRunLogger.log_event(
                     company_name=req.company_name or "Company",
                     target_url=req.lob_domain,
                     level="lob",
                     action="pull",
-                    status="staged",
+                    status="success",
+                    quality_score=audit_score,
+                    quality_grade=audit_grade,
                     started_at=t0,
-                    completed_at=datetime.now(timezone.utc),
+                    completed_at=now_completed,
+                    duration_seconds=duration_sec,
+                    total_credits_used=lob_credit_tally.get("credits", 0),
+                    credits_breakdown=credits_breakdown,
                     entities_extracted={
                         "lob_name": req.lob_name,
                         "account_id": req.account_id,
                         "domain": req.lob_domain,
+                        "total_lobs": 1,
                     },
                 )
                 return {
@@ -2311,12 +2405,41 @@ if FASTAPI_AVAILABLE:
                             for c in tree.get("gleif_children", []):
                                 if c.get("legal_name"):
                                     discovered_names.append(c.get("legal_name"))
+                            for a_sub in tree.get("all_subsidiaries", []):
+                                if a_sub.get("legal_name"):
+                                    discovered_names.append(a_sub.get("legal_name"))
+                            for ind in tree.get("gleif_indirect_sublobs", []):
+                                if ind.get("legal_name"):
+                                    discovered_names.append(ind.get("legal_name"))
+                        if acct.lobs:
+                            for ex_lob in acct.lobs:
+                                if ex_lob.lob_name:
+                                    discovered_names.append(ex_lob.lob_name)
                 except Exception as db_err:
                     print(f"[!] [LobFetch] DB Account lookup notice: {db_err}")
                 finally:
                     session.close()
 
-                # 2. If no names from DB, query SEC Exhibit 21 and GLEIF directly
+                # 2. Extract Diffbot raw subsidiaries if available in output cache
+                try:
+                    comp_clean = slugify(req.company_name or "")
+                    for out_root in [config.OUTPUT_DIR / "raw" / "diffbot", config.OUTPUT_DIR]:
+                        if not out_root.exists():
+                            continue
+                        for df_path in out_root.rglob("*diffbot*.json"):
+                            if comp_clean and comp_clean in df_path.stem.lower():
+                                with open(df_path, "r", encoding="utf-8") as df_f:
+                                    df_data = json.load(df_f)
+                                    df_obj = df_data.get("data", [{}])[0] if isinstance(df_data.get("data"), list) else df_data
+                                    for sub in df_obj.get("subsidiaries", []):
+                                        if isinstance(sub, str) and sub.strip():
+                                            discovered_names.append(sub.strip())
+                                        elif isinstance(sub, dict) and sub.get("name"):
+                                            discovered_names.append(sub.get("name").strip())
+                except Exception as df_err:
+                    print(f"[!] [LobFetch] Diffbot raw lookup notice: {df_err}")
+
+                # 3. If no names from DB/Diffbot, query SEC Exhibit 21 and GLEIF directly
                 if not discovered_names and sec_cik_val:
                     try:
                         ex21 = fetch_sec_exhibit_21_subsidiaries(sec_cik_val)
@@ -3135,7 +3258,7 @@ if FASTAPI_AVAILABLE:
                 finally:
                     session.close()
 
-            # 2. Enrich via Enterprise PersonaService (FullEnrich + Exa + Apollo + Serper + SEC + ORCID + OpenAlex)
+            # 2. Enrich via Enterprise PersonaService (FullEnrich + Exa + Apollo + Serper + SEC + ORCID + OpenAlex + ExecutiveOsintUrlEngine)
             person_entry = PersonaService.enrich_single_persona(
                 full_name=parsed_name,
                 company_name=parsed_company,
@@ -3467,7 +3590,58 @@ if FASTAPI_AVAILABLE:
     def dump_single_persona_to_db(req: PersonDumpRequest):
         """
         [Tab 4 - Individual Dump DB Button]: Commits a single validated persona into PostgreSQL `personas` table.
+        Includes disk re-hydration: if 'saved_file' is present in person_data, the full enriched
+        JSON is loaded from disk and deep-merged to restore fields lost during the browser round-trip.
         """
+        import json as _json
+        import glob as _glob
+        import copy as _copy
+
+        def _deep_merge_into(base: dict, overlay: dict) -> dict:
+            """Fill missing/None keys in base from overlay. Non-destructive."""
+            for k, v in overlay.items():
+                if k not in base or base[k] is None or base[k] == "" or base[k] == []:
+                    base[k] = v
+                elif isinstance(base.get(k), dict) and isinstance(v, dict):
+                    _deep_merge_into(base[k], v)
+            return base
+
+        def _rehydrate_from_disk(person_data: dict) -> dict:
+            """
+            Load the full enriched JSON from disk and deep-merge it into person_data,
+            restoring vendor sub-dicts and any fields lost during the browser round-trip.
+            If no disk path is found, returns person_data unchanged.
+            """
+            merged = _copy.deepcopy(person_data)
+            disk_path = person_data.get("saved_file") or person_data.get("enriched_file_path")
+
+            # Fallback: find most-recent enriched file by account_key + name slug
+            if not disk_path:
+                full_name = person_data.get("full_name") or person_data.get("name", "")
+                account_id_val = str(person_data.get("account_id", ""))
+                if full_name and account_id_val:
+                    import os
+                    pipeline_root = os.path.dirname(os.path.abspath(__file__))
+                    pattern = os.path.join(pipeline_root, "output", "**", "*.json")
+                    name_slug = full_name.lower().replace(" ", "_")[:20]
+                    candidates = sorted(
+                        [f for f in _glob.glob(pattern, recursive=True)
+                         if "enriched" in f and name_slug in f.lower()],
+                        reverse=True
+                    )
+                    if candidates:
+                        disk_path = candidates[0]
+
+            if disk_path:
+                try:
+                    with open(disk_path, "r", encoding="utf-8") as _f:
+                        disk_data = _json.load(_f)
+                    _deep_merge_into(merged, disk_data)
+                    print(f"[+] [dump-single-db] Disk re-hydration applied from: {disk_path}")
+                except Exception as _rh_err:
+                    print(f"[!] [dump-single-db] Disk re-hydration notice: {_rh_err}")
+            return merged
+
         t0 = datetime.now(timezone.utc)
         session = get_session()
         try:
@@ -3477,7 +3651,9 @@ if FASTAPI_AVAILABLE:
 
             p_data = dict(req.person_data)
             p_data["account_id"] = acct.id
+            p_data = _rehydrate_from_disk(p_data)        # ← disk re-hydration
             schema = PersonaSchema.from_enriched_json(p_data)
+
 
             # Enterprise Deduplication Mapping Layer: resolve and coalesce into master
             repo = PersonaRepository(session)
@@ -4228,7 +4404,7 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
-    @app.delete("/api/lobs/{lob_id}", tags=["2. Lines of Business"])
+    @app.delete("/api/lobs/{lob_id}", tags=["2. Lines of Business"], dependencies=[Depends(auth.require_role("super_admin"))])
     def delete_single_lob(lob_id: int):
         """Delete a single Line of Business (and its sub-LOBs) by ID."""
         session = get_session()
@@ -4354,7 +4530,7 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
-    @app.delete("/api/personas/{persona_id}", tags=["3. Personas & Buying Committee"])
+    @app.delete("/api/personas/{persona_id}", tags=["3. Personas & Buying Committee"], dependencies=[Depends(auth.require_role("super_admin"))])
     def delete_single_persona(persona_id: int):
         """Delete a single Persona record by ID."""
         session = get_session()
@@ -4383,7 +4559,6 @@ if FASTAPI_AVAILABLE:
     # ── Enterprise Record Updating & Verification Endpoints ────────────────────
 
 
-    @app.patch("/api/accounts/{account_id}", tags=["1. Accounts"])
     @app.patch("/api/accounts/{account_id}", tags=["1. Accounts"], dependencies=[Depends(auth.require_account_access), Depends(auth.require_editor)])
     def update_account_record(account_id: int, updates: Dict[str, Any]):
         """Directly updates Account fields in PostgreSQL, sets is_manually_verified=True, and logs audit run."""
@@ -4435,7 +4610,7 @@ if FASTAPI_AVAILABLE:
 
     # ── Enterprise Data Management & Granular Purge Endpoints ─────────────────
 
-    @app.get("/api/accounts/{account_id}/data-summary", tags=["1. Accounts"])
+    @app.get("/api/accounts/{account_id}/data-summary", tags=["1. Accounts"], dependencies=[Depends(auth.require_account_access)])
     def get_account_data_summary(account_id: int):
         """Returns live counts of all child entities and persona seniority tiers for granular data management."""
         session = get_session()
@@ -4455,7 +4630,7 @@ if FASTAPI_AVAILABLE:
             # Personas by Seniority Tier
             personas = session.query(Persona).filter_by(account_id=account_id).all()
             total_personas = len(personas)
-
+            
             c_suite_cnt = 0
             vp_cnt = 0
             director_cnt = 0
@@ -4525,7 +4700,7 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
-    @app.post("/api/accounts/{account_id}/purge", tags=["1. Accounts"])
+    @app.post("/api/accounts/{account_id}/purge", tags=["1. Accounts"], dependencies=[Depends(auth.require_role("super_admin"))])
     def purge_account_data(account_id: int, req: AccountPurgeRequest):
         """Atomically purges selected or all components of an account with enterprise safeguards."""
         session = get_session()
@@ -4737,19 +4912,19 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
-    @app.delete("/api/accounts/{account_id}", tags=["1. Accounts"])
+    @app.delete("/api/accounts/{account_id}", tags=["1. Accounts"], dependencies=[Depends(auth.require_role("super_admin"))])
     def delete_account_direct(account_id: int, confirmation: Optional[str] = Query(None)):
         """REST shortcut to purge an entire account."""
         req = AccountPurgeRequest(delete_account_record=True, confirmation_text=confirmation)
         return purge_account_data(account_id, req)
 
-    @app.get("/api/accounts/{account_id}/credit-breakdown", tags=["1. Accounts"])
+    @app.get("/api/accounts/{account_id}/credit-breakdown", tags=["1. Accounts"], dependencies=[Depends(auth.require_account_access)])
     def get_account_credit_breakdown(account_id: int):
         """Returns enterprise run telemetry & credit usage breakdown for an account."""
         from services.telemetry_service import TelemetryService
         return TelemetryService.get_run_credit_breakdown(account_id=account_id)
 
-    @app.get("/api/system/health", tags=["0. System Telemetry"])
+    @app.get("/api/system/health", tags=["0. System Telemetry"], dependencies=[Depends(auth.require_role("super_admin"))])
     def get_system_health():
         """Returns live system telemetry, credit usage stats, database status, and API connectors health."""
         from db.models import PipelineRun, Account, Lob, Persona
@@ -4812,13 +4987,12 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
-    @app.get("/api/pipeline/runs/{run_id}/credit-breakdown", tags=["4. Pipeline Orchestration"])
+    @app.get("/api/pipeline/runs/{run_id}/credit-breakdown", tags=["4. Pipeline Orchestration"], dependencies=[Depends(auth.require_role("super_admin"))])
     def get_run_credit_breakdown_by_id(run_id: str):
         """Returns enterprise run telemetry & credit usage breakdown for a specific run ID."""
         from services.telemetry_service import TelemetryService
         return TelemetryService.get_run_credit_breakdown(run_id=run_id)
 
-    @app.patch("/api/lobs/{lob_id}", tags=["2. Lines of Business"])
     @app.patch("/api/lobs/{lob_id}", tags=["2. Lines of Business"], dependencies=[Depends(auth.require_lob_account_access), Depends(auth.require_editor)])
     def update_lob_record(lob_id: int, updates: Dict[str, Any]):
         """Directly updates LOB fields in PostgreSQL, sets is_manually_verified=True, and logs audit run."""
@@ -5118,7 +5292,7 @@ if FASTAPI_AVAILABLE:
                 return row
         return None
 
-    @app.get("/api/explorer/personas/{persona_id}/download-pdf", tags=["3. Personas & Buying Committee"])
+    @app.get("/api/explorer/personas/{persona_id}/download-pdf", tags=["3. Personas & Buying Committee"], dependencies=[Depends(auth.require_persona_account_access)])
     def download_explorer_persona_dossier_pdf(persona_id: int):
         """Dedicated Account Explorer executive dossier PDF download.
         Renders full database intelligence, AI sales playbook, KPIs, objections,
@@ -6136,7 +6310,7 @@ if FASTAPI_AVAILABLE:
         try:
             item = (session.query(ActionItem)
                     .options(selectinload(ActionItem.persona), selectinload(ActionItem.assigned_to),
-                             selectinload(ActionItem.created_by))
+                             selectinload(ActionItem.created_by), selectinload(ActionItem.account))
                     .filter_by(id=item_id).first())
             if not item:
                 raise HTTPException(status_code=404, detail="Action item not found")
@@ -6729,8 +6903,6 @@ if FASTAPI_AVAILABLE:
             session.close()
 
     @app.get("/api/accounts/{account_id}/hiring-summary", tags=["5. LinkedIn Jobs"], dependencies=[Depends(auth.require_account_access)])
-    def get_account_hiring_summary(account_id: int):
-    @app.get("/api/accounts/{account_id}/hiring-summary", tags=["5. LinkedIn Jobs"])
     def get_account_hiring_summary(
         account_id: int,
         days: Optional[int] = Query(None, description="Filter jobs posted within the last N days (e.g. 15, 30)")
@@ -7259,8 +7431,8 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
-    @app.get("/api/database/download", tags=["7. Database Operations"])
-    @app.get("/api/database/download/sql", tags=["7. Database Operations"])
+    @app.get("/api/database/download", tags=["7. Database Operations"], dependencies=[Depends(auth.require_role("super_admin"))])
+    @app.get("/api/database/download/sql", tags=["7. Database Operations"], dependencies=[Depends(auth.require_role("super_admin"))])
     def download_database_sql():
         """Download the complete PostgreSQL SQL database dump file."""
         sql_path = PIPELINE_ROOT / "sales_ai_database_export.sql"
@@ -7276,7 +7448,7 @@ if FASTAPI_AVAILABLE:
             path=str(sql_path), filename="sales_ai_database_export.sql", media_type="application/sql"
         )
 
-    @app.get("/api/database/download/json", tags=["7. Database Operations"])
+    @app.get("/api/database/download/json", tags=["7. Database Operations"], dependencies=[Depends(auth.require_role("super_admin"))])
     def download_database_json():
         """Download the complete database in JSON format."""
         json_path = PIPELINE_ROOT / "sales_ai_database_export.json"

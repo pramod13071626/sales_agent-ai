@@ -150,6 +150,11 @@ def route(q: str, ents: Dict[str, Any]) -> str:
         return "remember"
     if re.search(r"\bwhat('?s| has| have)? changed\b|\bchanges since\b|\bany changes\b", ql):
         return "what_changed"
+    if re.search(r"\b(deals?|pipeline|opportunit(y|ies))\b", ql) and \
+            not re.search(r"\b(draft|write|compose)\b", ql) and \
+            re.search(r"\b(my|our|open|stuck|risk|at-risk|closing|close|overdue|stalled|list|show|which|how many|status|"
+                      r"health|summary|digest|week|pipeline|all)\b", ql):
+        return "deals"
     people_words = r"\b(vps?|vice presidents?|directors?|c-?suite|cxos?|chiefs?|executives|managers|people|contacts|personas|leaders|stakeholders|decision[- ]makers)\b"
     if re.search(r"\b(list|which|who are|show( me)?|all|how many|find)\b", ql) and re.search(people_words, ql) \
             and not (ents["persona"] and ents["persona_source"] == "question"):
@@ -619,8 +624,8 @@ def begin_turn(session, user, q: str, session_id: Optional[str], context: Dict[s
             "prefs": _prefs(session, user.id), "citations": [], "evidence": [], "notes": [], "persona_info": {},
             "extras": {"entities": {"persona": ents["persona"],
                                     "accounts": [{"id": a["id"], "name": a["name"]} for a in ents["accounts"]]}},
-            "answer": None, "mode": "database", "prompt": None, "llm_info": {}, "deal_id": deal_id}
-            "answer": None, "mode": "database", "prompt": None, "llm_info": {}, "smalltalk": small}
+            "answer": None, "mode": "database", "prompt": None, "llm_info": {}, "deal_id": deal_id,
+            "smalltalk": small}
 
 
 def answer_without_llm(session, t: Dict[str, Any]) -> bool:
