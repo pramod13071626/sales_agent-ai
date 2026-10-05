@@ -20,7 +20,7 @@
   <link rel="stylesheet" href="css/action-items.css?v=1.0">
   <link rel="stylesheet" href="css/profile-page.css?v=3.1">
   <link rel="stylesheet" href="css/responsive.css?v=3.0">
-  <link rel="stylesheet" href="css/tasks-page.css?v=1.0">
+  <link rel="stylesheet" href="css/tasks-page.css?v=2.0">
 </head>
 <body>
 
@@ -34,40 +34,167 @@
 
 {% include "partials/nav.html" %}
 
-    <main class="dash-main">
+    <main class="dash-main" id="tasksMain">
       <header class="tp-header">
         <div>
           <div class="tp-breadcrumb"><a href="/"><i class="fa-solid fa-arrow-left"></i> Accounts</a></div>
           <h1 class="tp-title">My Tasks</h1>
-          <p class="tp-subtitle" id="tpSubtitle">Loading…</p>
+          <p class="tp-subtitle" id="tpSubtitle">Loading tasks…</p>
         </div>
-        <button type="button" class="action-btn" id="tpExport" title="Download the tasks shown (with your current filters) as Excel" style="align-self:center;"><i class="fa-regular fa-file-excel"></i> Export to Excel</button>
+        <div class="tp-header-actions">
+          <button type="button" class="tp-btn-primary" id="tpCreateTaskBtn">
+            <i class="fa-solid fa-plus"></i> Create Task
+          </button>
+          <button type="button" class="tp-btn-secondary" id="tpExport" title="Download the tasks shown (with your current filters) as Excel">
+            <i class="fa-regular fa-file-excel"></i> Export Excel
+          </button>
+        </div>
       </header>
+
+      <!-- Clean KPI Summary Metrics -->
+      <div class="tp-kpi-grid">
+        <div class="tp-kpi-card">
+          <div class="tp-kpi-icon icon-blue"><i class="fa-solid fa-list-check"></i></div>
+          <div class="tp-kpi-info">
+            <span class="tp-kpi-label">Open Tasks</span>
+            <span class="tp-kpi-val" id="tpKpiOpen">0</span>
+          </div>
+        </div>
+        <div class="tp-kpi-card">
+          <div class="tp-kpi-icon icon-red"><i class="fa-solid fa-triangle-exclamation"></i></div>
+          <div class="tp-kpi-info">
+            <span class="tp-kpi-label">Overdue</span>
+            <span class="tp-kpi-val text-red" id="tpKpiOverdue">0</span>
+          </div>
+        </div>
+        <div class="tp-kpi-card">
+          <div class="tp-kpi-icon icon-amber"><i class="fa-solid fa-bolt"></i></div>
+          <div class="tp-kpi-info">
+            <span class="tp-kpi-label">High Priority</span>
+            <span class="tp-kpi-val text-amber" id="tpKpiHigh">0</span>
+          </div>
+        </div>
+        <div class="tp-kpi-card">
+          <div class="tp-kpi-icon icon-purple"><i class="fa-solid fa-building"></i></div>
+          <div class="tp-kpi-info">
+            <span class="tp-kpi-label">Accounts Active</span>
+            <span class="tp-kpi-val" id="tpKpiAccounts">0</span>
+          </div>
+        </div>
+      </div>
 
       <div class="panel">
         <div class="tp-filter-row">
-          <div id="tpStatusFilters"></div>
+          <div id="tpStatusFilters" class="tp-status-tabs"></div>
           <div class="tp-filter-controls">
+            <div class="tp-search-wrap">
+              <i class="fa-solid fa-magnifying-glass tp-search-icon"></i>
+              <input type="text" id="tpSearchInput" class="tp-input tp-search-input" placeholder="Search tasks, accounts, contacts...">
+            </div>
             <select id="tpAccountFilter" class="tp-select" title="Filter by account">
-              <option value="">All accounts</option>
+              <option value="">All Accounts</option>
             </select>
             <select id="tpPriorityFilter" class="tp-select" title="Filter by priority">
-              <option value="">All priorities</option>
-              <option value="high">High priority</option>
-              <option value="medium">Medium priority</option>
-              <option value="low">Low priority</option>
+              <option value="">All Priorities</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
             </select>
             <select id="tpSort" class="tp-select" title="Sort">
-              <option value="due">Sort: Due date</option>
+              <option value="due">Sort: Due Date</option>
               <option value="priority">Sort: Priority</option>
               <option value="account">Sort: Account (A-Z)</option>
               <option value="newest">Sort: Newest</option>
             </select>
           </div>
         </div>
-        <div id="tpListBody"><div class="main-loading"><div class="spinner-md"></div> Loading your tasks…</div></div>
+
+        <div id="tpListBody">
+          <div class="main-loading"><div class="spinner-md"></div> Loading your tasks…</div>
+        </div>
       </div>
     </main>
+  </div>
+</div>
+
+<!-- Clean & Neat "Create Task" Modal -->
+<div class="tp-modal-backdrop" id="tpCreateModalBackdrop" style="display:none;">
+  <div class="tp-modal-card" role="dialog" aria-modal="true" aria-labelledby="tpModalTitle">
+    <div class="tp-modal-header">
+      <div class="tp-modal-title-wrap">
+        <div class="tp-modal-icon"><i class="fa-solid fa-plus"></i></div>
+        <div>
+          <h2 class="tp-modal-title" id="tpModalTitle">Create Task</h2>
+          <p class="tp-modal-subtitle">Add a structured follow-up or action item for your sales pipeline</p>
+        </div>
+      </div>
+      <button type="button" class="tp-modal-close" id="tpModalCloseBtn" aria-label="Close modal">&times;</button>
+    </div>
+
+    <form id="tpCreateTaskForm" class="tp-modal-form">
+      <div class="tp-form-group">
+        <label for="tpFormTitle" class="tp-label">Task Name <span class="tp-req">*</span></label>
+        <input type="text" id="tpFormTitle" class="tp-input" placeholder="e.g. Follow up on Q3 Cloud security proposal with VP Eng" required autocomplete="off">
+      </div>
+
+      <div class="tp-form-row-2">
+        <div class="tp-form-group">
+          <label for="tpFormAccount" class="tp-label">Target Account <span class="tp-req">*</span></label>
+          <select id="tpFormAccount" class="tp-select tp-select-full" required>
+            <option value="">Select an account...</option>
+          </select>
+        </div>
+        <div class="tp-form-group">
+          <label for="tpFormPersona" class="tp-label">Contact / Persona (Optional)</label>
+          <select id="tpFormPersona" class="tp-select tp-select-full">
+            <option value="">Select account first...</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="tp-form-row-3">
+        <div class="tp-form-group">
+          <label for="tpFormPriority" class="tp-label">Priority</label>
+          <select id="tpFormPriority" class="tp-select tp-select-full">
+            <option value="high">High</option>
+            <option value="medium" selected>Medium</option>
+            <option value="low">Low</option>
+          </select>
+        </div>
+        <div class="tp-form-group">
+          <label for="tpFormStatus" class="tp-label">Status</label>
+          <select id="tpFormStatus" class="tp-select tp-select-full">
+            <option value="open" selected>Open</option>
+            <option value="in_progress">In Progress</option>
+          </select>
+        </div>
+        <div class="tp-form-group">
+          <label for="tpFormDueDate" class="tp-label">Due Date</label>
+          <input type="datetime-local" id="tpFormDueDate" class="tp-input tp-input-full">
+        </div>
+      </div>
+
+      <div class="tp-form-group">
+        <label for="tpFormAssignee" class="tp-label">Assignee</label>
+        <select id="tpFormAssignee" class="tp-select tp-select-full">
+          <option value="">Assign to me (default)</option>
+        </select>
+      </div>
+
+      <div class="tp-form-group">
+        <label for="tpFormDesc" class="tp-label">Description & Context (Optional)</label>
+        <textarea id="tpFormDesc" class="tp-textarea" rows="3" placeholder="Add specific notes, objections raised, or call background..."></textarea>
+      </div>
+
+      <div class="tp-form-error" id="tpFormError" style="display:none;"></div>
+
+      <div class="tp-modal-footer">
+        <button type="button" class="tp-btn-secondary" id="tpModalCancelBtn">Cancel</button>
+        <button type="submit" class="tp-btn-primary" id="tpFormSubmitBtn">
+          <i class="fa-solid fa-check"></i> Create Task
+        </button>
+      </div>
+    </form>
   </div>
 </div>
 
@@ -75,7 +202,7 @@
 
 {% include "partials/drawer.html" %}
 
-<script type="module" src="js/modules/tasks-page/main.js?v=4.0"></script>
+<script type="module" src="js/modules/tasks-page/main.js?v=5.0"></script>
 {% include "partials/copilot-dock.html" %}
 </body>
 </html>
