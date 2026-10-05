@@ -10,7 +10,7 @@
 #
 # Deliberately NOT included:
 #   - Postgres: both apps already point at real Postgres today (Neon and/or
-#     local, per each app's own .env / MERGE_PLAN.md Phase 1's toggle) —
+#     local, per the shared root .env / MERGE_PLAN.md Phase 1's toggle) —
 #     adding a containerized Postgres here would just be a third database.
 #   - Redis/Celery: not implemented yet in this app (celery_app.py, tasks/
 #     are gitignored placeholders) — nothing would consume it.
@@ -18,7 +18,7 @@ services:
   content_pipeline:
     build: ./apps/content_pipeline
     env_file:
-      - ./apps/content_pipeline/.env
+      - ./.env   # one .env for both apps (see apps/content_pipeline/envfile.py)
     ports:
       - "8001:8080"
     volumes:

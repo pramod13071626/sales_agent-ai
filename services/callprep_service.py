@@ -17,8 +17,8 @@ Token strategy (see generate_account):
   * Person evidence capped: last 3 roles, 5 posts x 400 chars, digest summary only.
   * Unchanged inputs (same input_hash) are skipped unless force=True.
 
-LLM: OpenRouter chat-completions. Key from OPENROUTER_API_KEY (env), falling
-back to apps/content_pipeline/.env, which is where the digest pipeline keeps it.
+LLM: OpenRouter chat-completions. Key from OPENROUTER_API_KEY and model from
+CALLPREP_LLM_MODEL, else the digest pipeline's LLM_MODEL — all in the repo-root .env.
 """
 
 import hashlib
@@ -33,7 +33,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
-from dotenv import dotenv_values
 from sqlalchemy import text
 
 import config
@@ -43,13 +42,10 @@ from db.models.persona import Persona
 PROMPT_VERSION = "callprep-v2"
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-_CONTENT_PIPELINE_ENV = config.BASE_DIR / "apps" / "content_pipeline" / ".env"
-_pipeline_env = dotenv_values(_CONTENT_PIPELINE_ENV) if _CONTENT_PIPELINE_ENV.exists() else {}
-
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY") or _pipeline_env.get("OPENROUTER_API_KEY", "")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 CALLPREP_MODEL = (
     os.getenv("CALLPREP_LLM_MODEL")
-    or _pipeline_env.get("LLM_MODEL")
+    or os.getenv("LLM_MODEL")
     or "nvidia/nemotron-3-super-120b-a12b:free"
 )
 
@@ -195,7 +191,7 @@ def _parse_json(raw: str) -> Dict[str, Any]:
 def call_llm(system: str, user: str, max_tokens: int) -> Tuple[Dict[str, Any], Dict[str, int]]:
     """OpenRouter chat call with 429/5xx backoff. Returns (parsed_json, usage)."""
     if not OPENROUTER_API_KEY:
-        raise LLMError("OPENROUTER_API_KEY not set (env or apps/content_pipeline/.env)")
+        raise LLMError("OPENROUTER_API_KEY not set in .env")
     body = {
         "model": CALLPREP_MODEL,
         "max_tokens": max_tokens,

@@ -4,16 +4,11 @@ and colliding module names have caused real crashes here (README §2.4)."""
 
 import os
 
-from dotenv import dotenv_values
-
-import config as app_config  # main app config (BASE_DIR, OUTPUT_DIR, .env already loaded)
-
-_pipeline_env_path = app_config.BASE_DIR / "apps" / "content_pipeline" / ".env"
-_pipeline_env = dotenv_values(_pipeline_env_path) if _pipeline_env_path.exists() else {}
+import config as app_config  # main app config (BASE_DIR, OUTPUT_DIR; importing it loads the repo-root .env)
 
 
 def _env(name: str, default: str = "") -> str:
-    return os.getenv(name) or _pipeline_env.get(name) or default
+    return os.getenv(name) or default
 
 
 # ── Embeddings (free, local) ──

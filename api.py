@@ -52,8 +52,8 @@ from collectors.validator import DataQualityValidator
 from serializer import MasterSerializer
 from serializers.account_serializer import slugify
 
-from sqlalchemy import or_, and_, text as sql_text
-from sqlalchemy.orm import selectinload
+from sqlalchemy import or_, and_, func, text as sql_text
+from sqlalchemy.orm import load_only, selectinload
 from db.connection import get_session
 from db.models import (
     Account,
@@ -4321,7 +4321,13 @@ if FASTAPI_AVAILABLE:
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         session = get_session()
         try:
-            query = session.query(Persona).join(Account, Persona.account_id == Account.id)
+            # Only the fields tallied below — full persona rows carry large raw_data JSON and
+            # p.account would load each account's multi-MB enrichment row.
+            query = session.query(
+                Persona.id, Persona.full_name, Persona.title, Persona.tier, Persona.account_id,
+                Persona.operational_pain_points, Persona.key_objections,
+                func.coalesce(Account.display_name, Account.legal_name).label("acct_name"),
+            ).join(Account, Persona.account_id == Account.id)
             if user.role != "super_admin":
                 accessible_ids = auth.get_accessible_account_ids(session, user.id)
                 query = query.filter(Account.id.in_(accessible_ids)) if accessible_ids else query.filter(False)
@@ -4330,7 +4336,7 @@ if FASTAPI_AVAILABLE:
             pain_points: Dict[str, Dict[str, Any]] = {}
             objections: Dict[str, Dict[str, Any]] = {}
 
-            def _tally(bucket: Dict[str, Dict[str, Any]], text: Optional[str], acct_name: Optional[str], p: Optional[Persona] = None):
+            def _tally(bucket: Dict[str, Dict[str, Any]], text: Optional[str], acct_name: Optional[str], p=None):
                 text = (text or "").strip()
                 if not text:
                     return
@@ -4349,7 +4355,7 @@ if FASTAPI_AVAILABLE:
                     })
 
             for p in personas:
-                acct_name = (p.account.display_name or p.account.legal_name) if p.account else None
+                acct_name = p.acct_name
                 for text in (p.operational_pain_points or []):
                     _tally(pain_points, text, acct_name, p)
                 for text in (p.key_objections or []):
@@ -6432,7 +6438,11 @@ if FASTAPI_AVAILABLE:
 
     def _build_target_key_to_account_map(session) -> Dict[str, Account]:
         mapping: Dict[str, Account] = {}
-        for a in session.query(Account).all():
+        # Only the naming columns: full account rows carry MBs of enrichment JSON, and
+        # loading them dominated every feed endpoint that calls this (~0.6s for 5 rows).
+        accounts = session.query(Account).options(load_only(
+            Account.id, Account.key, Account.stock_symbol, Account.display_name, Account.legal_name)).all()
+        for a in accounts:
             for candidate in (
                 a.key,
                 (a.stock_symbol or "").lower() or None,
@@ -6879,52 +6889,95 @@ if FASTAPI_AVAILABLE:
         finally:
             session.close()
 
+    def _news_date(published_at: Optional[str], first_seen: Optional[datetime]) -> Optional[datetime]:
+        """Article date from the scraped text (RSS gives RFC 822, e.g. "Wed, 26 Aug 2026
+        23:14:00 GMT"; some sources give ISO). Falls back to when we first saw it."""
+        from email.utils import parsedate_to_datetime
+        if published_at:
+            for parse in (parsedate_to_datetime, datetime.fromisoformat):
+                try:
+                    d = parse(published_at.strip())
+                    return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+                except (TypeError, ValueError, IndexError):
+                    continue
+        return first_seen
+
     @app.get("/api/news", tags=["4. Content Intelligence"])
     def get_cross_account_news(
         response: Response,
         user: User = Depends(auth.get_current_user),
         limit: int = Query(30, ge=1, le=100),
+        account_id: Optional[int] = Query(None),
     ):
-        """Recent Google News articles (Post.channel == "news") captured across
-        every account the caller can see — the cross-account counterpart to
-        /api/accounts/{id}/content's per-account news slice, for a single feed
-        on Command Center instead of one fetch per account."""
+        """Recent Google News articles (Post.channel == "news") across every account
+        the caller can see — both company-level scrapes (target_key = account key)
+        and person-level ones (target_key = persona key, mapped to the persona's
+        account). Newest article first by the article's own date, the same story
+        under several people shown once. account_id narrows to one account."""
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         session = get_session()
         try:
-            target_map = _build_target_key_to_account_map(session)
+            company_map = _build_target_key_to_account_map(session)
             if user.role != "super_admin":
-                accessible_ids = auth.get_accessible_account_ids(session, user.id)
-                target_map = {k: a for k, a in target_map.items() if a.id in accessible_ids}
-            if not target_map:
+                accessible_ids = set(auth.get_accessible_account_ids(session, user.id))
+                company_map = {k: a for k, a in company_map.items() if a.id in accessible_ids}
+            accounts = {a.id: a for a in company_map.values()}
+            if account_id is not None:
+                accounts = {k: v for k, v in accounts.items() if k == account_id}
+                company_map = {k: a for k, a in company_map.items() if a.id == account_id}
+            if not accounts:
                 return {"articles": []}
 
+            # target_key -> (account, person name or None)
+            target_map = {k: (a, None) for k, a in company_map.items()}
+            person_rows = (
+                session.query(Persona.key, Persona.account_id, func.coalesce(Persona.full_name, Persona.display_name))
+                .filter(Persona.account_id.in_(list(accounts)), Persona.key.isnot(None))
+                .all()
+            )
+            for key, acct_id, name in person_rows:
+                target_map.setdefault(key, (accounts[acct_id], name))
+
+            # Candidates by scrape time (indexed), then ranked by the article's own date.
             posts = (
                 session.query(Post)
                 .filter(Post.channel == "news", Post.target_key.in_(list(target_map.keys())))
                 .order_by(Post.first_seen.desc().nullslast())
-                .limit(limit)
+                .limit(max(limit * 25, 500))
                 .all()
             )
-            articles = []
-            for p in posts:
+            ranked = sorted(posts, key=lambda p: _news_date(p.published_at, p.first_seen)
+                            or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+
+            articles, seen = [], set()
+            for p in ranked:
                 raw = p.raw or {}
                 body_stripped = (p.body or "").strip()
                 title = raw.get("title") or (body_stripped.splitlines()[0][:200] if body_stripped else None)
                 if not title:
                     continue
-                acct = target_map.get(p.target_key)
+                dedupe = " ".join(title.lower().split())
+                if dedupe in seen:
+                    continue
+                seen.add(dedupe)
+                acct, person = target_map[p.target_key]
+                published = _news_date(p.published_at, None)
                 articles.append({
                     "id": p.id,
-                    "account_id": acct.id if acct else None,
-                    "account_name": (acct.display_name or acct.legal_name) if acct else p.target_key,
+                    "account_id": acct.id,
+                    "account_name": acct.display_name or acct.legal_name,
+                    "person_name": person,
                     "title": title,
                     "source": p.author or raw.get("source"),
                     "url": p.post_url,
-                    "published_at": p.published_at,
+                    "published_at": published.isoformat() if published else None,
                     "first_seen": p.first_seen.isoformat() if p.first_seen else None,
                 })
-            return {"articles": articles}
+                if len(articles) >= limit:
+                    break
+            last_scraped = session.query(func.max(Post.first_seen)).filter(
+                Post.channel == "news", Post.target_key.in_(list(target_map.keys()))).scalar()
+            return {"articles": articles, "last_scraped": last_scraped.isoformat() if last_scraped else None}
         finally:
             session.close()
 
