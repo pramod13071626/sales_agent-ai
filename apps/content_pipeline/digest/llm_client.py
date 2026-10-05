@@ -13,9 +13,9 @@ import urllib.error
 import urllib.request
 from typing import Any, Dict, List, Optional
 
-from dotenv import load_dotenv
+from envfile import load_env
 
-load_dotenv()
+load_env()
 
 PROVIDER = os.getenv("LLM_PROVIDER", "anthropic").lower()
 
