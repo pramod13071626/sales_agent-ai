@@ -6,13 +6,18 @@
 /api/search/semantic — "related content" for phrase-like queries. Reuses the copilot's hybrid
                        retrieval (Chroma vectors + Postgres full-text, RRF). No LLM call.
 
-Both are scoped to the accounts the caller may see (same rule as the copilot).
+/api/search/log     — the palette reports each search session's final query (result count,
+                       what was picked). /api/search/misses lists what people looked for and
+                       didn't find (super admin). Rows older than LOG_RETENTION_DAYS are pruned.
+
+Both searches are scoped to the accounts the caller may see (same rule as the copilot).
 """
 import html
 import re
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 import auth
@@ -27,6 +32,23 @@ _TRGM = False
 _FUZZY_MIN = 0.45   # word_similarity threshold; below this, typo matches are mostly noise
 
 CURRENT_ACCOUNT_BOOST = 8   # enough to win ties within a tier, not to beat an exact match elsewhere
+
+LOG_RETENTION_DAYS = 90
+LOG_TYPES = {"account", "persona", "lob", "signal", "deal", "task", "doc", "copilot"}
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS search_log (
+  id           bigserial PRIMARY KEY,
+  user_id      int REFERENCES users(id) ON DELETE SET NULL,
+  q            text NOT NULL,
+  account_id   int,
+  n_results    int NOT NULL,
+  chosen_type  text,
+  semantic     boolean NOT NULL DEFAULT false,
+  created_at   timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS search_log_created ON search_log (created_at);
+"""
 
 GROUP_LIMITS = {"accounts": 3, "people": 6, "lobs": 4, "signals": 4, "deals": 3, "tasks": 3}
 
@@ -57,6 +79,7 @@ def _params(q: str, acl: List[int], current: Optional[int]) -> Dict[str, Any]:
 def _score(col: str, weight: float = 1.0) -> str:
     """SQL rank for one text column: exact 100, prefix 90, word-prefix 80, contains 60,
     typo match up to 50. Multiplied by weight (secondary fields rank below names)."""
+    col = f"replace({col}, chr(160), ' ')"   # some scraped legal names use non-breaking spaces
     fuzzy = f"WHEN word_similarity(:q, {col}) >= {_FUZZY_MIN} THEN 50 * word_similarity(:q, {col})" if _TRGM else ""
     return f"""({weight} * CASE
         WHEN {col} IS NULL THEN 0
@@ -82,7 +105,7 @@ def _grouped(session, sql: str, params: Dict[str, Any], limit: int) -> List[Any]
 
 
 def _clean(s: Optional[str]) -> Optional[str]:
-    return html.unescape(s) if s else s
+    return html.unescape(s).replace("\xa0", " ") if s else s
 
 
 def _accounts(s, p):
@@ -200,6 +223,61 @@ def semantic(q: str = Query("", max_length=300), account_id: Optional[int] = Non
     } for h in hits]}
 
 
+class SearchLogIn(BaseModel):
+    q: str = Field(..., max_length=300)
+    n_results: int = Field(..., ge=0, le=1000)
+    chosen_type: Optional[str] = None
+    account_id: Optional[int] = None
+    semantic: bool = False
+
+
+@router.post("/log", status_code=204)
+def log_search(body: SearchLogIn, user: User = Depends(auth.get_current_user), s=Depends(_session)):
+    """One row per palette session (sent on pick or close), not per keystroke."""
+    q = " ".join(body.q.split())
+    if len(q) < 2:
+        return
+    s.execute(text("""INSERT INTO search_log (user_id, q, account_id, n_results, chosen_type, semantic)
+                      VALUES (:u, :q, :a, :n, :c, :sem)"""),
+              {"u": getattr(user, "id", None), "q": q, "a": body.account_id, "n": body.n_results,
+               "c": body.chosen_type if body.chosen_type in LOG_TYPES else None, "sem": body.semantic})
+    s.commit()
+
+
+@router.get("/misses")
+def search_misses(days: int = Query(30, ge=1, le=LOG_RETENTION_DAYS), limit: int = Query(50, ge=1, le=500),
+                  user: User = Depends(auth.require_role("super_admin")), s=Depends(_session)):
+    """What people searched for and didn't find: no direct matches and nothing picked."""
+    rows = s.execute(text("""
+        SELECT lower(q) AS q, count(*) AS searches, count(DISTINCT user_id) AS users,
+               bool_or(semantic) AS tried_related, max(created_at) AS last_seen
+        FROM search_log
+        WHERE created_at > now() - make_interval(days => :days) AND n_results = 0 AND chosen_type IS NULL
+        GROUP BY lower(q) ORDER BY searches DESC, last_seen DESC LIMIT :lim"""),
+                     {"days": days, "lim": limit}).fetchall()
+    totals = s.execute(text("""
+        SELECT count(*), count(*) FILTER (WHERE n_results = 0), count(*) FILTER (WHERE chosen_type IS NOT NULL)
+        FROM search_log WHERE created_at > now() - make_interval(days => :days)"""), {"days": days}).fetchone()
+    return {"days": days, "searches": totals[0], "zero_result": totals[1], "picked": totals[2],
+            "misses": [{"q": r.q, "searches": r.searches, "users": r.users, "tried_related": r.tried_related,
+                        "last_seen": r.last_seen.isoformat()} for r in rows]}
+
+
+def _ensure_schema() -> None:
+    s = get_session()
+    try:
+        s.execute(text("SET lock_timeout = '5s'"))
+        s.execute(text(SCHEMA))
+        s.execute(text("DELETE FROM search_log WHERE created_at < now() - make_interval(days => :d)"),
+                  {"d": LOG_RETENTION_DAYS})
+        s.commit()
+    except Exception as e:
+        s.rollback()
+        print(f"[search] search_log schema check failed: {str(e).splitlines()[0]}")
+    finally:
+        s.close()
+
+
 def install(app) -> None:
     """Called from api.py: enable pg_trgm if possible (typo tolerance), mount routes."""
     global _TRGM
@@ -213,4 +291,5 @@ def install(app) -> None:
         print(f"[search] pg_trgm unavailable, typo matching off: {str(e).splitlines()[0]}")
     finally:
         s.close()
+    _ensure_schema()
     app.include_router(router)

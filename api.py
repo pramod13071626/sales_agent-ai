@@ -71,6 +71,7 @@ from db.models import (
     ActionItem,
     ActionItemReminder,
     UserAccountAccess,
+    CommandCenterSnapshot,
 )
 
 from db.schemas import AccountSchema, LobSchema, PersonaSchema
@@ -85,6 +86,7 @@ from services.lob_service import LobService, LobValidator
 from services.persona_service import PersonaService, PersonaValidator
 from services.pipeline_run_logger import PipelineRunLogger
 from services import callprep_service
+from services import command_center_service
 # Contact privacy: work email/phone only — personal email & direct mobile never reach the browser
 from apps.sales_copilot import privacy as contact_privacy
 from pdf_export import build_persona_profile_pdf, build_psychological_profile_pdf
@@ -892,6 +894,7 @@ if FASTAPI_AVAILABLE:
         priority: str = "medium"  # high | medium | low
         due_date: Optional[str] = None  # ISO 8601
         assigned_to_id: Optional[int] = None
+        source: str = "manual"  # manual | playbook | signal_feed
 
     class ActionItemUpdateRequest(BaseModel):
         title: Optional[str] = None
@@ -5862,6 +5865,8 @@ if FASTAPI_AVAILABLE:
     ):
         if body.priority not in ("high", "medium", "low"):
             raise HTTPException(status_code=400, detail="priority must be 'high', 'medium', or 'low'")
+        if body.source not in ("manual", "playbook", "signal_feed"):
+            raise HTTPException(status_code=400, detail="source must be 'manual', 'playbook', or 'signal_feed'")
         session = get_session()
         try:
             if body.persona_id is not None:
@@ -5872,7 +5877,7 @@ if FASTAPI_AVAILABLE:
                 account_id=account_id, persona_id=body.persona_id, title=body.title,
                 description=body.description, priority=body.priority,
                 due_date=_parse_due_date(body.due_date), assigned_to_id=body.assigned_to_id,
-                created_by_id=user.id, source="manual",
+                created_by_id=user.id, source=body.source,
             )
             session.add(item)
             session.commit()
@@ -6157,6 +6162,97 @@ if FASTAPI_AVAILABLE:
                 d["account_name"] = i.account.display_name or i.account.legal_name if i.account else None
                 results.append(d)
             return {"action_items": results}
+        finally:
+            session.close()
+
+    # ══════════════════════════════════════════════════════
+    # COMMAND CENTER — signal feed / playbook generator
+    # ══════════════════════════════════════════════════════
+
+    PLAY_STALL_DAYS = 14
+
+    def _command_center_scope(session, user: User) -> Optional[List[int]]:
+        """None = every account (super_admin); otherwise the granted ids."""
+        if user.role == "super_admin":
+            return None
+        return auth.get_accessible_account_ids(session, user.id)
+
+    def _command_center_payload(session, user: User, snap: Optional[CommandCenterSnapshot]) -> Dict[str, Any]:
+        """Snapshot + live play counts. "Plays in motion" are real action
+        items created from the playbook (source='playbook') that are still
+        open; stalled = untouched for PLAY_STALL_DAYS."""
+        scope = _command_center_scope(session, user)
+        q = session.query(ActionItem).filter(ActionItem.source == "playbook")
+        if scope is not None:
+            q = q.filter(ActionItem.account_id.in_(scope or [-1]))
+        play_items = q.all()
+        now = datetime.now(timezone.utc)
+        open_items = [i for i in play_items if i.status in ("open", "in_progress")]
+        stalled = [
+            i for i in open_items
+            if i.updated_at and (now - (i.updated_at if i.updated_at.tzinfo else i.updated_at.replace(tzinfo=timezone.utc))).days >= PLAY_STALL_DAYS
+        ]
+        tasked = {(i.account_id, i.title) for i in play_items}
+        playbook = [
+            {**p, "tasked": (p.get("account_id"), p.get("title")) in tasked}
+            for p in (snap.playbook if snap else [])
+        ]
+        return {
+            "generated_at": snap.generated_at.isoformat() if snap else None,
+            "signals": snap.signals if snap else [],
+            "playbook": playbook,
+            "velocity": snap.velocity if snap else None,
+            "source_counts": snap.source_counts if snap else {},
+            "categories": command_center_service.CATEGORIES,
+            "plays": {"in_motion": len(open_items), "stalled": len(stalled)},
+        }
+
+    @app.get("/api/command-center", tags=["9. Command Center"])
+    def get_command_center(response: Response, user: User = Depends(auth.get_current_user)):
+        """The caller's most recently generated signal feed + playbook
+        (empty until they press Generate), plus live plays-in-motion counts."""
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        session = get_session()
+        try:
+            snap = (session.query(CommandCenterSnapshot)
+                    .filter_by(user_id=user.id)
+                    .order_by(CommandCenterSnapshot.generated_at.desc())
+                    .first())
+            return _command_center_payload(session, user, snap)
+        finally:
+            session.close()
+
+    @app.post("/api/command-center/generate", tags=["9. Command Center"])
+    def generate_command_center(user: User = Depends(auth.get_current_user)):
+        """Rebuilds the Priority Signal Feed, This Week's Playbook and signal
+        velocity from exec movements, LinkedIn jobs, news and opportunity
+        signals already in the DB (see services/command_center_service.py),
+        and saves the result as the caller's latest snapshot."""
+        session = get_session()
+        try:
+            result = command_center_service.generate(session, _command_center_scope(session, user))
+            snap = CommandCenterSnapshot(
+                user_id=user.id, generated_at=datetime.now(timezone.utc),
+                signals=result["signals"], playbook=result["playbook"],
+                velocity=result["velocity"], source_counts=result["source_counts"],
+            )
+            session.add(snap)
+            session.flush()
+            # Keep a short history per user, not an ever-growing table.
+            old = (session.query(CommandCenterSnapshot.id)
+                   .filter_by(user_id=user.id)
+                   .order_by(CommandCenterSnapshot.generated_at.desc())
+                   .offset(10).all())
+            if old:
+                session.query(CommandCenterSnapshot).filter(
+                    CommandCenterSnapshot.id.in_([o[0] for o in old])
+                ).delete(synchronize_session=False)
+            session.commit()
+            session.refresh(snap)
+            return _command_center_payload(session, user, snap)
+        except Exception as e:
+            session.rollback()
+            raise HTTPException(status_code=500, detail=f"Command Center generation failed: {e}")
         finally:
             session.close()
 
@@ -7029,8 +7125,9 @@ if FASTAPI_AVAILABLE:
         async def sales_command_center_page(request: Request):
             """Action-first rep/manager/exec dashboard — KPI strip, account
             priority matrix, priority signal feed, playbook and exec
-            movements timeline. Currently runs on mock seed data; see
-            frontend/js/modules/command-center/data.js."""
+            movements timeline. The signal feed, playbook and their KPIs are
+            built on demand by POST /api/command-center/generate; see
+            services/command_center_service.py."""
             return templates.TemplateResponse(request, "command-center.html", headers=_NO_CACHE_HEADERS)
 
         @app.get("/deals", response_class=HTMLResponse, include_in_schema=False)

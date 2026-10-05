@@ -1,12 +1,14 @@
 """Central configuration for Apify Social Scraper Engine."""
 import os
-from dotenv import load_dotenv
+from envfile import load_env
 
-load_dotenv()
+load_env()   # the repo-root .env (shared with the main app) — see envfile.py
 
 # ─── Apify API Token ─────────────────────────────────────────────
 # Get yours from: https://console.apify.com/account/integrations
-APIFY_TOKEN = os.getenv("APIFY_TOKEN", "YOUR_APIFY_TOKEN_HERE")
+# CONTENT_APIFY_TOKEN lets the scrapers bill a different Apify account than the
+# main app's enrichment (which reads APIFY_TOKEN) now that both share one .env.
+APIFY_TOKEN = os.getenv("CONTENT_APIFY_TOKEN") or os.getenv("APIFY_TOKEN", "YOUR_APIFY_TOKEN_HERE")
 
 # ─── Default Settings ────────────────────────────────────────────
 DEFAULT_POST_LIMIT = 10
@@ -78,7 +80,9 @@ GRAPH_TENANT_ID = os.getenv("GRAPH_TENANT_ID", "common")
 # see MERGE_PLAN.md Phase 1 before pointing this at local Postgres, the
 # sales_agent-ai `posts` table needs its UNIQUE constraint fixed first.
 DATABASE_URL_NEON = os.getenv("DATABASE_URL_NEON", os.getenv("DATABASE_URL", ""))
-DATABASE_URL_LOCAL = os.getenv("DATABASE_URL_LOCAL", "")
+# Defaults to the main app's DATABASE_URL so both always read and write the same
+# Postgres unless DATABASE_URL_LOCAL deliberately says otherwise.
+DATABASE_URL_LOCAL = os.getenv("DATABASE_URL_LOCAL") or os.getenv("DATABASE_URL", "")
 DB_USE_LOCAL = os.getenv("DB_USE_LOCAL", "false").strip().lower() in ("1", "true", "yes")
 DATABASE_URL = DATABASE_URL_LOCAL if DB_USE_LOCAL else DATABASE_URL_NEON
 
