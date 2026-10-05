@@ -18,7 +18,8 @@ import { renderNewsFeed } from './news.js';
 import { initWidgetGuides } from './widget-guide.js';
 import { initAccountFilter } from './account-filter.js';
 import { initWidgetCustomizer } from './widget-customizer.js';
-import { kpiBase } from './data.js';
+import { loadCommandCenter, generateCommandCenter, getCommandCenter, isGenerated } from './generator.js';
+import { esc, relativeTime } from './utils.js';
 
 function weekRangeLabel() {
   const now = new Date();
@@ -36,8 +37,36 @@ function renderSubtitle() {
   if (ccState.selectedAccountName) {
     el.innerHTML = `<span class="cc-filtered-subtitle"><i class="fa-solid fa-filter"></i> Showing intelligence filtered for <strong>${esc(ccState.selectedAccountName)}</strong></span>`;
   } else {
-    el.textContent = `${weekRangeLabel()} · ${kpiBase.playsInMotion} open plays`;
+    const cc = getCommandCenter();
+    const generated = isGenerated()
+      ? `generated ${relativeTime(new Date(cc.generated_at))}`
+      : 'feed &amp; playbook not generated yet';
+    el.innerHTML = `${esc(weekRangeLabel())} · ${cc.plays.in_motion} open plays · <span class="cc-generated-at">${generated}</span>`;
   }
+}
+
+function initGenerateButton() {
+  const btn = document.getElementById('ccGenerateBtn');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    const label = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Generating…';
+    try {
+      const data = await generateCommandCenter();
+      ccState.activeDomainFilters.clear();
+      renderAll();
+      const n = data.signals.length;
+      showToast(n
+        ? `Generated ${n} signal${n === 1 ? '' : 's'} and ${data.playbook.length} play${data.playbook.length === 1 ? '' : 's'}`
+        : 'Generated — no signals in the last 7 days. Run the pipeline or content refresh for your accounts first.');
+    } catch (e) {
+      showToast(e.message || 'Generation failed.');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = label;
+    }
+  });
 }
 
 async function renderKpi() {
@@ -78,6 +107,9 @@ async function init() {
   initDrawer();
   initAccountsNav();
   initWidgetCustomizer();
+  initGenerateButton();
+  document.addEventListener('cc:plays-changed', () => { renderSubtitle(); renderKpi(); });
+  await loadCommandCenter();
   await initAccountFilter((accountId, accountObj) => {
     renderAll();
     renderMatrix();

@@ -14,13 +14,13 @@ function priorityFromScore(score) {
  * not a simulated/local-only toast. Returns true on success; on any failure
  * (account not in the DB, not granted to this user, network error) it shows
  * an explanatory toast and returns false instead of pretending it worked. */
-async function createRealActionItem({ accountName, title, description, priority }) {
+async function createRealActionItem({ accountName, accountId, title, description, priority, source }) {
   const user = getCurrentUser();
   if (!user) {
     showToast('Your session expired — sign in again to create tasks.');
     return false;
   }
-  const account = await resolveRealAccount(accountName).catch(() => null);
+  const account = accountId ? { id: accountId } : await resolveRealAccount(accountName).catch(() => null);
   if (!account) {
     showToast(`"${accountName}" isn't in the database (or isn't shared with you yet) — task not created.`);
     return false;
@@ -29,7 +29,7 @@ async function createRealActionItem({ accountName, title, description, priority 
     const res = await fetch(`/api/accounts/${account.id}/action-items`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, description, priority, assigned_to_id: user.id }),
+      body: JSON.stringify({ title, description, priority, assigned_to_id: user.id, source: source || 'manual' }),
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
@@ -65,9 +65,11 @@ export function logTouch(accountName, context) {
 export async function createTask(accountName, title, opts = {}) {
   const ok = await createRealActionItem({
     accountName,
+    accountId: opts.accountId || null,
     title,
     description: opts.description || null,
     priority: opts.priority || priorityFromScore(opts.score),
+    source: opts.source,
   });
   if (ok) showToast(`Task created for ${accountName} — see My Tasks`);
   return ok;

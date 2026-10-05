@@ -23,6 +23,7 @@ from db.models.user_account_access import UserAccountAccess
 from db.models.action_item import ActionItem
 from db.models.action_item_reminder import ActionItemReminder
 from db.models.api_config import SystemApiConfig
+from db.models.command_center_snapshot import CommandCenterSnapshot
 
 __all__ = [
     "Base",
@@ -45,4 +46,5 @@ __all__ = [
     "ActionItem",
     "ActionItemReminder",
     "SystemApiConfig",
+    "CommandCenterSnapshot",
 ]

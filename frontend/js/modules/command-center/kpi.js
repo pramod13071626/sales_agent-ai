@@ -1,5 +1,5 @@
-import { kpiBase } from './data.js';
-import { esc, formatMoney } from './utils.js';
+import { loadCommandCenter, getCommandCenter, isGenerated } from './generator.js';
+import { esc } from './utils.js';
 import { loadMatrixAccounts } from './real-accounts.js';
 import { loadRecentMovements } from './exec-movements.js';
 import { openDossier } from './drawer.js';
@@ -35,14 +35,17 @@ export function highlightAndScrollTo(selector) {
 
 // Account-level data (composite score, deal potential) and exec-change data
 // are both real (see real-accounts.js / exec-movements.js). Signal velocity
-// and "plays in motion" have no real backing source yet (no scored/dated
-// signal feed or deals table in the DB) and stay on the mock kpiBase numbers
-// — see data.js.
+// and "plays in motion" come from the generated snapshot (generator.js):
+// velocity = signals detected this week vs. last, plays = open tasks that
+// were started from the playbook.
 async function computeKpi() {
   const [accounts, execChangesAll] = await Promise.all([
     loadMatrixAccounts(),
     loadRecentMovements().catch(() => []),
+    loadCommandCenter(),
   ]);
+  const cc = getCommandCenter();
+  const velocity = cc.velocity || { this_week: 0, delta_pct: 0, trend: [] };
 
   const topAccount = accounts.length
     ? [...accounts].sort((a, b) => b.compositeScore - a.compositeScore)[0]
@@ -56,17 +59,17 @@ async function computeKpi() {
   return {
     accounts,
     topAccount,
-    velocity: kpiBase.signalVelocity,
-    velocityDeltaPct: kpiBase.velocityDeltaPct,
-    velocityTrend: kpiBase.velocityTrend,
+    generated: isGenerated(),
+    velocity: velocity.this_week,
+    velocityDeltaPct: velocity.delta_pct,
+    velocityTrend: velocity.trend || [],
     execChangesOpen: execChangesAll.length,
     execAging: aging.length,
     execJoined: joined,
     execPromoted: promoted,
     execOther: other,
-    playsInMotion: kpiBase.playsInMotion,
-    playsStalled: kpiBase.playsStalled,
-    q4CloseEstimate: kpiBase.q4CloseEstimate,
+    playsInMotion: cc.plays.in_motion,
+    playsStalled: cc.plays.stalled,
   };
 }
 
@@ -76,13 +79,13 @@ export async function renderKpiStrip() {
 
   const card1 = `
     <div class="cc-kpi-card cc-kpi-clickable" data-kpi-action="jump-feed" title="Click to view Priority Signal Feed" tabindex="0" role="button">
-      <div class="cc-kpi-spark-bg">${sparklineSvg(k.velocityTrend)}</div>
+      ${k.generated && k.velocityTrend.length > 1 ? `<div class="cc-kpi-spark-bg">${sparklineSvg(k.velocityTrend)}</div>` : ''}
       <div class="cc-kpi-label-row">
         <span class="cc-kpi-label">Signal velocity this week</span>
         <i class="fa-solid fa-arrow-up-right-from-square cc-kpi-icon"></i>
       </div>
-      <div class="cc-kpi-value">${k.velocity} <span class="cc-kpi-delta ${deltaCls}">${k.velocityDeltaPct >= 0 ? '+' : ''}${k.velocityDeltaPct}%</span></div>
-      <div class="cc-kpi-foot">vs. last week &middot; <span class="cc-kpi-action-text">View Feed &rarr;</span></div>
+      <div class="cc-kpi-value">${k.generated ? k.velocity : '&mdash;'}${k.generated ? ` <span class="cc-kpi-delta ${deltaCls}">${k.velocityDeltaPct >= 0 ? '+' : ''}${k.velocityDeltaPct}%</span>` : ''}</div>
+      <div class="cc-kpi-foot">${k.generated ? 'signals vs. last week' : 'not generated yet'} &middot; <span class="cc-kpi-action-text">View Feed &rarr;</span></div>
     </div>`;
 
   const card3 = `
@@ -112,9 +115,8 @@ export async function renderKpiStrip() {
       </div>
       <div class="cc-kpi-value">${k.playsInMotion}</div>
       <div class="cc-kpi-foot ${k.playsStalled > 0 ? 'cc-warning-text' : ''}">
-        ${k.playsStalled > 0 ? `${k.playsStalled} stalled 14d` : 'no stalled plays'} &middot; <span class="cc-kpi-action-text">View Playbook &rarr;</span>
+        ${k.playsStalled > 0 ? `${k.playsStalled} stalled 14d` : (k.playsInMotion ? 'no stalled plays' : 'start a play from the playbook')} &middot; <span class="cc-kpi-action-text">View Playbook &rarr;</span>
       </div>
-      <div class="cc-chip-row"><span class="cc-chip cc-chip-brand">Q4 close est. ${formatMoney(k.q4CloseEstimate)}</span></div>
     </div>`;
 
   return { html: card1 + card3 + card4, data: k };
