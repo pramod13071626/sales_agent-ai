@@ -4965,6 +4965,27 @@ if FASTAPI_AVAILABLE:
                 "serper": {"name": "Serper Google OSINT", "status": "active" if bool(SERPER_API_KEY) else "unconfigured", "type": "Search Engine"},
             }
 
+            # Real normalized units across all enterprise accounts (30s in-memory cache)
+            import time
+            from services.telemetry_service import TelemetryService
+            global _HEALTH_TELEMETRY_CACHE
+            if "_HEALTH_TELEMETRY_CACHE" not in globals():
+                _HEALTH_TELEMETRY_CACHE = {"ts": 0.0, "units": 2751, "cost": 13.76}
+
+            now = time.time()
+            if now - _HEALTH_TELEMETRY_CACHE.get("ts", 0) > 30:
+                accounts = session.query(Account).all()
+                t_units = 0
+                for a in accounts:
+                    bd = TelemetryService.get_run_credit_breakdown(account_id=a.id)
+                    t_units += bd.get("kpis", {}).get("total_credits", 0)
+                _HEALTH_TELEMETRY_CACHE["ts"] = now
+                _HEALTH_TELEMETRY_CACHE["units"] = t_units
+                _HEALTH_TELEMETRY_CACHE["cost"] = round(t_units * 0.005, 2)
+
+            real_account_units = _HEALTH_TELEMETRY_CACHE.get("units", 2751)
+            estimated_cost_usd = _HEALTH_TELEMETRY_CACHE.get("cost", 13.76)
+
             return {
                 "status": "healthy",
                 "database": {
@@ -4977,7 +4998,11 @@ if FASTAPI_AVAILABLE:
                     "total_lobs": total_lobs,
                     "total_personas": total_personas,
                     "total_pipeline_runs": total_runs,
-                    "total_credits_consumed": total_credits,
+                    "total_credits_consumed": real_account_units,
+                    "total_units": real_account_units,
+                    "estimated_cost_usd": estimated_cost_usd,
+                    "billing_tier": "Free Tier Evaluation",
+                    "disclaimer": "Free Tier Active • Trial quota units",
                     "last_sync_timestamp": last_run,
                 },
                 "connectors": connectors,
