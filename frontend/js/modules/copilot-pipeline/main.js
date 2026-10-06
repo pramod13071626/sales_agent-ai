@@ -226,13 +226,22 @@ function startPolling() {
   if (st.poll) return;
   st.poll = setInterval(async () => {
     try {
+      if (!st.viewingId) { stopPolling(); return; }
       const cur = await api('/runs/current');
-      if (!cur || cur.id !== st.viewingId) return;
-      renderRun(cur);
-      st.run = cur;
-      if (cur.status !== 'running') {
+      let run = cur && cur.id === st.viewingId ? cur : null;
+      if (!run) {
+        // No longer the live run: it finished and was replaced, or a server restart cut it off
+        // (/runs/current lives in server memory). Its stored row has the final status.
+        run = await api(`/runs/${encodeURIComponent(st.viewingId)}`).catch(() => null);
+        if (!run) { stopPolling(); return; }
+      }
+      renderRun(run);
+      st.run = run;
+      if (run.status !== 'running') {
         stopPolling();
-        showToast(cur.status === 'succeeded' ? 'Pipeline run finished' : 'Pipeline run finished with failures');
+        showToast(run.status === 'succeeded' ? 'Pipeline run finished'
+          : run.status === 'interrupted' ? 'Pipeline run was interrupted (the server restarted) — start it again'
+            : 'Pipeline run finished with failures');
         loadOverview().catch(() => {});
       }
     } catch { /* transient — keep polling */ }

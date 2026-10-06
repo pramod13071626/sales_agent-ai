@@ -4,8 +4,9 @@ The digest pipeline only needs one operation — send a prompt, get text back �
 so each provider is a small adapter behind `LLMClient.complete()`. Pick the
 provider with `LLM_PROVIDER` in .env; each reads its own API key.
 
-Supported: anthropic (default), openai, openrouter, ollama (local, no key),
-dry-run.
+Supported: anthropic (default), openai, openrouter, openai_compatible (any
+OpenAI-style API at LLM_API_BASE with LLM_API_KEY, e.g. HeyRoute — the same
+settings the copilot and call-prep use), ollama (local, no key), dry-run.
 """
 import json
 import os
@@ -43,6 +44,13 @@ PROVIDERS: Dict[str, Dict[str, Any]] = {
         "url": "https://openrouter.ai/api/v1/chat/completions",
         "key_env": "OPENROUTER_API_KEY",
         "default_model": "nvidia/nemotron-3-super-120b-a12b:free",
+    },
+    # Any OpenAI-compatible gateway (e.g. HeyRoute: LLM_API_BASE=https://heyroute.ai/v1).
+    # Model comes from LLM_MODEL / CHANNEL_LLM_MODEL — there is no sensible default.
+    "openai_compatible": {
+        "url": f"{(os.getenv('LLM_API_BASE') or '').rstrip('/')}/chat/completions",
+        "key_env": "LLM_API_KEY",
+        "default_model": os.getenv("LLM_MODEL", ""),
     },
 }
 
@@ -191,7 +199,7 @@ class LLMClient:
                 {"x-api-key": self.api_key, "anthropic-version": "2023-06-01"},
             )
 
-        if self.provider in ("openai", "openrouter"):
+        if self.provider in ("openai", "openrouter", "openai_compatible"):
             headers = {"Authorization": f"Bearer {self.api_key}"}
             if self.provider == "openrouter":
                 # Not required for the API to accept the request, but part of
@@ -227,7 +235,7 @@ class LLMClient:
         if self.provider == "anthropic":
             blocks = payload.get("content", [])
             return "".join(b.get("text", "") for b in blocks if b.get("type") == "text")
-        if self.provider in ("openai", "openrouter"):
+        if self.provider in ("openai", "openrouter", "openai_compatible"):
             return payload["choices"][0]["message"]["content"]
         return payload.get("message", {}).get("content", "")
 
