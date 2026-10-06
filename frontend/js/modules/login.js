@@ -54,9 +54,10 @@ loginForm.addEventListener('submit', async (e) => {
     if (user && user.role === 'super_admin') {
       window.location.replace('/admin');
     } else {
-      // Only same-site paths: "/x" yes; "//evil.com", "/\evil.com" and "https://…" fall back to "/".
+      // Only same-site paths: "/x" yes; "//evil.com", "/\evil.com" and "https://…" fall back to the
+      // default landing spot, the Command Center.
       const next = new URLSearchParams(window.location.search).get('next') || '';
-      const safe = /^\/(?![/\\])/.test(next) ? next : '/';
+      const safe = /^\/(?![/\\])/.test(next) ? next : '/command-center';
       window.location.replace(safe);
     }
   } catch (err) {

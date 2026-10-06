@@ -1,6 +1,17 @@
-// Public landing page (/welcome). No auth, no API calls: the search box only carries the
-// typed name through sign-in to the dashboard, which opens the matching account
-// (main.js already understands ?account_key=).
+// Public landing page — served at / to signed-out visitors (and always at /welcome).
+// The search box only carries the typed name through sign-in to the dashboard, which
+// opens the matching account (main.js already understands ?account_key=).
+
+// Already signed in but without the session-hint cookie (e.g. signed in before it
+// existed): a silent refresh sets it, and reloading / then shows the dashboard.
+// Once per browser session, so a cookie the browser refuses can never cause a reload loop.
+let triedResume = false;
+try { triedResume = sessionStorage.getItem('lpResumeTried') === '1'; sessionStorage.setItem('lpResumeTried', '1'); } catch { /* storage blocked */ }
+if (window.location.pathname === '/' && !triedResume) {
+  fetch('/api/auth/refresh', { method: 'POST', credentials: 'same-origin' })
+    .then(res => { if (res.ok) window.location.replace('/'); })
+    .catch(() => { /* signed out — stay on the landing page */ });
+}
 
 const search = document.getElementById('lpSearch');
 const input = document.getElementById('lpSearchInput');

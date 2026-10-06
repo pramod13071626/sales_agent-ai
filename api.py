@@ -245,9 +245,20 @@ if FASTAPI_AVAILABLE:
                 "refresh_token", refresh_token, httponly=True, secure=_COOKIE_SECURE, samesite="lax",
                 max_age=auth.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600, path="/api/auth",
             )
+            _set_session_hint(response)
             return {"access_token": access_token, "token_type": "bearer", "user": _user_public(user)}
         finally:
             session.close()
+
+    # "/" serves the public landing page to signed-out visitors and the dashboard to
+    # signed-in users. The refresh cookie is scoped to /api/auth, so page requests can't
+    # see it; this companion cookie is only a hint for which page to render — it holds
+    # no secret and grants nothing (every API call still needs the access token).
+    SESSION_HINT_COOKIE = "si_signed_in"
+
+    def _set_session_hint(response: Response) -> None:
+        response.set_cookie(SESSION_HINT_COOKIE, "1", httponly=True, secure=_COOKIE_SECURE, samesite="lax",
+                            max_age=auth.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600, path="/")
 
     @app.post("/api/auth/refresh", tags=["0. Authentication"])
     def refresh_access_token(request: Request, response: Response):
@@ -262,6 +273,7 @@ if FASTAPI_AVAILABLE:
                 "refresh_token", new_raw, httponly=True, secure=_COOKIE_SECURE, samesite="lax",
                 max_age=auth.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600, path="/api/auth",
             )
+            _set_session_hint(response)
             return {"access_token": access_token, "token_type": "bearer", "user": _user_public(user)}
         finally:
             session.close()
@@ -282,6 +294,7 @@ if FASTAPI_AVAILABLE:
             samesite="lax",
             secure=_COOKIE_SECURE,
         )
+        response.delete_cookie(SESSION_HINT_COOKIE, path="/", httponly=True, samesite="lax", secure=_COOKIE_SECURE)
         return {"ok": True}
 
     @app.get("/api/auth/me", tags=["0. Authentication"])
@@ -7441,6 +7454,18 @@ if FASTAPI_AVAILABLE:
 
         @app.get("/", response_class=HTMLResponse, include_in_schema=False)
         async def dashboard_home(request: Request):
+            """Bare /: signed-out visitors get the landing page, signed-in users (session hint
+            cookie) go to the Command Center. With a query string (/?account=…, deep links
+            that predate /accounts) it is the accounts dashboard, which handles login itself."""
+            if not request.query_params:
+                if request.cookies.get(SESSION_HINT_COOKIE):
+                    return RedirectResponse(url="/command-center", status_code=302)
+                return templates.TemplateResponse(request, "landing.html", headers=_NO_CACHE_HEADERS)
+            return templates.TemplateResponse(request, "index.html", headers=_NO_CACHE_HEADERS)
+
+        @app.get("/accounts", response_class=HTMLResponse, include_in_schema=False)
+        async def accounts_dashboard(request: Request):
+            """The accounts dashboard (account tree, dossiers, buying committee)."""
             return templates.TemplateResponse(request, "index.html", headers=_NO_CACHE_HEADERS)
 
         @app.get("/login", response_class=HTMLResponse, include_in_schema=False)
@@ -7449,8 +7474,8 @@ if FASTAPI_AVAILABLE:
 
         @app.get("/welcome", response_class=HTMLResponse, include_in_schema=False)
         async def landing_page(request: Request):
-            """Public marketing landing page (EliteHost theme). Signed-out visitors to /
-            are sent here instead of straight to /login."""
+            """The public landing page at a fixed URL (it is also what / shows signed-out
+            visitors), e.g. for a signed-in user who wants to see it."""
             return templates.TemplateResponse(request, "landing.html", headers=_NO_CACHE_HEADERS)
 
         @app.get("/reset-password", response_class=HTMLResponse, include_in_schema=False)
