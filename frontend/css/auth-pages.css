@@ -22,11 +22,11 @@ body.auth-page-body {
   align-items: center;
   padding: 72px 88px;
   color: #fff;
-  background-color: #221E3D;
+  /* EliteHost hero: navy starfield (same image as the /welcome landing hero) */
+  background-color: var(--navy);
   background:
-    radial-gradient(circle at 12% 15%, rgba(255,255,255,.08) 0%, transparent 38%),
-    radial-gradient(circle at 88% 85%, rgba(255,255,255,.05) 0%, transparent 42%),
-    linear-gradient(135deg, #1A1640 0%, #221E3D 55%, #3F3690 100%);
+    radial-gradient(circle at 88% 85%, rgba(253, 93, 7, .18) 0%, transparent 42%),
+    var(--navy) url(/assets/elitehost/banner-bg-2.webp) center bottom / cover no-repeat;
 }
 
 /* Faint dot-grid texture so the panel doesn't read as a flat gradient. */
@@ -51,7 +51,7 @@ body.auth-page-body {
   border-radius: 999px;
 }
 .auth-brand i { font-size: 1.05rem; }
-.auth-brand-mobile { display: none; margin-bottom: 28px; color: var(--brand); background: var(--brand-muted); border: 1px solid rgba(111,106,248,.15); }
+.auth-brand-mobile { display: none; margin-bottom: 28px; color: var(--brand); background: var(--brand-muted); border: 1px solid rgba(253, 93, 7,.15); }
 
 .auth-left-title {
   font-size: 2.6rem; font-weight: 800; line-height: 1.18;
@@ -121,10 +121,10 @@ body.auth-page-body {
   font-size: .9rem; font-weight: 700; font-family: inherit;
   color: #fff; background: var(--brand); border: none;
   border-radius: var(--radius-sm); cursor: pointer;
-  box-shadow: 0 2px 8px rgba(111, 106, 248, 0.28);
+  box-shadow: 0 2px 8px rgba(253, 93, 7, 0.28);
   transition: var(--transition);
 }
-.auth-submit:hover { background: var(--brand-hover); box-shadow: 0 4px 14px rgba(111, 106, 248, 0.38); transform: translateY(-1px); }
+.auth-submit:hover { background: var(--brand-hover); box-shadow: 0 4px 14px rgba(253, 93, 7, 0.38); transform: translateY(-1px); }
 .auth-submit:active { transform: translateY(0); }
 .auth-submit:disabled { opacity: .6; cursor: not-allowed; box-shadow: none; transform: none; }
 

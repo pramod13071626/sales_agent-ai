@@ -909,7 +909,7 @@ function renderApiConfigPanel() {
       <div class="api-config-section">
         <div class="api-config-section-header">
           <div class="api-config-section-title">
-            <i class="bi bi-envelope-check-fill" style="color:#0061ff;"></i> Email &amp; Daily News Digest Delivery
+            <i class="bi bi-envelope-check-fill" style="color:var(--brand);"></i> Email &amp; Daily News Digest Delivery
           </div>
         </div>
         <div class="api-config-card">

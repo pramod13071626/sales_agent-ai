@@ -54,8 +54,10 @@ loginForm.addEventListener('submit', async (e) => {
     if (user && user.role === 'super_admin') {
       window.location.replace('/admin');
     } else {
-      const params = new URLSearchParams(window.location.search);
-      window.location.replace(params.get('next') || '/');
+      // Only same-site paths: "/x" yes; "//evil.com", "/\evil.com" and "https://…" fall back to "/".
+      const next = new URLSearchParams(window.location.search).get('next') || '';
+      const safe = /^\/(?![/\\])/.test(next) ? next : '/';
+      window.location.replace(safe);
     }
   } catch (err) {
     showError(loginError, err.message || 'Sign in failed.');

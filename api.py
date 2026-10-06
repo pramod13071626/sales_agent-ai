@@ -7447,6 +7447,12 @@ if FASTAPI_AVAILABLE:
         async def login_page(request: Request):
             return templates.TemplateResponse(request, "login.html", headers=_NO_CACHE_HEADERS)
 
+        @app.get("/welcome", response_class=HTMLResponse, include_in_schema=False)
+        async def landing_page(request: Request):
+            """Public marketing landing page (EliteHost theme). Signed-out visitors to /
+            are sent here instead of straight to /login."""
+            return templates.TemplateResponse(request, "landing.html", headers=_NO_CACHE_HEADERS)
+
         @app.get("/reset-password", response_class=HTMLResponse, include_in_schema=False)
         async def reset_password_page(request: Request):
             return templates.TemplateResponse(request, "reset-password.html", headers=_NO_CACHE_HEADERS)
@@ -7540,6 +7546,10 @@ if FASTAPI_AVAILABLE:
             app.mount("/css", NoCacheStaticFiles(directory=str(css_dir)), name="frontend-css")
         if js_dir.exists():
             app.mount("/js", NoCacheStaticFiles(directory=str(js_dir)), name="frontend-js")
+        assets_dir = frontend_dir / "assets"
+        if assets_dir.exists():
+            # Images (EliteHost theme illustrations etc.) — cacheable, they never change in place.
+            app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="frontend-assets")
         if pipline_dir.exists():
             app.mount("/pipeline", NoCacheStaticFiles(directory=str(pipline_dir), html=True), name="frontend-pipeline")
             app.mount("/pipline", NoCacheStaticFiles(directory=str(pipline_dir), html=True), name="frontend-pipline")

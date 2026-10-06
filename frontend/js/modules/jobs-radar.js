@@ -271,7 +271,7 @@ export function renderHiringTrendRadar(account, jobs) {
         <div class="radar-kpi-card">
           <div class="radar-kpi-header">
             <span class="radar-kpi-label">Top Booming Domain</span>
-            <span class="radar-kpi-icon" style="color:#6366f1;"><i class="${topDomain ? topDomain.icon : 'fa-solid fa-star'}"></i></span>
+            <span class="radar-kpi-icon" style="color:var(--brand);"><i class="${topDomain ? topDomain.icon : 'fa-solid fa-star'}"></i></span>
           </div>
           <div class="radar-kpi-value">${topDomain ? esc(topDomain.name) : 'Balanced'}</div>
           <div class="radar-kpi-sub">

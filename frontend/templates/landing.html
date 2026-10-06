@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sales Intelligence | Know every account before the first call</title>
+  <meta name="description" content="Account research, buying committees, AI call-prep and a grounded sales copilot — built from public filings, news and enrichment sources.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="css/tokens.css?v=5.0">
+  <link rel="stylesheet" href="css/landing.css?v=1.0">
+</head>
+<body class="lp">
+
+<!-- ── Top strip ───────────────────────────────────────────── -->
+<div class="lp-strip">
+  <div class="lp-container lp-strip-inner">
+    <span class="lp-strip-left"><i class="fa-regular fa-envelope"></i> Built for enterprise sales teams</span>
+    <span class="lp-strip-promo"><i class="fa-solid fa-wand-magic-sparkles"></i> New: <strong>Sales Copilot</strong> answers with citations from your own research</span>
+    <a class="lp-strip-link" href="/login"><i class="fa-regular fa-user"></i> Sign in</a>
+  </div>
+</div>
+
+<!-- ── Header ──────────────────────────────────────────────── -->
+<header class="lp-header" id="top">
+  <div class="lp-container lp-header-inner">
+    <a class="lp-logo" href="/welcome" aria-label="Sales Intelligence home">
+      <span class="lp-logo-icon"><i class="fa-solid fa-sitemap"></i></span>
+      <span>Sales Intelligence</span>
+    </a>
+    <button type="button" class="lp-menu-btn" id="lpMenuBtn" aria-label="Open menu" aria-expanded="false" aria-controls="lpNav">
+      <i class="fa-solid fa-bars"></i>
+    </button>
+    <nav class="lp-nav" id="lpNav" aria-label="Main">
+      <a href="#platform">Platform</a>
+      <a href="#research">Research</a>
+      <a href="#command-center">Command Center</a>
+      <a href="#copilot">Copilot</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <a class="lp-btn lp-btn-outline lp-header-cta" href="/login">Sign in</a>
+  </div>
+</header>
+
+<main>
+  <!-- ── Hero (EliteHost index-two navy starfield) ───────────── -->
+  <section class="lp-hero">
+    <div class="lp-container lp-hero-inner">
+      <div class="lp-hero-copy">
+        <h1>Know every account before the first call</h1>
+        <p>Firmographics, subsidiaries, the full buying committee and an AI call-prep for every decision-maker — researched from public filings, news and enrichment sources, approved by your team before it lands in your CRM.</p>
+
+        <div class="lp-tabs" role="tablist" aria-label="Search type">
+          <button type="button" class="lp-tab active" role="tab" aria-selected="true" data-mode="account">Account</button>
+          <button type="button" class="lp-tab" role="tab" aria-selected="false" data-mode="person">Person</button>
+        </div>
+        <form class="lp-search" id="lpSearch" autocomplete="off">
+          <label class="lp-sr" for="lpSearchInput">Company or person</label>
+          <input id="lpSearchInput" type="text" placeholder="Enter a company name" maxlength="120">
+          <button type="submit" class="lp-btn lp-btn-primary">Research <i class="fa-solid fa-arrow-right"></i></button>
+        </form>
+        <p class="lp-hero-hints">Sources include <span>SEC EDGAR</span> <span>GLEIF</span> <span>Crunchbase</span> <span>Google News</span></p>
+      </div>
+      <img class="lp-hero-art" src="/assets/elitehost/banner-hero-02.svg" alt="" width="460" height="460">
+    </div>
+  </section>
+
+  <!-- ── Capability cards ─────────────────────────────────────── -->
+  <section class="lp-section" id="platform">
+    <div class="lp-container">
+      <div class="lp-section-title">
+        <h2>Everything you need before<br>the first call</h2>
+        <p>One workspace from first research to a ready-to-send opener.</p>
+      </div>
+      <div class="lp-card-grid">
+        <article class="lp-card">
+          <span class="lp-card-icon"><i class="fa-solid fa-building-columns"></i></span>
+          <h3>Account intelligence</h3>
+          <p>Firmographics, funding, filings, patents and ownership in one profile.</p>
+          <a href="#research">Learn more <i class="fa-solid fa-arrow-right"></i></a>
+        </article>
+        <article class="lp-card">
+          <span class="lp-card-icon"><i class="fa-solid fa-diagram-project"></i></span>
+          <h3>Subsidiaries &amp; LOBs</h3>
+          <p>Business units and legal entities merged from SEC Exhibit 21, GLEIF and more.</p>
+          <a href="#research">Learn more <i class="fa-solid fa-arrow-right"></i></a>
+        </article>
+        <article class="lp-card">
+          <span class="lp-card-icon"><i class="fa-solid fa-people-group"></i></span>
+          <h3>Buying committee</h3>
+          <p>A four-tier org chart of who decides, who influences and who signs.</p>
+          <a href="#research">Learn more <i class="fa-solid fa-arrow-right"></i></a>
+        </article>
+        <article class="lp-card">
+          <span class="lp-card-icon"><i class="fa-solid fa-id-card"></i></span>
+          <h3>AI persona dossiers</h3>
+          <p>Background, priorities and likely objections for each decision-maker.</p>
+          <a href="#research">Learn more <i class="fa-solid fa-arrow-right"></i></a>
+        </article>
+        <article class="lp-card">
+          <span class="lp-card-icon"><i class="fa-solid fa-comments"></i></span>
+          <h3>Call-prep &amp; battlecards</h3>
+          <p>An icebreaker, value proposition and objection handling, per person.</p>
+          <a href="#research">Learn more <i class="fa-solid fa-arrow-right"></i></a>
+        </article>
+        <article class="lp-card">
+          <span class="lp-card-icon"><i class="fa-solid fa-bolt"></i></span>
+          <h3>Signals &amp; news</h3>
+          <p>Leadership moves, hiring themes and coverage, ranked by what to act on.</p>
+          <a href="#command-center">Learn more <i class="fa-solid fa-arrow-right"></i></a>
+        </article>
+        <article class="lp-card">
+          <span class="lp-card-icon"><i class="fa-solid fa-gauge-high"></i></span>
+          <h3>Sales Command Center</h3>
+          <p>A priority signal feed and this week's playbook, across all your accounts.</p>
+          <a href="#command-center">Learn more <i class="fa-solid fa-arrow-right"></i></a>
+        </article>
+        <article class="lp-card">
+          <span class="lp-card-icon"><i class="fa-solid fa-wand-magic-sparkles"></i></span>
+          <h3>Sales Copilot</h3>
+          <p>Ask in plain English and get answers that cite the records behind them.</p>
+          <a href="#copilot">Learn more <i class="fa-solid fa-arrow-right"></i></a>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Research (peach, illustration left) ──────────────────── -->
+  <section class="lp-section lp-section-alt" id="research">
+    <div class="lp-container lp-split">
+      <img class="lp-split-art" src="/assets/elitehost/feature-hero-03.svg" alt="" width="420" height="420" loading="lazy">
+      <div>
+        <h2>From public data to a call-ready brief</h2>
+        <p class="lp-lead">Research runs across the sources a good analyst would check, then waits for your team's approval before anything reaches the database.</p>
+        <ul class="lp-list">
+          <li>
+            <span class="lp-list-icon"><i class="fa-solid fa-layer-group"></i></span>
+            <div><h4>Multi-source research</h4><p>Crunchbase, Diffbot, GLEIF, SEC EDGAR, USPTO and news, merged into one record.</p></div>
+          </li>
+          <li>
+            <span class="lp-list-icon"><i class="fa-solid fa-clipboard-check"></i></span>
+            <div><h4>Quality-scored, human-approved</h4><p>Every run is graded and staged; your team validates it before it is saved.</p></div>
+          </li>
+          <li>
+            <span class="lp-list-icon"><i class="fa-solid fa-user-shield"></i></span>
+            <div><h4>Work contacts only</h4><p>Personal emails and mobile numbers are filtered out before they reach a browser.</p></div>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Command Center (white, illustration right in peach box) ── -->
+  <section class="lp-section" id="command-center">
+    <div class="lp-container lp-split lp-split-reverse">
+      <div>
+        <h2>Your weekly sales cockpit</h2>
+        <p class="lp-lead">The Command Center turns every account's movement into a short list of what to do this week.</p>
+        <ul class="lp-list">
+          <li>
+            <span class="lp-list-icon"><i class="fa-solid fa-ranking-star"></i></span>
+            <div><h4>Priority signal feed</h4><p>Executive moves, hiring themes and news, scored by urgency and fit.</p></div>
+          </li>
+          <li>
+            <span class="lp-list-icon"><i class="fa-solid fa-list-check"></i></span>
+            <div><h4>This week's playbook</h4><p>Turn any signal into a task with an owner and a due date in one click.</p></div>
+          </li>
+          <li>
+            <span class="lp-list-icon"><i class="fa-solid fa-magnifying-glass"></i></span>
+            <div><h4>Find anything fast</h4><p>Press Ctrl+F for accounts, people, business units, deals and signals.</p></div>
+          </li>
+        </ul>
+      </div>
+      <div class="lp-art-box">
+        <img src="/assets/elitehost/feature-hero-04.webp" alt="" width="400" height="400" loading="lazy">
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Why (peach, icon cards) ──────────────────────────────── -->
+  <section class="lp-section lp-section-alt" id="copilot">
+    <div class="lp-container">
+      <div class="lp-section-title">
+        <h2>A copilot you can trust</h2>
+        <p>Answers come from your team's research, not from the open internet.</p>
+      </div>
+      <div class="lp-why-grid">
+        <article class="lp-why">
+          <span class="lp-why-icon"><i class="fa-solid fa-quote-left"></i></span>
+          <h3>Cited answers</h3>
+          <p>Every answer links to the filings, posts and profiles it used.</p>
+        </article>
+        <article class="lp-why">
+          <span class="lp-why-icon"><i class="fa-solid fa-shield-halved"></i></span>
+          <h3>Guardrails built in</h3>
+          <p>Drafts are checked for unsupported claims before you see them.</p>
+        </article>
+        <article class="lp-why">
+          <span class="lp-why-icon"><i class="fa-solid fa-user-lock"></i></span>
+          <h3>Role-based access</h3>
+          <p>Reps see their accounts; managers and admins see more.</p>
+        </article>
+        <article class="lp-why">
+          <span class="lp-why-icon"><i class="fa-solid fa-gauge"></i></span>
+          <h3>Budget-aware</h3>
+          <p>A shared AI budget keeps usage predictable across the team.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── FAQ ──────────────────────────────────────────────────── -->
+  <section class="lp-section" id="faq">
+    <div class="lp-container lp-faq">
+      <div class="lp-section-title">
+        <h2>Frequently asked questions</h2>
+      </div>
+      <details class="lp-faq-item" open>
+        <summary>Where does the account data come from?</summary>
+        <p>Public and licensed sources: SEC EDGAR filings, GLEIF ownership records, Crunchbase, Diffbot, USPTO patents, Google News and enrichment providers. Each research run records which sources it used.</p>
+      </details>
+      <details class="lp-faq-item">
+        <summary>Will I see personal phone numbers or emails?</summary>
+        <p>No. Only work email and phone details are shown. Personal emails and direct mobile numbers are removed on the server before any page receives them.</p>
+      </details>
+      <details class="lp-faq-item">
+        <summary>Can the copilot make things up?</summary>
+        <p>It answers from your team's indexed research and cites the records it used. When the evidence isn't there, it says so instead of guessing.</p>
+      </details>
+      <details class="lp-faq-item">
+        <summary>Who can see which accounts?</summary>
+        <p>Access is granted per account. Reps see the accounts they are assigned; administrators manage access and roles from the admin console.</p>
+      </details>
+      <details class="lp-faq-item">
+        <summary>How fresh is the information?</summary>
+        <p>News, posts and job listings are refreshed by scheduled scrapes, and the Command Center flags when a feed hasn't been updated recently.</p>
+      </details>
+    </div>
+  </section>
+
+  <!-- ── CTA ──────────────────────────────────────────────────── -->
+  <section class="lp-cta">
+    <div class="lp-container lp-cta-inner">
+      <div>
+        <h2>Ready for your next call?</h2>
+        <p>Sign in to open your accounts, Command Center and Copilot.</p>
+      </div>
+      <a class="lp-btn lp-btn-light" href="/login">Sign in <i class="fa-solid fa-arrow-right"></i></a>
+    </div>
+  </section>
+</main>
+
+<!-- ── Footer ──────────────────────────────────────────────── -->
+<footer class="lp-footer">
+  <div class="lp-container lp-footer-grid">
+    <div>
+      <a class="lp-logo" href="/welcome"><span class="lp-logo-icon"><i class="fa-solid fa-sitemap"></i></span><span>Sales Intelligence</span></a>
+      <p class="lp-footer-about">Account research, buying committees and AI call-prep for enterprise sales teams.</p>
+    </div>
+    <div>
+      <h4>Platform</h4>
+      <a href="#platform">Capabilities</a>
+      <a href="#research">Research</a>
+      <a href="#command-center">Command Center</a>
+      <a href="#copilot">Copilot</a>
+    </div>
+    <div>
+      <h4>Help</h4>
+      <a href="#faq">FAQ</a>
+      <a href="/reset-password">Reset password</a>
+    </div>
+    <div>
+      <h4>Account</h4>
+      <a href="/login">Sign in</a>
+    </div>
+  </div>
+  <div class="lp-container lp-copyright">© <span id="lpYear">2026</span> Sales Intelligence. All rights reserved.</div>
+</footer>
+
+<script type="module" src="js/modules/landing.js?v=1.0"></script>
+</body>
+</html>
