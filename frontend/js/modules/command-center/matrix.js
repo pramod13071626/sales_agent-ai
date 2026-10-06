@@ -60,7 +60,7 @@ const quadrantPlugin = {
     ctx.fillRect(chartArea.left, chartArea.top, xMid - chartArea.left, yMid - chartArea.top);
 
     // Bottom-Right: Re-engage (Indigo / Violet)
-    ctx.fillStyle = 'rgba(253, 93, 7, 0.04)';
+    ctx.fillStyle = 'rgba(228, 101, 33, 0.04)';
     ctx.fillRect(xMid, yMid, chartArea.right - xMid, chartArea.bottom - yMid);
 
     // Bottom-Left: Watch (Slate)
@@ -96,7 +96,7 @@ const quadrantPlugin = {
 
     drawBadge('🔥 ACT NOW (HIGH HEAT)', xMid + 10, chartArea.top + 18, '#dc2626', 'rgba(239, 68, 68, 0.14)');
     drawBadge('🌱 NURTURE', chartArea.left + 10, chartArea.top + 18, '#059669', 'rgba(16, 185, 129, 0.12)');
-    drawBadge('⚡ RE-ENGAGE', xMid + 10, chartArea.bottom - 10, '#E04F00', 'rgba(253, 93, 7, 0.12)');
+    drawBadge('⚡ RE-ENGAGE', xMid + 10, chartArea.bottom - 10, '#C9541A', 'rgba(228, 101, 33, 0.12)');
     drawBadge('👁️ WATCH', chartArea.left + 10, chartArea.bottom - 10, '#64748b', 'rgba(148, 163, 184, 0.12)');
 
     ctx.restore();

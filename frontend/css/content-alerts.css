@@ -107,8 +107,8 @@
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .expansion-card:hover {
-  box-shadow: 0 4px 14px rgba(253, 93, 7, 0.08);
-  border-right-color: rgba(253, 93, 7, 0.2);
+  box-shadow: 0 4px 14px rgba(228, 101, 33, 0.08);
+  border-right-color: rgba(228, 101, 33, 0.2);
 }
 .expansion-card:last-child { margin-bottom: 0; }
 .expansion-header {
@@ -127,7 +127,7 @@
   place-items: center;
   font-size: 1.05rem;
   flex-shrink: 0;
-  border: 1px solid rgba(253, 93, 7, 0.2);
+  border: 1px solid rgba(228, 101, 33, 0.2);
 }
 .expansion-header-body { flex: 1; min-width: 0; }
 .expansion-title {
@@ -311,7 +311,7 @@
   font-family: inherit; font-size: .74rem; font-weight: 700;
   cursor: pointer; transition: var(--transition);
 }
-.alert-view-account:hover { background: rgba(253, 93, 7,.18); }
+.alert-view-account:hover { background: rgba(228, 101, 33,.18); }
 
 /* Org hierarchy disclosure */
 .alert-hierarchy { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border-color); font-size: .74rem; }
@@ -341,6 +341,6 @@
 .hierarchy-person:hover {
   background: var(--brand-soft);
   color: var(--brand);
-  border-color: rgba(253, 93, 7,.25);
+  border-color: rgba(228, 101, 33,.25);
 }
 

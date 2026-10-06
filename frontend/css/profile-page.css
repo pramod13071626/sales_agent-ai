@@ -174,9 +174,9 @@ body.profile-page-body {
   gap: 4px;
 }
 .meta-badge.badge-csuite {
-  background: rgba(253, 93, 7, 0.08);
+  background: rgba(228, 101, 33, 0.08);
   color: var(--brand);
-  border-color: rgba(253, 93, 7, 0.2);
+  border-color: rgba(228, 101, 33, 0.2);
 }
 .meta-badge.badge-authority {
   background: rgba(0, 186, 136, 0.08);
@@ -214,7 +214,7 @@ body.profile-page-body {
   background: var(--brand);
   color: #fff;
   border-color: var(--brand);
-  box-shadow: 0 2px 6px rgba(253, 93, 7, 0.2);
+  box-shadow: 0 2px 6px rgba(228, 101, 33, 0.2);
 }
 .profile-action-btn.btn-primary:hover {
   background: var(--brand-hover);
@@ -285,8 +285,8 @@ body.profile-page-body {
 
 /* ── Archetype & Synthesis ───────────────────────────────────── */
 .archetype-banner {
-  background: linear-gradient(135deg, rgba(253, 93, 7, 0.06), rgba(253, 93, 7, 0.08));
-  border: 1px solid rgba(253, 93, 7, 0.15);
+  background: linear-gradient(135deg, rgba(228, 101, 33, 0.06), rgba(228, 101, 33, 0.08));
+  border: 1px solid rgba(228, 101, 33, 0.15);
   border-radius: var(--radius-md);
   padding: 14px 18px;
   display: flex;
@@ -569,7 +569,7 @@ body.profile-page-body {
 
 /* ── Icebreaker Quote Card ───────────────────────────────────── */
 .icebreaker-card {
-  background: linear-gradient(135deg, rgba(253, 93, 7, 0.04), rgba(0, 186, 136, 0.04));
+  background: linear-gradient(135deg, rgba(228, 101, 33, 0.04), rgba(0, 186, 136, 0.04));
   border: 1px dashed var(--brand-light);
   border-radius: var(--radius-md);
   padding: 16px 18px;
@@ -675,7 +675,7 @@ body.profile-page-body {
   background: var(--brand);
   color: #fff;
   border-color: var(--brand);
-  box-shadow: 0 2px 8px rgba(253, 93, 7, 0.25);
+  box-shadow: 0 2px 8px rgba(228, 101, 33, 0.25);
 }
 .channel-filter-pill .pill-count {
   font-size: .72rem;
@@ -762,7 +762,7 @@ body.profile-page-body {
   background: var(--brand);
   color: #fff;
   border-color: var(--brand);
-  box-shadow: 0 2px 6px rgba(253, 93, 7, 0.25);
+  box-shadow: 0 2px 6px rgba(228, 101, 33, 0.25);
 }
 .profile-page-nav-btn:disabled {
   opacity: .4;
@@ -771,8 +771,8 @@ body.profile-page-body {
 
 /* ── Psychological Profile Styling ───────────────────────────── */
 .psych-archetype-hero {
-  background: linear-gradient(135deg, rgba(27, 37, 89, 0.05) 0%, rgba(253, 93, 7, 0.08) 100%);
-  border: 1px solid rgba(253, 93, 7, 0.2);
+  background: linear-gradient(135deg, rgba(27, 37, 89, 0.05) 0%, rgba(228, 101, 33, 0.08) 100%);
+  border: 1px solid rgba(228, 101, 33, 0.2);
   border-radius: var(--radius-md);
   padding: 20px 22px;
   position: relative;

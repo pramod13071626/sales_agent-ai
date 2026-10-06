@@ -83,7 +83,7 @@
 }
 .cc-global-account-select.has-filter {
   border-color: var(--brand);
-  background: rgba(253, 93, 7, 0.08);
+  background: rgba(228, 101, 33, 0.08);
   font-weight: 600;
   color: var(--brand);
 }
@@ -123,7 +123,7 @@
 .cc-customize-btn:hover {
   border-color: var(--brand);
   color: var(--brand);
-  background: rgba(253, 93, 7, 0.05);
+  background: rgba(228, 101, 33, 0.05);
 }
 
 /* ── KPI strip ───────────────────────────────────────────────── */
@@ -222,15 +222,15 @@
 
 @keyframes ccPanelPulse {
   0% {
-    box-shadow: 0 0 0 0 rgba(253, 93, 7, 0.4);
+    box-shadow: 0 0 0 0 rgba(228, 101, 33, 0.4);
     border-color: var(--brand);
   }
   50% {
-    box-shadow: 0 0 0 6px rgba(253, 93, 7, 0.15);
+    box-shadow: 0 0 0 6px rgba(228, 101, 33, 0.15);
     border-color: var(--brand);
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(253, 93, 7, 0);
+    box-shadow: 0 0 0 0 rgba(228, 101, 33, 0);
   }
 }
 .cc-panel-highlight {
@@ -539,7 +539,7 @@
 .hs-domain-tag {
   display: inline-flex; align-items: center; gap: 4px;
   font-size: .65rem; font-weight: 600; padding: 2px 7px;
-  border-radius: 5px; background: rgba(253, 93, 7,.12);
+  border-radius: 5px; background: rgba(228, 101, 33,.12);
   color: var(--brand); flex-shrink: 0; margin-left: auto;
 }
 
@@ -618,7 +618,7 @@
   border-radius: 6px;
 }
 .hs-bulletin-row:hover {
-  background: var(--input-bg, rgba(253, 93, 7, 0.04));
+  background: var(--input-bg, rgba(228, 101, 33, 0.04));
   border-left-color: var(--brand, var(--brand));
   transform: translateX(2px);
 }
@@ -644,9 +644,9 @@
   color: var(--brand, var(--brand));
 }
 .hs-bulletin-avatar.avatar-ai {
-  background: rgba(253, 93, 7, 0.12);
+  background: rgba(228, 101, 33, 0.12);
   color: var(--brand);
-  border-color: rgba(253, 93, 7, 0.25);
+  border-color: rgba(228, 101, 33, 0.25);
 }
 .hs-bulletin-avatar.avatar-fintech {
   background: rgba(14, 165, 233, 0.12);
@@ -670,13 +670,13 @@
   font-weight: 700;
   padding: 1px 6px;
   border-radius: 4px;
-  background: rgba(253, 93, 7, 0.09);
+  background: rgba(228, 101, 33, 0.09);
   color: var(--brand, var(--brand));
 }
 
 /* Domain tags */
 .hs-domain-tag.tag-ai {
-  background: rgba(253, 93, 7, 0.12);
+  background: rgba(228, 101, 33, 0.12);
   color: var(--brand);
 }
 .hs-domain-tag.tag-fintech {
@@ -752,8 +752,8 @@
 .hs-tile > .hs-domain-tag { align-self: flex-start; margin-left: 0; }
 
 .hs-action-box {
-  background: rgba(253, 93, 7, 0.04);
-  border: 1px solid rgba(253, 93, 7, 0.16);
+  background: rgba(228, 101, 33, 0.04);
+  border: 1px solid rgba(228, 101, 33, 0.16);
   border-radius: var(--radius-sm, 6px);
   padding: 9px 10px;
   margin-top: 4px;
@@ -895,7 +895,7 @@
   background: var(--brand, var(--brand));
   color: #ffffff;
   border-color: var(--brand, var(--brand));
-  box-shadow: 0 1px 4px rgba(253, 93, 7, 0.28);
+  box-shadow: 0 1px 4px rgba(228, 101, 33, 0.28);
 }
 .hs-org-pill-badge {
   font-size: 0.62rem;
@@ -911,8 +911,8 @@
 
 /* Strategic Expansion Callout (When Contract leads = 0) */
 .hs-expansion-banner {
-  background: linear-gradient(135deg, rgba(253, 93, 7, 0.08), rgba(253, 93, 7, 0.04));
-  border: 1px solid rgba(253, 93, 7, 0.25);
+  background: linear-gradient(135deg, rgba(228, 101, 33, 0.08), rgba(228, 101, 33, 0.04));
+  border: 1px solid rgba(228, 101, 33, 0.25);
   border-radius: 8px;
   padding: 10px 12px;
   display: flex;
@@ -939,7 +939,7 @@
   padding: 2px 7px;
   border-radius: 4px;
   background: var(--surface-bg, #ffffff);
-  border: 1px solid rgba(253, 93, 7, 0.2);
+  border: 1px solid rgba(228, 101, 33, 0.2);
   color: var(--text-primary, #0f172a);
   font-weight: 500;
   display: inline-flex;
@@ -984,7 +984,7 @@
   font-weight: 600;
   padding: 2px 6px;
   border-radius: 4px;
-  background: rgba(253, 93, 7, 0.1);
+  background: rgba(228, 101, 33, 0.1);
   color: var(--brand, var(--brand));
 }
 .bny-hs-actions-top {
@@ -1140,7 +1140,7 @@
 }
 
 .cc-track-card:hover {
-  border-color: rgba(253, 93, 7, 0.4);
+  border-color: rgba(228, 101, 33, 0.4);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
 }
 
@@ -1162,7 +1162,7 @@
 }
 
 .cc-track-badge.track-ai {
-  background: rgba(253, 93, 7, 0.12);
+  background: rgba(228, 101, 33, 0.12);
   color: var(--brand);
 }
 
@@ -1210,8 +1210,8 @@
 }
 
 .cc-track-pitch-box {
-  background: rgba(253, 93, 7, 0.04);
-  border: 1px solid rgba(253, 93, 7, 0.15);
+  background: rgba(228, 101, 33, 0.04);
+  border: 1px solid rgba(228, 101, 33, 0.15);
   border-radius: 6px;
   padding: 8px 12px;
   font-size: 0.74rem;
@@ -1263,7 +1263,7 @@
 .cc-track-btn-primary {
   background: var(--brand-soft);
   color: var(--brand);
-  border-color: rgba(253, 93, 7, 0.3);
+  border-color: rgba(228, 101, 33, 0.3);
 }
 
 .cc-track-btn-primary:hover {
@@ -1293,7 +1293,7 @@
   transition: background 0.15s;
 }
 .bny-toggle-jobs-btn:hover {
-  background: rgba(253, 93, 7, 0.08);
+  background: rgba(228, 101, 33, 0.08);
   color: var(--brand);
 }
 .bny-jobs-list-drawer {
@@ -1324,7 +1324,7 @@
   border-bottom: none;
 }
 .bny-job-item:hover {
-  background: rgba(253, 93, 7, 0.03);
+  background: rgba(228, 101, 33, 0.03);
 }
 .bny-job-top {
   display: flex;
@@ -1443,7 +1443,7 @@
   color: #f1f5f9;
 }
 [data-theme="dark"] .cc-filter-pill.active {
-  background: rgba(253, 93, 7, 0.22);
+  background: rgba(228, 101, 33, 0.22);
   color: var(--brand-light);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
 }
@@ -1465,7 +1465,7 @@
 }
 .cc-help-btn:hover {
   color: var(--brand, var(--brand));
-  background: var(--brand-soft, rgba(253, 93, 7, 0.1));
+  background: var(--brand-soft, rgba(228, 101, 33, 0.1));
   border-color: var(--brand, var(--brand));
   transform: scale(1.08);
 }
@@ -1475,7 +1475,7 @@
   color: #94a3b8;
 }
 [data-theme="dark"] .cc-help-btn:hover {
-  background: rgba(253, 93, 7, 0.25);
+  background: rgba(228, 101, 33, 0.25);
   color: var(--brand-light);
 }
 
@@ -1537,7 +1537,7 @@
   width: 36px;
   height: 36px;
   border-radius: 8px;
-  background: var(--brand-soft, rgba(253, 93, 7, 0.12));
+  background: var(--brand-soft, rgba(228, 101, 33, 0.12));
   color: var(--brand, var(--brand));
   display: flex;
   align-items: center;
@@ -1607,8 +1607,8 @@
   line-height: 1.55;
 }
 .cc-info-section-action {
-  background: rgba(253, 93, 7, 0.05);
-  border: 1px solid rgba(253, 93, 7, 0.15);
+  background: rgba(228, 101, 33, 0.05);
+  border: 1px solid rgba(228, 101, 33, 0.15);
   border-left: 3.5px solid var(--brand, var(--brand));
   border-radius: 8px;
   padding: 12px 14px;
@@ -1707,7 +1707,7 @@
   width: 38px;
   height: 38px;
   border-radius: 9px;
-  background: rgba(253, 93, 7, 0.12);
+  background: rgba(228, 101, 33, 0.12);
   color: var(--brand);
   display: flex;
   align-items: center;
@@ -1907,7 +1907,7 @@
 
 .tier-dot-low {
   background: var(--brand);
-  box-shadow: 0 0 0 3px rgba(253, 93, 7, 0.2);
+  box-shadow: 0 0 0 3px rgba(228, 101, 33, 0.2);
 }
 
 .cc-severity-group-title {
@@ -1951,9 +1951,9 @@
 }
 
 .tier-badge-low {
-  background: rgba(253, 93, 7, 0.12);
+  background: rgba(228, 101, 33, 0.12);
   color: var(--brand);
-  border: 1px solid rgba(253, 93, 7, 0.22);
+  border: 1px solid rgba(228, 101, 33, 0.22);
 }
 
 /* ── Severity List & Rows ── */
@@ -1978,7 +1978,7 @@
 }
 
 .cc-severity-row:hover {
-  background: var(--brand-soft, rgba(253, 93, 7, 0.04));
+  background: var(--brand-soft, rgba(228, 101, 33, 0.04));
 }
 
 .cc-severity-row-main {
@@ -2048,9 +2048,9 @@
   border-radius: 6px;
   font-size: 0.72rem;
   font-weight: 600;
-  background: var(--brand-soft, rgba(253, 93, 7, 0.1));
+  background: var(--brand-soft, rgba(228, 101, 33, 0.1));
   color: var(--brand, var(--brand));
-  border: 1px solid rgba(253, 93, 7, 0.25);
+  border: 1px solid rgba(228, 101, 33, 0.25);
   text-decoration: none;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -2063,7 +2063,7 @@
   color: #ffffff;
   border-color: var(--brand, var(--brand));
   transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(253, 93, 7, 0.3);
+  box-shadow: 0 2px 8px rgba(228, 101, 33, 0.3);
   text-decoration: none;
 }
 
@@ -2075,8 +2075,8 @@
 }
 
 [data-theme="dark"] .cc-view-btn {
-  background: rgba(253, 93, 7, 0.18);
-  border-color: rgba(253, 93, 7, 0.35);
+  background: rgba(228, 101, 33, 0.18);
+  border-color: rgba(228, 101, 33, 0.35);
   color: var(--brand-light);
 }
 
@@ -2109,7 +2109,7 @@
 
 .cc-obj-category-row:hover {
   border-color: var(--brand, var(--brand));
-  background: var(--brand-soft, rgba(253, 93, 7, 0.03));
+  background: var(--brand-soft, rgba(228, 101, 33, 0.03));
   transform: translateY(-1px);
   box-shadow: 0 3px 10px rgba(0, 0, 0, 0.03);
 }
@@ -2512,7 +2512,7 @@
   text-decoration: none !important;
   cursor: pointer !important;
   white-space: nowrap !important;
-  box-shadow: 0 1px 2px 0 rgba(253, 93, 7, 0.25) !important;
+  box-shadow: 0 1px 2px 0 rgba(228, 101, 33, 0.25) !important;
   transition: all 0.15s ease !important;
 }
 
@@ -2521,7 +2521,7 @@
   color: #FFFFFF !important;
   border-color: #1E40AF !important;
   transform: translateY(-1px) !important;
-  box-shadow: 0 2px 6px 0 rgba(253, 93, 7, 0.4) !important;
+  box-shadow: 0 2px 6px 0 rgba(228, 101, 33, 0.4) !important;
   text-decoration: none !important;
 }
 
@@ -2656,7 +2656,7 @@
   border: 1px solid var(--brand-hover) !important;
   text-decoration: none !important;
   cursor: pointer !important;
-  box-shadow: 0 1px 2px rgba(253, 93, 7, 0.25) !important;
+  box-shadow: 0 1px 2px rgba(228, 101, 33, 0.25) !important;
 }
 
 .cc-view-btn-primary:hover {
@@ -2785,7 +2785,7 @@
   border: 1px solid var(--brand-hover) !important;
   text-decoration: none !important;
   cursor: pointer !important;
-  box-shadow: 0 1px 2px rgba(253, 93, 7, 0.2) !important;
+  box-shadow: 0 1px 2px rgba(228, 101, 33, 0.2) !important;
   transition: all 0.15s ease !important;
 }
 
@@ -2910,7 +2910,7 @@
 .cc-compact-acc-badge:hover {
   border-color: var(--brand) !important;
   color: var(--brand) !important;
-  background: rgba(253, 93, 7, 0.04) !important;
+  background: rgba(228, 101, 33, 0.04) !important;
   text-decoration: none !important;
 }
 
@@ -3172,7 +3172,7 @@
   width: 20px !important;
   height: 20px !important;
   border-radius: 4px !important;
-  background: rgba(253, 93, 7, 0.08) !important;
+  background: rgba(228, 101, 33, 0.08) !important;
   color: var(--brand) !important;
   font-size: 0.70rem !important;
   font-weight: 700 !important;
@@ -3370,7 +3370,7 @@
 }
 
 .cc-score-tag {
-  background: rgba(253, 93, 7, 0.08) !important;
+  background: rgba(228, 101, 33, 0.08) !important;
   color: var(--brand) !important;
   font-weight: 700 !important;
   padding: 1px 6px !important;
@@ -3414,7 +3414,7 @@
   background: var(--brand) !important;
   color: #FFFFFF !important;
   border: 1px solid var(--brand-hover) !important;
-  box-shadow: 0 1px 2px rgba(253, 93, 7, 0.2) !important;
+  box-shadow: 0 1px 2px rgba(228, 101, 33, 0.2) !important;
   white-space: nowrap !important;
   cursor: pointer !important;
   transition: all 0.15s ease !important;
@@ -3423,7 +3423,7 @@
 #ccFeedList .cc-feed-task-btn:hover {
   background: var(--brand-hover) !important;
   transform: translateY(-1px) !important;
-  box-shadow: 0 2px 4px rgba(253, 93, 7, 0.3) !important;
+  box-shadow: 0 2px 4px rgba(228, 101, 33, 0.3) !important;
 }
 
 /* Dark mode adjustments for Priority Signal Feed */
@@ -3483,7 +3483,7 @@
 
 .cc-objection-card:hover {
   border-color: var(--brand) !important;
-  box-shadow: 0 2px 6px rgba(253, 93, 7, 0.08) !important;
+  box-shadow: 0 2px 6px rgba(228, 101, 33, 0.08) !important;
   transform: translateY(-1px) !important;
 }
 
@@ -3568,9 +3568,9 @@
 
 .cc-account-view-pill:hover {
   border-color: var(--brand) !important;
-  background: rgba(253, 93, 7, 0.04) !important;
+  background: rgba(228, 101, 33, 0.04) !important;
   transform: translateY(-1px) !important;
-  box-shadow: 0 2px 4px rgba(253, 93, 7, 0.12) !important;
+  box-shadow: 0 2px 4px rgba(228, 101, 33, 0.12) !important;
 }
 
 .cc-acc-name {
@@ -3592,7 +3592,7 @@
   border-radius: 3px !important;
   text-transform: uppercase !important;
   letter-spacing: 0.02em !important;
-  box-shadow: 0 1px 2px rgba(253, 93, 7, 0.25) !important;
+  box-shadow: 0 1px 2px rgba(228, 101, 33, 0.25) !important;
 }
 
 .cc-account-view-pill:hover .cc-acc-view-btn {

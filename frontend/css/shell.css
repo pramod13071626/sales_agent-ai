@@ -24,7 +24,7 @@
   display: grid; place-items: center;
   font-size: 1rem; color: #fff;
   flex-shrink: 0;
-  box-shadow: 0 2px 8px rgba(253, 93, 7,.4);
+  box-shadow: 0 2px 8px rgba(228, 101, 33,.4);
 }
 
 .topbar-title {
@@ -201,7 +201,7 @@
   place-items: center;
   text-transform: uppercase;
   flex-shrink: 0;
-  box-shadow: 0 2px 6px rgba(253, 93, 7, 0.4);
+  box-shadow: 0 2px 6px rgba(228, 101, 33, 0.4);
 }
 
 .profile-dropdown-info {
@@ -247,9 +247,9 @@
 }
 
 .profile-role-tag.role-super-admin {
-  background: rgba(253, 93, 7, 0.16);
+  background: rgba(228, 101, 33, 0.16);
   color: #818cf8;
-  border: 1px solid rgba(253, 93, 7, 0.3);
+  border: 1px solid rgba(228, 101, 33, 0.3);
 }
 
 .profile-role-tag.role-user {

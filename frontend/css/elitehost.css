@@ -3,7 +3,7 @@
    palette, radii and shadows into every component; this file only adds the
    template's signature details that tokens can't express:
      • orange accent line under the navy topbar (the template's orange top strip)
-     • white cards with a light-orange border that turns brand orange on hover
+     • white cards with a neutral border that darkens on hover
      • navy, bold headings
    Keep it small: page-specific look belongs in each page's own CSS. */
 
@@ -11,10 +11,10 @@
 .dash-topbar,
 .cc-topbar,
 .tp-topbar {
-  border-bottom: 3px solid var(--topbar-accent) !important;
+  border-bottom: 2px solid var(--topbar-accent) !important;
   box-shadow: 0 2px 12px rgba(0, 18, 51, .18);
 }
-.topbar-icon { box-shadow: 0 2px 8px rgba(253, 93, 7, .45); }
+.topbar-icon { box-shadow: 0 2px 8px rgba(228, 101, 33, .45); }
 
 /* Cards & panels: EliteHost card hover */
 .cc-panel,
@@ -49,4 +49,60 @@
 .cc-view-btn-primary:hover {
   background: var(--brand-hover);
   border-color: var(--brand-hover);
+}
+
+/* ── Calm accents: orange for primary actions and the active state only ──
+   Everything below tones down places where orange filled large areas or
+   repeated on every row, which made long sessions tiring. */
+
+/* Command Center: no rainbow top borders on panels and KPI cards */
+.cc-panel,
+.cc-panel[data-widget-id],
+.cc-kpi-card,
+.cc-kpi-card:nth-child(n) {
+  border-top: 1px solid var(--cc-border-defined, var(--border-color)) !important;
+}
+
+/* Signal feed: "new" rows get a thin soft edge (the NEW badge already says it), no tint */
+.cc-feed-row.is-new,
+#ccFeedList .cc-feed-row.is-new {
+  background: transparent !important;
+  border-left: 2px solid rgba(228, 101, 33, .45) !important;
+}
+.cc-feed-row:hover,
+.cc-feed-row.is-new:hover,
+#ccFeedList .cc-feed-row:hover {
+  background: var(--hover-bg) !important;
+}
+
+/* A primary button repeated on every row competes with itself: outline until hovered */
+.cc-feed-task-btn.cc-btn-primary,
+#ccFeedList .cc-feed-task-btn {
+  background: transparent !important;
+  color: var(--brand) !important;
+  border: 1px solid rgba(228, 101, 33, .4) !important;
+  box-shadow: none !important;
+}
+.cc-feed-task-btn.cc-btn-primary:hover,
+#ccFeedList .cc-feed-task-btn:hover {
+  background: var(--brand) !important;
+  color: #fff !important;
+  border-color: var(--brand) !important;
+}
+
+/* Left nav cards: tinted icons; only the active page gets solid orange */
+.nav-digest-icon { background: var(--brand-muted); color: var(--brand); }
+.nav-digest-btn:hover { border-color: var(--border-mid); background: var(--hover-bg); }
+.nav-digest-btn.active {
+  border-color: var(--border-mid);
+  background: var(--brand-soft);
+  box-shadow: inset 3px 0 0 var(--brand);
+}
+.nav-digest-btn.active .nav-digest-title { color: var(--text-primary); }
+.nav-digest-btn.active .nav-digest-icon { background: var(--brand); color: #fff; }
+
+/* Account avatars: soft navy instead of orange blocks */
+.nav-account-avatar {
+  background: var(--avatar-bg) !important;
+  color: var(--avatar-fg) !important;
 }

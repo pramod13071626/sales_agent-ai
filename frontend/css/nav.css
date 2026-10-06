@@ -148,7 +148,7 @@
 .nav-filter-pill:hover {
   background: var(--brand-soft);
   color: var(--brand);
-  border-color: rgba(253, 93, 7, 0.25);
+  border-color: rgba(228, 101, 33, 0.25);
 }
 .nav-filter-pill.active {
   background: var(--brand);
@@ -251,7 +251,7 @@
   box-shadow: 0 1px 3px rgba(0,0,0,0.02);
 }
 .nav-digest-btn:hover {
-  border-color: rgba(253, 93, 7, 0.35);
+  border-color: rgba(228, 101, 33, 0.35);
   background: var(--brand-soft);
 }
 .nav-digest-btn.active {

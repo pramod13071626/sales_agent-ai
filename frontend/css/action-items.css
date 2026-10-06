@@ -14,7 +14,7 @@
   border-radius: var(--radius-sm);
 }
 .action-item-card.action-item-overdue { border-color: rgba(255,77,79,.35); background: rgba(255,77,79,.04); }
-.action-item-card.action-item-suggestion { border-style: dashed; border-color: rgba(253, 93, 7,.35); background: var(--brand-soft); }
+.action-item-card.action-item-suggestion { border-style: dashed; border-color: rgba(228, 101, 33,.35); background: var(--brand-soft); }
 
 .action-item-rationale {
   display: flex; align-items: flex-start; gap: 5px;
@@ -46,7 +46,7 @@
   background: var(--panel-bg); color: var(--text-secondary); cursor: pointer;
   font-family: inherit; transition: var(--transition); white-space: nowrap;
 }
-.aitem-btn:hover { background: var(--brand-soft); color: var(--brand); border-color: rgba(253, 93, 7,.25); }
+.aitem-btn:hover { background: var(--brand-soft); color: var(--brand); border-color: rgba(228, 101, 33,.25); }
 .aitem-btn.danger:hover { background: rgba(255,77,79,.08); color: var(--danger); border-color: rgba(255,77,79,.2); }
 
 .aitem-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; align-items: end; }
@@ -73,6 +73,6 @@
   background: var(--panel-bg); color: var(--text-secondary); cursor: pointer;
   font-family: inherit; transition: var(--transition);
 }
-.aitem-filter-pill:hover { border-color: rgba(253, 93, 7,.3); }
+.aitem-filter-pill:hover { border-color: rgba(228, 101, 33,.3); }
 .aitem-filter-pill.active { background: var(--brand); color: #fff; border-color: var(--brand); }
 .aitem-filter-pill.active .tab-badge { background: rgba(255,255,255,.25); color: #fff; border-color: transparent; }

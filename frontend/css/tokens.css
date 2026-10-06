@@ -1,6 +1,6 @@
 /* ── EliteHost Design Tokens ───────────────────────────────── */
 /* Palette from the EliteHost HTML template (assets/scss/default/_variables.scss):
-   primary orange --color-primary #FD5D07, navy --color-secondary #001233, peach
+   primary orange --color-primary #E46521, navy --color-secondary #001233, peach
    section background --body-bg-2 #FFF5EF, light-orange card border --border-color
    #FFD4BD, body text --btc #4C5671, Roboto throughout.
    Variable NAMES are unchanged — every component file already consumes these, so
@@ -9,25 +9,36 @@
    The topbar uses the template's navy (its hero colour) rather than its white nav
    bar: shell.css and topbar-auth.js style topbar text white, and navy keeps all of
    that legible. EliteHost ships no dark theme; the dark values below are its navy
-   family so the app's existing theme toggle keeps working. */
+   family so the app's existing theme toggle keeps working.
+   Brand orange is the template's #FD5D07 with the neon taken out: same hue and
+   lightness, saturation .98 -> .78 (#E46521). It still reads as EliteHost orange
+   but no longer glares; contrast on white rises from 3.1:1 to 3.4:1 (fine for the
+   bold links/labels and button text it is used for).
+   Accent discipline: orange is reserved for primary actions, the active state and
+   small highlights. Borders, badges and surfaces are neutral — large areas of
+   orange tire the eyes in a tool people look at all day. The landing page
+   re-tints its own borders orange (landing.css), like the template. */
 :root {
   /* Brand */
-  --brand: #FD5D07;
-  --brand-hover: #E04F00;
-  --brand-light: #FF8B43;
-  --brand-soft: #FFF5EF;
-  --brand-muted: rgba(253, 93, 7, 0.10);
-  --brand-gradient: linear-gradient(180deg, #FF9C5E 0%, #FD5D07 100%);
+  --brand: #E46521;
+  --brand-hover: #C9541A;
+  --brand-light: #F0894F;
+  --brand-soft: #FFF7F2;
+  --brand-muted: rgba(228, 101, 33, 0.10);
+  --brand-gradient: linear-gradient(180deg, #F0894F 0%, #E46521 100%);
   --navy: #001233;
   --navy-2: #0A1F44;
 
   /* Surfaces */
-  --content-bg: #F7F8FB;
+  --content-bg: #F5F6F9;
   --section-bg: #FFF5EF;          /* EliteHost alternating "body-bg-2" sections */
   --panel-bg: #FFF;
-  --panel-border: #FFE4D4;        /* softened EliteHost card border */
+  --panel-border: #E7EAF0;
   --input-bg: #F4F6FA;
-  --badge-bg: #FFF5EF;
+  --badge-bg: #F1F3F7;
+  --hover-bg: #F6F7FA;
+  --avatar-bg: #E9EDF5;
+  --avatar-fg: #001233;
 
   /* Shadows */
   --shadow: 0 4px 16px rgba(0, 18, 51, .06);
@@ -41,8 +52,8 @@
 
   /* Border */
   --border-color: #EEF0F5;
-  --border-mid: #FFD4BD;
-  --border-dark: #FD9C66;
+  --border-mid: #DCE1E9;
+  --border-dark: #C3CBD8;
 
   /* Status */
   --success: #26CF4B;
@@ -63,7 +74,7 @@
 
   /* Chrome */
   --topbar-bg: #001233;
-  --topbar-accent: #FD5D07;
+  --topbar-accent: #E46521;
   --topbar-height: 64px;
   --nav-width: 320px;
 }
@@ -85,6 +96,14 @@
   --border-dark: #3A5590;
   --input-bg: #0B2048;
   --badge-bg: #0B2048;
-  --brand-soft: rgba(253, 93, 7, .16);
+  --brand: #E46521;
+  --brand-hover: #F0894F;
+  --brand-light: #F4A170;
+  --brand-soft: rgba(238, 125, 64, .12);
+  --brand-muted: rgba(238, 125, 64, .14);
+  --topbar-accent: #E46521;
+  --hover-bg: rgba(255, 255, 255, .04);
+  --avatar-bg: #13295A;
+  --avatar-fg: #F3F5FA;
   --topbar-bg: #000B20;
 }

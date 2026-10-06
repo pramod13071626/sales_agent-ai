@@ -63,7 +63,7 @@
 .tp-btn-primary:hover {
   background: var(--brand-hover, var(--brand));
   transform: translateY(-1px);
-  box-shadow: 0 3px 6px rgba(253, 93, 7,0.2);
+  box-shadow: 0 3px 6px rgba(228, 101, 33,0.2);
 }
 .tp-btn-primary:active { transform: translateY(0); }
 
@@ -127,7 +127,7 @@
   font-size: 1.1rem;
   flex-shrink: 0;
 }
-.icon-blue { background: rgba(253, 93, 7, 0.12); color: var(--brand); }
+.icon-blue { background: rgba(228, 101, 33, 0.12); color: var(--brand); }
 .icon-red { background: rgba(239, 68, 68, 0.12); color: #dc2626; }
 .icon-amber { background: rgba(245, 158, 11, 0.12); color: #d97706; }
 .icon-purple { background: rgba(147, 51, 234, 0.12); color: var(--brand); }
@@ -187,7 +187,7 @@
 }
 .tp-input:focus, .tp-select:focus, .tp-textarea:focus {
   border-color: var(--brand, var(--brand));
-  box-shadow: 0 0 0 3px rgba(253, 93, 7, 0.15);
+  box-shadow: 0 0 0 3px rgba(228, 101, 33, 0.15);
 }
 .tp-input-full, .tp-select-full { width: 100%; }
 
@@ -390,7 +390,7 @@
   font-weight: 500;
   word-break: break-all;
   overflow-wrap: anywhere;
-  background: rgba(253, 93, 7, 0.08);
+  background: rgba(228, 101, 33, 0.08);
   padding: 1px 6px;
   border-radius: 4px;
   font-size: .76rem;
@@ -399,7 +399,7 @@
 }
 .tp-task-desc .tp-link:hover {
   text-decoration: underline;
-  background: rgba(253, 93, 7, 0.16);
+  background: rgba(228, 101, 33, 0.16);
   color: var(--brand-hover, var(--brand));
 }
 
@@ -429,7 +429,7 @@
   white-space: nowrap;
 }
 .tp-tag-account {
-  background: rgba(253, 93, 7, 0.08);
+  background: rgba(228, 101, 33, 0.08);
   color: var(--brand);
   font-weight: 600;
 }
@@ -516,7 +516,7 @@
   width: 36px;
   height: 36px;
   border-radius: 8px;
-  background: rgba(253, 93, 7, 0.12);
+  background: rgba(228, 101, 33, 0.12);
   color: var(--brand, var(--brand));
   display: flex;
   align-items: center;

@@ -3,6 +3,9 @@
    /assets/elitehost/. Light-only, like the template. */
 
 .lp {
+  /* The landing page keeps the template's orange-tinted borders; the app uses neutral ones. */
+  --border-mid: #FFD4BD;
+  --border-dark: #FFC9A8;
   margin: 0;
   font-family: Roboto, system-ui, -apple-system, sans-serif;
   color: var(--text-secondary);
