@@ -92,6 +92,7 @@
 .lp-card {
   background: #fff; border: 1px solid var(--border-dark); border-radius: var(--radius-sm);
   padding: 30px 26px; display: flex; flex-direction: column; gap: 12px; transition: var(--transition);
+  cursor: default;
 }
 .lp-card:hover { border-color: var(--brand); box-shadow: var(--shadow-hover); transform: translateY(-3px); }
 .lp-card-icon {
