@@ -3,9 +3,11 @@ import './fetch-instrumentation.js';
 import { getCurrentUser, logout, refreshAccessToken } from './auth-client.js';
 import { initTopbarAuth } from './topbar-auth.js';
 import { initThemeToggle } from './theme.js';
+import { initTopbarAuth } from './topbar-auth.js';
 import { showToast } from './toast.js';
 
 initThemeToggle();
+initTopbarAuth();
 
 const esc = (s) => {
   const d = document.createElement('div');
@@ -464,7 +466,7 @@ function findConfig(key) {
 function renderFieldInput(c) {
   const meta = c.extra_metadata || {};
   const currentVal = dirtyConfigs[c.config_key] !== undefined ? dirtyConfigs[c.config_key] : (c.is_secret ? '' : (c.value || ''));
-  
+
   if (meta.options && Array.isArray(meta.options)) {
     return `
       <select class="api-input" data-config-key="${c.config_key}">
@@ -472,7 +474,7 @@ function renderFieldInput(c) {
       </select>
     `;
   }
-  
+
   if (c.is_secret) {
     let cleanPlaceholder = meta.placeholder || (c.is_configured ? 'Key configured — paste new key to replace...' : 'Enter API key...');
     cleanPlaceholder = cleanPlaceholder.replace(/[•*]+/g, '').trim() || 'Enter API key...';
@@ -506,7 +508,7 @@ function renderFieldInput(c) {
       </div>
     `;
   }
-  
+
   return `
     <input type="${meta.type === 'number' ? 'number' : 'text'}" class="api-input" data-config-key="${c.config_key}" value="${esc(currentVal)}" placeholder="${esc(meta.placeholder || '')}">
   `;
@@ -909,7 +911,7 @@ function renderApiConfigPanel() {
       <div class="api-config-section">
         <div class="api-config-section-header">
           <div class="api-config-section-title">
-            <i class="bi bi-envelope-check-fill" style="color:var(--brand);"></i> Email &amp; Daily News Digest Delivery
+            <i class="bi bi-envelope-check-fill" style="color:#0061ff;"></i> Email &amp; Daily News Digest Delivery
           </div>
         </div>
         <div class="api-config-card">
@@ -1026,6 +1028,9 @@ async function loadAndRender() {
   usersCache = usersData.users || [];
 
   const me = getCurrentUser();
+  if (me) {
+    renderTopBarUser(me);
+  }
 
   let tabContentHtml = '';
   if (activeAdminTab === 'users') {
@@ -1598,8 +1603,8 @@ function renderDashboardAccessToggles(userId, permissions, disabled) {
     </div>
     <div class="admin-access-dashboards-grid">
       ${dashboards.map(d => {
-        const hasAccess = !!permissions[d.key];
-        return `
+    const hasAccess = !!permissions[d.key];
+    return `
           <div class="admin-access-row">
             <label class="admin-access-toggle">
               <input type="checkbox" data-perm-key="${d.key}" ${hasAccess ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
@@ -1613,7 +1618,7 @@ function renderDashboardAccessToggles(userId, permissions, disabled) {
             </span>
           </div>
         `;
-      }).join('')}
+  }).join('')}
     </div>
   `;
 
@@ -1813,7 +1818,7 @@ function initTopbarAccountsDropdown() {
     if (isOpening) {
       container.classList.add('active');
       menu.classList.remove('d-none');
-      
+
       const accounts = await loadTopbarAccounts();
       renderTopbarAccountsList(accounts);
     } else {

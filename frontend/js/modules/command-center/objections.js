@@ -1,7 +1,9 @@
-// Operational Pain Points & Common Objections Widgets (Complete Visibility & Professional Card Layout)
-// Real data from /api/objections
+// Operational Pain Points & Common Objections Widgets
+// Enterprise B2B SaaS Clean Layout — Previous Data Only, Perfectly Arranged
 import { esc } from './utils.js';
 import { renderSkeleton } from '../skeleton.js';
+import { ccState } from './state.js';
+import { loadRealAccounts } from './real-accounts.js';
 
 let objectionsPromise = null;
 
@@ -17,77 +19,120 @@ export function loadObjectionsData() {
   return objectionsPromise;
 }
 
-function getAccountList(item) {
-  const personas = item.personas || [];
+function getAccountList(item, realAccounts) {
   const accountMap = new Map();
 
-  personas.forEach(p => {
+  (item.personas || []).forEach(p => {
     if (p.account && !accountMap.has(p.account)) {
-      let profileUrl = '';
-      if (p.account_id && p.id) {
-        profileUrl = `/profile?account=${encodeURIComponent(p.account_id)}&persona_id=${encodeURIComponent(p.id)}`;
-      } else if (p.account_id) {
-        profileUrl = `/?account=${encodeURIComponent(p.account_id)}&tab=personas`;
-      } else {
-        profileUrl = `/?account_key=${encodeURIComponent(p.account)}&tab=personas`;
-      }
-
-      accountMap.set(p.account, {
-        name: p.account,
-        accountId: p.account_id,
-        personaId: p.id,
-        personaName: p.name || 'Executive',
-        url: profileUrl,
-      });
+      const url = p.account_id
+        ? `/?account=${encodeURIComponent(p.account_id)}`
+        : `/?account_key=${encodeURIComponent(p.account)}&tab=personas`;
+      accountMap.set(p.account, { name: p.account, url });
     }
   });
 
   (item.accounts || []).forEach(name => {
     if (!accountMap.has(name)) {
-      accountMap.set(name, {
-        name: name,
-        accountId: null,
-        personaId: null,
-        personaName: 'Executive',
-        url: `/?account_key=${encodeURIComponent(name)}&tab=personas`,
-      });
+      let url = `/?account_key=${encodeURIComponent(name)}&tab=personas`;
+      if (realAccounts && realAccounts.length) {
+        const target = name.toLowerCase().trim();
+        const found = realAccounts.find(r => {
+          const rn = (r.name || r.display_name || '').toLowerCase().trim();
+          return rn === target || rn.includes(target) || target.includes(rn);
+        });
+        if (found) {
+          url = `/?account=${encodeURIComponent(found.id)}`;
+        }
+      }
+      accountMap.set(name, { name, url });
     }
   });
 
   return Array.from(accountMap.values());
 }
 
-function renderSeverityMatrix(items, emptyText) {
+function matchesActiveAccount(item, realAccounts) {
+  if (!ccState.activeAccountId) return true;
+  const activeId = String(ccState.activeAccountId);
+  const activeName = (ccState.selectedAccountName || '').toLowerCase().trim();
+
+  // Check personas
+  for (const p of (item.personas || [])) {
+    if (p.account_id && String(p.account_id) === activeId) return true;
+    if (p.account && activeName && p.account.toLowerCase().includes(activeName)) return true;
+  }
+
+  // Check accounts
+  for (const accName of (item.accounts || [])) {
+    if (activeName && (accName.toLowerCase().includes(activeName) || activeName.includes(accName.toLowerCase()))) return true;
+    const real = (realAccounts || []).find(r => String(r.id) === activeId);
+    if (real) {
+      const rn = (real.name || real.display_name || '').toLowerCase();
+      if (rn.includes(accName.toLowerCase()) || accName.toLowerCase().includes(rn)) return true;
+    }
+  }
+
+  return false;
+}
+
+function getSeverity(count) {
+  if (count >= 200) return { cls: 'cc-sev-critical', dotCls: 'dot-critical' };
+  if (count >= 50) return { cls: 'cc-sev-high', dotCls: 'dot-high' };
+  return { cls: 'cc-sev-med', dotCls: 'dot-med' };
+}
+
+function renderFilterBar(filteredCount, totalCount, onClearId) {
+  if (!ccState.activeAccountId) return '';
+  const acctName = ccState.selectedAccountName || 'Account';
+  return `
+    <div class="cc-intel-filter-strip">
+      <span class="cc-intel-filter-info">
+        <i class="fa-solid fa-filter"></i> Filtered by <strong>${esc(acctName)}</strong> (${filteredCount} of ${totalCount})
+      </span>
+      <button type="button" class="cc-intel-filter-clear" id="${onClearId}">
+        Show All <i class="fa-solid fa-xmark"></i>
+      </button>
+    </div>
+  `;
+}
+
+function renderPainPointsList(items, realAccounts, emptyText) {
   if (!items || !items.length) {
     return `<div class="cc-drawer-empty">${esc(emptyText)}</div>`;
   }
 
+  const filtered = items.filter(it => matchesActiveAccount(it, realAccounts));
+  if (!filtered.length) {
+    return `
+      ${renderFilterBar(0, items.length, 'ccClearPainFilter')}
+      <div class="cc-drawer-empty">No pain points recorded for <strong>${esc(ccState.selectedAccountName || 'this account')}</strong>.</div>
+    `;
+  }
+
   return `
-    <div class="cc-compact-scroll-wrap">
-      <ul class="cc-compact-list">
-        ${items.slice(0, 10).map((item, idx) => {
-          const accountList = getAccountList(item);
+    ${renderFilterBar(filtered.length, items.length, 'ccClearPainFilter')}
+    <div class="cc-intel-scroll-wrap">
+      <ul class="cc-intel-card-list">
+        ${filtered.slice(0, 10).map((item, idx) => {
+          const accountList = getAccountList(item, realAccounts);
           const count = item.count || 1;
-          const severity = count >= 300 ? 'high' : count >= 50 ? 'med' : 'low';
-          const severityLabel = severity === 'high' ? 'High Impact' : severity === 'med' ? 'Medium Impact' : 'Active Signal';
+          const sev = getSeverity(count);
 
           return `
-            <li class="cc-objection-card">
-              <div class="cc-card-header-row">
-                <div class="cc-card-title-group">
-                  <span class="cc-severity-dot tier-dot-${severity}" title="${severityLabel} (${count} mentions)"></span>
-                  <span class="cc-compact-rank">#${idx + 1}</span>
-                  <span class="cc-card-full-text">${esc(item.text)}</span>
+            <li class="cc-intel-card cc-pain-card ${sev.cls}">
+              <div class="cc-intel-row-top">
+                <div class="cc-intel-lead">
+                  <span class="cc-intel-rank">#${String(idx + 1).padStart(2, '0')}</span>
+                  <span class="cc-intel-title" title="${esc(item.text)}">${esc(item.text)}</span>
                 </div>
-                <span class="cc-chip cc-chip-xs ${severity === 'high' ? 'cc-chip-danger' : severity === 'med' ? 'cc-chip-warning' : 'cc-chip-plain'}">${count} mentions</span>
               </div>
-              <div class="cc-card-accounts-row">
-                <span class="cc-accounts-lead"><i class="fa-regular fa-building"></i> Target Accounts:</span>
-                <div class="cc-accounts-pill-list">
+              <div class="cc-intel-row-bottom">
+                <span class="cc-intel-label"><i class="fa-regular fa-building"></i> Target Accounts:</span>
+                <div class="cc-intel-accounts">
                   ${accountList.map(acc => `
-                    <a href="${acc.url}" class="cc-account-view-pill" title="View Executive Profile Dossier at ${esc(acc.name)}">
+                    <a href="${acc.url}" class="cc-account-pill" title="View Dossier for ${esc(acc.name)}">
                       <span class="cc-acc-name">${esc(acc.name)}</span>
-                      <span class="cc-acc-view-btn">View <i class="fa-solid fa-arrow-up-right-from-square"></i></span>
+                      <i class="fa-solid fa-arrow-up-right-from-square cc-ext-icon"></i>
                     </a>
                   `).join('')}
                 </div>
@@ -100,35 +145,44 @@ function renderSeverityMatrix(items, emptyText) {
   `;
 }
 
-function renderCleanObjections(items, emptyText) {
+function renderObjectionsList(items, realAccounts, emptyText) {
   if (!items || !items.length) {
     return `<div class="cc-drawer-empty">${esc(emptyText)}</div>`;
   }
 
+  const filtered = items.filter(it => matchesActiveAccount(it, realAccounts));
+  if (!filtered.length) {
+    return `
+      ${renderFilterBar(0, items.length, 'ccClearObjFilter')}
+      <div class="cc-drawer-empty">No objections recorded for <strong>${esc(ccState.selectedAccountName || 'this account')}</strong>.</div>
+    `;
+  }
+
   return `
-    <div class="cc-compact-scroll-wrap">
-      <ul class="cc-compact-list">
-        ${items.slice(0, 10).map((item, idx) => {
-          const accountList = getAccountList(item);
+    ${renderFilterBar(filtered.length, items.length, 'ccClearObjFilter')}
+    <div class="cc-intel-scroll-wrap">
+      <ul class="cc-intel-card-list">
+        ${filtered.slice(0, 10).map((item, idx) => {
+          const accountList = getAccountList(item, realAccounts);
           const count = item.count || 1;
 
           return `
-            <li class="cc-objection-card">
-              <div class="cc-card-header-row">
-                <div class="cc-card-title-group">
-                  <span class="cc-compact-quote-icon"><i class="fa-solid fa-quote-left"></i></span>
-                  <span class="cc-compact-rank">#${idx + 1}</span>
-                  <span class="cc-card-full-text">${esc(item.text)}</span>
+            <li class="cc-intel-card cc-objection-card">
+              <div class="cc-intel-row-top">
+                <div class="cc-intel-lead">
+                  <span class="cc-intel-rank cc-rank-obj">#${String(idx + 1).padStart(2, '0')}</span>
+                  <span class="cc-intel-title cc-obj-text" title="${esc(item.text)}">
+                    <i class="fa-solid fa-quote-left cc-quote-icon"></i> "${esc(item.text)}"
+                  </span>
                 </div>
-                ${count > 1 ? `<span class="cc-chip cc-chip-xs cc-chip-plain">${count} mentions</span>` : ''}
               </div>
-              <div class="cc-card-accounts-row">
-                <span class="cc-accounts-lead"><i class="fa-regular fa-building"></i> Target Accounts:</span>
-                <div class="cc-accounts-pill-list">
+              <div class="cc-intel-row-bottom">
+                <span class="cc-intel-label"><i class="fa-regular fa-building"></i> Target Accounts:</span>
+                <div class="cc-intel-accounts">
                   ${accountList.map(acc => `
-                    <a href="${acc.url}" class="cc-account-view-pill" title="View Executive Profile Dossier at ${esc(acc.name)}">
+                    <a href="${acc.url}" class="cc-account-pill" title="View Dossier for ${esc(acc.name)}">
                       <span class="cc-acc-name">${esc(acc.name)}</span>
-                      <span class="cc-acc-view-btn">View <i class="fa-solid fa-arrow-up-right-from-square"></i></span>
+                      <i class="fa-solid fa-arrow-up-right-from-square cc-ext-icon"></i>
                     </a>
                   `).join('')}
                 </div>
@@ -139,6 +193,27 @@ function renderCleanObjections(items, emptyText) {
       </ul>
     </div>
   `;
+}
+
+function bindClearHandlers() {
+  const clearHandler = () => {
+    const sel = document.getElementById('ccGlobalAccountSelect');
+    if (sel) {
+      sel.value = '';
+      sel.dispatchEvent(new Event('change'));
+    } else {
+      ccState.activeAccountId = null;
+      ccState.selectedAccountName = null;
+      ccState.selectedAccountObj = null;
+      renderObjections();
+    }
+  };
+
+  const btn1 = document.getElementById('ccClearPainFilter');
+  if (btn1) btn1.addEventListener('click', clearHandler);
+
+  const btn2 = document.getElementById('ccClearObjFilter');
+  if (btn2) btn2.addEventListener('click', clearHandler);
 }
 
 export async function renderObjections() {
@@ -148,9 +223,12 @@ export async function renderObjections() {
   if (painPointsBody) painPointsBody.innerHTML = renderSkeleton('lines');
   if (objectionsBody) objectionsBody.innerHTML = renderSkeleton('lines');
 
-  let data;
+  let data, realAccounts = [];
   try {
-    data = await loadObjectionsData();
+    [data, realAccounts] = await Promise.all([
+      loadObjectionsData(),
+      loadRealAccounts().catch(() => []),
+    ]);
   } catch (err) {
     console.error('Failed to load objections & pain points data:', err);
     if (painPointsBody) painPointsBody.innerHTML = '<div class="cc-drawer-empty">Could not load pain points data.</div>';
@@ -159,9 +237,19 @@ export async function renderObjections() {
   }
 
   if (painPointsBody) {
-    painPointsBody.innerHTML = renderSeverityMatrix(data.pain_points || [], 'No pain points captured yet for your accounts.');
+    painPointsBody.innerHTML = renderPainPointsList(
+      data.pain_points || [],
+      realAccounts,
+      'No operational pain points captured yet for your accounts.'
+    );
   }
   if (objectionsBody) {
-    objectionsBody.innerHTML = renderCleanObjections(data.objections || [], 'No objections captured yet for your accounts.');
+    objectionsBody.innerHTML = renderObjectionsList(
+      data.objections || [],
+      realAccounts,
+      'No common objections captured yet for your accounts.'
+    );
   }
+
+  bindClearHandlers();
 }

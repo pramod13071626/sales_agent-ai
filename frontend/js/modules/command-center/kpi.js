@@ -33,10 +33,11 @@ export function highlightAndScrollTo(selector) {
 }
 
 async function computeKpi() {
-  const [accounts, execChangesAll] = await Promise.all([
+  const [accounts, execChangesAll, _, dueSoonItems] = await Promise.all([
     loadMatrixAccounts(),
     loadRecentMovements().catch(() => []),
     loadCommandCenter(),
+    fetch('/api/me/action-items').then(r => r.ok ? r.json() : { action_items: [] }).then(d => d.action_items || []).catch(() => []),
   ]);
   const cc = getCommandCenter();
   const velocity = cc.velocity || { this_week: 0, delta_pct: 0, trend: [] };
@@ -52,12 +53,50 @@ async function computeKpi() {
 
   const playbookList = cc.playbook || [];
   const activeAcctId = ccState.activeAccountId;
+  const activeAcctName = ccState.selectedAccountName;
   const matchingPlays = activeAcctId
     ? playbookList.filter(p => String(p.account_id) === String(activeAcctId))
     : playbookList;
 
   const inMotionCount = matchingPlays.filter(p => p.tasked).length || (cc.plays && cc.plays.in_motion) || 0;
   const stalledCount = (cc.plays && cc.plays.stalled) || 0;
+
+  // Filter tasks for active account if selected
+  let relevantTasks = dueSoonItems.filter(i => i.status === 'open' || i.status === 'in_progress');
+  if (activeAcctId || activeAcctName) {
+    relevantTasks = relevantTasks.filter(i => {
+      if (activeAcctId && String(i.account_id) === String(activeAcctId)) return true;
+      if (activeAcctName && i.account_name) {
+        const c = i.account_name.toLowerCase();
+        const a = activeAcctName.toLowerCase();
+        if (c.includes(a) || a.includes(c)) return true;
+      }
+      return false;
+    });
+  }
+
+  const now = Date.now();
+  let overdueCount = 0;
+  let dueTodayCount = 0;
+  let dueThisWeekCount = 0;
+  let totalDueSoon = 0;
+
+  relevantTasks.forEach(t => {
+    if (!t.due_date) return;
+    const dueTime = new Date(t.due_date).getTime();
+    if (isNaN(dueTime)) return;
+    const diffDays = Math.round((dueTime - now) / 86400000);
+    if (diffDays < 0) {
+      overdueCount++;
+      totalDueSoon++;
+    } else if (diffDays === 0) {
+      dueTodayCount++;
+      totalDueSoon++;
+    } else if (diffDays <= 7) {
+      dueThisWeekCount++;
+      totalDueSoon++;
+    }
+  });
 
   return {
     accounts,
@@ -74,6 +113,11 @@ async function computeKpi() {
     playbookTotal: matchingPlays.length,
     playsInMotion: inMotionCount,
     playsStalled: stalledCount,
+    totalDueSoon,
+    overdueCount,
+    dueTodayCount,
+    dueThisWeekCount,
+    openTasksCount: relevantTasks.length,
   };
 }
 
@@ -127,7 +171,25 @@ export async function renderKpiStrip() {
       </div>
     </div>`;
 
-  return { html: card1 + card3 + card4, data: k };
+  const cardDueSoon = `
+    <div class="cc-kpi-card cc-kpi-clickable" data-kpi-action="jump-due-soon" title="Click to view Due Soon tasks" tabindex="0" role="button">
+      <div class="cc-kpi-label-row">
+        <span class="cc-kpi-label">Tasks due soon</span>
+        <i class="fa-solid fa-arrow-up-right-from-square cc-kpi-icon"></i>
+      </div>
+      <div class="cc-kpi-value">${k.totalDueSoon} <span class="cc-kpi-unit" style="font-size:0.85rem; font-weight:500; color:var(--text-secondary);">due</span></div>
+      <div class="cc-kpi-foot ${k.overdueCount > 0 ? 'cc-warning-text' : ''}">
+        ${k.overdueCount > 0 ? `<strong style="color:var(--danger);">${k.overdueCount} overdue</strong>` : (k.dueTodayCount > 0 ? `${k.dueTodayCount} due today` : (k.totalDueSoon > 0 ? `${k.totalDueSoon} next 7 days` : 'all clear this week'))} &middot; <span class="cc-kpi-action-text">View Due Soon &rarr;</span>
+      </div>
+      <div class="cc-chip-row">
+        ${k.overdueCount > 0 ? `<span class="cc-chip cc-chip-danger">${k.overdueCount} overdue</span>` : ''}
+        ${k.dueTodayCount > 0 ? `<span class="cc-chip cc-chip-warning">${k.dueTodayCount} today</span>` : ''}
+        ${k.dueThisWeekCount > 0 ? `<span class="cc-chip cc-chip-plain">${k.dueThisWeekCount} next 7d</span>` : ''}
+        ${k.totalDueSoon === 0 ? `<span class="cc-chip cc-chip-brand">all caught up</span>` : ''}
+      </div>
+    </div>`;
+
+  return { html: card1 + cardDueSoon + card3 + card4, data: k };
 }
 
 export function bindKpiListeners(container, kpiData) {
@@ -145,6 +207,8 @@ export function bindKpiListeners(container, kpiData) {
         highlightAndScrollTo('.cc-timeline-panel');
       } else if (action === 'jump-playbook') {
         highlightAndScrollTo('.cc-playbook-panel');
+      } else if (action === 'jump-due-soon') {
+        highlightAndScrollTo('[data-widget-id="due_soon"]');
       }
     };
 

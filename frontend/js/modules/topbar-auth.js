@@ -7,7 +7,6 @@ import { esc, initials } from './utils.js';
 import { getCurrentUser, logout, refreshAccessToken } from './auth-client.js';
 import { renderMyTasksPanel } from './action-items.js';
 import { myTasksDrawer, myTasksDrawerBackdrop, myTasksDrawerBody } from './dom.js';
-import { initSearchPalette } from './search-palette.js';
 
 function openMyTasksDrawer() {
   const drawer = document.getElementById('myTasksDrawer');
@@ -58,7 +57,7 @@ function render() {
   }
 
   const isOnAdminPage = window.location.pathname.startsWith('/admin');
-  const showTasks = currentOptions.showTasks !== false && !isOnAdminPage && (user.role === 'super_admin' || user.has_tasks_access !== false);
+  const showTasks = !isOnAdminPage && (user.role === 'super_admin' || user.has_tasks_access !== false);
   const displayName = user.full_name || (user.email ? user.email.split('@')[0] : 'User');
   const initials = getUserInitials(user);
   const isSuperAdmin = user.role === 'super_admin';
@@ -188,7 +187,5 @@ export async function initTopbarAuth(options = {}) {
   currentOptions = options;
   await refreshAccessToken(); // silent — restores a session from the refresh cookie on page load
   render();
-  const user = getCurrentUser();
-  if (user) initSearchPalette();
-  return user;
+  return getCurrentUser();
 }

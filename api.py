@@ -926,6 +926,7 @@ if FASTAPI_AVAILABLE:
         status: Optional[str] = "open"  # open | in_progress
         due_date: Optional[str] = None  # ISO 8601
         assigned_to_id: Optional[int] = None
+        source: str = "manual"  # manual | playbook | signal_feed
 
     class ActionItemDirectCreateRequest(BaseModel):
         account_id: int
