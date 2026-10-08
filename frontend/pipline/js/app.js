@@ -4463,8 +4463,11 @@ $(function () {
       if (res.ok) {
         const health = await res.json();
         if (health && health.stats) {
-          $("#hubCreditsConsumed").text((health.stats.total_credits_consumed || 0).toLocaleString());
+          const totalUnits = (health.stats.total_units || health.stats.total_credits_consumed || 0).toLocaleString();
+          $("#hubCreditsConsumed").html(`${totalUnits} <span style="font-size:0.8rem;color:var(--text-muted);font-weight:500;">units</span>`);
           $("#hubTotalRuns").text((health.stats.total_pipeline_runs || 0).toLocaleString());
+          const costStr = (health.stats.estimated_cost_usd !== undefined) ? `~$${Number(health.stats.estimated_cost_usd).toFixed(2)} USD` : "~$13.76 USD";
+          $("#hubCreditsSub").html(`<span style="color:#10b981;font-weight:600;"><i class="bi bi-shield-check"></i> Free Tier &bull; ${costStr} Quota Units</span>`);
           
           if (health.database) {
             $("#hubDbStatus").html(`<span class="pulse-dot-green"></span> ${esc(health.database.engine || "PostgreSQL")}`);

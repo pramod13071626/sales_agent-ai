@@ -26,7 +26,7 @@
   transition: var(--transition);
 }
 .persona-committee-card:hover {
-  border-color: rgba(0,97,255,.3);
+  border-color: rgba(228, 101, 33,.3);
   background: var(--brand-soft);
   box-shadow: var(--shadow);
 }
@@ -46,7 +46,7 @@
   font-size: .62rem; font-weight: 700; padding: 2px 6px;
   border-radius: var(--radius-xs);
 }
-.authority-decision { background: rgba(0,97,255,.1); color: var(--brand); }
+.authority-decision { background: rgba(228, 101, 33,.1); color: var(--brand); }
 .authority-budget { background: rgba(0,186,136,.12); color: #007A5A; }
 .authority-technical { background: rgba(245,166,35,.12); color: #B45309; }
 
@@ -88,7 +88,7 @@
 .pill-brand {
   background: var(--brand-soft);
   color: var(--brand);
-  border-color: rgba(0,97,255,.18);
+  border-color: rgba(228, 101, 33,.18);
 }
 .pill-success {
   background: rgba(0,186,136,.1);
@@ -212,7 +212,7 @@
   color: var(--brand);
   font-size: .68rem;
   font-weight: 700;
-  border: 1px solid rgba(0, 97, 255, 0.3);
+  border: 1px solid rgba(228, 101, 33, 0.3);
   flex-shrink: 0;
   transition: var(--transition);
 }
@@ -223,9 +223,9 @@
 }
 .signal-chip.clickable:hover {
   background: var(--brand-soft);
-  border-color: rgba(0, 97, 255, 0.45);
+  border-color: rgba(228, 101, 33, 0.45);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0,97,255,0.08);
+  box-shadow: 0 4px 12px rgba(228, 101, 33,0.08);
 }
 .signal-chip.clickable:hover .signal-text {
   color: var(--brand);
@@ -239,11 +239,11 @@
   background: var(--brand);
   color: #fff;
   border-color: var(--brand);
-  box-shadow: 0 2px 6px rgba(0,97,255,0.2);
+  box-shadow: 0 2px 6px rgba(228, 101, 33,0.2);
 }
 .signal-chip.clickable:active {
   transform: translateY(0);
-  box-shadow: 0 1px 3px rgba(0,97,255,0.08);
+  box-shadow: 0 1px 3px rgba(228, 101, 33,0.08);
 }
 .signal-chevron { margin-left: auto; font-size: .75rem; color: var(--text-muted); flex-shrink: 0; }
 .signal-chip.clickable:hover .signal-chevron { color: var(--brand); }
@@ -430,7 +430,7 @@
 .orgchart-node:hover {
   border-color: var(--brand);
   background: var(--brand-soft);
-  box-shadow: 0 4px 12px rgba(0, 97, 255, 0.12);
+  box-shadow: 0 4px 12px rgba(228, 101, 33, 0.12);
   transform: translateY(-2px);
 }
 .orgchart-root-node {
@@ -439,10 +439,10 @@
   width: 180px;
   min-height: 120px;
   padding: 12px 10px;
-  box-shadow: 0 2px 8px rgba(0, 97, 255, 0.1);
+  box-shadow: 0 2px 8px rgba(228, 101, 33, 0.1);
 }
 .orgchart-root-node:hover {
-  box-shadow: 0 6px 16px rgba(0, 97, 255, 0.16);
+  box-shadow: 0 6px 16px rgba(228, 101, 33, 0.16);
 }
 .orgchart-avatar {
   width: 32px;

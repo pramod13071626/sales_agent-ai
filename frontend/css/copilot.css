@@ -353,7 +353,7 @@ kbd {
 .cpd-fab {
   position: fixed; right: 22px; bottom: 22px; z-index: 900; display: inline-flex; align-items: center; gap: 8px;
   padding: 11px 16px; border: 0; border-radius: var(--radius-xl); background: var(--brand); color: #fff;
-  font-size: .85rem; font-weight: 600; box-shadow: 0 6px 18px rgba(111, 106, 248, .35); cursor: pointer; transition: var(--transition);
+  font-size: .85rem; font-weight: 600; box-shadow: 0 6px 18px rgba(228, 101, 33, .35); cursor: pointer; transition: var(--transition);
 }
 .cpd-fab:hover { background: var(--brand-hover); transform: translateY(-1px); }
 .cpd-fab:focus-visible { outline: 3px solid var(--brand-light); outline-offset: 2px; }

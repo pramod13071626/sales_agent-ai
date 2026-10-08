@@ -24,6 +24,7 @@ from apps.sales_copilot import settings
 
 INTERACTIVE = ("copilot", "callprep", "profiles")
 BATCH_WINDOW_UTC = (15.5, 24.0)      # 21:00–05:30 IST (quota resets 00:00 UTC = 05:30 IST)
+NIGHT_KEEP = 5                        # requests batch jobs leave for anyone still chatting at night
 
 
 class QuotaExceeded(Exception):
@@ -71,16 +72,30 @@ def quota_status(session, user_id: Optional[int]) -> Dict[str, Any]:
     }
 
 
-def _room(status: Dict[str, Any], feature: str) -> int:
-    """Requests this feature may still send today (team-side limits only)."""
+def in_batch_window(now: Optional[datetime] = None) -> bool:
+    now = now or datetime.now(timezone.utc)
+    hour = now.hour + now.minute / 60
+    return BATCH_WINDOW_UTC[0] <= hour < BATCH_WINDOW_UTC[1]
+
+
+def _room(status: Dict[str, Any], feature: str, night: Optional[bool] = None) -> int:
+    """Requests this feature may still send today (team-side limits only).
+
+    Batch jobs ("<feature>_batch"): the interactive reserves + pool add up to the whole daily
+    limit, so "what nobody reserved" is always 0. Instead:
+      * in the night window the day's reserves are released — batch may use everything left
+        today except NIGHT_KEEP for late interactive use;
+      * by day (the script's --daytime) a batch job draws only on its own feature's reserve
+        plus the shared pool, exactly like that feature's interactive button — it can never
+        eat the copilot's or another feature's reserve."""
     team = status["team"]
     left_total = team["requests_limit"] - team["requests_used"]
     if team["provider_exhausted"]:
         return 0
     if feature.endswith("_batch"):
-        unused_reserves = sum(max(0, f["reserve"] - f["used"]) for f in team["by_feature"].values())
-        pool_left = max(0, team["pool"]["size"] - team["pool"]["used"])
-        return max(0, left_total - unused_reserves - pool_left)
+        if night if night is not None else in_batch_window():
+            return max(0, left_total - NIGHT_KEEP)
+        feature = feature[: -len("_batch")]
     f = team["by_feature"].get(feature, {"used": 0, "reserve": 0})
     own = max(0, f["reserve"] - f["used"])
     pool_left = max(0, team["pool"]["size"] - team["pool"]["used"])
@@ -92,10 +107,8 @@ def _check(status: Dict[str, Any], feature: str, est_tokens: int, requests_: int
     team, me = status["team"], status["me"]
     if team["provider_exhausted"] or team["requests_used"] >= team["requests_limit"]:
         raise QuotaExceeded("team", "The team's AI requests for today are used up.")
-    if feature.endswith("_batch") and not allow_daytime:
-        hour = datetime.now(timezone.utc).hour + datetime.now(timezone.utc).minute / 60
-        if not (BATCH_WINDOW_UTC[0] <= hour < BATCH_WINDOW_UTC[1]):
-            raise QuotaExceeded("batch_window", "Batch jobs only run 21:00–05:30 IST, on requests the team didn't use.")
+    if feature.endswith("_batch") and not allow_daytime and not in_batch_window():
+        raise QuotaExceeded("batch_window", "Batch jobs only run 21:00–05:30 IST, on requests the team didn't use.")
     room = _room(status, feature)
     if room < requests_:
         raise QuotaExceeded("team", f"Today's AI requests for {feature.replace('_batch', '')} (and the shared pool) are used up."
@@ -160,21 +173,27 @@ def _body(system: str, user: str, max_tokens: int, stream: bool, model: Optional
         "model": model,
         "max_tokens": max_tokens,
         "temperature": 0.2,
-        "reasoning": {"enabled": False},   # reasoning cost 3-6x tokens on nemotron (README §10.2)
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
     }
-    others = [m for m in settings.LLM_MODELS if m != model]
-    if others:
-        body["models"] = [model] + others           # OpenRouter-side fallback (only before a stream starts)
+    if settings.IS_OPENROUTER:
+        body["reasoning"] = {"enabled": False}     # reasoning cost 3-6x tokens on nemotron (README §10.2)
+        others = [m for m in settings.LLM_MODELS if m != model]
+        if others:
+            body["models"] = [model] + others       # OpenRouter-side fallback (only before a stream starts)
     if stream:
         body["stream"] = True
-        body["usage"] = {"include": True}          # final chunk carries token usage
+        if settings.IS_OPENROUTER:
+            body["usage"] = {"include": True}      # final chunk carries token usage
+        else:
+            body["stream_options"] = {"include_usage": True}   # the OpenAI-standard equivalent
     return body
 
 
 def _headers() -> Dict[str, str]:
-    return {"Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
-            "HTTP-Referer": "http://localhost", "X-Title": "sales-agent-ai copilot"}
+    headers = {"Authorization": f"Bearer {settings.LLM_API_KEY}"}
+    if settings.IS_OPENROUTER:
+        headers.update({"HTTP-Referer": "http://localhost", "X-Title": "sales-agent-ai copilot"})
+    return headers
 
 
 def _raise_for(status_code: int, body_text: str) -> None:
@@ -189,16 +208,16 @@ def _raise_for(status_code: int, body_text: str) -> None:
 
 def chat(session, *, feature: str, user_id: Optional[int], system: str, user: str,
          max_tokens: int = settings.LLM_MAX_TOKENS) -> Tuple[str, Dict[str, Any]]:
-    """One OpenRouter request under the governor. Returns (content, usage-info)."""
-    if not settings.OPENROUTER_API_KEY:
-        raise LLMError("OPENROUTER_API_KEY is not configured")
+    """One LLM request under the governor. Returns (content, usage-info)."""
+    if not settings.LLM_API_KEY:
+        raise LLMError("LLM_API_KEY is not configured")
     est = (len(system) + len(user)) // 4 + max_tokens
     (usage_id,) = reserve(session, feature, user_id, est)
     t0 = time.time()
     status_code, content, u, model_used = None, "", {}, settings.LLM_MODELS[0]
     try:
         try:
-            res = requests.post(settings.OPENROUTER_URL, json=_body(system, user, max_tokens, False),
+            res = requests.post(settings.LLM_CHAT_URL, json=_body(system, user, max_tokens, False),
                                 timeout=120, headers=_headers())
         except requests.RequestException as e:
             raise LLMError(str(e)) from e
@@ -227,23 +246,23 @@ def is_transient(err: Exception) -> bool:
 
 def chat_stream(session, *, feature: str, user_id: Optional[int], system: str, user: str,
                 max_tokens: int = settings.LLM_MAX_TOKENS, model: Optional[str] = None) -> Iterator[Dict[str, Any]]:
-    """Streamed OpenRouter request under the governor. Yields {"token": str} items,
+    """Streamed LLM request under the governor. Yields {"token": str} items,
     then one {"done": usage-info}. The usage row is finalized even if the consumer
     stops early (the rep pressed Stop)."""
-    if not settings.OPENROUTER_API_KEY:
-        raise LLMError("OPENROUTER_API_KEY is not configured")
+    if not settings.LLM_API_KEY:
+        raise LLMError("LLM_API_KEY is not configured")
     est = (len(system) + len(user)) // 4 + max_tokens
     (usage_id,) = reserve(session, feature, user_id, est, model=model)
     t0 = time.time()
     status_code, got, u, model_used = None, [], {}, model or settings.LLM_MODELS[0]
     try:
         try:
-            res = requests.post(settings.OPENROUTER_URL, json=_body(system, user, max_tokens, True, model),
+            res = requests.post(settings.LLM_CHAT_URL, json=_body(system, user, max_tokens, True, model),
                                 timeout=120, headers=_headers(), stream=True)
         except requests.RequestException as e:
             raise LLMError(str(e)) from e
         status_code = res.status_code
-        # OpenRouter's event stream has no charset, so requests would decode it as ISO-8859-1
+        # The event stream may have no charset, so requests would decode it as ISO-8859-1
         # and turn "’" into "â\x80\x99". The body is UTF-8.
         res.encoding = "utf-8"
         if res.status_code != 200:
@@ -280,8 +299,9 @@ def chat_stream(session, *, feature: str, user_id: Optional[int], system: str, u
 
 
 def check_models() -> Dict[str, Any]:
-    """README §14.2: warn when a configured free model disappeared or stopped being free."""
-    res = requests.get("https://openrouter.ai/api/v1/models", timeout=30)
+    """README §14.2: warn when a configured model disappeared from the provider's list
+    (and, on OpenRouter, when a free model stopped being free)."""
+    res = requests.get(f"{settings.LLM_API_BASE}/models", timeout=30, headers=_headers())
     res.raise_for_status()
     models = {m["id"]: m for m in res.json().get("data", [])}
     out: Dict[str, Any] = {}
@@ -290,5 +310,6 @@ def check_models() -> Dict[str, Any]:
         pricing = m.get("pricing") or {}
         free = bool(m) and float(pricing.get("prompt") or 1) == 0 and float(pricing.get("completion") or 1) == 0
         out[mid] = {"listed": bool(m), "free": free, "context_length": m.get("context_length")}
-    out["_ok"] = all(v["listed"] and v["free"] for k, v in out.items() if not k.startswith("_"))
+    out["_ok"] = all(v["listed"] and (v["free"] or not settings.IS_OPENROUTER)
+                     for k, v in out.items() if not k.startswith("_"))
     return out

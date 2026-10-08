@@ -71,7 +71,7 @@ function render() {
   }
 
   const isOnAdminPage = window.location.pathname.startsWith('/admin');
-  const showTasks = currentOptions.showTasks !== false && !isOnAdminPage && (user.role === 'super_admin' || user.has_tasks_access !== false);
+  const showTasks = !isOnAdminPage && (user.role === 'super_admin' || user.has_tasks_access !== false);
   const displayName = user.full_name || (user.email ? user.email.split('@')[0] : 'User');
   const initials = getUserInitials(user);
   const isSuperAdmin = user.role === 'super_admin';

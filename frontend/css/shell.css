@@ -24,7 +24,7 @@
   display: grid; place-items: center;
   font-size: 1rem; color: #fff;
   flex-shrink: 0;
-  box-shadow: 0 2px 8px rgba(0,97,255,.4);
+  box-shadow: 0 2px 8px rgba(228, 101, 33,.4);
 }
 
 .topbar-title {
@@ -122,7 +122,7 @@
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #6366f1, #3b82f6);
+  background: linear-gradient(135deg, var(--brand), var(--brand));
   color: #fff;
   font-size: 0.7rem;
   font-weight: 700;
@@ -193,7 +193,7 @@
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #6366f1, #3b82f6);
+  background: linear-gradient(135deg, var(--brand), var(--brand));
   color: #fff;
   font-size: 0.9rem;
   font-weight: 700;
@@ -201,7 +201,7 @@
   place-items: center;
   text-transform: uppercase;
   flex-shrink: 0;
-  box-shadow: 0 2px 6px rgba(99, 102, 241, 0.4);
+  box-shadow: 0 2px 6px rgba(228, 101, 33, 0.4);
 }
 
 .profile-dropdown-info {
@@ -247,9 +247,9 @@
 }
 
 .profile-role-tag.role-super-admin {
-  background: rgba(99, 102, 241, 0.16);
+  background: rgba(228, 101, 33, 0.16);
   color: #818cf8;
-  border: 1px solid rgba(99, 102, 241, 0.3);
+  border: 1px solid rgba(228, 101, 33, 0.3);
 }
 
 .profile-role-tag.role-user {
@@ -301,7 +301,7 @@
 }
 
 .profile-dropdown-item:hover i {
-  color: var(--brand, #6366f1);
+  color: var(--brand, var(--brand));
 }
 
 .profile-dropdown-logout {

@@ -34,9 +34,14 @@ def collection_name() -> str:
     return f"sales_copilot__e{slug}-{EMBED_DIMS}__{CHUNKER_VERSION}__{ATTRIBUTION_VERSION}"
 
 
-# ── LLM: OpenRouter free models only ──
-OPENROUTER_API_KEY = _env("OPENROUTER_API_KEY")
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+# ── LLM: any OpenAI-compatible chat-completions provider ──
+# LLM_API_BASE / LLM_API_KEY pick the provider (e.g. https://heyroute.ai/v1). Unset, it is
+# OpenRouter with OPENROUTER_API_KEY, as before. The OpenRouter key is only ever sent to
+# OpenRouter. Copilot, call-prep and the content pipeline all read these same settings.
+LLM_API_BASE = (_env("LLM_API_BASE") or "https://openrouter.ai/api/v1").rstrip("/")
+IS_OPENROUTER = "openrouter.ai" in LLM_API_BASE
+LLM_API_KEY = _env("LLM_API_KEY") or (_env("OPENROUTER_API_KEY") if IS_OPENROUTER else "")
+LLM_CHAT_URL = f"{LLM_API_BASE}/chat/completions"
 LLM_MODELS = [m.strip() for m in _env(
     "COPILOT_LLM_MODELS",
     "nvidia/nemotron-3-super-120b-a12b:free,qwen/qwen3.8-27b:free,google/gemma-4-31b-it:free",

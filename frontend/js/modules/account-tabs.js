@@ -104,7 +104,7 @@ function renderExecutiveBriefingTab(account, lob, signals, matches) {
 
       <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:4px;">
         ${matches.length ? `
-          <div class="signal-chip" style="background:var(--brand-soft); border-color:rgba(0,97,255,.2); color:var(--brand);">
+          <div class="signal-chip" style="background:var(--brand-soft); border-color:rgba(228, 101, 33,.2); color:var(--brand);">
             <i class="bi bi-lightning-charge-fill"></i>
             <span><strong>${matches[0].label} Opportunity:</strong> ${esc(matches[0].pitch)}</span>
           </div>` : ''}

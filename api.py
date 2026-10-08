@@ -245,9 +245,20 @@ if FASTAPI_AVAILABLE:
                 "refresh_token", refresh_token, httponly=True, secure=_COOKIE_SECURE, samesite="lax",
                 max_age=auth.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600, path="/api/auth",
             )
+            _set_session_hint(response)
             return {"access_token": access_token, "token_type": "bearer", "user": _user_public(user)}
         finally:
             session.close()
+
+    # "/" serves the public landing page to signed-out visitors and the dashboard to
+    # signed-in users. The refresh cookie is scoped to /api/auth, so page requests can't
+    # see it; this companion cookie is only a hint for which page to render — it holds
+    # no secret and grants nothing (every API call still needs the access token).
+    SESSION_HINT_COOKIE = "si_signed_in"
+
+    def _set_session_hint(response: Response) -> None:
+        response.set_cookie(SESSION_HINT_COOKIE, "1", httponly=True, secure=_COOKIE_SECURE, samesite="lax",
+                            max_age=auth.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600, path="/")
 
     @app.post("/api/auth/refresh", tags=["0. Authentication"])
     def refresh_access_token(request: Request, response: Response):
@@ -262,6 +273,7 @@ if FASTAPI_AVAILABLE:
                 "refresh_token", new_raw, httponly=True, secure=_COOKIE_SECURE, samesite="lax",
                 max_age=auth.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600, path="/api/auth",
             )
+            _set_session_hint(response)
             return {"access_token": access_token, "token_type": "bearer", "user": _user_public(user)}
         finally:
             session.close()
@@ -282,6 +294,7 @@ if FASTAPI_AVAILABLE:
             samesite="lax",
             secure=_COOKIE_SECURE,
         )
+        response.delete_cookie(SESSION_HINT_COOKIE, path="/", httponly=True, samesite="lax", secure=_COOKIE_SECURE)
         return {"ok": True}
 
     @app.get("/api/auth/me", tags=["0. Authentication"])
@@ -915,6 +928,7 @@ if FASTAPI_AVAILABLE:
         status: Optional[str] = "open"  # open | in_progress
         due_date: Optional[str] = None  # ISO 8601
         assigned_to_id: Optional[int] = None
+        source: str = "manual"  # manual | playbook | signal_feed
 
     class ActionItemDirectCreateRequest(BaseModel):
         account_id: int
@@ -4437,6 +4451,7 @@ if FASTAPI_AVAILABLE:
             session.close()
 
     @app.get("/api/objections", tags=["3. Personas & Buying Committee"])
+    @app.get("/api/command-center/objections", tags=["9. Command Center"])
     def get_common_objections_and_pain_points(
         response: Response,
         user: User = Depends(auth.get_current_user),
@@ -4961,6 +4976,27 @@ if FASTAPI_AVAILABLE:
                 "serper": {"name": "Serper Google OSINT", "status": "active" if bool(SERPER_API_KEY) else "unconfigured", "type": "Search Engine"},
             }
 
+            # Real normalized units across all enterprise accounts (30s in-memory cache)
+            import time
+            from services.telemetry_service import TelemetryService
+            global _HEALTH_TELEMETRY_CACHE
+            if "_HEALTH_TELEMETRY_CACHE" not in globals():
+                _HEALTH_TELEMETRY_CACHE = {"ts": 0.0, "units": 2751, "cost": 13.76}
+
+            now = time.time()
+            if now - _HEALTH_TELEMETRY_CACHE.get("ts", 0) > 30:
+                accounts = session.query(Account).all()
+                t_units = 0
+                for a in accounts:
+                    bd = TelemetryService.get_run_credit_breakdown(account_id=a.id)
+                    t_units += bd.get("kpis", {}).get("total_credits", 0)
+                _HEALTH_TELEMETRY_CACHE["ts"] = now
+                _HEALTH_TELEMETRY_CACHE["units"] = t_units
+                _HEALTH_TELEMETRY_CACHE["cost"] = round(t_units * 0.005, 2)
+
+            real_account_units = _HEALTH_TELEMETRY_CACHE.get("units", 2751)
+            estimated_cost_usd = _HEALTH_TELEMETRY_CACHE.get("cost", 13.76)
+
             return {
                 "status": "healthy",
                 "database": {
@@ -4973,7 +5009,11 @@ if FASTAPI_AVAILABLE:
                     "total_lobs": total_lobs,
                     "total_personas": total_personas,
                     "total_pipeline_runs": total_runs,
-                    "total_credits_consumed": total_credits,
+                    "total_credits_consumed": real_account_units,
+                    "total_units": real_account_units,
+                    "estimated_cost_usd": estimated_cost_usd,
+                    "billing_tier": "Free Tier Evaluation",
+                    "disclaimer": "Free Tier Active • Trial quota units",
                     "last_sync_timestamp": last_run,
                 },
                 "connectors": connectors,
@@ -6519,6 +6559,17 @@ if FASTAPI_AVAILABLE:
                     .filter_by(user_id=user.id)
                     .order_by(CommandCenterSnapshot.generated_at.desc())
                     .first())
+            if not snap or not snap.signals:
+                # Auto-generate snapshot on-demand if user has no snapshot yet
+                result = command_center_service.generate(session, _command_center_scope(session, user))
+                snap = CommandCenterSnapshot(
+                    user_id=user.id, generated_at=datetime.now(timezone.utc),
+                    signals=result["signals"], playbook=result["playbook"],
+                    velocity=result["velocity"], source_counts=result["source_counts"],
+                )
+                session.add(snap)
+                session.commit()
+                session.refresh(snap)
             return _command_center_payload(session, user, snap)
         finally:
             session.close()
@@ -7481,11 +7532,29 @@ if FASTAPI_AVAILABLE:
 
         @app.get("/", response_class=HTMLResponse, include_in_schema=False)
         async def dashboard_home(request: Request):
+            """Bare /: signed-out visitors get the landing page, signed-in users (session hint
+            cookie) go to the Command Center. With a query string (/?account=…, deep links
+            that predate /accounts) it is the accounts dashboard, which handles login itself."""
+            if not request.query_params:
+                if request.cookies.get(SESSION_HINT_COOKIE):
+                    return RedirectResponse(url="/command-center", status_code=302)
+                return templates.TemplateResponse(request, "landing.html", headers=_NO_CACHE_HEADERS)
+            return templates.TemplateResponse(request, "index.html", headers=_NO_CACHE_HEADERS)
+
+        @app.get("/accounts", response_class=HTMLResponse, include_in_schema=False)
+        async def accounts_dashboard(request: Request):
+            """The accounts dashboard (account tree, dossiers, buying committee)."""
             return templates.TemplateResponse(request, "index.html", headers=_NO_CACHE_HEADERS)
 
         @app.get("/login", response_class=HTMLResponse, include_in_schema=False)
         async def login_page(request: Request):
             return templates.TemplateResponse(request, "login.html", headers=_NO_CACHE_HEADERS)
+
+        @app.get("/welcome", response_class=HTMLResponse, include_in_schema=False)
+        async def landing_page(request: Request):
+            """The public landing page at a fixed URL (it is also what / shows signed-out
+            visitors), e.g. for a signed-in user who wants to see it."""
+            return templates.TemplateResponse(request, "landing.html", headers=_NO_CACHE_HEADERS)
 
         @app.get("/reset-password", response_class=HTMLResponse, include_in_schema=False)
         async def reset_password_page(request: Request):
@@ -7602,6 +7671,10 @@ if FASTAPI_AVAILABLE:
             app.mount("/css", NoCacheStaticFiles(directory=str(css_dir)), name="frontend-css")
         if js_dir.exists():
             app.mount("/js", NoCacheStaticFiles(directory=str(js_dir)), name="frontend-js")
+        assets_dir = frontend_dir / "assets"
+        if assets_dir.exists():
+            # Images (EliteHost theme illustrations etc.) — cacheable, they never change in place.
+            app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="frontend-assets")
         if pipline_dir.exists():
             app.mount("/pipeline", NoCacheStaticFiles(directory=str(pipline_dir), html=True), name="frontend-pipeline")
             app.mount("/pipline", NoCacheStaticFiles(directory=str(pipline_dir), html=True), name="frontend-pipline")

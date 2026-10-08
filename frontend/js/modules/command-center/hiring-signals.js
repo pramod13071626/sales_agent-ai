@@ -302,8 +302,8 @@ export async function renderHiringSignals(days = currentHiringDays) {
             </div>
             <div class="hs-action-text">${esc(actionStep.recommendation)}</div>
             <div class="hs-action-footer">
-              <button type="button" class="cc-btn cc-btn-primary cc-btn-xs hs-task-btn" data-account-name="${esc(shortName)}" data-task-title="${esc(actionStep.taskTitle)}" data-task-desc="${esc(actionStep.taskDescription)}" title="Create assigned task in My Tasks">
-                <i class="fa-solid fa-plus"></i> Create Action Task
+              <button type="button" class="cc-btn cc-btn-primary cc-btn-xs hs-task-btn" data-account-id="${account.id}" data-account-name="${esc(shortName)}" data-task-title="${esc(actionStep.taskTitle)}" data-task-desc="${esc(actionStep.taskDescription)}" title="Create assigned task in My Tasks">
+                <i class="fa-solid fa-plus"></i> Create task
               </button>
               <a class="hs-explore-link" href="/?account=${account.id}&tab=jobs" title="View all open requisitions">
                 Requisitions <i class="fa-solid fa-arrow-right"></i>
@@ -314,10 +314,11 @@ export async function renderHiringSignals(days = currentHiringDays) {
       `;
     }).join('');
 
-    // 4. Click handlers for Action Task buttons
+    // 4. Click handlers for Create Task buttons
     list.querySelectorAll('.hs-task-btn').forEach(btn => {
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
+        const accountId = btn.dataset.accountId ? Number(btn.dataset.accountId) : null;
         const accountName = btn.dataset.accountName;
         const title = btn.dataset.taskTitle;
         const description = btn.dataset.taskDesc;
@@ -325,8 +326,13 @@ export async function renderHiringSignals(days = currentHiringDays) {
         btn.disabled = true;
         btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Creating...';
         try {
-          await createTask(accountName, title, { description, score: 85 });
-          btn.innerHTML = '<i class="fa-solid fa-check"></i> Added';
+          const ok = await createTask(accountName, title, { accountId, description, score: 85, source: 'signal_feed' });
+          if (ok) {
+            btn.innerHTML = '<i class="fa-solid fa-check"></i> Added';
+          } else {
+            btn.innerHTML = origHtml;
+            btn.disabled = false;
+          }
         } catch {
           btn.innerHTML = origHtml;
           btn.disabled = false;

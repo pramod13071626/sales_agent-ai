@@ -25,7 +25,7 @@ export const WIDGET_GUIDES = {
     icon: 'fa-solid fa-bookmark',
     badge: 'Weekly Action Plan',
     summary: 'The top 5 plays for this week, one per account and signal type, built from the highest-scoring signals in the Priority Signal Feed.',
-    actionTip: 'Click "Start play" to create a task for it — open plays count toward "Open plays in motion". Press Generate again each week (or after new data lands).',
+    actionTip: 'Click "Create task" to create a task for it — open plays count toward "Open plays in motion". Press Generate again each week (or after new data lands).',
     signals: 'Priority Signal Feed (generated)',
   },
   timeline: {
